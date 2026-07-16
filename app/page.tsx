@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import adsData from "./ads-data.json";
 
 type Store = { id: string; name: string; platform: string };
 type DashboardResponse = { stores: Store[]; selectedStoreId: string | null; snapshot: { payload: any; importedAt: string } | null };
@@ -44,6 +45,9 @@ export default function Home() {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [storeId, setStoreId] = useState("");
   const [loading, setLoading] = useState(false);
+  const [adStatusFilter, setAdStatusFilter] = useState("All");
+  const [adSearch, setAdSearch] = useState("");
+  const [adPage, setAdPage] = useState(1);
 
   async function load(id?: string) {
     setLoading(true);
@@ -60,7 +64,11 @@ export default function Home() {
   const live = data?.snapshot?.payload ?? {};
   const overview = Array.isArray(live.overview) ? live.overview : overviewFallback;
   const ads = live.advertising ?? (allStoresSelected ? allStoresAdvertising : adFallback);
-  const adCampaigns = Array.isArray(live.adCampaigns) ? live.adCampaigns : (allStoresSelected ? allStoresCampaigns : adCampaignFallback);
+  const importedStoreAds = adsData.filter((ad:any) => allStoresSelected || ad.store === store?.name);
+  const adCampaigns = Array.isArray(live.adCampaigns) ? live.adCampaigns : (importedStoreAds.length ? importedStoreAds : adCampaignFallback);
+  const filteredAdCampaigns = adCampaigns.filter((ad:any) => (adStatusFilter === "All" || ad.status === adStatusFilter) && `${ad.name} ${ad.store ?? ""}`.toLowerCase().includes(adSearch.toLowerCase()));
+  const adPageCount = Math.max(1, Math.ceil(filteredAdCampaigns.length / 25));
+  const visibleAdCampaigns = filteredAdCampaigns.slice((adPage - 1) * 25, adPage * 25);
   const orders = Array.isArray(live.orders) ? live.orders : ordersFallback;
   const clientActions = Array.isArray(live.clientActions) ? live.clientActions : actionFallback;
   const warningOrders = orders.filter((order:any) => order.status === "Expired" || order.status === "Urgent");
@@ -79,7 +87,7 @@ export default function Home() {
       <header className="header">
         <div><p className="kicker">SHOPEE HUB PERFORMANCE</p><h1>{allStoresSelected ? "All Stores" : (store?.name ?? "J Packaging")}</h1></div>
         <div className="toolbar">
-          <label>Store<select value={storeId} onChange={e=>{setStoreId(e.target.value);load(e.target.value)}}><option value="all">All Stores · MY & SG</option>{data?.stores.map(s=><option key={s.id} value={s.id}>{s.name} · {s.platform}</option>) ?? <option value="j-packaging-shopee">J Packaging · Shopee</option>}</select></label>
+          <label>Store<select value={storeId} onChange={e=>{setStoreId(e.target.value);setAdPage(1);load(e.target.value)}}><option value="all">All Stores · MY & SG</option>{data?.stores.map(s=><option key={s.id} value={s.id}>{s.name} · {s.platform}</option>) ?? <option value="j-packaging-shopee">J Packaging · Shopee</option>}</select></label>
           <button onClick={()=>load(storeId)} disabled={loading}>{loading?"Updating…":"Update data"}</button>
         </div>
       </header>
@@ -100,7 +108,7 @@ export default function Home() {
       {section==="advertising" && <div className="page"><div className="page-title"><div><p className="kicker">ADVERTISING</p><h2>Campaign performance</h2></div><span className="period">This month</span></div>
         <section className="metric-grid ads">{[["Ad Balance",ads.balance],["Ad Spend",ads.spend],["Ad Sales",ads.sales],["ROAS",ads.roas],["Views",ads.views],["Clicks",ads.clicks],["Conversion",ads.conversion],["Sold Products",ads.sold],["Cost per Conversion",ads.cpc],["ACOS",ads.acos]].map(m=><article className="metric" key={m[0]}><span>{m[0]}</span><strong>{money(m[1])}</strong></article>)}</section>
         <section className="rule-grid"><article className={`rule ${parseFloat(ads.ctr)<2?"danger":"ok"}`}><div><span>CTR</span><strong>{ads.ctr}</strong></div><b>{parseFloat(ads.ctr)<2?"Warning":"Normal"}</b><p>Rule: CTR below 2% triggers a red warning.</p></article><article className={`rule ${parseFloat(ads.conversionRate)<2?"danger":"ok"}`}><div><span>Conversion Rate</span><strong>{ads.conversionRate}</strong></div><b>{parseFloat(ads.conversionRate)<2?"Warning":"Normal"}</b><p>Rule: Conversion Rate below 2% triggers a red warning.</p></article></section>
-        <section className="campaign-section"><div className="campaign-heading"><div><p className="kicker">EVERY AD</p><h3>Individual advertisement data</h3>{allStoresSelected&&<small>Current source: 535 ads · 123 ongoing · 266 paused · 146 ended</small>}</div><div className="campaign-counts"><span>{adCampaigns.filter((a:any)=>a.status==="Active"||a.status==="Ongoing").length} Active</span><span className="paused-count">{adCampaigns.filter((a:any)=>a.status==="Paused").length} Paused</span></div></div><div className="card table-card"><table className="campaign-table"><thead><tr><th>Advertisement</th><th>Status</th><th>Budget</th><th>Spend</th><th>Ad Sales</th><th>ROAS</th><th>Views</th><th>Clicks</th><th>CTR</th><th>Conversion</th><th>Sold</th><th>ACOS</th></tr></thead><tbody>{adCampaigns.map((a:any)=><tr key={a.name} className={a.status==="Paused"?"paused-row":""}><td><b>{a.name}</b><small>{a.type}</small></td><td><span className={`ad-status ${a.status.toLowerCase()}`}>{a.status}</span></td><td>{a.budget}</td><td>{a.spend}</td><td>{a.sales}</td><td><b>{a.roas}</b></td><td>{a.views}</td><td>{a.clicks}</td><td className={parseFloat(a.ctr)<2?"cell-warning":""}>{a.ctr}</td><td className={parseFloat(a.conversionRate)<2?"cell-warning":""}>{a.conversionRate}</td><td>{a.sold}</td><td>{a.acos}</td></tr>)}</tbody></table></div></section>
+        <section className="campaign-section"><div className="campaign-heading"><div><p className="kicker">EVERY AD</p><h3>Individual advertisement data</h3><small>{adCampaigns.length} ads · {adCampaigns.filter((a:any)=>a.status==="Ongoing").length} ongoing · {adCampaigns.filter((a:any)=>a.status==="Paused").length} paused · {adCampaigns.filter((a:any)=>a.status==="Ended").length} ended</small></div><div className="campaign-counts"><span>{adCampaigns.filter((a:any)=>a.status==="Active"||a.status==="Ongoing").length} Active</span><span className="paused-count">{adCampaigns.filter((a:any)=>a.status==="Paused").length} Paused</span></div></div><div className="ad-controls"><div>{["All","Ongoing","Paused","Ended"].map(status=><button key={status} className={adStatusFilter===status?"active":""} onClick={()=>{setAdStatusFilter(status);setAdPage(1)}}>{status}</button>)}</div><input value={adSearch} onChange={e=>{setAdSearch(e.target.value);setAdPage(1)}} placeholder="Search ad or store" aria-label="Search advertisements"/></div><div className="card table-card"><table className="campaign-table"><thead><tr><th>Advertisement</th><th>Status</th><th>Budget</th><th>Spend</th><th>Ad Sales</th><th>ROAS</th><th>Views</th><th>Clicks</th><th>CTR</th><th>Conversion</th><th>Sold</th><th>ACOS</th></tr></thead><tbody>{visibleAdCampaigns.map((a:any)=><tr key={a.id ?? a.name} className={a.status==="Paused"?"paused-row":""}><td><b>{a.name}</b><small>{a.store ? `${a.store} · ${a.type}` : a.type}</small></td><td><span className={`ad-status ${a.status.toLowerCase()}`}>{a.status}</span></td><td>{a.budget}</td><td>{a.spend}</td><td>{a.sales}</td><td><b>{a.roas}</b></td><td>{a.views}</td><td>{a.clicks}</td><td className={parseFloat(a.ctr)<2?"cell-warning":""}>{a.ctr}</td><td className={parseFloat(a.conversionRate)<2?"cell-warning":""}>{a.conversionRate}</td><td>{a.sold}</td><td>{a.acos}</td></tr>)}</tbody></table></div><div className="ad-pagination"><button disabled={adPage===1} onClick={()=>setAdPage(p=>Math.max(1,p-1))}>← Previous</button><span>Page {adPage} of {adPageCount} · {filteredAdCampaigns.length} ads</span><button disabled={adPage===adPageCount} onClick={()=>setAdPage(p=>Math.min(adPageCount,p+1))}>Next →</button></div></section>
       </div>}
 
       {section==="orders" && <div className="page"><div className="page-title"><div><p className="kicker">ORDERS & INVENTORY</p><h2>Today’s orders & deadlines</h2></div></div><section className="metric-grid three"><article className="metric"><span>Today’s Orders</span><strong>98</strong></article><article className="metric warn"><span>Expiring Today</span><strong>7</strong></article><article className="metric danger"><span>Expired</span><strong>2</strong></article></section><div className="card table-card"><table><thead><tr><th>Order</th><th>Buyer</th><th>Product</th><th>Order Time</th><th>Order Value</th><th>Expire Time</th><th>Time Left</th><th>Status</th></tr></thead><tbody>{orders.map((o:any)=><tr key={o.id}><td><b>{o.id}</b></td><td>{o.buyer}</td><td>{o.product}</td><td>{o.time}</td><td>{o.value}</td><td>{o.expire}</td><td>{o.left}</td><td><span className={`badge ${o.status.toLowerCase()}`}>{o.status}</span></td></tr>)}</tbody></table></div></div>}
