@@ -1,0 +1,96 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+
+type Store = { id: string; name: string; platform: string };
+type DashboardResponse = { stores: Store[]; selectedStoreId: string | null; snapshot: { payload: any; importedAt: string } | null };
+
+const overviewFallback = [
+  ["Valid Order Sales", "RM 18,711.82", "+21.4%"], ["Valid Orders", "654", "+20.7%"],
+  ["Customers", "527", "+14.2%"], ["Sales per Customer", "RM 35.51", "+6.3%"],
+];
+const adFallback = { balance:"RM 1,842.60", spend:"RM 2,480.30", sales:"RM 18,922.40", roas:"7.63×", views:"428,190", clicks:"12,846", conversion:"3.18%", sold:"1,106", cpc:"RM 2.24", acos:"13.11%", ctr:"3.00%", conversionRate:"3.18%" };
+const ordersFallback = [
+  { id:"260717K3M8Q1", buyer:"mi***88", product:"Pizza Box 20 × 12 × 7cm", time:"09:18", value:"RM 86.40", expire:"16:30", left:"2h 14m", status:"Urgent" },
+  { id:"260717F9A2J7", buyer:"jo***tan", product:"Corrugated Tray 60 × 35 × 10cm", time:"08:42", value:"RM 124.00", expire:"14:00", left:"Expired", status:"Expired" },
+  { id:"260717P5X4B2", buyer:"nur***ah", product:"Pizza Box A4", time:"10:06", value:"RM 45.60", expire:"18:00", left:"3h 44m", status:"Urgent" },
+];
+const actionFallback = [
+  { title:"待提供配套图片", client:"J Packaging", due:"Today", type:"Content", action:"Upload" },
+  { title:"新配套价格更新 - Fulfilment Sheet", client:"J Packaging", due:"18 Jul", type:"Pricing", action:"Open Sheet", href:"https://docs.google.com/spreadsheets/d/1mpB7KVCGzP_9IXYVbhJZsLsndM4ladU3cJre5cfALAA/edit?usp=drive_link" },
+  { title:"Join CoFund", client:"J Packaging", due:"Today", type:"Campaign", action:"Review" },
+  { title:"待批准广告预算 RM 800", client:"J Packaging", due:"19 Jul", type:"Urgent", action:"Approve" },
+];
+
+function money(value: string) { return value; }
+
+export default function Home() {
+  const [section, setSection] = useState("overview");
+  const [data, setData] = useState<DashboardResponse | null>(null);
+  const [storeId, setStoreId] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function load(id?: string) {
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/dashboard${id ? `?storeId=${encodeURIComponent(id)}` : ""}`, { cache:"no-store" });
+      if (response.ok) {
+        const next = await response.json(); setData(next); setStoreId(next.selectedStoreId ?? next.stores?.[0]?.id ?? "");
+      }
+    } finally { setLoading(false); }
+  }
+  useEffect(() => { load(); }, []);
+  const allStoresSelected = storeId === "all";
+  const store = allStoresSelected ? null : (data?.stores.find(s => s.id === storeId) ?? data?.stores[0]);
+  const live = data?.snapshot?.payload ?? {};
+  const overview = Array.isArray(live.overview) ? live.overview : overviewFallback;
+  const ads = live.advertising ?? adFallback;
+  const orders = Array.isArray(live.orders) ? live.orders : ordersFallback;
+  const clientActions = Array.isArray(live.clientActions) ? live.clientActions : actionFallback;
+  const warningOrders = orders.filter((order:any) => order.status === "Expired" || order.status === "Urgent");
+  const updated = data?.snapshot?.importedAt ? new Date(data.snapshot.importedAt).toLocaleString("en-MY", { dateStyle:"medium", timeStyle:"short" }) : "17 Jul 2026, 10:15";
+  const nav = useMemo(() => [["overview","Overview"],["advertising","Advertising"],["orders","Orders & Inventory"],["health","Store Health"],["actions","Client Action Center"]], []);
+
+  return <main className="app-shell">
+    <aside className="side">
+      <div className="logo"><img src="/shopee-hub-logo-transparent.png" alt="ShopeeHub"/><small>STORE COMMAND CENTER</small></div>
+      <nav>{nav.map(([id,label]) => <button key={id} className={section===id?"active":""} onClick={()=>setSection(id)}><span>{label.slice(0,1)}</span>{label}</button>)}</nav>
+      <div className="fleet"><p>Managed stores</p><strong>64</strong><div><span>MY 45</span><span>SG 19</span></div></div>
+      <p className="access">Private access<br/><b>shopeehub.ctg@gmail.com</b></p>
+    </aside>
+
+    <section className="workspace">
+      <header className="header">
+        <div><p className="kicker">SHOPEE HUB PERFORMANCE</p><h1>{allStoresSelected ? "All Stores" : (store?.name ?? "J Packaging")}</h1></div>
+        <div className="toolbar">
+          <label>Store<select value={storeId} onChange={e=>{setStoreId(e.target.value);load(e.target.value)}}><option value="all">All Stores · MY & SG</option>{data?.stores.map(s=><option key={s.id} value={s.id}>{s.name} · {s.platform}</option>) ?? <option value="j-packaging-shopee">J Packaging · Shopee</option>}</select></label>
+          <button onClick={()=>load(storeId)} disabled={loading}>{loading?"Updating…":"Update data"}</button>
+        </div>
+      </header>
+      <div className="statusline"><span/>Data refreshed · Last updated {updated}</div>
+
+      {section==="overview" && <div className="page">
+        <div className="page-title"><div><p className="kicker">OVERVIEW</p><h2>Business pulse</h2></div><div className="warning-pill">3 important warnings</div></div>
+        <section className="metric-grid">{overview.map((m:any)=><article className="metric" key={m[0]}><span>{m[0]}</span><strong>{m[1]}</strong><em>{m[2]}</em></article>)}</section>
+        <section className="overview-grid">
+          <article className="card target"><div className="card-head"><div><p className="kicker">MONTHLY TARGET</p><h3>RM 120,000</h3></div><strong>68.4%</strong></div><div className="progress"><i style={{width:"68.4%"}}/></div><div className="split"><span>Achieved <b>RM 82,080</b></span><span>Projected month end <b>RM 126,430</b></span></div></article>
+          <article className="card losses"><p className="kicker">ORDER LOSSES</p><div><span>Cancelled orders<b>28</b><small>RM 1,486.20</small></span><span>Refund orders<b>9</b><small>RM 422.60</small></span></div></article>
+          <article className="card alerts detailed-alerts"><div className="card-head"><div><p className="kicker">IMPORTANT WARNINGS</p><h3>Requires immediate attention</h3></div><b>{warningOrders.length}</b></div><div className="warning-metrics"><span><b>{orders.filter((o:any)=>o.status==="Expired").length}</b> Expired orders</span><span><b>{orders.filter((o:any)=>o.status==="Urgent").length}</b> Urgent orders</span><span><b>0</b> Penalty points</span></div><div className="warning-orders">{warningOrders.map((o:any)=><div className="warning-order" key={o.id}><span className={`badge ${o.status.toLowerCase()}`}>{o.status}</span><div><b>{o.id}</b><small>{o.buyer} · {o.product}</small></div><div><b>{o.value}</b><small>Order {o.time}</small></div><div><b>{o.expire}</b><small>{o.status==="Expired"?"Expired":"Time left: "+o.left}</small></div></div>)}</div></article>
+          <article className="card action-summary"><div className="card-head"><div><p className="kicker">CLIENT ACTION CENTER</p><h3>Waiting on client</h3></div><b>{clientActions.length}</b></div><div className="chips"><span>Content 1</span><span>Pricing 1</span><span>Campaign 1</span><span>Approval 1</span></div><button onClick={()=>setSection("actions")}>Open action center →</button></article>
+        </section>
+      </div>}
+
+      {section==="advertising" && <div className="page"><div className="page-title"><div><p className="kicker">ADVERTISING</p><h2>Campaign performance</h2></div><span className="period">This month</span></div>
+        <section className="metric-grid ads">{[["Ad Balance",ads.balance],["Ad Spend",ads.spend],["Ad Sales",ads.sales],["ROAS",ads.roas],["Views",ads.views],["Clicks",ads.clicks],["Conversion",ads.conversion],["Sold Products",ads.sold],["Cost per Conversion",ads.cpc],["ACOS",ads.acos]].map(m=><article className="metric" key={m[0]}><span>{m[0]}</span><strong>{money(m[1])}</strong></article>)}</section>
+        <section className="rule-grid"><article className={`rule ${parseFloat(ads.ctr)<2?"danger":"ok"}`}><div><span>CTR</span><strong>{ads.ctr}</strong></div><b>{parseFloat(ads.ctr)<2?"Warning":"Normal"}</b><p>Rule: CTR below 2% triggers a red warning.</p></article><article className={`rule ${parseFloat(ads.conversionRate)<2?"danger":"ok"}`}><div><span>Conversion Rate</span><strong>{ads.conversionRate}</strong></div><b>{parseFloat(ads.conversionRate)<2?"Warning":"Normal"}</b><p>Rule: Conversion Rate below 2% triggers a red warning.</p></article></section>
+      </div>}
+
+      {section==="orders" && <div className="page"><div className="page-title"><div><p className="kicker">ORDERS & INVENTORY</p><h2>Today’s orders & deadlines</h2></div></div><section className="metric-grid three"><article className="metric"><span>Today’s Orders</span><strong>98</strong></article><article className="metric warn"><span>Expiring Today</span><strong>7</strong></article><article className="metric danger"><span>Expired</span><strong>2</strong></article></section><div className="card table-card"><table><thead><tr><th>Order</th><th>Buyer</th><th>Product</th><th>Order Time</th><th>Order Value</th><th>Expire Time</th><th>Time Left</th><th>Status</th></tr></thead><tbody>{orders.map((o:any)=><tr key={o.id}><td><b>{o.id}</b></td><td>{o.buyer}</td><td>{o.product}</td><td>{o.time}</td><td>{o.value}</td><td>{o.expire}</td><td>{o.left}</td><td><span className={`badge ${o.status.toLowerCase()}`}>{o.status}</span></td></tr>)}</tbody></table></div></div>}
+
+      {section==="health" && <div className="page"><div className="page-title"><div><p className="kicker">STORE HEALTH</p><h2>Reputation & compliance</h2></div><span className="health-status">Healthy</span></div><section className="metric-grid"><article className="metric"><span>Reviews</span><strong>4,286</strong><em>+182 this month</em></article><article className="metric danger"><span>Bad Reviews</span><strong>37</strong><em>0.86%</em></article><article className="metric"><span>Buyer Overall Rating</span><strong>4.92 / 5</strong></article><article className="metric"><span>Penalty Points</span><strong>0</strong><em>Normal</em></article></section><section className="health-grid"><article className="card reviews"><p className="kicker">RATING DISTRIBUTION</p>{[["5 stars",88],["4 stars",9],["1–3 stars",3]].map(r=><div key={r[0]}><span>{r[0]}</span><i><b style={{width:`${r[1]}%`}}/></i><strong>{r[1]}%</strong></div>)}</article><article className="card quality"><p className="kicker">SERVICE QUALITY</p>{[["Fast Handover Rate","96.8%"],["Chat Satisfaction","94.2%"],["Response Rate","98.1%"],["Late Shipment Rate","1.2%"]].map(r=><div key={r[0]}><span>{r[0]}</span><strong>{r[1]}</strong></div>)}</article><article className="card violations"><p className="kicker">LISTING VIOLATIONS</p><strong>0</strong><span>No active listing violations</span></article></section></div>}
+
+      {section==="actions" && <div className="page"><div className="page-title"><div><p className="kicker">CLIENT ACTION CENTER</p><h2>What we need from the client</h2></div><span className="warning-pill">{clientActions.length} open items</span></div><div className="action-list">{clientActions.map((a:any)=><article className="card action" key={a.title}><div className={`type ${a.type.toLowerCase()}`}>{a.type.slice(0,1)}</div><div><span className="category">{a.type}</span><h3>{a.title}</h3><p>{a.client} · Due {a.due}</p></div>{a.href?<a className="action-link" href={a.href} target="_blank" rel="noopener noreferrer">{a.action}</a>:<button>{a.action}</button>}</article>)}</div></div>}
+      <footer>Shopee Hub · 45 Malaysia stores · 19 Singapore stores · Private command center</footer>
+    </section>
+  </main>;
+}

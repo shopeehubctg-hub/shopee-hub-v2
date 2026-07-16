@@ -1,0 +1,27 @@
+.action-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 15px;
+  border-radius: 8px;
+  color: #fff;
+  background: linear-gradient(135deg, #9b2325, #c52d30);
+  box-shadow: 0 7px 18px #9b232528;
+  text-decoration: none;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+@media (max-width: 680px) {
+  .action-link { grid-column: 2; width: max-content; }
+}
+
+.type.campaign { background: #e9eff4; color: #16465d; }
+
+.logo img {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
