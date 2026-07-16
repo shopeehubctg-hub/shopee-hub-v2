@@ -91,7 +91,7 @@ export default function Home() {
           <button onClick={()=>load(storeId)} disabled={loading}>{loading?"Updating…":"Update data"}</button>
         </div>
       </header>
-      <div className="statusline"><span className={allStoresSelected||data?.snapshot?"":"sample"}/>{allStoresSelected?"BigSeller snapshot · 62 connected Shopee stores":(data?.snapshot?"Live imported data":"Sample layout — awaiting store import")} · Last updated {updated}</div>
+      <div className="statusline"><span className={allStoresSelected||data?.snapshot?"":"sample"}/>{allStoresSelected?"Data snapshot · 62 connected Shopee stores":(data?.snapshot?"Live imported data":"Sample layout — awaiting store import")} · Last updated {updated}</div>
 
       {section==="overview" && <div className="page">
         <div className="page-title"><div><p className="kicker">OVERVIEW</p><h2>Business pulse</h2></div><div className="warning-pill">3 important warnings</div></div>
