@@ -10,6 +10,21 @@ const overviewFallback = [
   ["Customers", "527", "+14.2%"], ["Sales per Customer", "RM 35.51", "+6.3%"],
 ];
 const adFallback = { balance:"RM 1,842.60", spend:"RM 2,480.30", sales:"RM 18,922.40", roas:"7.63×", views:"428,190", clicks:"12,846", conversion:"3.18%", sold:"1,106", cpc:"RM 2.24", acos:"13.11%", ctr:"3.00%", conversionRate:"3.18%" };
+const allStoresAdvertising = { balance:"By store", spend:"RM 19,465.75", sales:"RM 347,585.29", roas:"17.86×", views:"703,913", clicks:"19,287", conversion:"1,171", sold:"5,370", cpc:"RM 16.62", acos:"5.60%", ctr:"2.74%", conversionRate:"6.07%" };
+const adCampaignFallback = [
+  { name:"Pizza Box – Search", type:"Product Search", status:"Active", budget:"RM 80/day", spend:"RM 742.18", sales:"RM 6,820.40", roas:"9.19×", views:"126,420", clicks:"4,188", ctr:"3.31%", conversionRate:"3.58%", sold:"302", acos:"10.88%" },
+  { name:"Corrugated Tray – Discovery", type:"Discovery", status:"Active", budget:"RM 60/day", spend:"RM 614.92", sales:"RM 4,392.60", roas:"7.14×", views:"98,310", clicks:"2,744", ctr:"2.79%", conversionRate:"2.88%", sold:"216", acos:"14.00%" },
+  { name:"A4 Pizza Box – Search", type:"Product Search", status:"Paused", budget:"RM 45/day", spend:"RM 284.60", sales:"RM 1,108.20", roas:"3.89×", views:"55,840", clicks:"946", ctr:"1.69%", conversionRate:"1.48%", sold:"64", acos:"25.68%" },
+];
+const allStoresCampaigns = [
+  { name:"Sous Vide Chicken Breast – Value Pack", type:"Jeeroul by CTG4u · GMV Max", status:"Ongoing", budget:"RM 8/day", spend:"RM 55.74", sales:"RM 412.00", roas:"7.39×", views:"4,163", clicks:"98", ctr:"2.35%", conversionRate:"2.04%", sold:"2", acos:"13.53%" },
+  { name:"Golden Oat 2.0 Gastric Comfort", type:"True Golden Care by Naturelish · GMV Max", status:"Ongoing", budget:"RM 10/day", spend:"RM 70.00", sales:"RM 2,917.00", roas:"41.67×", views:"1,088", clicks:"43", ctr:"3.95%", conversionRate:"13.95%", sold:"6", acos:"2.40%" },
+  { name:"Probiotic Whitening Tooth Powder", type:"Dr Smile Whitening by CTG4u · GMV Max", status:"Ongoing", budget:"RM 50/day", spend:"RM 434.42", sales:"RM 5,431.62", roas:"12.50×", views:"7,665", clicks:"241", ctr:"3.14%", conversionRate:"10.79%", sold:"27", acos:"8.00%" },
+  { name:"Top & Bottom Packaging Box [2]", type:"J Packaging · GMV Max", status:"Ongoing", budget:"RM 10/day", spend:"RM 30.07", sales:"RM 153.36", roas:"5.10×", views:"6,739", clicks:"187", ctr:"2.77%", conversionRate:"6.42%", sold:"48", acos:"19.61%" },
+  { name:"Pizza Box A4 [3]", type:"J Packaging · GMV Max", status:"Ongoing", budget:"RM 10/day", spend:"RM 22.54", sales:"RM 88.41", roas:"3.92×", views:"2,486", clicks:"85", ctr:"3.42%", conversionRate:"10.59%", sold:"74", acos:"25.49%" },
+  { name:"10 in 1 Baby Comfort Cream [2]", type:"CTG4U Malaysia · GMV Max", status:"Paused", budget:"RM 8/day", spend:"RM 0", sales:"RM 0", roas:"0×", views:"0", clicks:"0", ctr:"0%", conversionRate:"0%", sold:"0", acos:"0%" },
+  { name:"iLady Scalp Essence Hair Growth [2]", type:"CTG4U Malaysia · GMV Max", status:"Paused", budget:"RM 8/day", spend:"RM 0", sales:"RM 0", roas:"0×", views:"0", clicks:"0", ctr:"0%", conversionRate:"0%", sold:"0", acos:"0%" },
+];
 const ordersFallback = [
   { id:"260717K3M8Q1", buyer:"mi***88", product:"Pizza Box 20 × 12 × 7cm", time:"09:18", value:"RM 86.40", expire:"16:30", left:"2h 14m", status:"Urgent" },
   { id:"260717F9A2J7", buyer:"jo***tan", product:"Corrugated Tray 60 × 35 × 10cm", time:"08:42", value:"RM 124.00", expire:"14:00", left:"Expired", status:"Expired" },
@@ -44,18 +59,19 @@ export default function Home() {
   const store = allStoresSelected ? null : (data?.stores.find(s => s.id === storeId) ?? data?.stores[0]);
   const live = data?.snapshot?.payload ?? {};
   const overview = Array.isArray(live.overview) ? live.overview : overviewFallback;
-  const ads = live.advertising ?? adFallback;
+  const ads = live.advertising ?? (allStoresSelected ? allStoresAdvertising : adFallback);
+  const adCampaigns = Array.isArray(live.adCampaigns) ? live.adCampaigns : (allStoresSelected ? allStoresCampaigns : adCampaignFallback);
   const orders = Array.isArray(live.orders) ? live.orders : ordersFallback;
   const clientActions = Array.isArray(live.clientActions) ? live.clientActions : actionFallback;
   const warningOrders = orders.filter((order:any) => order.status === "Expired" || order.status === "Urgent");
-  const updated = data?.snapshot?.importedAt ? new Date(data.snapshot.importedAt).toLocaleString("en-MY", { dateStyle:"medium", timeStyle:"short" }) : "17 Jul 2026, 10:15";
+  const updated = allStoresSelected ? "17 Jul 2026, 3:13 am" : (data?.snapshot?.importedAt ? new Date(data.snapshot.importedAt).toLocaleString("en-MY", { dateStyle:"medium", timeStyle:"short" }) : "Awaiting store import");
   const nav = useMemo(() => [["overview","Overview"],["advertising","Advertising"],["orders","Orders & Inventory"],["health","Store Health"],["actions","Client Action Center"]], []);
 
   return <main className="app-shell">
     <aside className="side">
       <div className="logo"><img src="/shopee-hub-logo-transparent.png" alt="ShopeeHub"/><small>STORE COMMAND CENTER</small></div>
       <nav>{nav.map(([id,label]) => <button key={id} className={section===id?"active":""} onClick={()=>setSection(id)}><span>{label.slice(0,1)}</span>{label}</button>)}</nav>
-      <div className="fleet"><p>Managed stores</p><strong>64</strong><div><span>MY 45</span><span>SG 19</span></div></div>
+      <div className="fleet"><p>Connected Shopee stores</p><strong>62</strong><div><span>MY 44</span><span>SG 18</span><span>2 pending</span></div></div>
       <p className="access">Private access<br/><b>shopeehub.ctg@gmail.com</b></p>
     </aside>
 
@@ -67,10 +83,11 @@ export default function Home() {
           <button onClick={()=>load(storeId)} disabled={loading}>{loading?"Updating…":"Update data"}</button>
         </div>
       </header>
-      <div className="statusline"><span/>Data refreshed · Last updated {updated}</div>
+      <div className="statusline"><span className={allStoresSelected||data?.snapshot?"":"sample"}/>{allStoresSelected?"BigSeller snapshot · 62 connected Shopee stores":(data?.snapshot?"Live imported data":"Sample layout — awaiting store import")} · Last updated {updated}</div>
 
       {section==="overview" && <div className="page">
         <div className="page-title"><div><p className="kicker">OVERVIEW</p><h2>Business pulse</h2></div><div className="warning-pill">3 important warnings</div></div>
+        <section className="owner-brief"><div><span>老板今日重点</span><strong>{warningOrders.length} 个订单需要立即处理</strong><small>先处理 Expired 与 Urgent，再检查暂停广告和客户待办。</small></div><button onClick={()=>setSection("orders")}>查看订单 →</button></section>
         <section className="metric-grid">{overview.map((m:any)=><article className="metric" key={m[0]}><span>{m[0]}</span><strong>{m[1]}</strong><em>{m[2]}</em></article>)}</section>
         <section className="overview-grid">
           <article className="card target"><div className="card-head"><div><p className="kicker">MONTHLY TARGET</p><h3>RM 120,000</h3></div><strong>68.4%</strong></div><div className="progress"><i style={{width:"68.4%"}}/></div><div className="split"><span>Achieved <b>RM 82,080</b></span><span>Projected month end <b>RM 126,430</b></span></div></article>
@@ -83,6 +100,7 @@ export default function Home() {
       {section==="advertising" && <div className="page"><div className="page-title"><div><p className="kicker">ADVERTISING</p><h2>Campaign performance</h2></div><span className="period">This month</span></div>
         <section className="metric-grid ads">{[["Ad Balance",ads.balance],["Ad Spend",ads.spend],["Ad Sales",ads.sales],["ROAS",ads.roas],["Views",ads.views],["Clicks",ads.clicks],["Conversion",ads.conversion],["Sold Products",ads.sold],["Cost per Conversion",ads.cpc],["ACOS",ads.acos]].map(m=><article className="metric" key={m[0]}><span>{m[0]}</span><strong>{money(m[1])}</strong></article>)}</section>
         <section className="rule-grid"><article className={`rule ${parseFloat(ads.ctr)<2?"danger":"ok"}`}><div><span>CTR</span><strong>{ads.ctr}</strong></div><b>{parseFloat(ads.ctr)<2?"Warning":"Normal"}</b><p>Rule: CTR below 2% triggers a red warning.</p></article><article className={`rule ${parseFloat(ads.conversionRate)<2?"danger":"ok"}`}><div><span>Conversion Rate</span><strong>{ads.conversionRate}</strong></div><b>{parseFloat(ads.conversionRate)<2?"Warning":"Normal"}</b><p>Rule: Conversion Rate below 2% triggers a red warning.</p></article></section>
+        <section className="campaign-section"><div className="campaign-heading"><div><p className="kicker">EVERY AD</p><h3>Individual advertisement data</h3>{allStoresSelected&&<small>Current source: 535 ads · 123 ongoing · 266 paused · 146 ended</small>}</div><div className="campaign-counts"><span>{adCampaigns.filter((a:any)=>a.status==="Active"||a.status==="Ongoing").length} Active</span><span className="paused-count">{adCampaigns.filter((a:any)=>a.status==="Paused").length} Paused</span></div></div><div className="card table-card"><table className="campaign-table"><thead><tr><th>Advertisement</th><th>Status</th><th>Budget</th><th>Spend</th><th>Ad Sales</th><th>ROAS</th><th>Views</th><th>Clicks</th><th>CTR</th><th>Conversion</th><th>Sold</th><th>ACOS</th></tr></thead><tbody>{adCampaigns.map((a:any)=><tr key={a.name} className={a.status==="Paused"?"paused-row":""}><td><b>{a.name}</b><small>{a.type}</small></td><td><span className={`ad-status ${a.status.toLowerCase()}`}>{a.status}</span></td><td>{a.budget}</td><td>{a.spend}</td><td>{a.sales}</td><td><b>{a.roas}</b></td><td>{a.views}</td><td>{a.clicks}</td><td className={parseFloat(a.ctr)<2?"cell-warning":""}>{a.ctr}</td><td className={parseFloat(a.conversionRate)<2?"cell-warning":""}>{a.conversionRate}</td><td>{a.sold}</td><td>{a.acos}</td></tr>)}</tbody></table></div></section>
       </div>}
 
       {section==="orders" && <div className="page"><div className="page-title"><div><p className="kicker">ORDERS & INVENTORY</p><h2>Today’s orders & deadlines</h2></div></div><section className="metric-grid three"><article className="metric"><span>Today’s Orders</span><strong>98</strong></article><article className="metric warn"><span>Expiring Today</span><strong>7</strong></article><article className="metric danger"><span>Expired</span><strong>2</strong></article></section><div className="card table-card"><table><thead><tr><th>Order</th><th>Buyer</th><th>Product</th><th>Order Time</th><th>Order Value</th><th>Expire Time</th><th>Time Left</th><th>Status</th></tr></thead><tbody>{orders.map((o:any)=><tr key={o.id}><td><b>{o.id}</b></td><td>{o.buyer}</td><td>{o.product}</td><td>{o.time}</td><td>{o.value}</td><td>{o.expire}</td><td>{o.left}</td><td><span className={`badge ${o.status.toLowerCase()}`}>{o.status}</span></td></tr>)}</tbody></table></div></div>}
@@ -90,7 +108,7 @@ export default function Home() {
       {section==="health" && <div className="page"><div className="page-title"><div><p className="kicker">STORE HEALTH</p><h2>Reputation & compliance</h2></div><span className="health-status">Healthy</span></div><section className="metric-grid"><article className="metric"><span>Reviews</span><strong>4,286</strong><em>+182 this month</em></article><article className="metric danger"><span>Bad Reviews</span><strong>37</strong><em>0.86%</em></article><article className="metric"><span>Buyer Overall Rating</span><strong>4.92 / 5</strong></article><article className="metric"><span>Penalty Points</span><strong>0</strong><em>Normal</em></article></section><section className="health-grid"><article className="card reviews"><p className="kicker">RATING DISTRIBUTION</p>{[["5 stars",88],["4 stars",9],["1–3 stars",3]].map(r=><div key={r[0]}><span>{r[0]}</span><i><b style={{width:`${r[1]}%`}}/></i><strong>{r[1]}%</strong></div>)}</article><article className="card quality"><p className="kicker">SERVICE QUALITY</p>{[["Fast Handover Rate","96.8%"],["Chat Satisfaction","94.2%"],["Response Rate","98.1%"],["Late Shipment Rate","1.2%"]].map(r=><div key={r[0]}><span>{r[0]}</span><strong>{r[1]}</strong></div>)}</article><article className="card violations"><p className="kicker">LISTING VIOLATIONS</p><strong>0</strong><span>No active listing violations</span></article></section></div>}
 
       {section==="actions" && <div className="page"><div className="page-title"><div><p className="kicker">CLIENT ACTION CENTER</p><h2>What we need from the client</h2></div><span className="warning-pill">{clientActions.length} open items</span></div><div className="action-list">{clientActions.map((a:any)=><article className="card action" key={a.title}><div className={`type ${a.type.toLowerCase()}`}>{a.type.slice(0,1)}</div><div><span className="category">{a.type}</span><h3>{a.title}</h3><p>{a.client} · Due {a.due}</p></div>{a.href?<a className="action-link" href={a.href} target="_blank" rel="noopener noreferrer">{a.action}</a>:<button>{a.action}</button>}</article>)}</div></div>}
-      <footer>Shopee Hub · 45 Malaysia stores · 19 Singapore stores · Private command center</footer>
+      <footer>Shopee Hub · 62 connected Shopee stores · 2 pending connection · Private command center</footer>
     </section>
   </main>;
 }
