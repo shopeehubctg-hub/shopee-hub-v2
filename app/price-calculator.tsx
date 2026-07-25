@@ -25,10 +25,11 @@ export function PriceCalculator() {
   const [packages,setPackages] = useState(INITIAL_PACKAGES);
   const [category,setCategory] = useState<string>("28");
   const [onCashback,setOnCashback] = useState(true);
-  const [customCommission,setCustomCommission] = useState(12.96);
+  const [customCommission,setCustomCommission] = useState("");
   const [serviceMode,setServiceMode] = useState<ServiceMode>("nonCampaign");
   const [showAdvanced,setShowAdvanced] = useState(false);
   const commission = commissionRateFor(category,onCashback,customCommission);
+  const usingCustomCommission = customCommission !== "";
   const [fees,setFees] = useState<Omit<FeeSettings,"commission"|"service">>({
     transaction:3.78, serviceCap:108, preorder:2.14, isPreorder:false, platformSupport:0.54,
     shopeeVoucher:16, sellerVoucher:0, cofundVoucher:20,
@@ -55,14 +56,13 @@ export function PriceCalculator() {
     </section>
 
     <section className="calculator-primary card">
-      <div className="calculator-section-head"><div><p className="kicker">STEP 1 · YOUR SHOPEE SETUP</p><h3>选择 Product Category 与收费情境</h3></div><span>Commission rate effective 21 May 2026 · 已包含 8% SST</span></div>
+      <div className="calculator-section-head"><div><p className="kicker">STEP 1 · YOUR SHOPEE SETUP</p><h3>选择 Product Category 与收费情境</h3></div><span>Food rates: 21 May 2026 · Essential Goods: 1 Aug 2026 · 已包含 8% SST</span></div>
       <div className="primary-fields">
         <label>Product Category
           <select value={category} onChange={event=>setCategory(event.target.value)}>
             {[...new Set(COMMISSION_CATEGORIES.map(item=>item.cluster))].map(cluster=><optgroup label={cluster} key={cluster}>
               {COMMISSION_CATEGORIES.map((item,index)=>item.cluster===cluster&&<option value={index} key={`${cluster}-${item.name}`}>{item.name}</option>)}
             </optgroup>)}
-            <option value="custom">Custom / 特殊 Sub-category</option>
           </select>
         </label>
         <label>Cashback Programme
@@ -71,12 +71,14 @@ export function PriceCalculator() {
             <option value="no">Seller NOT on Cashback Programme</option>
           </select>
         </label>
-        {category==="custom"&&<label>Custom Commission Fee (%)<input type="number" step=".01" value={customCommission} onChange={event=>setCustomCommission(positive(event.target.value))}/></label>}
+        <label>Custom Commission Fee (%)
+          <input type="number" min="0" step=".01" value={customCommission} placeholder={`Auto: ${pct(commissionRateFor(category,onCashback))}`} onChange={event=>setCustomCommission(event.target.value)}/>
+          <small>{usingCustomCommission?"Custom rate is active · 输入最终含 SST 的费率":"留空则自动使用 Product Category 费率"}</small>
+        </label>
         <label>Service Fee Scenario
           <select value={serviceMode} onChange={event=>setServiceMode(event.target.value as ServiceMode)}>
             <option value="nonCampaign">Non-Campaign Day · 5.94%</option>
             <option value="campaign">Campaign Day · 8.10%</option>
-            <option value="none">No campaign service fee · 0%</option>
           </select>
         </label>
         <label className="preorder-toggle"><input type="checkbox" checked={fees.isPreorder} onChange={event=>updateFee("isPreorder",event.target.checked)}/><span><b>Pre-Order listing</b><small>额外 {pct(fees.preorder)}</small></span></label>
@@ -85,7 +87,7 @@ export function PriceCalculator() {
 
     <section className="fee-strip">
       <article><span>Transaction Fee</span><strong>3.78%</strong><small>Default</small></article>
-      <article><span>Commission Fee</span><strong>{pct(commission)}</strong><small>Category + Cashback + SST</small></article>
+      <article><span>Commission Fee</span><strong>{pct(commission)}</strong><small>{usingCustomCommission?"Customized rate":"Category + Cashback + SST"}</small></article>
       <article><span>Service Fee</span><strong>{pct(SERVICE_MODES[serviceMode].rate)}</strong><small>Capped at RM108</small></article>
       <article><span>Pre-Order Service Fee</span><strong>{fees.isPreorder?pct(fees.preorder):"OFF"}</strong><small>Default 2.14%</small></article>
       <article className="fee-total"><span>Platform Support Fee</span><strong>RM 0.54</strong><small>Per order</small></article>

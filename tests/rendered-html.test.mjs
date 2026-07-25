@@ -64,9 +64,12 @@ test("Shopee calculator reverse-solves listing price and itemized fees", async (
 });
 
 test("Shopee calculator applies category SST, pre-order fee and RM108 service cap", async () => {
-  const { calculateShopeePrice, commissionRateFor } = await import("../app/price-calculator-model.js");
-  assert.ok(Math.abs(commissionRateFor(28,true) - 12.96) < 0.000001);
-  assert.ok(Math.abs(commissionRateFor(28,false) - 18.36) < 0.000001);
+  const { calculateShopeePrice, commissionRateFor, COMMISSION_CATEGORIES, SERVICE_MODES } = await import("../app/price-calculator-model.js");
+  const beauty = COMMISSION_CATEGORIES.findIndex(item=>item.name==="Beauty");
+  assert.ok(Math.abs(commissionRateFor(beauty,true) - 12.96) < 0.000001);
+  assert.ok(Math.abs(commissionRateFor(beauty,false) - 18.36) < 0.000001);
+  assert.equal(commissionRateFor(beauty,true,"9.25"), 9.25);
+  assert.deepEqual(Object.keys(SERVICE_MODES), ["nonCampaign","campaign"]);
   const base = {
     transaction:3.78, commission:12.96, service:8.1, serviceCap:108,
     preorder:2.14, isPreorder:true, platformSupport:0.54,
@@ -81,9 +84,10 @@ test("Shopee calculator applies category SST, pre-order fee and RM108 service ca
 });
 
 test("price calculator is available in navigation with all required outputs", async () => {
-  const [page, calculator] = await Promise.all([
+  const [page, calculator, model] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("app/price-calculator.tsx", root), "utf8"),
+    readFile(new URL("app/price-calculator-model.js", root), "utf8"),
   ]);
   assert.match(page, /Price Calculator/);
   assert.match(page, /<PriceCalculator/);
@@ -94,6 +98,10 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /Service Fee/);
   assert.match(calculator, /Product Category/);
   assert.match(calculator, /Cashback Programme/);
+  assert.match(calculator, /Custom Commission Fee/);
+  assert.doesNotMatch(calculator, /No campaign service fee/);
+  assert.match(model, /Essential Goods/);
+  assert.match(model, /Cheese & Cheese Powder/);
   assert.match(calculator, /Capped at RM108/);
   assert.match(calculator, /2\.14%/);
   assert.match(calculator, /需要 Markup/);

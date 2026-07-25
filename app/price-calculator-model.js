@@ -32,18 +32,54 @@ export const COMMISSION_CATEGORIES = [
   { cluster:"FMCG", name:"Mom & baby — feeding essentials", cashback:8, noCashback:13 },
   { cluster:"FMCG", name:"Mom & baby — general", cashback:10, noCashback:15 },
   { cluster:"FMCG", name:"Pets", cashback:10, noCashback:15 },
-  { cluster:"Food & Beverages", name:"Bakery", cashback:4, noCashback:9 },
-  { cluster:"Food & Beverages", name:"Alcoholic beverages", cashback:9, noCashback:14 },
+  { cluster:"Food & Beverages · effective 21 May 2026", name:"Bakery — Cakes & Pies, Pastry, Others", cashback:4, noCashback:9 },
+  { cluster:"Food & Beverages · effective 21 May 2026", name:"Alcoholic Beverages — all listed sub-categories", cashback:9, noCashback:14 },
+  { cluster:"Food & Beverages · effective 21 May 2026", name:"Dairy & Eggs — Cheese & Cheese Powder, Ice Cream", cashback:11, noCashback:16 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Bakery — Breads", cashback:0, noCashback:0 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Baking Needs — Baking Powder & Soda / Baking Premix Flour / Flour", cashback:0, noCashback:0 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Baking Needs — Food Coloring / Baking Decoration / Others", cashback:3, noCashback:8 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Cooking Essentials — Oil, Pepper, Salt, Herbs & Spices, Sauce", cashback:0, noCashback:0 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Seasonings & Condiments — Chilli & Sambal / Vinegar / Cooking Wine / Dressing / Others", cashback:9, noCashback:14 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Cooking Essentials — Sugar / Sweetener", cashback:0, noCashback:0 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Stock, Gravy & Instant Soup", cashback:9, noCashback:14 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Cooking Paste & Kit / Flavour Enhancers", cashback:0, noCashback:0 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Flour Coating / Others", cashback:9, noCashback:14 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Food Staples — Beans & Grains / Noodles / Rice", cashback:0, noCashback:0 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Dried Goods — Dried Seafood", cashback:0, noCashback:0 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Dried Goods — Traditional Herbs / Others", cashback:3, noCashback:8 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Food Staples — Pasta / Others", cashback:3, noCashback:8 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Canned Food — all listed sub-categories", cashback:3, noCashback:8 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Preserved Vegetables", cashback:0, noCashback:0 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Fresh Meat & Seafood", cashback:0, noCashback:0 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Vegetarian Meat / Others", cashback:3, noCashback:8 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Breakfast Cereals & Spread — Cereal, Granola & Oats", cashback:11, noCashback:16 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Dairy — Fresh / UHT / Condensed / Evaporated Milk", cashback:0, noCashback:0 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Dairy — Powdered Milk / Others", cashback:11, noCashback:16 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Dairy — Yogurt & Cultured Milk / Creamers", cashback:0, noCashback:0 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Dairy — Butter & Margarine", cashback:0, noCashback:0 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Dairy & Eggs — Eggs", cashback:0, noCashback:0 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Dairy & Eggs — Beancurd", cashback:8.5, noCashback:13.5 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Dairy & Eggs — Others", cashback:11, noCashback:16 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Oral Care — Manual Toothbrushes", cashback:9, noCashback:14 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Oral Care — Toothpaste / Dental Floss / Mouth Wash / Denture Care / Whitening / Orthodontic Accessories", cashback:12, noCashback:17 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Feminine Care — Sanitary Napkins & Panty Liners", cashback:9.5, noCashback:14.5 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Health — Over-the-counter Medicine / Pain Relievers", cashback:9, noCashback:14 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Medical Supplies — First Aid / Antiseptics / Disinfectants / Others", cashback:10, noCashback:15 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Mom & Baby — Bottles & Bottle Accessories", cashback:5, noCashback:10 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Mom & Baby — Bottle Cleansing / Sterilizers / Breastfeeding Essentials / Food Processors / Others", cashback:8, noCashback:13 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Mom & Baby — Breast Pump & Accessories / Breastmilk Storage", cashback:5, noCashback:10 },
+  { cluster:"Essential Goods · effective 1 Aug 2026", name:"Maternity — Pillows / Storage & Organisation", cashback:10, noCashback:15 },
 ];
 
 export const SERVICE_MODES = {
-  none:{ label:"No campaign service fee", rate:0 },
   nonCampaign:{ label:"Non-Campaign Day", rate:5.94 },
   campaign:{ label:"Campaign Day", rate:8.1 },
 };
 
-export function commissionRateFor(categoryIndex, onCashback, customRate = 0) {
-  if (categoryIndex === "custom") return Math.max(0, customRate);
+export function commissionRateFor(categoryIndex, onCashback, customRate = "") {
+  if (customRate !== "" && customRate !== null && customRate !== undefined) {
+    return Math.max(0, Number(customRate) || 0);
+  }
   const category = COMMISSION_CATEGORIES[Number(categoryIndex)] ?? COMMISSION_CATEGORIES[0];
   const baseRate = onCashback ? category.cashback : category.noCashback;
   return baseRate * 1.08;
