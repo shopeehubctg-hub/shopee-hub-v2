@@ -106,25 +106,32 @@ export function PriceCalculator() {
       <p className="formula-note">Default：Transaction 3.78% · Platform Support RM0.54 · Pre-Order 2.14% · Non-Campaign 5.94% / Campaign 8.10%，两种 campaign service fee 均 capped at RM108。</p>
     </section>
 
-    <section className="calculator-table card">
+    <section className="calculator-table calculator-results card">
       <div className="calculator-section-head"><div><p className="kicker">STEP 2 · PACKAGE RESULTS</p><h3>每个配套的建议卖价</h3></div><button onClick={addPackage}>+ Add package</button></div>
-      <div className="calculator-table-scroll"><table>
-        <thead><tr><th>配套</th><th>FB 卖价</th><th>建议 Shopee 卖价</th><th>需要 Markup</th><th>顾客 Voucher 后价钱</th><th>你的目标到手</th><th>实际到手</th><th>Transaction</th><th>Commission</th><th>Service Fee</th><th>Pre-Order</th><th></th></tr></thead>
-        <tbody>{calculations.map(({row,result})=><tr key={row.id}>
-          <td><input className="package-name-input" value={row.name} onChange={event=>updatePackage(row.id,"name",event.target.value)}/></td>
-          <td><div className="money-input"><span>RM</span><input type="number" step=".01" value={row.facebookPrice} onChange={event=>updatePackage(row.id,"facebookPrice",event.target.value)}/></div></td>
-          <td className="suggested-price"><strong>{money(result.requiredPrice)}</strong><small>Listing price</small></td>
-          <td><strong className="markup">{pct(result.markupRate)}</strong><small>{money(result.markupAmount)}</small></td>
-          <td><strong>{money(result.customerPrice)}</strong><small>顾客角度</small></td>
-          <td>{money(result.targetPayout)}</td>
-          <td className="payout"><strong>{money(result.payout)}</strong><small>✓ 已保护利润</small></td>
-          <td>{money(result.transactionFee)}<small>3.78%</small></td>
-          <td>{money(result.commissionFee)}<small>{pct(commission)}</small></td>
-          <td>{money(result.serviceFee)}<small>{result.serviceCapped?"已到 RM108 cap":pct(SERVICE_MODES[serviceMode].rate)}</small></td>
-          <td>{money(result.preorderFee)}<small>{fees.isPreorder?pct(fees.preorder):"Not pre-order"}</small></td>
-          <td><button className="remove-row" disabled={packages.length===1} onClick={()=>setPackages(current=>current.filter(item=>item.id!==row.id))} aria-label={`Remove ${row.name}`}>×</button></td>
-        </tr>)}</tbody>
-      </table></div>
+      <div className="package-results-header" aria-hidden="true">
+        <span>配套</span><span>Facebook 卖价</span><span>建议 Shopee 卖价</span><span>顾客 Voucher 后价钱</span><span>需要 Markup</span><span>实际到手</span><span></span>
+      </div>
+      <div className="package-result-list">{calculations.map(({row,result})=><article className="package-result-card" key={row.id}>
+        <div className="package-result-main">
+          <label className="result-input"><span>配套</span><input className="package-name-input" value={row.name} onChange={event=>updatePackage(row.id,"name",event.target.value)}/></label>
+          <label className="result-input"><span>Facebook 卖价</span><div className="money-input"><b>RM</b><input type="number" step=".01" value={row.facebookPrice} onChange={event=>updatePackage(row.id,"facebookPrice",event.target.value)}/></div></label>
+          <div className="result-metric suggested-price"><span>建议 Shopee 卖价</span><strong>{money(result.requiredPrice)}</strong><small>Listing price</small></div>
+          <div className="result-metric"><span>顾客 Voucher 后价钱</span><strong>{money(result.customerPrice)}</strong><small>顾客实际看到</small></div>
+          <div className="result-metric"><span>需要 Markup</span><strong className="markup">{pct(result.markupRate)}</strong><small>{money(result.markupAmount)}</small></div>
+          <div className="result-metric payout"><span>实际到手</span><strong>{money(result.payout)}</strong><small>目标 {money(result.targetPayout)} · ✓ 利润已保护</small></div>
+          <button className="remove-row" disabled={packages.length===1} onClick={()=>setPackages(current=>current.filter(item=>item.id!==row.id))} aria-label={`Remove ${row.name}`}>×</button>
+        </div>
+        <details className="fee-breakdown">
+          <summary>查看 Fee Breakdown</summary>
+          <div className="fee-breakdown-grid">
+            <div><span>Transaction Fee · 3.78%</span><strong>{money(result.transactionFee)}</strong></div>
+            <div><span>Commission · {pct(commission)}</span><strong>{money(result.commissionFee)}</strong></div>
+            <div><span>Service Fee · {result.serviceCapped?"RM108 cap":pct(SERVICE_MODES[serviceMode].rate)}</span><strong>{money(result.serviceFee)}</strong></div>
+            <div><span>Pre-Order · {fees.isPreorder?pct(fees.preorder):"OFF"}</span><strong>{money(result.preorderFee)}</strong></div>
+            <div><span>Platform Support</span><strong>{money(fees.platformSupport)}</strong></div>
+          </div>
+        </details>
+      </article>)}</div>
     </section>
   </div>;
 }
