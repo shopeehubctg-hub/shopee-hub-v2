@@ -102,6 +102,9 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /Service Fee/);
   assert.match(calculator, /Product Category/);
   assert.match(calculator, /Cashback Programme/);
+  assert.match(calculator, /className="setup-toggle"/);
+  assert.match(calculator, /checked=\{onCashback\}/);
+  assert.ok(calculator.indexOf("Custom Commission Fee") < calculator.indexOf("Cashback Programme"));
   assert.match(calculator, /Custom Commission Fee/);
   assert.doesNotMatch(calculator, /No campaign service fee/);
   assert.match(model, /Essential Goods/);

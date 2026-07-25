@@ -100,23 +100,18 @@ export function PriceCalculator({ onCreatePackage }:Props) {
             </optgroup>)}
           </select>
         </label>
-        <label>Cashback Programme
-          <select value={onCashback?"yes":"no"} onChange={event=>setOnCashback(event.target.value==="yes")}>
-            <option value="yes">Seller ON Cashback Programme</option>
-            <option value="no">Seller NOT on Cashback Programme</option>
-          </select>
-        </label>
-        <label>Custom Commission Fee (%)
+        <label className="commission-field">Custom Commission Fee (%)
           <input type="number" min="0" step=".01" value={customCommission} placeholder={`Auto: ${pct(commissionRateFor(category,onCashback))}`} onChange={event=>setCustomCommission(event.target.value)}/>
           <small>{usingCustomCommission?"Custom rate is active · 输入最终含 SST 的费率":"留空则自动使用 Product Category 费率"}</small>
         </label>
+        <label className="setup-toggle"><input type="checkbox" checked={onCashback} onChange={event=>setOnCashback(event.target.checked)}/><span><b>Cashback Programme</b><small>{onCashback?"Seller participating":"Seller not participating"}</small></span></label>
         <label>Service Fee Scenario
           <select value={serviceMode} onChange={event=>setServiceMode(event.target.value as ServiceMode)}>
             <option value="nonCampaign">Non-Campaign Day · 5.94%</option>
             <option value="campaign">Campaign Day · 8.10%</option>
           </select>
         </label>
-        <label className="preorder-toggle"><input type="checkbox" checked={fees.isPreorder} onChange={event=>updateFee("isPreorder",event.target.checked)}/><span><b>Pre-Order listing</b><small>额外 {pct(fees.preorder)}</small></span></label>
+        <label className="setup-toggle"><input type="checkbox" checked={fees.isPreorder} onChange={event=>updateFee("isPreorder",event.target.checked)}/><span><b>Pre-Order listing</b><small>额外 {pct(fees.preorder)}</small></span></label>
       </div>
     </section>
 
