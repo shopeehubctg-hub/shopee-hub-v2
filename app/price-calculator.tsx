@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { calculateShopeePrice } from "./price-calculator-model";
 
 type PackageRow = { id:number; name:string; facebookPrice:number };
 type FeeSettings = {
@@ -25,33 +26,11 @@ const money = (value:number) => `RM ${Number.isFinite(value) ? value.toFixed(2) 
 const pct = (value:number) => `${Number.isFinite(value) ? value.toFixed(2) : "0.00"}%`;
 const positive = (value:string) => Math.max(0, Number(value) || 0);
 
-function calculate(row:PackageRow, fees:FeeSettings) {
-  const rate = (fees.transaction + fees.commission + fees.service) / 100;
-  const targetPayout = row.facebookPrice - fees.facebookShipping + fees.extraProfit;
-  const requiredPrice = rate >= 1 ? 0 : (
-    targetPayout +
-    fees.sellerVoucher * (1 - rate) -
-    fees.cofundVoucher * (rate - 0.5) +
-    fees.platformSupport +
-    fees.sellerShipping
-  ) / (1 - rate);
-  const feeBase = Math.max(0, requiredPrice - fees.sellerVoucher - fees.cofundVoucher);
-  const transactionFee = feeBase * fees.transaction / 100;
-  const commissionFee = feeBase * fees.commission / 100;
-  const serviceFee = feeBase * fees.service / 100;
-  const payout = requiredPrice - fees.sellerVoucher - fees.cofundVoucher / 2 -
-    transactionFee - commissionFee - serviceFee - fees.platformSupport - fees.sellerShipping;
-  const customerPrice = feeBase * (1 - fees.shopeeVoucher / 100);
-  const markupAmount = requiredPrice - row.facebookPrice;
-  const markupRate = row.facebookPrice ? markupAmount / row.facebookPrice * 100 : 0;
-  return { targetPayout, requiredPrice, customerPrice, payout, markupAmount, markupRate, transactionFee, commissionFee, serviceFee };
-}
-
 export function PriceCalculator() {
   const [packages,setPackages] = useState(INITIAL_PACKAGES);
   const [fees,setFees] = useState(INITIAL_FEES);
   const [showSettings,setShowSettings] = useState(true);
-  const calculations = useMemo(()=>packages.map(row=>({row,result:calculate(row,fees)})),[packages,fees]);
+  const calculations = useMemo(()=>packages.map(row=>({row,result:calculateShopeePrice(row,fees)})),[packages,fees]);
   const totalRate = fees.transaction + fees.commission + fees.service;
 
   function updateFee(key:keyof FeeSettings, value:string) {
@@ -93,6 +72,7 @@ export function PriceCalculator() {
         <label>Extra Profit Target (RM)<input type="number" step=".01" value={fees.extraProfit} onChange={event=>updateFee("extraProfit",event.target.value)}/></label>
       </div>
       <p className="formula-note">到手目标 = Facebook 卖价 − Facebook 运费 + 额外利润。Shopee fee 以扣除 Seller Voucher 与 Co-fund Voucher 后的 fee base 计算；Co-fund 默认由卖家承担一半。</p>
+      {totalRate>=100&&<p className="calculator-error">Transaction、Commission 与 Service 的总费率必须低于 100%，请检查输入。</p>}
     </section>}
 
     <section className="calculator-table card">
@@ -106,7 +86,7 @@ export function PriceCalculator() {
           <td><strong className="markup">{pct(result.markupRate)}</strong><small>{money(result.markupAmount)}</small></td>
           <td><strong>{money(result.customerPrice)}</strong><small>顾客角度</small></td>
           <td>{money(result.targetPayout)}</td>
-          <td className="payout"><strong>{money(result.payout)}</strong><small>{Math.abs(result.payout-result.targetPayout)<.02?"✓ 已保护利润":"检查设定"}</small></td>
+          <td className="payout"><strong>{money(result.payout)}</strong><small>{result.valid&&Math.abs(result.payout-result.targetPayout)<.02?"✓ 已保护利润":"检查设定"}</small></td>
           <td>{money(result.transactionFee)}<small>{pct(fees.transaction)}</small></td>
           <td>{money(result.commissionFee)}<small>{pct(fees.commission)}</small></td>
           <td>{money(result.serviceFee)}<small>{pct(fees.service)}</small></td>

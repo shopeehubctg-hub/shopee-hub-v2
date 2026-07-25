@@ -44,3 +44,50 @@ test("package API enforces platform SKUs and persists component history", async 
   assert.match(baseMigration, /CREATE TABLE `package_versions`/);
   assert.match(platformMigration, /CREATE TABLE `package_platform_skus`/);
 });
+
+test("Shopee calculator reverse-solves listing price and itemized fees", async () => {
+  const { calculateShopeePrice } = await import("../app/price-calculator-model.js");
+  const fees = {
+    transaction:3.78, commission:12.96, service:5.94, platformSupport:0.54,
+    shopeeVoucher:16, sellerVoucher:0, cofundVoucher:20,
+    sellerShipping:0, facebookShipping:10, extraProfit:0,
+  };
+  const result = calculateShopeePrice({ facebookPrice:289 }, fees);
+  assert.equal(result.valid, true);
+  assert.ok(Math.abs(result.payout - 279) < 0.000001);
+  assert.ok(Math.abs(result.requiredPrice - 368.6032074495603) < 0.000001);
+  assert.ok(Math.abs(result.customerPrice - 292.8266942576306) < 0.000001);
+  assert.ok(Math.abs(
+    result.transactionFee + result.commissionFee + result.serviceFee -
+    result.feeBase * 0.2268
+  ) < 0.000001);
+});
+
+test("Shopee calculator supports extra profit and rejects impossible total fee rates", async () => {
+  const { calculateShopeePrice } = await import("../app/price-calculator-model.js");
+  const base = {
+    transaction:3.78, commission:12.96, service:5.94, platformSupport:0.54,
+    shopeeVoucher:16, sellerVoucher:0, cofundVoucher:20,
+    sellerShipping:0, facebookShipping:10, extraProfit:25,
+  };
+  const profitable = calculateShopeePrice({ facebookPrice:358 }, base);
+  assert.ok(Math.abs(profitable.payout - 373) < 0.000001);
+  const invalid = calculateShopeePrice({ facebookPrice:358 }, {...base, service:90});
+  assert.equal(invalid.valid, false);
+  assert.equal(invalid.requiredPrice, 0);
+});
+
+test("price calculator is available in navigation with all required outputs", async () => {
+  const [page, calculator] = await Promise.all([
+    readFile(new URL("app/page.tsx", root), "utf8"),
+    readFile(new URL("app/price-calculator.tsx", root), "utf8"),
+  ]);
+  assert.match(page, /Price Calculator/);
+  assert.match(page, /<PriceCalculator/);
+  assert.match(calculator, /顾客 Voucher 后价钱/);
+  assert.match(calculator, /实际到手/);
+  assert.match(calculator, /Transaction Fee/);
+  assert.match(calculator, /Commission Fee/);
+  assert.match(calculator, /Service Fee/);
+  assert.match(calculator, /需要 Markup/);
+});
