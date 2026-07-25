@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import adsData from "./ads-data.json";
+import { PackageControl } from "./package-control";
 import { storeSnapshots } from "./store-snapshots";
 
 type Store = { id: string; name: string; platform: string };
@@ -80,7 +81,7 @@ export default function Home() {
   const target = live.target;
   const losses = live.losses;
   const orderSummary = live.orderSummary;
-  const nav = useMemo(() => [["overview","Overview"],["advertising","Advertising"],["orders","Orders & Inventory"],["health","Store Health"],["actions","Client Action Center"]], []);
+  const nav = useMemo(() => [["overview","Overview"],["packages","Packages & Pricing"],["advertising","Advertising"],["orders","Orders & Inventory"],["health","Store Health"],["actions","Client Action Center"]], []);
 
   return <main className="app-shell">
     <aside className="side">
@@ -111,6 +112,8 @@ export default function Home() {
           <article className="card action-summary"><div className="card-head"><div><p className="kicker">CLIENT ACTION CENTER</p><h3>Waiting on client</h3></div><b>{clientActions.length}</b></div><div className="chips"><span>Content 1</span><span>Pricing 1</span><span>Campaign 1</span><span>Approval 1</span></div><button onClick={()=>setSection("actions")}>Open action center →</button></article>
         </section>
       </div>}
+
+      {section==="packages" && <div className="page"><PackageControl storeId={storeId || "all"} storeName={allStoresSelected ? "All stores" : (store?.name ?? "Selected store")} /></div>}
 
       {section==="advertising" && <div className="page"><div className="page-title"><div><p className="kicker">ADVERTISING</p><h2>Campaign performance</h2></div><span className="period">This month</span></div>
         <section className="metric-grid ads">{[["Ad Balance",ads.balance],["Ad Spend",ads.spend],["Ad Sales",ads.sales],["ROAS",ads.roas],["Views",ads.views],["Clicks",ads.clicks],["Conversion",ads.conversion],["Sold Products",ads.sold],["Cost per Conversion",ads.cpc],["ACOS",ads.acos]].map(m=><article className="metric" key={m[0]}><span>{m[0]}</span><strong>{money(m[1])}</strong></article>)}</section>
