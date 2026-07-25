@@ -77,12 +77,28 @@ export const packageVersions = sqliteTable("package_versions", {
   packageId: text("package_id").notNull().references(() => packages.id),
   version: integer("version").notNull(),
   components: text("components", { mode: "json" }).$type<Array<{ inventorySku: string; name: string; quantity: number; kind: "product" | "gift" }>>().notNull(),
+  promotionType: text("promotion_type", { enum: ["monthly", "custom"] }).notNull().default("monthly"),
+  addedComponents: text("added_components", { mode: "json" }).$type<Array<{ inventorySku: string; name: string; quantity: number; kind: "product" | "gift" }>>().notNull().default(sql`'[]'`),
+  removedComponents: text("removed_components", { mode: "json" }).$type<Array<{ inventorySku: string; name: string; quantity: number; kind: "product" | "gift" }>>().notNull().default(sql`'[]'`),
+  sheetSyncStatus: text("sheet_sync_status", { enum: ["pending", "synced", "failed"] }).notNull().default("pending"),
   changeNote: text("change_note").notNull().default("Initial version"),
   effectiveFrom: text("effective_from").notNull(),
   effectiveTo: text("effective_to"),
   createdBy: text("created_by").notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [uniqueIndex("package_version_idx").on(table.packageId, table.version)]);
+
+export const packagePlatformSkus = sqliteTable("package_platform_skus", {
+  id: text("id").primaryKey(),
+  packageId: text("package_id").notNull().references(() => packages.id),
+  versionId: text("version_id").notNull().references(() => packageVersions.id),
+  storeId: text("store_id").notNull(),
+  platform: text("platform", { enum: ["Shopee", "Lazada", "TikTok Shop"] }).notNull(),
+  packageSku: text("package_sku").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("package_platform_version_idx").on(table.versionId, table.platform),
+]);
 
 export const packagePrices = sqliteTable("package_prices", {
   id: text("id").primaryKey(),
