@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { CalculatorSnapshot, PackagePrefill } from "./calculator-types";
 
 type ComponentLine = { inventorySku:string; name:string; quantity:number; kind:"product"|"gift" };
 type PlatformName = "Shopee"|"Lazada"|"TikTok Shop";
@@ -9,13 +10,14 @@ type HistoryLine = {
   version:number; changeNote:string; promotionType:"monthly"|"custom"; effectiveFrom:string; effectiveTo?:string|null;
   addedComponents?:ComponentLine[]; removedComponents?:ComponentLine[]; platforms?:PlatformLine[];
   sheetSyncStatus?:"pending"|"synced"|"failed"; createdAt:string; createdBy:string;
+  calculatorSettings?:CalculatorSnapshot|null;
 };
 type PackageItem = {
   id:string; storeId:string; packageSku:string; name:string; market:string; status:string; version:number;
   promotionType:"monthly"|"custom"; originalPrice:number; sellingPrice:number; effectiveFrom:string; effectiveTo?:string|null;
   components:ComponentLine[]; platforms:PlatformLine[]; sheetSyncStatus?:"pending"|"synced"|"failed"; history?:HistoryLine[];
 };
-type Props = { storeId:string; storeName:string; canCreate?:boolean };
+type Props = { storeId:string; storeName:string; canCreate?:boolean; prefill?:PackagePrefill|null };
 
 const PLATFORM_NAMES:PlatformName[] = ["Shopee","Lazada","TikTok Shop"];
 const HISTORY_SHEET_URL = "https://docs.google.com/spreadsheets/d/1mpB7KVCGzP_9IXYVbhJZsLsndM4ladU3cJre5cfALAA/edit#gid=2129880014";
@@ -34,7 +36,7 @@ function monthDates(month:string) {
   return { from:`${month}-01`, to:`${month}-${String(lastDay).padStart(2,"0")}` };
 }
 
-export function PackageControl({ storeId, storeName, canCreate=true }:Props) {
+export function PackageControl({ storeId, storeName, canCreate=true, prefill=null }:Props) {
   const [items,setItems] = useState<PackageItem[]>([]);
   const [source,setSource] = useState("");
   const [filter,setFilter] = useState("all");
@@ -48,6 +50,7 @@ export function PackageControl({ storeId, storeName, canCreate=true }:Props) {
   const [form,setForm] = useState(blankForm());
   const [components,setComponents] = useState<ComponentLine[]>([blankLine()]);
   const [platforms,setPlatforms] = useState<PlatformLine[]>([{platform:"Shopee",packageSku:""}]);
+  const [calculatorSettings,setCalculatorSettings] = useState<CalculatorSnapshot|null>(null);
 
   async function load() {
     const response = await fetch(`/api/packages?storeId=${encodeURIComponent(storeId || "all")}`,{cache:"no-store"});
@@ -58,6 +61,15 @@ export function PackageControl({ storeId, storeName, canCreate=true }:Props) {
     }
   }
   useEffect(()=>{ load(); },[storeId]);
+  useEffect(()=>{
+    if (!prefill) return;
+    resetForm();
+    const price = prefill.sellingPrice.toFixed(2);
+    setForm(current=>({...current,name:prefill.name,originalPrice:price,sellingPrice:price,changeNote:"Created from Shopee Pricing Calculator"}));
+    setCalculatorSettings(prefill.calculatorSettings);
+    setMessage("");
+    setShowCreate(true);
+  },[prefill?.requestId]);
 
   const visible = useMemo(()=>items.filter(item =>
     (filter==="all"||item.status===filter) &&
@@ -72,6 +84,7 @@ export function PackageControl({ storeId, storeName, canCreate=true }:Props) {
     setForm(blankForm());
     setComponents([blankLine()]);
     setPlatforms([{platform:"Shopee",packageSku:""}]);
+    setCalculatorSettings(null);
   }
 
   function openNew() {
@@ -97,7 +110,7 @@ export function PackageControl({ storeId, storeName, canCreate=true }:Props) {
     const response = await fetch("/api/packages",{
       method:"POST",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({...form,storeId,storeName,components,platforms,packageId:editingPackageId}),
+      body:JSON.stringify({...form,storeId,storeName,components,platforms,packageId:editingPackageId,calculatorSettings}),
     });
     const data = await response.json();
     if (!response.ok) {
@@ -126,6 +139,7 @@ export function PackageControl({ storeId, storeName, canCreate=true }:Props) {
     });
     setComponents(item.components.map(line=>({...line})));
     setPlatforms((item.platforms?.length ? item.platforms : [{platform:"Shopee" as const,packageSku:item.packageSku}]).map(line=>({...line})));
+    setCalculatorSettings(null);
     setShowCreate(true);
   }
 
@@ -165,6 +179,13 @@ export function PackageControl({ storeId, storeName, canCreate=true }:Props) {
       }]).map(line=><div className="history-entry" key={line.version}>
         <div><b>v{line.version}</b><span>{line.changeNote}</span><small>{line.effectiveFrom} → {line.effectiveTo || "Open ended"} · Sheet {line.sheetSyncStatus ?? "preview"}</small></div>
         <div className="history-diff"><span className="added">+ {(line.addedComponents ?? []).map(lineText).join(", ") || "No additions"}</span><span className="removed">− {(line.removedComponents ?? []).map(lineText).join(", ") || "No removals"}</span></div>
+        {line.calculatorSettings&&<div className="calculator-history">
+          <b>Calculator snapshot</b>
+          <span>{line.calculatorSettings.category}</span>
+          <span>Facebook {money(line.calculatorSettings.facebookPrice,"MY")} → Shopee {money(line.calculatorSettings.suggestedShopeePrice,"MY")}</span>
+          <span>Commission {line.calculatorSettings.commissionRate.toFixed(2)}% · {line.calculatorSettings.serviceScenario} {line.calculatorSettings.serviceRate.toFixed(2)}% · Transaction {line.calculatorSettings.transactionRate.toFixed(2)}%</span>
+          <span>Customer {money(line.calculatorSettings.customerVoucherPrice,"MY")} · Payout {money(line.calculatorSettings.actualPayout,"MY")} · Markup {line.calculatorSettings.markupRate.toFixed(2)}%</span>
+        </div>}
       </div>)}</div>}
       <div className="package-card-foot"><span>{item.components.length} Inventory SKU lines</span><button onClick={()=>setOpenHistory(openHistory===item.id?null:item.id)}>{openHistory===item.id?"Hide history":"View history"}</button><button onClick={()=>startVersion(item)}>{source==="database"?"New version":"Migrate & edit"}</button></div>
     </article>)}</div>
@@ -180,6 +201,12 @@ export function PackageControl({ storeId, storeName, canCreate=true }:Props) {
           <label>Original price<input type="number" min="0" step="0.01" value={form.originalPrice} onChange={event=>setForm({...form,originalPrice:event.target.value})}/></label>
           <label>Selling price<input type="number" min="0" step="0.01" value={form.sellingPrice} onChange={event=>setForm({...form,sellingPrice:event.target.value})}/></label>
         </div>
+        {calculatorSettings&&<div className="calculator-prefill">
+          <div><b>✓ Calculator settings attached</b><span>保存 Package 后会一起记录在 Package History</span></div>
+          <span>{calculatorSettings.category}</span>
+          <span>Facebook {money(calculatorSettings.facebookPrice,"MY")} → Suggested Shopee {money(calculatorSettings.suggestedShopeePrice,"MY")}</span>
+          <span>Commission {calculatorSettings.commissionRate.toFixed(2)}% · {calculatorSettings.serviceScenario} {calculatorSettings.serviceRate.toFixed(2)}% · Payout {money(calculatorSettings.actualPayout,"MY")}</span>
+        </div>}
       </section>
 
       <section className="form-section"><div className="form-section-title"><span>2</span><div><h4>Selling platforms</h4><p>勾选平台；每个平台必须填写不同的 Package SKU</p></div></div>

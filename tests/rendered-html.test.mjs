@@ -84,9 +84,13 @@ test("Shopee calculator applies category SST, pre-order fee and RM108 service ca
 });
 
 test("price calculator is available in navigation with all required outputs", async () => {
-  const [page, calculator, model] = await Promise.all([
+  const [page, calculator, packageControl, packageRoute, schema, migration, model] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("app/price-calculator.tsx", root), "utf8"),
+    readFile(new URL("app/package-control.tsx", root), "utf8"),
+    readFile(new URL("app/api/packages/route.ts", root), "utf8"),
+    readFile(new URL("db/schema.ts", root), "utf8"),
+    readFile(new URL("drizzle/0003_zippy_bullseye.sql", root), "utf8"),
     readFile(new URL("app/price-calculator-model.js", root), "utf8"),
   ]);
   assert.match(page, /Price Calculator/);
@@ -105,4 +109,13 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /Capped at RM108/);
   assert.match(calculator, /2\.14%/);
   assert.match(calculator, /需要 Markup/);
+  assert.match(calculator, /Create Package/);
+  assert.match(calculator, /suggestedShopeePrice:result\.requiredPrice/);
+  assert.match(page, /setPackagePrefill/);
+  assert.match(page, /setSection\("packages"\)/);
+  assert.match(packageControl, /Calculator settings attached/);
+  assert.match(packageControl, /Calculator snapshot/);
+  assert.match(packageRoute, /calculatorSettings:body\.calculatorSettings/);
+  assert.match(schema, /calculatorSettings/);
+  assert.match(migration, /calculator_settings/);
 });

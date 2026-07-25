@@ -1,0 +1,1 @@
+ALTER TABLE `package_versions` ADD `calculator_settings` text;

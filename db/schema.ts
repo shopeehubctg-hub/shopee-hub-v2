@@ -81,6 +81,7 @@ export const packageVersions = sqliteTable("package_versions", {
   addedComponents: text("added_components", { mode: "json" }).$type<Array<{ inventorySku: string; name: string; quantity: number; kind: "product" | "gift" }>>().notNull().default(sql`'[]'`),
   removedComponents: text("removed_components", { mode: "json" }).$type<Array<{ inventorySku: string; name: string; quantity: number; kind: "product" | "gift" }>>().notNull().default(sql`'[]'`),
   sheetSyncStatus: text("sheet_sync_status", { enum: ["pending", "synced", "failed"] }).notNull().default("pending"),
+  calculatorSettings: text("calculator_settings", { mode: "json" }).$type<Record<string, unknown> | null>(),
   changeNote: text("change_note").notNull().default("Initial version"),
   effectiveFrom: text("effective_from").notNull(),
   effectiveTo: text("effective_to"),

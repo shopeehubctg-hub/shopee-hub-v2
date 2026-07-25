@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import adsData from "./ads-data.json";
 import { PackageControl } from "./package-control";
 import { PriceCalculator } from "./price-calculator";
+import type { PackagePrefill } from "./calculator-types";
 import { storeSnapshots } from "./store-snapshots";
 
 type Store = { id: string; name: string; platform: string };
@@ -51,6 +52,7 @@ export default function Home() {
   const [adStatusFilter, setAdStatusFilter] = useState("All");
   const [adSearch, setAdSearch] = useState("");
   const [adPage, setAdPage] = useState(1);
+  const [packagePrefill, setPackagePrefill] = useState<PackagePrefill|null>(null);
 
   async function load(id?: string) {
     setLoading(true);
@@ -114,8 +116,8 @@ export default function Home() {
         </section>
       </div>}
 
-      {section==="packages" && <div className="page"><PackageControl storeId={storeId || "all"} storeName={allStoresSelected ? "All stores" : (store?.name ?? "Selected store")} /></div>}
-      {section==="calculator" && <div className="page"><PriceCalculator /></div>}
+      {section==="packages" && <div className="page"><PackageControl storeId={storeId || "all"} storeName={allStoresSelected ? "All stores" : (store?.name ?? "Selected store")} prefill={packagePrefill} /></div>}
+      {section==="calculator" && <div className="page"><PriceCalculator onCreatePackage={prefill=>{setPackagePrefill(prefill);setSection("packages")}} /></div>}
 
       {section==="advertising" && <div className="page"><div className="page-title"><div><p className="kicker">ADVERTISING</p><h2>Campaign performance</h2></div><span className="period">This month</span></div>
         <section className="metric-grid ads">{[["Ad Balance",ads.balance],["Ad Spend",ads.spend],["Ad Sales",ads.sales],["ROAS",ads.roas],["Views",ads.views],["Clicks",ads.clicks],["Conversion",ads.conversion],["Sold Products",ads.sold],["Cost per Conversion",ads.cpc],["ACOS",ads.acos]].map(m=><article className="metric" key={m[0]}><span>{m[0]}</span><strong>{money(m[1])}</strong></article>)}</section>

@@ -139,6 +139,7 @@ export async function GET(request: Request) {
         addedComponents:version?.addedComponents ?? [],
         removedComponents:version?.removedComponents ?? [],
         sheetSyncStatus:version?.sheetSyncStatus ?? "pending",
+        calculatorSettings:version?.calculatorSettings ?? null,
         effectiveFrom:version?.effectiveFrom ?? price?.effectiveFrom ?? "",
         effectiveTo:version?.effectiveTo ?? price?.effectiveTo ?? null,
         originalPrice:price?.originalPrice ?? 0,
@@ -157,6 +158,7 @@ export async function GET(request: Request) {
             removedComponents:item.removedComponents,
             platforms:platformRows.filter(platformItem => platformItem.versionId === item.id).map(({ platform, packageSku }) => ({ platform, packageSku })),
             sheetSyncStatus:item.sheetSyncStatus,
+            calculatorSettings:item.calculatorSettings ?? null,
             createdAt:item.createdAt,
             createdBy:item.createdBy,
           };
@@ -188,6 +190,7 @@ export async function POST(request: Request) {
     changeNote?: string;
     components?: ComponentLine[];
     platforms?: PlatformLine[];
+    calculatorSettings?: Record<string, unknown> | null;
   };
   const platforms = (body.platforms ?? []).map(item => ({ platform:item.platform, packageSku:String(item.packageSku ?? "").trim() }));
   if (!body.storeId || !body.name?.trim() || !body.effectiveFrom || !body.effectiveTo || !Array.isArray(body.components) || !body.components.length || !platforms.length) {
@@ -272,6 +275,7 @@ export async function POST(request: Request) {
       addedComponents:diff.added,
       removedComponents:diff.removed,
       sheetSyncStatus:"pending",
+      calculatorSettings:body.calculatorSettings ?? null,
       changeNote:body.changeNote?.trim() || (nextVersion === 1 ? "Initial version" : `Version ${nextVersion}`),
       effectiveFrom:body.effectiveFrom,
       effectiveTo:body.effectiveTo,

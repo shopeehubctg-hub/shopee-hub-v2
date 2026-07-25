@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { calculateShopeePrice, COMMISSION_CATEGORIES, commissionRateFor, SERVICE_MODES } from "./price-calculator-model";
+import type { CalculatorSnapshot, PackagePrefill } from "./calculator-types";
 
 type PackageRow = { id:number; name:string; facebookPrice:number };
 type ServiceMode = keyof typeof SERVICE_MODES;
@@ -21,7 +22,9 @@ const money = (value:number) => `RM ${Number.isFinite(value) ? value.toFixed(2) 
 const pct = (value:number) => `${Number.isFinite(value) ? value.toFixed(2) : "0.00"}%`;
 const positive = (value:string) => Math.max(0, Number(value) || 0);
 
-export function PriceCalculator() {
+type Props = { onCreatePackage?:(prefill:PackagePrefill)=>void };
+
+export function PriceCalculator({ onCreatePackage }:Props) {
   const [packages,setPackages] = useState(INITIAL_PACKAGES);
   const [category,setCategory] = useState<string>("28");
   const [onCashback,setOnCashback] = useState(true);
@@ -47,6 +50,38 @@ export function PriceCalculator() {
   }
   function addPackage() {
     setPackages(current=>[...current,{id:Math.max(0,...current.map(row=>row.id))+1,name:`Package ${String.fromCharCode(65+current.length)}`,facebookPrice:0}]);
+  }
+  function createPackage(row:PackageRow, result:ReturnType<typeof calculateShopeePrice>) {
+    const categoryItem = COMMISSION_CATEGORIES[Number(category)];
+    const calculatorSettings:CalculatorSnapshot = {
+      source:"Shopee Pricing Calculator",
+      packageName:row.name,
+      category:`${categoryItem?.cluster ?? ""} · ${categoryItem?.name ?? "Unknown"}`,
+      cashbackProgramme:onCashback,
+      customCommission:usingCustomCommission ? Number(customCommission) : null,
+      commissionRate:commission,
+      transactionRate:fees.transaction,
+      serviceScenario:serviceMode === "campaign" ? "Campaign Day" : "Non-Campaign Day",
+      serviceRate:SERVICE_MODES[serviceMode].rate,
+      serviceCap:fees.serviceCap,
+      preorderListing:fees.isPreorder,
+      preorderRate:fees.preorder,
+      platformSupportFee:fees.platformSupport,
+      shopeeVoucherRate:fees.shopeeVoucher,
+      sellerVoucher:fees.sellerVoucher,
+      cofundVoucher:fees.cofundVoucher,
+      sellerShipping:fees.sellerShipping,
+      facebookShipping:fees.facebookShipping,
+      extraProfit:fees.extraProfit,
+      facebookPrice:row.facebookPrice,
+      suggestedShopeePrice:result.requiredPrice,
+      customerVoucherPrice:result.customerPrice,
+      markupRate:result.markupRate,
+      markupAmount:result.markupAmount,
+      targetPayout:result.targetPayout,
+      actualPayout:result.payout,
+    };
+    onCreatePackage?.({requestId:Date.now(),name:row.name,sellingPrice:result.requiredPrice,calculatorSettings});
   }
 
   return <div className="price-calculator">
@@ -109,7 +144,7 @@ export function PriceCalculator() {
     <section className="calculator-table calculator-results card">
       <div className="calculator-section-head"><div><p className="kicker">STEP 2 · PACKAGE RESULTS</p><h3>每个配套的建议卖价</h3></div><button onClick={addPackage}>+ Add package</button></div>
       <div className="package-results-header" aria-hidden="true">
-        <span>配套</span><span>Facebook 卖价</span><span>建议 Shopee 卖价</span><span>顾客 Voucher 后价钱</span><span>需要 Markup</span><span>实际到手</span><span></span>
+        <span>配套</span><span>Facebook 卖价</span><span>建议 Shopee 卖价</span><span>顾客 Voucher 后价钱</span><span>需要 Markup</span><span>实际到手</span><span>操作</span>
       </div>
       <div className="package-result-list">{calculations.map(({row,result})=><article className="package-result-card" key={row.id}>
         <div className="package-result-main">
@@ -119,7 +154,10 @@ export function PriceCalculator() {
           <div className="result-metric"><span>顾客 Voucher 后价钱</span><strong>{money(result.customerPrice)}</strong><small>顾客实际看到</small></div>
           <div className="result-metric"><span>需要 Markup</span><strong className="markup">{pct(result.markupRate)}</strong><small>{money(result.markupAmount)}</small></div>
           <div className="result-metric payout"><span>实际到手</span><strong>{money(result.payout)}</strong><small>目标 {money(result.targetPayout)} · ✓ 利润已保护</small></div>
-          <button className="remove-row" disabled={packages.length===1} onClick={()=>setPackages(current=>current.filter(item=>item.id!==row.id))} aria-label={`Remove ${row.name}`}>×</button>
+          <div className="package-result-actions">
+            <button className="create-package-link" disabled={!row.name.trim()||!result.valid} onClick={()=>createPackage(row,result)}>Create Package</button>
+            <button className="remove-row" disabled={packages.length===1} onClick={()=>setPackages(current=>current.filter(item=>item.id!==row.id))} aria-label={`Remove ${row.name}`}>×</button>
+          </div>
         </div>
         <details className="fee-breakdown">
           <summary>查看 Fee Breakdown</summary>
