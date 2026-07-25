@@ -104,7 +104,7 @@ export function PriceCalculator({ onCreatePackage }:Props) {
           <input type="number" min="0" step=".01" value={customCommission} placeholder={`Auto: ${pct(commissionRateFor(category,onCashback))}`} onChange={event=>setCustomCommission(event.target.value)}/>
           <small>{usingCustomCommission?"Custom rate is active · 输入最终含 SST 的费率":"留空则自动使用 Product Category 费率"}</small>
         </label>
-        <label className="setup-toggle"><input type="checkbox" checked={onCashback} onChange={event=>setOnCashback(event.target.checked)}/><span><b>Cashback Programme</b><small>{onCashback?"Seller participating":"Seller not participating"}</small></span></label>
+        <label className="setup-toggle"><input type="checkbox" checked={onCashback} onChange={event=>setOnCashback(event.target.checked)}/><span><b>Cashback Program</b><small>{onCashback?"Seller participating":"Seller not participating"}</small></span></label>
         <label>Service Fee Scenario
           <select value={serviceMode} onChange={event=>setServiceMode(event.target.value as ServiceMode)}>
             <option value="nonCampaign">Non-Campaign Day · 5.94%</option>
