@@ -23,6 +23,16 @@ test("package control is wired into the command center", async () => {
   assert.match(component, /Google Sheet History/);
 });
 
+test("sidebar contacts the selected project's Shopee Hub specialist", async () => {
+  const [page, route, links] = await Promise.all([readFile(new URL("app/page.tsx", root), "utf8"), readFile(new URL("app/api/dashboard/route.ts", root), "utf8"), readFile(new URL("app/project-group-links.ts", root), "utf8")]);
+  assert.match(page, /Contact Shopee Hub Specialist/);
+  assert.match(page, /store\?\.contacts\.map/);
+  assert.match(route, /contactsForStore\(name\)/);
+  assert.match(links, /HF6D8uRYwGW37rTJ3wOYi6/);
+  assert.match(links, /Mizino Placenta/);
+  assert.match(links, /Mizino SlimPro/);
+});
+
 test("package API enforces platform SKUs and persists component history", async () => {
   const [route, schema, baseMigration, platformMigration] = await Promise.all([
     readFile(new URL("app/api/packages/route.ts", root), "utf8"),

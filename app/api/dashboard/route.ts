@@ -2,6 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { customerUsers, dashboardSnapshots, managementActions, stores, tenants } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
+import { contactsForStore } from "../../project-group-links";
 
 export const dynamic = "force-dynamic";
 
@@ -57,7 +58,7 @@ export async function GET(request: Request) {
 
   return Response.json({
     customer: { id: tenant.id, name: tenant.name },
-    stores: visibleStores.map(({ id, name, platform }) => ({ id, name, platform })),
+    stores: visibleStores.map(({ id, name, platform }) => ({ id, name, platform, contacts: contactsForStore(name) })),
     selectedStoreId: allStoresRequested ? "all" : (selectedStore?.id ?? null),
     snapshot: latest[0] ?? null,
     actions,

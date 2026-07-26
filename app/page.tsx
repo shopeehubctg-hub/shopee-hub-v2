@@ -9,7 +9,7 @@ import type { PackagePrefill } from "./calculator-types";
 import { storeSnapshots } from "./store-snapshots";
 import { buildAdvertisingFunds, buildTopUpAction, formatRinggit } from "./advertising-model.js";
 
-type Store = { id: string; name: string; platform: string };
+type Store = { id: string; name: string; platform: string; contacts: { project: string; href: string }[] };
 type DashboardResponse = { stores: Store[]; selectedStoreId: string | null; snapshot: { payload: any; importedAt: string } | null };
 
 const overviewFallback = [
@@ -96,7 +96,7 @@ export default function Home() {
     <aside className="side">
       <div className="logo"><img src="/shopee-hub-logo-transparent.png" alt="ShopeeHub"/><small>STORE COMMAND CENTER</small></div>
       <nav>{nav.map(([id,label]) => <button key={id} className={section===id?"active":""} onClick={()=>setSection(id)}><span>{label.slice(0,1)}</span>{label}</button>)}</nav>
-      <div className="fleet"><p>Connected Shopee stores</p><strong>62</strong><div><span>MY 44</span><span>SG 18</span><span>2 pending</span></div></div>
+      <div className="fleet contact-card"><p>Contact Shopee Hub Specialist</p><strong>{allStoresSelected ? "Select a project" : (store?.contacts.length ? store.name : "Link unavailable")}</strong><div>{!allStoresSelected && store?.contacts.map(contact=><a key={contact.href} href={contact.href} target="_blank" rel="noopener noreferrer" title={contact.project}>{store.contacts.length > 1 ? contact.project : "Contact"} →</a>)}</div></div>
       <p className="access">Private access<br/><b>shopeehub.ctg@gmail.com</b></p>
     </aside>
 
