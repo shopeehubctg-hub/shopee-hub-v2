@@ -142,3 +142,15 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(schema, /calculatorSettings/);
   assert.match(migration, /calculator_settings/);
 });
+
+test("advertising summary keeps one balance and removes low-priority cards", async () => {
+  const page = await readFile(new URL("app/page.tsx", root), "utf8");
+  const summary = page.match(/<section className="metric-grid ads ad-performance-grid">([\s\S]*?)<\/section>/)?.[1] ?? "";
+  assert.doesNotMatch(summary, /\["Ad Balance"/);
+  assert.doesNotMatch(summary, /\["Conversion"/);
+  assert.doesNotMatch(summary, /\["Sold Products"/);
+  assert.match(summary, /\["Ad Spend"/);
+  assert.match(summary, /\["Ad Sales"/);
+  assert.match(summary, /\["ROAS"/);
+  assert.match(summary, /\["ACOS"/);
+});
