@@ -7,17 +7,26 @@ export const dynamic="force-dynamic";
 type Meta={name:string;width:number;height:number;size:number;type:string};
 type Finding={level:"pass"|"warning"|"fail";title:string;detail:string};
 
-const categoryNames={package:"配套图",product:"产品图",description:"Description 图",banner:"Shop Banner",cover:"Cover Photo"} as const;
+const categoryNames={package:"配套图",product:"产品图（9张图）",description:"Description 图",banner:"Shop Banner",cover:"Cover Photo"} as const;
+const categoryRules={
+  package:["1080 × 1080，Max 2MB","数量必须与配套一致并清楚 Label","Free Gift 样品、数量和名称必须对应","可显示 Worth／Off／Discount"],
+  product:["9 张产品图每张都必须能独立成为主图","1080 × 1080，Max 2MB","盒装至少占 25% 或高度 270px；罐装／支装至少占 50% 或高度 540px","必须有 Watermark，只保留 2–3 个重点","整套覆盖 USP、Pain Point、End Result、Ingredients，各 1–2 张","手机可读、风格一致、有场景感","禁止卖价"],
+  description:["1000 × 2000，Max 2MB","Landing Page 且有画面感","顺序为 Certification、How It Works、After Sales、FAQ／Ingredients、Testi／Before & After","Non-Preferred 最多 3 张；Preferred 最多 12 张"],
+  banner:["宽度 Max 1200、高度 Max 2200、Max 2MB","建议直式 1080 × 1350 或横式 1200 × 675","可做连续 Landing Page","内容可含公司背景、代言人、产品陈列、步骤、认证、服务、优惠、会员和推荐"],
+  cover:["1200 × 518，Max 1MB","设计简单","建议 Slogan、产品、场景、Logo 或代言人","禁止 Email、地址、电话号码和其他平台"]
+} as const;
 type Category=keyof typeof categoryNames;
 function technical(meta:Meta,category:string):Finding[]{
   const max=category==="cover"?1048576:2097152;
   const size:Finding=meta.size<=max?{level:"pass",title:"文件容量",detail:(meta.size/1048576).toFixed(2)+" MB，符合上限。"}:{level:"fail",title:"文件容量超标",detail:(meta.size/1048576).toFixed(2)+" MB，要求不超过 "+max/1048576+" MB。"};
   const valid=category==="cover"?meta.width===1200&&meta.height===518:category==="description"?meta.width===1000&&meta.height===2000:category==="banner"?meta.width<=1200&&meta.height<=2200:meta.width===1080&&meta.height===1080;
-  return [size,valid?{level:"pass",title:"画布尺寸",detail:meta.width+" × "+meta.height+"px，符合 "+categoryNames[category as Category]+" 标准。"}:{level:"fail",title:"画布尺寸不符合",detail:"目前为 "+meta.width+" × "+meta.height+"px，请按 "+categoryNames[category as Category]+" Requirement 调整。"},{level:"warning",title:"Logo／Watermark 对照",detail:"尚未配置这个品牌的标准参考文件，需由 Shopee Hub 确认。"}];
+  const findings:Finding[]=[size,valid?{level:"pass",title:"画布尺寸",detail:meta.width+" × "+meta.height+"px，符合 "+categoryNames[category as Category]+" 标准。"}:{level:"fail",title:"画布尺寸不符合",detail:"目前为 "+meta.width+" × "+meta.height+"px，请按 "+categoryNames[category as Category]+" Requirement 调整。"}];
+  if(category==="product"||category==="package")findings.push({level:"warning",title:"Watermark 对照",detail:"此类别需要 Watermark；尚未配置品牌标准参考文件。"});
+  return findings;
 }
 async function analyse(files:File[],metas:Meta[],category:Category){
   const key=process.env.OPENAI_API_KEY;if(!key)return null;
-  const content:Array<Record<string,unknown>>=[{type:"input_text",text:"The user explicitly selected "+categoryNames[category]+". Review these Shopee images according to that category. Return JSON: {images:[{productType,detectedCategory,grammar:[{level,title,detail}],creative:[{level,title,detail}]}],advice:[string]}. Same image order. Grammar and creative levels may only be pass or warning. OCR English spelling and grammar, prohibited URL/email/phone/address/other platform/Return & Refund/non-English text and selling price; assess product type, product prominence, mobile readability, 2-3 key messages, USP, pain point, end result, ingredients, scene feeling and consistency. Give 3-6 concise actionable Chinese advice. Metadata: "+JSON.stringify(metas)}];
+  const content:Array<Record<string,unknown>>=[{type:"input_text",text:"The user explicitly selected "+categoryNames[category]+". Review strictly against these requirements: "+categoryRules[category].join(" | ")+". Return JSON: {images:[{productType,detectedCategory,grammar:[{level,title,detail}],creative:[{level,title,detail}]}],advice:[string]}. Same image order. Grammar and creative levels may only be pass or warning. OCR English spelling and grammar, prohibited URL/email/phone/address/other platform/Return & Refund/non-English text and selling price; assess every selected-category rule, product type, product prominence, mobile readability, key messages, scene feeling and consistency. Give 3-6 concise actionable Chinese advice. Metadata: "+JSON.stringify(metas)}];
   for(const file of files){const bytes=new Uint8Array(await file.arrayBuffer());let binary="";for(let i=0;i<bytes.length;i+=32768)binary+=String.fromCharCode(...bytes.subarray(i,i+32768));content.push({type:"input_image",image_url:"data:"+file.type+";base64,"+btoa(binary),detail:"high"})}
   const response=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{Authorization:"Bearer "+key,"Content-Type":"application/json"},body:JSON.stringify({model:"gpt-5-mini",store:false,input:[{role:"user",content}],text:{format:{type:"json_object"}}})});
   if(!response.ok)return null;const data=await response.json() as {output_text?:string;output?:Array<{content?:Array<{text?:string}>}>};const text=data.output_text??data.output?.flatMap(i=>i.content??[]).map(i=>i.text??"").join("");

@@ -7,11 +7,11 @@ type ImageResult={id:string;fileName:string;previewUrl?:string;detectedCategory:
 type ReviewResult={reviewId:string;status:"technical_failed"|"awaiting_review";images:ImageResult[];advice:string[]};
 const labels={pass:"PASS",warning:"注意",fail:"FAILED"} as const;
 const categories=[
-  {id:"package",label:"配套图",requirement:"1080 × 1080 · Max 2MB"},
-  {id:"product",label:"产品图",requirement:"1080 × 1080 · Max 2MB"},
-  {id:"description",label:"Description 图",requirement:"1000 × 2000 · Max 2MB"},
-  {id:"banner",label:"Shop Banner",requirement:"Max 1200 × 2200 · Max 2MB"},
-  {id:"cover",label:"Cover Photo",requirement:"1200 × 518 · Max 1MB"},
+  {id:"package",label:"配套图",requirement:"1080 × 1080 · Max 2MB",rules:["画面数量必须与实际配套数量完全一致，并放大或 Label 清楚","必须有清楚的配套 Label","Free Gift 样品、数量和名称必须对应显示","可显示 Worth／Off／Discount，让顾客清楚优惠价值"]},
+  {id:"product",label:"产品图（9张图）",requirement:"1080 × 1080 · Max 2MB",rules:["每张都必须能独立成为主图，并具备成交吸引力","盒装产品至少占画面 25% 或产品高度至少 270px","罐装／支装产品至少占画面 50% 或产品高度至少 540px","必须有 Watermark；每张只保留 2–3 个重点","整套需覆盖 USP、Pain Point、End Result、Ingredients，各 1–2 张","文字不可太小或太多，手机第一眼必须看到重点","整套风格一致并尽量有场景感","主图禁止出现产品或配套卖价"]},
+  {id:"description",label:"Description 图",requirement:"1000 × 2000 · Max 2MB",rules:["作为 Landing Page 补充 9 张图未呈现的内容","内容必须有画面感","整套顺序必须为 Certification → How It Works → After Sales → FAQ／全部 Ingredients → Testi／Before & After","Non-Preferred Seller 最多 3 张；Preferred Seller 最多 12 张"]},
+  {id:"banner",label:"Shop Banner",requirement:"Max 1200 × 2200 · Max 2MB",rules:["宽度最多 1200px，高度最多 2200px","建议尺寸：直式 1080 × 1350；横式 1200 × 675","可使用连贯 Landing Page 形式","内容可涵盖公司背景、代言人、产品陈列、使用步骤、认证奖项、服务、优惠、会员活动和强力推荐"]},
+  {id:"cover",label:"Cover Photo",requirement:"1200 × 518 · Max 1MB",rules:["设计以简单为主","建议包含 Slogan、产品、场景、Logo 或代言人","禁止出现 Email、地址、电话号码和其他平台"]},
 ] as const;
 
 async function inspectFile(file:File):Promise<LocalImage>{
@@ -22,11 +22,12 @@ function localTechnical(item:LocalImage,category:string):Finding[]{
   const selected=categories.find(option=>option.id===category);
   const max=category==="cover"?1048576:2097152;
   const dimensions=category==="cover"?item.width===1200&&item.height===518:category==="description"?item.width===1000&&item.height===2000:category==="banner"?item.width<=1200&&item.height<=2200:item.width===1080&&item.height===1080;
-  return [
+  const findings:Finding[]=[
     item.file.size<=max?{level:"pass",title:"文件容量",detail:(item.file.size/1048576).toFixed(2)+" MB，符合上限。"}:{level:"fail",title:"文件容量超标",detail:(item.file.size/1048576).toFixed(2)+" MB；"+selected?.label+"要求不超过 "+max/1048576+" MB。"},
     dimensions?{level:"pass",title:"画布尺寸",detail:item.width+" × "+item.height+"px，符合标准。"}:{level:"fail",title:"画布尺寸不符合",detail:"目前为 "+item.width+" × "+item.height+"px；要求为 "+selected?.requirement+"。"},
-    {level:"warning",title:"Logo／Watermark 对照",detail:"等待配置品牌标准参考文件后核对。"}
   ];
+  if(category==="product"||category==="package")findings.push({level:"warning",title:"Watermark 对照",detail:"此类别需要 Watermark；等待配置品牌标准参考文件后核对正确版本。"});
+  return findings;
 }
 
 export function DesignChecker({storeId}:{storeId:string}){
@@ -86,11 +87,12 @@ export function DesignChecker({storeId}:{storeId:string}){
       "",
       "第二轮 Technical Compliance 已由 Dashboard 处理，不要改变 Technical Pass/Fail。",
       "本类别 Requirement："+selected?.requirement+"。",
+      "必须逐项执行以下原始 Design Requirement：",
+      ...(selected?.rules.map((rule,index)=>(index+1)+". "+rule)??[]),
       "",
       "第三轮 Creative Review：",
       "- 判断产品包装类型（盒装、罐装、瓶装、支装、袋装或混合配套）。",
       "- 检查第一眼是否知道卖什么、产品是否突出、手机可读性、2–3 个重点、USP、Pain Point、End Result、Ingredients、场景感、风格一致性。",
-      "- 配套图要核对标题中的 Buy/Free 数量与画面数量、赠品名称和 Label。",
       "- Grammar 与 Creative 只能使用 pass 或 warning，不能产生 technical fail。",
       "",
       "只输出 JSON，不要 Markdown、不要解释。格式必须完全如下：",
@@ -111,7 +113,7 @@ export function DesignChecker({storeId}:{storeId:string}){
   return <div className="design-checker">
     <section className="design-hero"><div><p className="kicker">DESIGN CHECKER</p><h2>上传图片，自动完成三轮检查</h2><p>无需填写产品类型。系统会同时检查英文、技术规范及画面吸引力。</p></div><div className="design-flow"><span><b>01</b>Grammar</span><i/><span><b>02</b>Compliance</span><i/><span><b>03</b>Creative</span></div></section>
     {!result&&<section className="upload-card card">
-      <div className="category-step"><div><span>STEP 1</span><h3>这批是什么图？</h3><p>选择后，系统会使用对应的 Shopee Requirement 检查。</p></div><div className="category-picker">{categories.map(item=><button type="button" key={item.id} className={category===item.id?"selected":""} onClick={()=>setCategory(item.id)}><b>{item.label}</b><small>{item.requirement}</small></button>)}</div></div>
+      <div className="category-step"><div><span>STEP 1</span><h3>这批是什么图？</h3><p>选择后，系统会使用对应的 Shopee Requirement 检查。</p></div><div className="category-picker">{categories.map(item=><button type="button" key={item.id} className={category===item.id?"selected":""} onClick={()=>setCategory(item.id)}><b>{item.label}</b><small>{item.requirement}</small></button>)}</div>{category&&<div className="category-requirements"><strong>{categories.find(item=>item.id===category)?.label} 检查标准</strong><ul>{categories.find(item=>item.id===category)?.rules.map(rule=><li key={rule}>{rule}</li>)}</ul></div>}</div>
       <div className="upload-step-title"><span>STEP 2</span><h3>上传图片</h3></div>
       <button className={"drop-zone "+(dragging?"dragging":"")} type="button" onClick={()=>inputRef.current?.click()} onDragOver={event=>{event.preventDefault();setDragging(true)}} onDragLeave={()=>setDragging(false)} onDrop={event=>{event.preventDefault();setDragging(false);addFiles(event.dataTransfer.files)}}>
         <span className="upload-symbol">↑</span><strong>把设计图拖到这里</strong><small>或点击选择图片 · PNG、JPG、WEBP · 最多 20 张</small>
