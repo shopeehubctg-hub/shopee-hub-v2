@@ -23,6 +23,9 @@ export type CalculatorSnapshot = {
   customerVoucherPrice:number;
   markupRate:number;
   markupAmount:number;
+  markupCustomized?:boolean;
+  systemSuggestedMarkupRate?:number;
+  systemSuggestedShopeePrice?:number;
   targetPayout:number;
   actualPayout:number;
 };

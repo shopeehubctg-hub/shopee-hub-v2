@@ -98,7 +98,7 @@ export function calculateFeesForPrice(price, fees) {
   return { feeBase, transactionFee, commissionFee, serviceFee, uncappedServiceFee, preorderFee, payout };
 }
 
-export function calculateShopeePrice(row, fees) {
+export function calculateShopeePrice(row, fees, markupOverride = null) {
   const uncappedRate = (fees.transaction + fees.commission + (fees.isPreorder ? fees.preorder : 0)) / 100;
   const valid = uncappedRate >= 0 && uncappedRate < 1 && fees.service >= 0;
   const targetPayout = Math.max(0, row.facebookPrice - fees.facebookShipping + fees.extraProfit);
@@ -114,7 +114,8 @@ export function calculateShopeePrice(row, fees) {
   } else {
     high = 0;
   }
-  const requiredPrice = high;
+  const hasMarkupOverride = markupOverride !== null && markupOverride !== undefined && Number.isFinite(Number(markupOverride));
+  const requiredPrice = hasMarkupOverride ? row.facebookPrice * (1 + Math.max(0, Number(markupOverride)) / 100) : high;
   const calculated = calculateFeesForPrice(requiredPrice, fees);
   const customerPrice = calculated.feeBase * (1 - Math.min(100, fees.shopeeVoucher) / 100);
   const markupAmount = requiredPrice - row.facebookPrice;

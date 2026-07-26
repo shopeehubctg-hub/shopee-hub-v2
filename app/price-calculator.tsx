@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { calculateShopeePrice, COMMISSION_CATEGORIES, commissionRateFor, SERVICE_MODES } from "./price-calculator-model";
 import type { CalculatorSnapshot, PackagePrefill } from "./calculator-types";
 
-type PackageRow = { id:number; name:string; facebookPrice:number };
+type PackageRow = { id:number; name:string; facebookPrice:number; markupRate:string|null };
 type ServiceMode = keyof typeof SERVICE_MODES;
 type FeeSettings = {
   transaction:number; commission:number; service:number; serviceCap:number;
@@ -14,9 +14,9 @@ type FeeSettings = {
 };
 
 const INITIAL_PACKAGES:PackageRow[] = [
-  { id:1, name:"Package A", facebookPrice:289 },
-  { id:2, name:"Package B", facebookPrice:358 },
-  { id:3, name:"Package C", facebookPrice:716 },
+  { id:1, name:"Package A", facebookPrice:289, markupRate:null },
+  { id:2, name:"Package B", facebookPrice:358, markupRate:null },
+  { id:3, name:"Package C", facebookPrice:716, markupRate:null },
 ];
 const money = (value:number) => `RM ${Number.isFinite(value) ? value.toFixed(2) : "0.00"}`;
 const pct = (value:number) => `${Number.isFinite(value) ? value.toFixed(2) : "0.00"}%`;
@@ -39,19 +39,23 @@ export function PriceCalculator({ onCreatePackage }:Props) {
     sellerShipping:0, facebookShipping:10, extraProfit:0,
   });
   const activeFees:FeeSettings = {...fees,commission,service:SERVICE_MODES[serviceMode].rate};
-  const calculations = useMemo(()=>packages.map(row=>({row,result:calculateShopeePrice(row,activeFees)})),[packages,activeFees]);
+  const calculations = useMemo(()=>packages.map(row=>{
+    const suggested = calculateShopeePrice(row,activeFees);
+    const result = row.markupRate === null ? suggested : calculateShopeePrice(row,activeFees,positive(row.markupRate));
+    return {row,suggested,result};
+  }),[packages,activeFees]);
   const headlineRate = fees.transaction + commission + SERVICE_MODES[serviceMode].rate + (fees.isPreorder?fees.preorder:0);
 
   function updateFee(key:keyof typeof fees, value:string|boolean) {
     setFees(current=>({...current,[key]:typeof value==="boolean"?value:positive(value)}));
   }
-  function updatePackage(id:number, key:"name"|"facebookPrice", value:string) {
-    setPackages(current=>current.map(row=>row.id===id?{...row,[key]:key==="facebookPrice"?positive(value):value}:row));
+  function updatePackage(id:number, key:"name"|"facebookPrice"|"markupRate", value:string) {
+    setPackages(current=>current.map(row=>row.id===id?{...row,[key]:key==="facebookPrice"?positive(value):key==="markupRate"?(value===""?null:value):value}:row));
   }
   function addPackage() {
-    setPackages(current=>[...current,{id:Math.max(0,...current.map(row=>row.id))+1,name:`Package ${String.fromCharCode(65+current.length)}`,facebookPrice:0}]);
+    setPackages(current=>[...current,{id:Math.max(0,...current.map(row=>row.id))+1,name:`Package ${String.fromCharCode(65+current.length)}`,facebookPrice:0,markupRate:null}]);
   }
-  function createPackage(row:PackageRow, result:ReturnType<typeof calculateShopeePrice>) {
+  function createPackage(row:PackageRow, result:ReturnType<typeof calculateShopeePrice>, suggested:ReturnType<typeof calculateShopeePrice>) {
     const categoryItem = COMMISSION_CATEGORIES[Number(category)];
     const calculatorSettings:CalculatorSnapshot = {
       source:"Shopee Pricing Calculator",
@@ -78,6 +82,9 @@ export function PriceCalculator({ onCreatePackage }:Props) {
       customerVoucherPrice:result.customerPrice,
       markupRate:result.markupRate,
       markupAmount:result.markupAmount,
+      markupCustomized:row.markupRate !== null,
+      systemSuggestedMarkupRate:suggested.markupRate,
+      systemSuggestedShopeePrice:suggested.requiredPrice,
       targetPayout:result.targetPayout,
       actualPayout:result.payout,
     };
@@ -104,14 +111,14 @@ export function PriceCalculator({ onCreatePackage }:Props) {
           <input type="number" min="0" step=".01" value={customCommission} placeholder={`Auto: ${pct(commissionRateFor(category,onCashback))}`} onChange={event=>setCustomCommission(event.target.value)}/>
           <small>{usingCustomCommission?"Custom rate is active · 输入最终含 SST 的费率":"留空则自动使用 Product Category 费率"}</small>
         </label>
-        <label className="setup-toggle"><input type="checkbox" checked={onCashback} onChange={event=>setOnCashback(event.target.checked)}/><span><b>Cashback Program</b><small>{onCashback?"Seller participating":"Seller not participating"}</small></span></label>
+        <div className="setup-toggle-field"><label className="setup-toggle"><input type="checkbox" checked={onCashback} onChange={event=>setOnCashback(event.target.checked)}/><span><b>Cashback Program</b></span></label><small>{onCashback?"Seller participating":"Seller not participating"}</small></div>
         <label>Service Fee Scenario
           <select value={serviceMode} onChange={event=>setServiceMode(event.target.value as ServiceMode)}>
             <option value="nonCampaign">Non-Campaign Day · 5.94%</option>
             <option value="campaign">Campaign Day · 8.10%</option>
           </select>
         </label>
-        <label className="setup-toggle"><input type="checkbox" checked={fees.isPreorder} onChange={event=>updateFee("isPreorder",event.target.checked)}/><span><b>Pre-Order listing</b><small>额外 {pct(fees.preorder)}</small></span></label>
+        <div className="setup-toggle-field"><label className="setup-toggle"><input type="checkbox" checked={fees.isPreorder} onChange={event=>updateFee("isPreorder",event.target.checked)}/><span><b>Pre-Order Listing</b></span></label><small>额外 {pct(fees.preorder)}</small></div>
       </div>
     </section>
 
@@ -141,17 +148,21 @@ export function PriceCalculator({ onCreatePackage }:Props) {
       <div className="package-results-header" aria-hidden="true">
         <span>配套</span><span>Facebook 卖价</span><span>建议 Shopee 卖价</span><span>顾客 Voucher 后价钱</span><span>需要 Markup</span><span>实际到手</span><span>操作</span>
       </div>
-      <div className="package-result-list">{calculations.map(({row,result})=><article className="package-result-card" key={row.id}>
+      <div className="package-result-list">{calculations.map(({row,suggested,result})=>{
+        const markupBlocked = result.markupRate >= 30;
+        const payoutProtected = result.payout >= result.targetPayout - .005;
+        return <article className={`package-result-card${markupBlocked?" markup-blocked":""}`} key={row.id}>
         <div className="package-result-main">
           <label className="result-input"><span>配套</span><input className="package-name-input" value={row.name} onChange={event=>updatePackage(row.id,"name",event.target.value)}/></label>
           <label className="result-input"><span>Facebook 卖价</span><div className="money-input"><b>RM</b><input type="number" step=".01" value={row.facebookPrice} onChange={event=>updatePackage(row.id,"facebookPrice",event.target.value)}/></div></label>
           <div className="result-metric suggested-price"><span>建议 Shopee 卖价</span><strong>{money(result.requiredPrice)}</strong><small>Listing price</small></div>
           <div className="result-metric"><span>顾客 Voucher 后价钱</span><strong>{money(result.customerPrice)}</strong><small>顾客实际看到</small></div>
-          <div className="result-metric"><span>需要 Markup</span><strong className="markup">{pct(result.markupRate)}</strong><small>{money(result.markupAmount)}</small></div>
-          <div className="result-metric payout"><span>实际到手</span><strong>{money(result.payout)}</strong><small>目标 {money(result.targetPayout)} · ✓ 利润已保护</small></div>
+          <label className="result-metric markup-editor"><span>需要 Markup</span><div><input type="number" min="0" step=".01" value={row.markupRate ?? suggested.markupRate.toFixed(2)} onChange={event=>updatePackage(row.id,"markupRate",event.target.value)}/><b>%</b></div><small>{row.markupRate===null?`系统建议 · ${money(suggested.markupAmount)}`:`自订 · ${money(result.markupAmount)}`}</small></label>
+          <div className="result-metric payout"><span>实际到手</span><strong>{money(result.payout)}</strong><small>目标 {money(result.targetPayout)} · {payoutProtected?"✓ 利润已保护":"低于目标"}</small></div>
           <div className="package-result-actions">
-            <button className="create-package-link" disabled={!row.name.trim()||!result.valid} onClick={()=>createPackage(row,result)}>Create Package</button>
+            <button className="create-package-link" disabled={!row.name.trim()||!result.valid||markupBlocked} title={markupBlocked?"Markup 达到 30% 或更高，不能建立 Package":""} onClick={()=>createPackage(row,result,suggested)}>Create Package</button>
             <button className="remove-row" disabled={packages.length===1} onClick={()=>setPackages(current=>current.filter(item=>item.id!==row.id))} aria-label={`Remove ${row.name}`}>×</button>
+            {markupBlocked&&<small className="markup-warning">Markup ≥ 30% · Cannot create</small>}
           </div>
         </div>
         <details className="fee-breakdown">
@@ -164,7 +175,7 @@ export function PriceCalculator({ onCreatePackage }:Props) {
             <div><span>Platform Support</span><strong>{money(fees.platformSupport)}</strong></div>
           </div>
         </details>
-      </article>)}</div>
+      </article>})}</div>
     </section>
   </div>;
 }

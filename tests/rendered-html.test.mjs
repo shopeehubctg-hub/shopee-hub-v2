@@ -83,6 +83,20 @@ test("Shopee calculator applies category SST, pre-order fee and RM108 service ca
   assert.ok(Math.abs(result.preorderFee - result.feeBase * 0.0214) < 0.000001);
 });
 
+test("Shopee calculator accepts a user-adjusted markup rate", async () => {
+  const { calculateShopeePrice } = await import("../app/price-calculator-model.js");
+  const fees = {
+    transaction:3.78, commission:12.96, service:5.94, serviceCap:108,
+    preorder:2.14, isPreorder:false, platformSupport:0.54,
+    shopeeVoucher:16, sellerVoucher:0, cofundVoucher:20,
+    sellerShipping:0, facebookShipping:10, extraProfit:0,
+  };
+  const result = calculateShopeePrice({ facebookPrice:200 }, fees, 25);
+  assert.equal(result.requiredPrice, 250);
+  assert.equal(result.markupAmount, 50);
+  assert.equal(result.markupRate, 25);
+});
+
 test("price calculator is available in navigation with all required outputs", async () => {
   const [page, calculator, packageControl, packageRoute, schema, migration, model] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
@@ -113,6 +127,11 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /Capped at RM108/);
   assert.match(calculator, /2\.14%/);
   assert.match(calculator, /需要 Markup/);
+  assert.match(calculator, /Pre-Order Listing/);
+  assert.match(calculator, /markupRate >= 30/);
+  assert.match(calculator, /Markup ≥ 30% · Cannot create/);
+  assert.match(calculator, /markup-editor/);
+  assert.match(model, /markupOverride/);
   assert.match(calculator, /Create Package/);
   assert.match(calculator, /suggestedShopeePrice:result\.requiredPrice/);
   assert.match(page, /setPackagePrefill/);
