@@ -122,3 +122,27 @@ export const packageAuditLog = sqliteTable("package_audit_log", {
   actor: text("actor").notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const designReviews = sqliteTable("design_reviews", {
+  id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id),
+  storeId: text("store_id"),
+  submittedBy: text("submitted_by").notNull(),
+  status: text("status", { enum: ["technical_failed", "awaiting_review"] }).notNull(),
+  summary: text("summary", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const designReviewImages = sqliteTable("design_review_images", {
+  id: text("id").primaryKey(),
+  reviewId: text("review_id").notNull().references(() => designReviews.id),
+  fileName: text("file_name").notNull(),
+  objectKey: text("object_key").notNull(),
+  contentType: text("content_type").notNull(),
+  width: integer("width").notNull(),
+  height: integer("height").notNull(),
+  byteSize: integer("byte_size").notNull(),
+  detectedCategory: text("detected_category").notNull(),
+  result: text("result", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});

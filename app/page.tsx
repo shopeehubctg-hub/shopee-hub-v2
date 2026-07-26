@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import adsData from "./ads-data.json";
 import { PackageControl } from "./package-control";
 import { PriceCalculator } from "./price-calculator";
+import { DesignChecker } from "./design-checker";
 import type { PackagePrefill } from "./calculator-types";
 import { storeSnapshots } from "./store-snapshots";
 import { buildAdvertisingFunds, buildTopUpAction, formatRinggit } from "./advertising-model.js";
@@ -89,7 +90,7 @@ export default function Home() {
   const target = live.target;
   const losses = live.losses;
   const orderSummary = live.orderSummary;
-  const nav = useMemo(() => [["overview","Overview"],["calculator","Price Calculator"],["packages","Packages & Pricing"],["advertising","Advertising"],["orders","Orders & Inventory"],["health","Store Health"],["actions","Client Action Center"]], []);
+  const nav = useMemo(() => [["overview","Overview"],["design","Design Checker"],["calculator","Price Calculator"],["packages","Packages & Pricing"],["advertising","Advertising"],["orders","Orders & Inventory"],["health","Store Health"],["actions","Client Action Center"]], []);
 
   return <main className="app-shell">
     <aside className="side">
@@ -123,6 +124,7 @@ export default function Home() {
 
       {section==="packages" && <div className="page"><PackageControl storeId={storeId || "all"} storeName={allStoresSelected ? "All stores" : (store?.name ?? "Selected store")} prefill={packagePrefill} /></div>}
       {section==="calculator" && <div className="page"><PriceCalculator onCreatePackage={prefill=>{setPackagePrefill(prefill);setSection("packages")}} /></div>}
+      {section==="design" && <div className="page"><DesignChecker storeId={storeId}/></div>}
 
       {section==="advertising" && <div className="page"><div className="page-title"><div><p className="kicker">ADVERTISING</p><h2>Campaign Performance</h2></div><span className="period">This month</span></div><div className="advertising-summary-stack">
         <section className={`ad-funds-card ${adFunds.balanceStatus}`}><div className="ad-funds-status"><div><span>{adFunds.syncStatus === "delayed" ? "Data delayed" : (adFunds.lowBalance ? `Top-up ${formatRinggit(adFunds.recommendedTopUp)} required` : "Ads healthy")}</span><small>{adFunds.topUpOwner === "shopee_hub" ? "Managed by Shopee Hub" : (adFunds.approvalRequired ? "Approval needed" : "Client action")}</small></div><time>{adFunds.sourceUpdatedAt ? `Last updated ${adFunds.sourceUpdatedAt}` : "Last update unavailable"}</time></div><div className="fund-metric"><span>Ad Balance</span><strong>{formatRinggit(adFunds.balance, 2)}</strong></div><div className="fund-metric"><span>Ad Spend</span><strong>{formatRinggit(adFunds.averageDailySpend30d, 2)}</strong></div><div className="fund-metric"><span>Runway</span><strong>{adFunds.runwayDays == null ? "—" : `${Math.floor(adFunds.runwayDays)} days`}</strong></div><div className="fund-metric topup"><span>Top-up</span><strong>{formatRinggit(adFunds.recommendedTopUp)}</strong></div></section>
