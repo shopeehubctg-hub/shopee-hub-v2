@@ -92,7 +92,7 @@ export default function Home() {
   const losses = live.losses;
   const orderSummary = live.orderSummary;
   const fakeSellerCases = Array.isArray(live.fakeSellerCases) ? live.fakeSellerCases as FakeSellerCase[] : undefined;
-  const nav = useMemo(() => [["overview","Overview"],["protection","Fake Seller Reports"],["design","Design Checker"],["calculator","Price Calculator"],["packages","Packages & Pricing"],["advertising","Advertising"],["orders","Orders & Inventory"],["health","Store Health"],["actions","Client Action Center"]], []);
+  const nav = useMemo(() => [["overview","Overview"],["design","Design Checker"],["calculator","Price Calculator"],["packages","Packages & Pricing"],["advertising","Advertising"],["orders","Orders & Inventory"],["health","Store Health"],["protection","Fake Seller Reports"],["actions","Client Action Center"]], []);
 
   return <main className="app-shell">
     <aside className="side">
