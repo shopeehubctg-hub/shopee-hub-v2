@@ -149,10 +149,11 @@ test("advertising summary keeps one balance and removes low-priority cards", asy
   assert.doesNotMatch(summary, /\["Ad Balance"/);
   assert.doesNotMatch(summary, /\["Conversion"/);
   assert.doesNotMatch(summary, /\["Sold Products"/);
-  assert.match(summary, /\["Ad Spend"/);
   assert.match(summary, /\["Ad Sales"/);
   assert.match(summary, /\["ROAS"/);
   assert.match(summary, /\["ACOS"/);
+  assert.match(summary, /\["Cost Per Conversion"/);
+  assert.doesNotMatch(summary, /\["Ad Spend"/);
 });
 
 test("advertising uses three evenly spaced summary rows with rates on row three", async () => {
@@ -162,11 +163,11 @@ test("advertising uses three evenly spaced summary rows with rates on row three"
   ]);
   assert.match(page, /<h2>Campaign Performance<\/h2>/);
   assert.match(page, /<span>Ad Spend<\/span>/);
+  assert.equal((page.match(/<span>Ad Spend<\/span>/g) ?? []).length, 1);
   assert.doesNotMatch(page, /<span>Daily Spend<\/span>/);
   assert.match(page, /ad-secondary-grid[\s\S]*\["CTR"[\s\S]*\["Conversion Rate"/);
   assert.doesNotMatch(page, /<section className="rule-grid">/);
   assert.match(css, /\.advertising-summary-stack\{display:grid;gap:18px\}/);
-  assert.match(css, /\.ad-primary-grid\{[^}]*gap:18px/);
-  assert.match(css, /\.ad-secondary-grid\{[^}]*gap:18px/);
+  assert.match(css, /\.ad-primary-grid,\.ad-secondary-grid\{grid-template-columns:repeat\(4[^}]*gap:18px/);
   assert.match(css, /page-title h2[^}]*text-transform:capitalize/);
 });
