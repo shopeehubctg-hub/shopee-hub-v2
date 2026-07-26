@@ -145,7 +145,7 @@ test("price calculator is available in navigation with all required outputs", as
 
 test("advertising summary keeps one balance and removes low-priority cards", async () => {
   const page = await readFile(new URL("app/page.tsx", root), "utf8");
-  const summary = page.match(/<section className="metric-grid ads ad-performance-grid">([\s\S]*?)<\/section>/)?.[1] ?? "";
+  const summary = page.match(/<section className="metric-grid ads ad-primary-grid">([\s\S]*?)<\/section>/)?.[1] ?? "";
   assert.doesNotMatch(summary, /\["Ad Balance"/);
   assert.doesNotMatch(summary, /\["Conversion"/);
   assert.doesNotMatch(summary, /\["Sold Products"/);
@@ -153,4 +153,20 @@ test("advertising summary keeps one balance and removes low-priority cards", asy
   assert.match(summary, /\["Ad Sales"/);
   assert.match(summary, /\["ROAS"/);
   assert.match(summary, /\["ACOS"/);
+});
+
+test("advertising uses three evenly spaced summary rows with rates on row three", async () => {
+  const [page, css] = await Promise.all([
+    readFile(new URL("app/page.tsx", root), "utf8"),
+    readFile(new URL("app/globals.css", root), "utf8"),
+  ]);
+  assert.match(page, /<h2>Campaign Performance<\/h2>/);
+  assert.match(page, /<span>Ad Spend<\/span>/);
+  assert.doesNotMatch(page, /<span>Daily Spend<\/span>/);
+  assert.match(page, /ad-secondary-grid[\s\S]*\["CTR"[\s\S]*\["Conversion Rate"/);
+  assert.doesNotMatch(page, /<section className="rule-grid">/);
+  assert.match(css, /\.advertising-summary-stack\{display:grid;gap:18px\}/);
+  assert.match(css, /\.ad-primary-grid\{[^}]*gap:18px/);
+  assert.match(css, /\.ad-secondary-grid\{[^}]*gap:18px/);
+  assert.match(css, /page-title h2[^}]*text-transform:capitalize/);
 });
