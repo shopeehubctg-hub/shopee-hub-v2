@@ -18,6 +18,16 @@ async function inspectFile(file:File):Promise<LocalImage>{
   const url=URL.createObjectURL(file); const image=new Image(); image.src=url; await image.decode();
   return {file,url,width:image.naturalWidth,height:image.naturalHeight};
 }
+function localTechnical(item:LocalImage,category:string):Finding[]{
+  const selected=categories.find(option=>option.id===category);
+  const max=category==="cover"?1048576:2097152;
+  const dimensions=category==="cover"?item.width===1200&&item.height===518:category==="description"?item.width===1000&&item.height===2000:category==="banner"?item.width<=1200&&item.height<=2200:item.width===1080&&item.height===1080;
+  return [
+    item.file.size<=max?{level:"pass",title:"文件容量",detail:(item.file.size/1048576).toFixed(2)+" MB，符合上限。"}:{level:"fail",title:"文件容量超标",detail:(item.file.size/1048576).toFixed(2)+" MB；"+selected?.label+"要求不超过 "+max/1048576+" MB。"},
+    dimensions?{level:"pass",title:"画布尺寸",detail:item.width+" × "+item.height+"px，符合标准。"}:{level:"fail",title:"画布尺寸不符合",detail:"目前为 "+item.width+" × "+item.height+"px；要求为 "+selected?.requirement+"。"},
+    {level:"warning",title:"Logo／Watermark 对照",detail:"等待配置品牌标准参考文件后核对。"}
+  ];
+}
 
 export function DesignChecker({storeId}:{storeId:string}){
   const inputRef=useRef<HTMLInputElement>(null);
@@ -44,16 +54,24 @@ export function DesignChecker({storeId}:{storeId:string}){
   async function runCheck(){
     if(!category){setError("请先选择这批图片的用途。");return}
     if(!files.length)return; setError("");setResult(null);setStage("uploading");
-    const form=new FormData(); form.set("storeId",storeId||"all");
-    form.set("category",category);
-    form.set("metadata",JSON.stringify(files.map(item=>({name:item.file.name,width:item.width,height:item.height,size:item.file.size,type:item.file.type}))));
-    files.forEach(item=>form.append("images",item.file));
+    const local=files.map((item,index)=>({id:"local-"+index,fileName:item.file.name,previewUrl:item.url,detectedCategory:categories.find(option=>option.id===category)?.label||category,productType:"等待 ChatGPT 识别",grammar:[{level:"warning" as const,title:"等待 ChatGPT 检查",detail:"请使用下方无 API ChatGPT Review 完成文字检查。"}],technical:localTechnical(item,category),creative:[{level:"warning" as const,title:"等待 ChatGPT 检查",detail:"请使用下方无 API ChatGPT Review 完成吸引力与场景感分析。"}]}));
+    if(local.some(image=>image.technical.some(finding=>finding.level==="fail"))){
+      setResult({reviewId:"local",status:"technical_failed",images:local,advice:["先修正所有 FAILED 的尺寸或文件容量问题。","技术标准通过后，再使用 ChatGPT 检查 Grammar、产品类型、吸引力和场景感。"]});
+      setStage("done");return;
+    }
     const timer=setTimeout(()=>setStage(current=>current==="uploading"?"analysing":current),650);
     try{
-      const response=await fetch("/api/design-reviews",{method:"POST",body:form}); const payload=await response.json();
-      if(!response.ok)throw new Error(payload.error||"检查暂时无法完成");
-      payload.images=payload.images.map((image:ImageResult,index:number)=>({...image,previewUrl:files[index]?.url}));
-      setResult(payload);setStage("done");
+      const collected:ImageResult[]=[];let reviewId="";
+      for(let index=0;index<files.length;index++){
+        const item=files[index],form=new FormData();form.set("storeId",storeId||"all");form.set("category",category);
+        form.set("metadata",JSON.stringify([{name:item.file.name,width:item.width,height:item.height,size:item.file.size,type:item.file.type}]));form.append("images",item.file);
+        const response=await fetch("/api/design-reviews",{method:"POST",body:form});
+        const text=await response.text();let payload:ReviewResult&{error?:string};
+        try{payload=JSON.parse(text)}catch{throw new Error(response.status===413||/Payload Too Large/i.test(text)?"图片仍超过服务器传输上限，请先压缩至 Requirement 内。":"服务器返回了无法读取的结果，请重新尝试。")}
+        if(!response.ok)throw new Error(payload.error||"检查暂时无法完成");
+        reviewId=reviewId||payload.reviewId;collected.push({...payload.images[0],previewUrl:item.url});
+      }
+      setResult({reviewId,status:"awaiting_review",images:collected,advice:["Technical Compliance 已通过。请使用下方 ChatGPT Review 完成 Grammar、产品类型、吸引力和场景感。"]});setStage("done");
     }catch(caught){setStage("idle");setError(caught instanceof Error?caught.message:"检查暂时无法完成")}finally{clearTimeout(timer)}
   }
   function chatPrompt(){
