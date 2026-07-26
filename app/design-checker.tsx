@@ -6,6 +6,13 @@ type Finding={level:"pass"|"warning"|"fail";title:string;detail:string};
 type ImageResult={id:string;fileName:string;previewUrl?:string;detectedCategory:string;productType:string;grammar:Finding[];technical:Finding[];creative:Finding[]};
 type ReviewResult={reviewId:string;status:"technical_failed"|"awaiting_review";images:ImageResult[];advice:string[]};
 const labels={pass:"PASS",warning:"注意",fail:"FAILED"} as const;
+const categories=[
+  {id:"package",label:"配套图",requirement:"1080 × 1080 · Max 2MB"},
+  {id:"product",label:"产品图",requirement:"1080 × 1080 · Max 2MB"},
+  {id:"description",label:"Description 图",requirement:"1000 × 2000 · Max 2MB"},
+  {id:"banner",label:"Shop Banner",requirement:"Max 1200 × 2200 · Max 2MB"},
+  {id:"cover",label:"Cover Photo",requirement:"1200 × 518 · Max 1MB"},
+] as const;
 
 async function inspectFile(file:File):Promise<LocalImage>{
   const url=URL.createObjectURL(file); const image=new Image(); image.src=url; await image.decode();
@@ -16,6 +23,7 @@ export function DesignChecker({storeId}:{storeId:string}){
   const inputRef=useRef<HTMLInputElement>(null);
   const [files,setFiles]=useState<LocalImage[]>([]);
   const [dragging,setDragging]=useState(false);
+  const [category,setCategory]=useState("");
   const [stage,setStage]=useState<"idle"|"uploading"|"analysing"|"done">("idle");
   const [result,setResult]=useState<ReviewResult|null>(null);
   const [error,setError]=useState("");
@@ -32,8 +40,10 @@ export function DesignChecker({storeId}:{storeId:string}){
     setResult(null);setStage("idle");
   }
   async function runCheck(){
+    if(!category){setError("请先选择这批图片的用途。");return}
     if(!files.length)return; setError("");setResult(null);setStage("uploading");
     const form=new FormData(); form.set("storeId",storeId||"all");
+    form.set("category",category);
     form.set("metadata",JSON.stringify(files.map(item=>({name:item.file.name,width:item.width,height:item.height,size:item.file.size,type:item.file.type}))));
     files.forEach(item=>form.append("images",item.file));
     const timer=setTimeout(()=>setStage(current=>current==="uploading"?"analysing":current),650);
@@ -48,6 +58,8 @@ export function DesignChecker({storeId}:{storeId:string}){
   return <div className="design-checker">
     <section className="design-hero"><div><p className="kicker">DESIGN CHECKER</p><h2>上传图片，自动完成三轮检查</h2><p>无需填写产品类型。系统会同时检查英文、技术规范及画面吸引力。</p></div><div className="design-flow"><span><b>01</b>Grammar</span><i/><span><b>02</b>Compliance</span><i/><span><b>03</b>Creative</span></div></section>
     {!result&&<section className="upload-card card">
+      <div className="category-step"><div><span>STEP 1</span><h3>这批是什么图？</h3><p>选择后，系统会使用对应的 Shopee Requirement 检查。</p></div><div className="category-picker">{categories.map(item=><button type="button" key={item.id} className={category===item.id?"selected":""} onClick={()=>setCategory(item.id)}><b>{item.label}</b><small>{item.requirement}</small></button>)}</div></div>
+      <div className="upload-step-title"><span>STEP 2</span><h3>上传图片</h3></div>
       <button className={"drop-zone "+(dragging?"dragging":"")} type="button" onClick={()=>inputRef.current?.click()} onDragOver={event=>{event.preventDefault();setDragging(true)}} onDragLeave={()=>setDragging(false)} onDrop={event=>{event.preventDefault();setDragging(false);addFiles(event.dataTransfer.files)}}>
         <span className="upload-symbol">↑</span><strong>把设计图拖到这里</strong><small>或点击选择图片 · PNG、JPG、WEBP · 最多 20 张</small>
       </button>
