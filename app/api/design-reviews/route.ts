@@ -86,11 +86,25 @@ async function fetchProvider(url:string,init:RequestInit){
   catch(error){if(error instanceof Error&&error.name==="AbortError")throw new ProviderFailure("timeout","Timeout");throw new ProviderFailure("http","Provider request failed")}
   finally{clearTimeout(timer)}
 }
+async function providerErrorMessage(response:Response){
+  try{const payload=await response.json() as {error?:{message?:string}};return payload.error?.message||""}catch{return ""}
+}
+function groqFailure(status:number,detail:string){
+  const normalized=detail.toLowerCase();
+  if(status===400&&normalized.includes("at least 2 pixels"))return new ProviderFailure("http","图片像素太小，宽和高都必须至少 2px。请重新导出图片后再上传");
+  if(status===400&&(normalized.includes("image")||normalized.includes("decode")))return new ProviderFailure("http","Groq 无法读取这张图片。请重新导出为标准 RGB PNG 或 JPG 后再上传");
+  if(status===400)return new ProviderFailure("http","Groq 拒绝了图片请求（400）。请重新导出为标准 RGB PNG 或 JPG 后再上传；若仍失败，请稍后重试");
+  if(status===401||status===403)return new ProviderFailure("config","Groq API Key 无效或没有 Qwen 3.6 27B 权限，请管理员检查 API Key");
+  if(status===429)return new ProviderFailure("rate_limit","Groq 今日额度或请求频率已达上限，请稍后再试");
+  if(status===503||normalized.includes("over capacity"))return new ProviderFailure("server_error","Groq 目前服务繁忙（503）。请稍后再按「开始审核」重试");
+  if(status>=500)return new ProviderFailure("server_error","Groq 服务暂时异常（"+status+"）。请稍后再按「开始审核」重试");
+  return new ProviderFailure("http","Groq 请求失败（"+status+"）。请稍后重试");
+}
 async function callGemini(file:File,meta:Meta,category:Category):Promise<AiResult>{
   const key=runtimeValue("GEMINI_API_KEY");if(!key)throw new ProviderFailure("config","Gemini API key is not configured");
   const data=await imageBase64(file);
   const model=runtimeValue("GEMINI_MODEL")||"gemini-3.6-flash";
-  const response=await fetchProvider("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(model)+":generateContent?key="+encodeURIComponent(key),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{role:"user",parts:[{text:prompt(category,meta)},{inlineData:{mimeType:file.type,data}}]}],generationConfig:{maxOutputTokens:maxOutputTokens(),responseMimeType:"application/json",responseJsonSchema:responseSchema}})});
+  const response=await fetchProvider("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(model)+":generateContent?key="+encodeURIComponent(key),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{role:"user",parts:[{text:prompt(category,meta)},{inlineData:{mimeType:file.type,data}}]}],generationConfig:{thinkingConfig:{thinkingLevel:"minimal"},maxOutputTokens:maxOutputTokens(),responseMimeType:"application/json",responseJsonSchema:responseSchema}})});
   if(response.status===429)throw new ProviderFailure("rate_limit","429 Rate Limit");
   if(response.status===404)throw new ProviderFailure("model_unavailable","Model unavailable");
   if(response.status>=500)throw new ProviderFailure("server_error","Gemini server error ("+response.status+")");
@@ -101,9 +115,10 @@ async function callGemini(file:File,meta:Meta,category:Category):Promise<AiResul
 async function callGroq(file:File,meta:Meta,category:Category):Promise<AiResult>{
   const key=runtimeValue("GROQ_API_KEY");if(!key)throw new ProviderFailure("config","Groq API key is not configured");
   const data=await imageBase64(file);
-  const response=await fetchProvider("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{Authorization:"Bearer "+key,"Content-Type":"application/json"},body:JSON.stringify({model:"qwen/qwen3.6-27b",messages:[{role:"user",content:[{type:"text",text:prompt(category,meta)},{type:"image_url",image_url:{url:"data:"+file.type+";base64,"+data}}]}],response_format:{type:"json_object"},reasoning_format:"hidden",max_completion_tokens:maxOutputTokens()})});
-  if(response.status===429)throw new ProviderFailure("rate_limit","Groq 429 Rate Limit");
-  if(!response.ok)throw new ProviderFailure("http","Groq request failed ("+response.status+")");
+  let response:Response;
+  try{response=await fetchProvider("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{Authorization:"Bearer "+key,"Content-Type":"application/json"},body:JSON.stringify({model:"qwen/qwen3.6-27b",messages:[{role:"user",content:[{type:"text",text:prompt(category,meta)},{type:"image_url",image_url:{url:"data:"+file.type+";base64,"+data}}]}],response_format:{type:"json_object"},reasoning_effort:"none",max_completion_tokens:maxOutputTokens()})})}
+  catch(error){if(error instanceof ProviderFailure&&error.reason==="timeout")throw new ProviderFailure("timeout","Groq 响应超时。请稍后再按「开始审核」重试");throw error}
+  if(!response.ok)throw groqFailure(response.status,await providerErrorMessage(response));
   const payload=await response.json() as {choices?:Array<{message?:{content?:string}}>};
   return parseAiJson(payload.choices?.[0]?.message?.content||"");
 }
