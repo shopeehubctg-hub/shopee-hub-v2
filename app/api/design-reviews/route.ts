@@ -8,7 +8,7 @@ export const dynamic="force-dynamic";
 type Meta={name:string;width:number;height:number;size:number;type:string};
 type Finding={level:"pass"|"warning"|"fail";title:string;detail:string};
 type AiResult={productType:string;grammar:Finding[];creative:Finding[];advice:string[]};
-type FailureReason="rate_limit"|"timeout"|"invalid_json"|"http"|"config";
+type FailureReason="rate_limit"|"timeout"|"invalid_json"|"model_unavailable"|"server_error"|"http"|"config";
 
 const categoryNames={package:"配套图",product:"产品图（9张图）",description:"Description 图",banner:"Shop Banner",cover:"Cover Photo"} as const;
 const categoryRules={
@@ -89,8 +89,11 @@ async function fetchProvider(url:string,init:RequestInit){
 async function callGemini(file:File,meta:Meta,category:Category):Promise<AiResult>{
   const key=runtimeValue("GEMINI_API_KEY");if(!key)throw new ProviderFailure("config","Gemini API key is not configured");
   const data=await imageBase64(file);
-  const response=await fetchProvider("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key="+encodeURIComponent(key),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{role:"user",parts:[{text:prompt(category,meta)},{inlineData:{mimeType:file.type,data}}]}],generationConfig:{maxOutputTokens:maxOutputTokens(),responseMimeType:"application/json",responseJsonSchema:responseSchema}})});
+  const model=runtimeValue("GEMINI_MODEL")||"gemini-3.6-flash";
+  const response=await fetchProvider("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(model)+":generateContent?key="+encodeURIComponent(key),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{role:"user",parts:[{text:prompt(category,meta)},{inlineData:{mimeType:file.type,data}}]}],generationConfig:{maxOutputTokens:maxOutputTokens(),responseMimeType:"application/json",responseJsonSchema:responseSchema}})});
   if(response.status===429)throw new ProviderFailure("rate_limit","429 Rate Limit");
+  if(response.status===404)throw new ProviderFailure("model_unavailable","Model unavailable");
+  if(response.status>=500)throw new ProviderFailure("server_error","Gemini server error ("+response.status+")");
   if(!response.ok)throw new ProviderFailure("http","Gemini request failed ("+response.status+")");
   const payload=await response.json() as {candidates?:Array<{content?:{parts?:Array<{text?:string}>}}>};
   return parseAiJson(payload.candidates?.[0]?.content?.parts?.map(part=>part.text||"").join("")||"");
@@ -104,12 +107,12 @@ async function callGroq(file:File,meta:Meta,category:Category):Promise<AiResult>
   const payload=await response.json() as {choices?:Array<{message?:{content?:string}}>};
   return parseAiJson(payload.choices?.[0]?.message?.content||"");
 }
-function fallbackLabel(reason:FailureReason){return reason==="rate_limit"?"429 Rate Limit":reason==="timeout"?"Timeout":"Invalid JSON"}
+function fallbackLabel(reason:FailureReason){return reason==="rate_limit"?"429 Rate Limit":reason==="timeout"?"Timeout":reason==="model_unavailable"?"Model unavailable":reason==="server_error"?"Gemini server error":"Invalid JSON"}
 async function analyse(file:File,meta:Meta,category:Category){
   try{return {result:await callGemini(file,meta,category),provider:"gemini" as const,fallbackReason:null}}
   catch(error){
     if(!(error instanceof ProviderFailure))throw error;
-    if(!(["rate_limit","timeout","invalid_json"] as FailureReason[]).includes(error.reason))throw error;
+    if(!(["rate_limit","timeout","invalid_json","model_unavailable","server_error"] as FailureReason[]).includes(error.reason))throw error;
     return {result:await callGroq(file,meta,category),provider:"groq" as const,fallbackReason:fallbackLabel(error.reason)};
   }
 }

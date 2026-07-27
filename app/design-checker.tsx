@@ -68,10 +68,10 @@ export function DesignChecker({storeId}:{storeId:string}){
   const technicalFailed=result?.status==="technical_failed";
   const technicalFailures=result?.images.flatMap(image=>image.technical.filter(finding=>finding.level==="fail"))??[];
   const primaryTechnicalFailure=technicalFailures[0];
-  const providerLabel=result?.provider==="groq"?"Groq · Qwen 3.6 27B":result?.provider==="gemini"?"Gemini 2.5 Flash":"Dashboard Technical Check";
+  const providerLabel=result?.provider==="groq"?"Groq · Qwen 3.6 27B":result?.provider==="gemini"?"Gemini 3.6 Flash":"Dashboard Technical Check";
   return <div className="design-checker">
     <section className="design-hero"><div><p className="kicker">DESIGN REQUIREMENT</p><h2>上传 1 张设计图，自动完成技术与 AI 审核</h2><p>先执行 Dashboard Technical Check；通过后才发送对应类别 Requirement 给 AI。</p></div><div className="design-flow"><span><b>01</b>Technical</span><i/><span><b>02</b>Gemini</span><i/><span><b>03</b>Result</span></div></section>
-    <section className="ai-routing-card card"><div><span>PRIMARY</span><strong>Gemini 2.5 Flash</strong><small>正常请求的首选审核模型</small></div><i>→</i><div><span>FALLBACK</span><strong>Groq · Qwen 3.6 27B</strong><small>429 / Timeout / Invalid JSON 自动切换</small></div><ul><li>max_output_tokens: 1600</li><li>一次 1 张图</li><li>最多 fallback 1 次</li><li>仅发送所选 Requirement</li></ul></section>
+    <section className="ai-routing-card card"><div><span>PRIMARY</span><strong>Gemini 3.6 Flash</strong><small>当前账号可用的首选审核模型</small></div><i>→</i><div><span>FALLBACK</span><strong>Groq · Qwen 3.6 27B</strong><small>429 / Timeout / Model unavailable / Invalid JSON 自动切换</small></div><ul><li>max_output_tokens: 1600</li><li>一次 1 张图</li><li>最多 fallback 1 次</li><li>仅发送所选 Requirement</li></ul></section>
     {!result&&<section className="upload-card card">
       <div className="category-step"><div><span>STEP 1</span><h3>这张是什么图？</h3><p>系统只会把所选类别的 Requirement 发送给审核模型。</p></div><div className="category-picker">{categories.map(item=><button type="button" key={item.id} className={category===item.id?"selected":""} onClick={()=>setCategory(item.id)}><b>{item.label}</b><small>{item.requirement}</small></button>)}</div>{category&&<div className="category-requirements"><strong>{categories.find(item=>item.id===category)?.label} 检查标准</strong><ul>{categories.find(item=>item.id===category)?.rules.map(rule=><li key={rule}>{rule}</li>)}</ul></div>}</div>
       <div className="upload-step-title"><span>STEP 2</span><h3>上传 1 张图片</h3></div>

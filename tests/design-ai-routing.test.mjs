@@ -10,10 +10,10 @@ test("design review accepts exactly one image",()=>{
   assert.doesNotMatch(checker,/\bmultiple\b/);
 });
 
-test("Gemini is primary and only the requested failures switch to Groq",()=>{
-  assert.match(route,/models\/gemini-2\.5-flash:generateContent/);
+test("Gemini is primary and recoverable failures switch to Groq",()=>{
+  assert.match(route,/gemini-3\.6-flash/);
   assert.match(route,/qwen\/qwen3\.6-27b/);
-  assert.match(route,/\["rate_limit","timeout","invalid_json"\]/);
+  assert.match(route,/\["rate_limit","timeout","invalid_json","model_unavailable","server_error"\]/);
   assert.match(route,/return \{result:await callGroq/);
 });
 
