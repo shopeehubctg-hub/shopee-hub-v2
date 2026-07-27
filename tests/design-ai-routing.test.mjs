@@ -23,3 +23,9 @@ test("output and daily quota controls stay bounded",()=>{
   assert.match(route,/Math\.ceil\(dailyLimit\*\.8\)/);
   assert.match(checker,/DAILY QUOTA WARNING/);
 });
+
+test("technical failure banner explains the problem and next action",()=>{
+  assert.match(checker,/primaryTechnicalFailure\?\.title/);
+  assert.match(checker,/请根据以上建议修改后再上传/);
+  assert.match(checker,/修改后再上传/);
+});

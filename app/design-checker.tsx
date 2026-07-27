@@ -66,6 +66,8 @@ export function DesignChecker({storeId}:{storeId:string}){
     }catch(caught){setStage("idle");setError(caught instanceof Error?caught.message:"检查暂时无法完成")}finally{clearTimeout(timer)}
   }
   const technicalFailed=result?.status==="technical_failed";
+  const technicalFailures=result?.images.flatMap(image=>image.technical.filter(finding=>finding.level==="fail"))??[];
+  const primaryTechnicalFailure=technicalFailures[0];
   const providerLabel=result?.provider==="groq"?"Groq · Qwen 3.6 27B":result?.provider==="gemini"?"Gemini 2.5 Flash":"Dashboard Technical Check";
   return <div className="design-checker">
     <section className="design-hero"><div><p className="kicker">DESIGN REQUIREMENT</p><h2>上传 1 张设计图，自动完成技术与 AI 审核</h2><p>先执行 Dashboard Technical Check；通过后才发送对应类别 Requirement 给 AI。</p></div><div className="design-flow"><span><b>01</b>Technical</span><i/><span><b>02</b>Gemini</span><i/><span><b>03</b>Result</span></div></section>
@@ -80,7 +82,7 @@ export function DesignChecker({storeId}:{storeId:string}){
     </section>}
     {result&&<section className="design-results">
       {result.quotaWarning&&<div className="quota-warning"><b>DAILY QUOTA WARNING</b><span>今日 AI 审核额度已使用 {result.dailyUsage} / {result.dailyLimit}（达到 80%）。</span></div>}
-      <div className={"review-decision "+(technicalFailed?"failed":"waiting")}><div><span>{technicalFailed?"TECHNICAL COMPLIANCE FAILED":"AI REVIEW COMPLETE"}</span><h3>{technicalFailed?"请先修改技术问题":"审核结果已返回"}</h3><p>{technicalFailed?"图片没有发送给 AI，避免浪费额度。":"结果仍由 Shopee Hub 作最终确认。"}</p></div><strong>{providerLabel}</strong></div>
+      <div className={"review-decision "+(technicalFailed?"failed":"waiting")}><div><span>{technicalFailed?"TECHNICAL COMPLIANCE FAILED":"AI REVIEW COMPLETE"}</span><h3>{technicalFailed?(primaryTechnicalFailure?.title||"技术规格不符合"):"审核结果已返回"}</h3>{technicalFailed?<><p>{primaryTechnicalFailure?.detail||"图片没有达到所选类别的技术规格。"}</p><p className="failure-action">请根据以上建议修改后再上传。图片尚未发送给 AI，不会消耗审核额度。</p>{technicalFailures.length>1&&<ul className="technical-failure-list">{technicalFailures.slice(1).map((finding,index)=><li key={index}><b>{finding.title}：</b>{finding.detail}</li>)}</ul>}</>:<p>结果仍由 Shopee Hub 作最终确认。</p>}</div><strong>{technicalFailed?"修改后再上传":providerLabel}</strong></div>
       {result.fallbackReason&&<div className="fallback-note"><b>已自动切换 Groq</b><span>Gemini 出现 {result.fallbackReason}；本次仅执行 1 次 fallback。</span></div>}
       <div className="result-toolbar"><div><p className="kicker">CHECK RESULT</p><h3>1 张图片</h3></div><button type="button" onClick={()=>{setResult(null);setStage("idle")}}>重新上传</button></div>
       <div className="result-list">{result.images.map((image,index)=><article className="result-card card" key={image.id}><div className="result-image"><img src={image.previewUrl} alt={image.fileName}/><span>{index+1}</span></div><div className="result-body"><header><div><h4>{image.fileName}</h4><p>AI 识别：{image.detectedCategory} · {image.productType}</p></div><span className={image.technical.some(item=>item.level==="fail")?"failed":"checked"}>{image.technical.some(item=>item.level==="fail")?"FAILED":"CHECKED"}</span></header><div className="finding-columns">{[["Grammar",image.grammar],["Technical Compliance",image.technical],["吸引力 · 场景感",image.creative]].map(([title,items])=><section key={String(title)}><h5>{String(title)}</h5>{(items as Finding[]).map((item,itemIndex)=><div className={"finding "+item.level} key={itemIndex}><b>{labels[item.level]} · {item.title}</b><p>{item.detail}</p></div>)}</section>)}</div></div></article>)}</div>
