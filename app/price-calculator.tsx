@@ -56,6 +56,7 @@ export function PriceCalculator({ onCreatePackage }:Props) {
     setPackages(current=>[...current,{id:Math.max(0,...current.map(row=>row.id))+1,name:`Package ${String.fromCharCode(65+current.length)}`,facebookPrice:0,markupRate:null}]);
   }
   function createPackage(row:PackageRow, result:ReturnType<typeof calculateShopeePrice>, suggested:ReturnType<typeof calculateShopeePrice>) {
+    if (result.markupRate >= 30) return;
     const categoryItem = COMMISSION_CATEGORIES[Number(category)];
     const calculatorSettings:CalculatorSnapshot = {
       source:"Shopee Pricing Calculator",

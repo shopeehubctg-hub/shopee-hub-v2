@@ -139,6 +139,7 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /需要 Markup/);
   assert.match(calculator, /Pre-Order Listing/);
   assert.match(calculator, /markupRate >= 30/);
+  assert.match(calculator, /if \(result\.markupRate >= 30\) return/);
   assert.match(calculator, /Markup ≥ 30% · Cannot create/);
   assert.match(calculator, /markup-editor/);
   assert.match(model, /markupOverride/);

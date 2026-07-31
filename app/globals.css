@@ -53,7 +53,7 @@ html,body,button,select,input,textarea,.header h1,.page-title h2,.card h3,.metri
 
 /* Calculator result layout: aligned, responsive, and intentionally scroll-free. */
 .calculator-results{overflow:hidden}
-.package-results-header,.package-result-main{display:grid;grid-template-columns:minmax(130px,1.15fr) minmax(120px,.9fr) minmax(135px,1fr) minmax(135px,1fr) minmax(105px,.8fr) minmax(145px,1.05fr) minmax(120px,.8fr);column-gap:12px;align-items:center}
+.package-results-header,.package-result-main{display:grid;grid-template-columns:minmax(125px,1.1fr) minmax(115px,.85fr) minmax(130px,.95fr) minmax(130px,.95fr) minmax(105px,.75fr) minmax(140px,1fr) minmax(185px,1.15fr);column-gap:12px;align-items:center}
 .package-results-header{padding:0 16px 10px;color:#7d8992;font-size:11px;font-weight:800}
 .package-result-list{display:grid;gap:12px}
 .package-result-card{border:1px solid #e1dcd5;border-radius:14px;background:#fff;overflow:hidden}
@@ -69,7 +69,7 @@ html,body,button,select,input,textarea,.header h1,.page-title h2,.card h3,.metri
 .result-metric strong{font-size:15px;white-space:nowrap}
 .result-metric small{color:#89939c;font-size:9px;line-height:1.35}
 .result-metric.suggested-price strong{font-size:18px}
-.package-result-actions{display:flex;align-items:center;justify-content:flex-end;gap:7px}.create-package-link{min-height:36px;border:0;border-radius:9px;background:#9b2325;color:#fff;padding:8px 10px;font-size:9px;font-weight:900;white-space:nowrap;cursor:pointer}.create-package-link:disabled{opacity:.4;cursor:not-allowed}
+.package-result-actions{min-width:0;display:grid;grid-template-columns:minmax(0,1fr) 30px;align-items:center;gap:7px}.create-package-link{width:100%;min-height:36px;border:0;border-radius:9px;background:#9b2325;color:#fff;padding:8px 10px;font-size:9px;font-weight:900;white-space:nowrap;cursor:pointer}.create-package-link:disabled{opacity:.45;cursor:not-allowed;pointer-events:none}
 .fee-breakdown{border-top:1px solid #ece7e1;background:#faf8f5}
 .fee-breakdown summary{padding:11px 16px;color:#526671;font-size:10px;font-weight:800;cursor:pointer;list-style-position:inside}
 .fee-breakdown-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:0;padding:0 16px 14px}
@@ -134,7 +134,7 @@ body{background:var(--paper);color:var(--ink)}
 @media(max-width:1100px){.side{background:#fff}.side nav button.active{background:#fff1f0;color:var(--red)}}
 
 /* Calculator toggle captions and editable markup guardrail. */
-.setup-toggle-field{display:grid;grid-template-rows:74px auto}.setup-toggle-field>small{margin-top:8px;color:#667781;font-size:10px;line-height:1.35}.setup-toggle-field .setup-toggle{color:#536570;font-weight:800}.setup-toggle-field .setup-toggle span{display:grid}.markup-editor>div{height:38px;display:flex;align-items:center;border:1px solid #d8dde3;border-radius:9px;background:#fff;overflow:hidden}.markup-editor input{width:100%;min-width:0;height:36px;border:0;padding:8px 4px 8px 9px;color:var(--red);font:800 14px/1 "Noto Sans",sans-serif}.markup-editor b{padding-right:9px;color:var(--red);font-size:12px}.markup-blocked{border-color:#efb5b2}.markup-warning{flex-basis:100%;color:var(--red);font-size:8px;font-weight:800;text-align:right;white-space:nowrap}
+.setup-toggle-field{display:grid;grid-template-rows:74px auto}.setup-toggle-field>small{margin-top:8px;color:#667781;font-size:10px;line-height:1.35}.setup-toggle-field .setup-toggle{color:#536570;font-weight:800}.setup-toggle-field .setup-toggle span{display:grid}.markup-editor>div{height:38px;display:flex;align-items:center;border:1px solid #d8dde3;border-radius:9px;background:#fff;overflow:hidden}.markup-editor input{width:100%;min-width:0;height:36px;border:0;padding:8px 4px 8px 9px;color:var(--red);font:800 14px/1 "Noto Sans",sans-serif}.markup-editor b{padding-right:9px;color:var(--red);font-size:12px}.markup-blocked{border-color:#efb5b2}.markup-warning{grid-column:1/-1;display:block;margin-top:1px;color:var(--red);font-size:8px;font-weight:800;line-height:1.35;text-align:left;white-space:normal}
 @media(max-width:680px){.setup-toggle-field{grid-template-rows:auto auto}.setup-toggle-field>small{margin-bottom:6px}}
 
 /* Advertising owner view */
