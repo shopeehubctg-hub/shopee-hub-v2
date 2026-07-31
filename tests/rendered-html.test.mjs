@@ -125,11 +125,10 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /Commission Fee/);
   assert.match(calculator, /Service Fee/);
   assert.match(calculator, /Product Category/);
-  assert.match(calculator, /Cashback Program/);
-  assert.doesNotMatch(calculator, /Cashback Programme/);
-  assert.match(calculator, /className="setup-toggle"/);
-  assert.match(calculator, /checked=\{onCashback\}/);
-  assert.ok(calculator.indexOf("Custom Commission Fee") < calculator.indexOf("Cashback Program"));
+  assert.match(calculator, /Cashback Program 已固定开启/);
+  assert.match(calculator, /cashbackProgramme:true/);
+  assert.doesNotMatch(calculator, /checked=\{onCashback\}/);
+  assert.doesNotMatch(calculator, /Service Fee Scenario/);
   assert.match(calculator, /Custom Commission Fee/);
   assert.doesNotMatch(calculator, /No campaign service fee/);
   assert.match(model, /Essential Goods/);
@@ -144,6 +143,12 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /markup-editor/);
   assert.match(model, /markupOverride/);
   assert.match(calculator, /Create Package/);
+  assert.match(calculator, /SCENARIOS\.map/);
+  assert.match(calculator, /Non-Campaign Day/);
+  assert.match(calculator, /Campaign Day/);
+  assert.match(calculator, /Shopee Voucher Discount/);
+  assert.match(calculator, /Co-Fund Voucher/);
+  assert.doesNotMatch(calculator, /showAdvanced/);
   assert.match(calculator, /suggestedShopeePrice:result\.requiredPrice/);
   assert.match(page, /setPackagePrefill/);
   assert.match(page, /setSection\("packages"\)/);
