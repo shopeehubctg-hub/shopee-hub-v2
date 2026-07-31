@@ -30,6 +30,7 @@ const adBalanceAliases: Record<string, string> = {
   "Zeero Skincare Official": "Zeero MY",
   "SkinDae MY by CTG4u": "SkinDae Official Store",
   "Naturelish Eco Plus by CTG4u": "Eco Plus by Naturelish",
+  "Kata Skincare Malaysia": "KATA Marine Malaysia",
 };
 
 function parseCsvLine(line: string) {

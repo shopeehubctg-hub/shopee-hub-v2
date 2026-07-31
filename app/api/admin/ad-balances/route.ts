@@ -31,6 +31,7 @@ const aliases: Record<string, string> = {
   "SkinDae MY by CTG4u": "SkinDae Official Store",
   "Naturelish Eco Plus by CTG4u": "Eco Plus by Naturelish",
   "Scale Gem Collagen by CTG4u": "Scale Gem Collagen by CTG4u",
+  "Kata Skincare Malaysia": "KATA Marine Malaysia",
 };
 
 type BalanceRow = { date: string; storeName: string; balance: number };
