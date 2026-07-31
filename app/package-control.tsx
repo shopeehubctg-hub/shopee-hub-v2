@@ -17,7 +17,7 @@ type PackageItem = {
   promotionType:"monthly"|"custom"; originalPrice:number; sellingPrice:number; effectiveFrom:string; effectiveTo?:string|null;
   components:ComponentLine[]; platforms:PlatformLine[]; sheetSyncStatus?:"pending"|"synced"|"failed"; history?:HistoryLine[];
 };
-type Props = { storeId:string; storeName:string; canCreate?:boolean; prefill?:PackagePrefill|null };
+type Props = { storeId:string; storeName:string; canCreate?:boolean; prefills?:PackagePrefill[]; onPrefillsAccepted?:()=>void };
 
 const PLATFORM_NAMES:PlatformName[] = ["Shopee","Lazada","TikTok Shop"];
 const HISTORY_SHEET_URL = "https://docs.google.com/spreadsheets/d/1mpB7KVCGzP_9IXYVbhJZsLsndM4ladU3cJre5cfALAA/edit#gid=2129880014";
@@ -36,7 +36,7 @@ function monthDates(month:string) {
   return { from:`${month}-01`, to:`${month}-${String(lastDay).padStart(2,"0")}` };
 }
 
-export function PackageControl({ storeId, storeName, canCreate=true, prefill=null }:Props) {
+export function PackageControl({ storeId, storeName, canCreate=true, prefills=[], onPrefillsAccepted }:Props) {
   const [items,setItems] = useState<PackageItem[]>([]);
   const [source,setSource] = useState("");
   const [filter,setFilter] = useState("all");
@@ -51,6 +51,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefill=nul
   const [components,setComponents] = useState<ComponentLine[]>([blankLine()]);
   const [platforms,setPlatforms] = useState<PlatformLine[]>([{platform:"Shopee",packageSku:""}]);
   const [calculatorSettings,setCalculatorSettings] = useState<CalculatorSnapshot|null>(null);
+  const [prefillQueue,setPrefillQueue] = useState<PackagePrefill[]>([]);
 
   async function load() {
     const response = await fetch(`/api/packages?storeId=${encodeURIComponent(storeId || "all")}`,{cache:"no-store"});
@@ -61,15 +62,20 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefill=nul
     }
   }
   useEffect(()=>{ load(); },[storeId]);
-  useEffect(()=>{
-    if (!prefill) return;
+  function openPrefill(prefill:PackagePrefill) {
     resetForm();
     const price = prefill.sellingPrice.toFixed(2);
     setForm(current=>({...current,name:prefill.name,originalPrice:price,sellingPrice:price,changeNote:"Created from Shopee Pricing Calculator"}));
     setCalculatorSettings(prefill.calculatorSettings);
     setMessage("");
     setShowCreate(true);
-  },[prefill?.requestId]);
+  }
+  useEffect(()=>{
+    if (!prefills.length) return;
+    openPrefill(prefills[0]);
+    setPrefillQueue(prefills.slice(1));
+    onPrefillsAccepted?.();
+  },[prefills[0]?.requestId]);
 
   const visible = useMemo(()=>items.filter(item =>
     (filter==="all"||item.status===filter) &&
@@ -88,9 +94,16 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefill=nul
   }
 
   function openNew() {
+    setPrefillQueue([]);
     resetForm();
     setMessage("");
     setShowCreate(true);
+  }
+
+  function closeCreate() {
+    setShowCreate(false);
+    setPrefillQueue([]);
+    resetForm();
   }
 
   function togglePlatform(platform:PlatformName) {
@@ -119,9 +132,15 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefill=nul
     } else {
       setMessageType(data.sheetSyncStatus==="synced"?"success":"warning");
       setMessage(`Version ${data.version} saved · ${data.added.length} added / ${data.removed.length} removed · Google Sheet ${data.sheetSyncStatus}`);
-      setShowCreate(false);
-      resetForm();
       await load();
+      const next = prefillQueue[0];
+      if (next) {
+        setPrefillQueue(current=>current.slice(1));
+        openPrefill(next);
+      } else {
+        setShowCreate(false);
+        resetForm();
+      }
     }
     setSaving(false);
   }
@@ -192,7 +211,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefill=nul
     {!visible.length&&<div className="package-empty"><strong>No packages in this view</strong><span>Choose another store/filter or create the first package.</span></div>}
 
     {showCreate&&<div className="package-modal" role="dialog" aria-modal="true"><div className="package-form">
-      <div className="package-form-head"><div><p className="kicker">{editingPackageId?"NEW VERSION":"NEW PACKAGE"}</p><h3>{editingPackageId?"Create next version":"Create a package"}</h3><span>{storeName}</span></div><button onClick={()=>setShowCreate(false)} aria-label="Close">×</button></div>
+      <div className="package-form-head"><div><p className="kicker">{editingPackageId?"NEW VERSION":"NEW PACKAGE"}</p><h3>{editingPackageId?"Create next version":"Create a package"}</h3><span>{storeName}{prefillQueue.length?` · ${prefillQueue.length} ready package${prefillQueue.length===1?"":"s"} remaining`:""}</span></div><button onClick={closeCreate} aria-label="Close">×</button></div>
 
       <section className="form-section"><div className="form-section-title"><span>1</span><div><h4>Package details</h4><p>名称、市场与价格</p></div></div>
         <div className="form-grid">
@@ -235,7 +254,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefill=nul
       </section>
 
       <label className="change-note">Change note<input value={form.changeNote} onChange={event=>setForm({...form,changeNote:event.target.value})} placeholder="What changed and why?"/></label>
-      <div className="form-actions"><button className="secondary" onClick={()=>setShowCreate(false)}>Cancel</button><button onClick={save} disabled={saving}>{saving?"Saving…":editingPackageId?"Save new version":"Create package"}</button></div>
+      <div className="form-actions"><button className="secondary" onClick={closeCreate}>Cancel</button><button onClick={save} disabled={saving}>{saving?"Saving…":prefillQueue.length?`Create & continue (${prefillQueue.length} more)`:editingPackageId?"Save new version":"Create package"}</button></div>
     </div></div>}
   </div>;
 }

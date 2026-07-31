@@ -12,7 +12,7 @@ type FeeSettings = {
   shopeeVoucher:number; sellerVoucher:number; cofundVoucher:number;
   sellerShipping:number; facebookShipping:number; extraProfit:number;
 };
-type Props = { onCreatePackage?:(prefill:PackagePrefill)=>void };
+type Props = { onCreatePackage?:(prefill:PackagePrefill)=>void; onCreatePackages?:(prefills:PackagePrefill[])=>void };
 
 const blankMarkups = ():Record<ServiceMode,string|null> => ({nonCampaign:null,campaign:null});
 const INITIAL_PACKAGES:PackageRow[] = [
@@ -25,7 +25,7 @@ const money = (value:number) => `RM ${Number.isFinite(value) ? value.toFixed(2) 
 const pct = (value:number) => `${Number.isFinite(value) ? value.toFixed(2) : "0.00"}%`;
 const positive = (value:string) => Math.max(0, Number(value) || 0);
 
-export function PriceCalculator({ onCreatePackage }:Props) {
+export function PriceCalculator({ onCreatePackage, onCreatePackages }:Props) {
   const [packages,setPackages] = useState(INITIAL_PACKAGES);
   const [category,setCategory] = useState<string>("28");
   const [customCommission,setCustomCommission] = useState("");
@@ -60,8 +60,8 @@ export function PriceCalculator({ onCreatePackage }:Props) {
   function addPackage() {
     setPackages(current=>[...current,{id:Math.max(0,...current.map(row=>row.id))+1,name:`Package ${String.fromCharCode(65+current.length)}`,facebookPrice:0,markupRates:blankMarkups()}]);
   }
-  function createPackage(row:PackageRow, mode:ServiceMode, result:ReturnType<typeof calculateShopeePrice>, suggested:ReturnType<typeof calculateShopeePrice>) {
-    if (result.markupRate >= 30) return;
+  function packagePrefill(row:PackageRow, mode:ServiceMode, result:ReturnType<typeof calculateShopeePrice>, suggested:ReturnType<typeof calculateShopeePrice>, requestId=Date.now()) {
+    if (!row.name.trim() || !result.valid || result.markupRate >= 30) return null;
     const categoryItem = COMMISSION_CATEGORIES[Number(category)];
     const calculatorSettings:CalculatorSnapshot = {
       source:"Shopee Pricing Calculator",
@@ -94,8 +94,18 @@ export function PriceCalculator({ onCreatePackage }:Props) {
       targetPayout:result.targetPayout,
       actualPayout:result.payout,
     };
-    onCreatePackage?.({requestId:Date.now(),name:row.name,sellingPrice:result.requiredPrice,calculatorSettings});
+    return {requestId,name:row.name,sellingPrice:result.requiredPrice,calculatorSettings};
   }
+  function createPackage(row:PackageRow, mode:ServiceMode, result:ReturnType<typeof calculateShopeePrice>, suggested:ReturnType<typeof calculateShopeePrice>) {
+    if (result.markupRate >= 30) return;
+    const prefill = packagePrefill(row,mode,result,suggested);
+    if (prefill) onCreatePackage?.(prefill);
+  }
+
+  const readyPackages = calculations.flatMap(({row,scenarios})=>scenarios.flatMap(({mode,suggested,result},index)=>{
+    const prefill = packagePrefill(row,mode,result,suggested,Date.now()+row.id*10+index);
+    return prefill ? [prefill] : [];
+  }));
 
   return <div className="price-calculator">
     <section className="calculator-hero">
@@ -143,7 +153,7 @@ export function PriceCalculator({ onCreatePackage }:Props) {
     </section>
 
     <section className="calculator-table calculator-results card">
-      <div className="calculator-section-head"><div><p className="kicker">STEP 2 · PACKAGE RESULTS</p><h3>Campaign 与 Non-Campaign 建议卖价</h3></div><button onClick={addPackage}>+ Add package</button></div>
+      <div className="calculator-section-head"><div><p className="kicker">STEP 2 · PACKAGE RESULTS</p><h3>Campaign 与 Non-Campaign 建议卖价</h3></div><div className="calculator-result-head-actions"><button className="create-all-packages" disabled={!readyPackages.length} onClick={()=>onCreatePackages?.(readyPackages)}>Create All Ready ({readyPackages.length})</button><button onClick={addPackage}>+ Add package</button></div></div>
       <div className="dual-result-head" aria-hidden="true"><span>收费情境</span><span>建议 Shopee 卖价</span><span>顾客 Voucher 后价钱</span><span>需要 Markup</span><span>实际到手</span><span>操作</span></div>
       <div className="package-result-list">{calculations.map(({row,scenarios})=><article className="package-result-card dual-package-card" key={row.id}>
         <div className="dual-package-inputs">

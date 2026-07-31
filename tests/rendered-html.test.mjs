@@ -119,6 +119,10 @@ test("price calculator is available in navigation with all required outputs", as
   ]);
   assert.match(page, /Price Calculator/);
   assert.match(page, /<PriceCalculator/);
+  assert.match(page, /onCreatePackages/);
+  assert.match(calculator, /Create All Ready/);
+  assert.match(calculator, /readyPackages/);
+  assert.match(packageControl, /prefillQueue/);
   assert.match(calculator, /顾客 Voucher 后价钱/);
   assert.match(calculator, /实际到手/);
   assert.match(calculator, /Transaction Fee/);

@@ -62,7 +62,7 @@ export default function Home() {
   const [adStatusFilter, setAdStatusFilter] = useState("All");
   const [adSearch, setAdSearch] = useState("");
   const [adPage, setAdPage] = useState(1);
-  const [packagePrefill, setPackagePrefill] = useState<PackagePrefill|null>(null);
+  const [packagePrefills, setPackagePrefills] = useState<PackagePrefill[]>([]);
 
   async function load(id?: string) {
     setLoading(true);
@@ -136,8 +136,8 @@ export default function Home() {
         </section>
       </div>}
 
-      {section==="packages" && <div className="page"><PackageControl storeId={storeId || "all"} storeName={allStoresSelected ? "All stores" : (store?.name ?? "Selected store")} prefill={packagePrefill} /></div>}
-      {section==="calculator" && <div className="page"><PriceCalculator onCreatePackage={prefill=>{setPackagePrefill(prefill);setSection("packages")}} /></div>}
+      {section==="packages" && <div className="page"><PackageControl storeId={storeId || "all"} storeName={allStoresSelected ? "All stores" : (store?.name ?? "Selected store")} prefills={packagePrefills} onPrefillsAccepted={()=>setPackagePrefills([])} /></div>}
+      {section==="calculator" && <div className="page"><PriceCalculator onCreatePackage={prefill=>{setPackagePrefills([prefill]);setSection("packages")}} onCreatePackages={prefills=>{setPackagePrefills(prefills);setSection("packages")}} /></div>}
       {section==="design" && <div className="page"><DesignChecker storeId={storeId}/></div>}
       {section==="protection" && <div className="page"><FakeSellerReport storeName={store?.name ?? "Selected store"} allStores={allStoresSelected} cases={fakeSellerCases}/></div>}
 
