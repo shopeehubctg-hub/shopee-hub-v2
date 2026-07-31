@@ -11,7 +11,8 @@ import { storeSnapshots } from "./store-snapshots";
 import { buildAdvertisingFunds, buildTopUpAction, formatRinggit } from "./advertising-model.js";
 
 type Store = { id: string; name: string; platform: string; contacts: { project: string; href: string }[] };
-type DashboardResponse = { stores: Store[]; selectedStoreId: string | null; snapshot: { payload: any; importedAt: string } | null };
+type DashboardResponse = { stores: Store[]; selectedStoreId: string | null; snapshot: { payload: any; importedAt: string } | null; adBalance: { balance:number; balanceDate:string; sourceUpdatedAt:string; syncStatus:string } | null };
+type ClientAction = { title: string; client: string; due: string; type: string; action: string; href?: string; generated?: boolean };
 
 const overviewFallback = [
   ["Valid Order Sales", "RM 18,711.82", "+21.4%"], ["Valid Orders", "654", "+20.7%"],
@@ -44,6 +45,12 @@ const actionFallback = [
   { title:"Join CoFund", client:"J Packaging", due:"Today", type:"Campaign", action:"Review" },
   { title:"待批准广告预算 RM 800", client:"J Packaging", due:"19 Jul", type:"Urgent", action:"Approve" },
 ];
+const projectDriveActions: Record<string, ClientAction[]> = {
+  "AgePros By Swissmed": [
+    { title:"Image Resources Folder", client:"AgePros By Swissmed", due:"Available now", type:"Drive", action:"Open Drive", href:"https://drive.google.com/drive/folders/1Xh9rHfeCym5e_zVVnPWAk6W99l6KrIC_" },
+    { title:"Product Details Folder", client:"AgePros By Swissmed", due:"Available now", type:"Drive", action:"Open Drive", href:"https://drive.google.com/drive/folders/18KuBDljRuXFGYfC-DXdzuxeQSipga91_" },
+  ],
+};
 
 function money(value: string) { return value; }
 
@@ -73,17 +80,22 @@ export default function Home() {
   const live = data?.snapshot?.payload ?? staticSnapshot ?? {};
   const noSample = Boolean(live.noSample);
   const overview = Array.isArray(live.overview) ? live.overview : overviewFallback;
-  const ads = live.advertising ?? (allStoresSelected ? allStoresAdvertising : adFallback);
+  const adsBase = live.advertising ?? (allStoresSelected ? allStoresAdvertising : adFallback);
+  const ads = data?.adBalance && !allStoresSelected
+    ? { ...adsBase, balance:data.adBalance.balance, sourceUpdatedAt:data.adBalance.sourceUpdatedAt, syncStatus:data.adBalance.syncStatus }
+    : adsBase;
   const importedStoreAds = adsData.filter((ad:any) => allStoresSelected || ad.store === store?.name);
   const adCampaigns = Array.isArray(live.adCampaigns) ? live.adCampaigns : (noSample ? [] : (importedStoreAds.length ? importedStoreAds : adCampaignFallback));
   const filteredAdCampaigns = adCampaigns.filter((ad:any) => (adStatusFilter === "All" || ad.status === adStatusFilter) && `${ad.name} ${ad.store ?? ""}`.toLowerCase().includes(adSearch.toLowerCase()));
   const adPageCount = Math.max(1, Math.ceil(filteredAdCampaigns.length / 25));
   const visibleAdCampaigns = filteredAdCampaigns.slice((adPage - 1) * 25, adPage * 25);
   const orders = Array.isArray(live.orders) ? live.orders : (noSample ? [] : ordersFallback);
-  const clientActions = Array.isArray(live.clientActions) ? live.clientActions : (noSample ? [] : actionFallback);
+  const driveActions = store ? (projectDriveActions[store.name] ?? []) : [];
+  const clientActions = Array.isArray(live.clientActions) ? live.clientActions : (driveActions.length || noSample ? [] : actionFallback);
   const adFunds = buildAdvertisingFunds(ads);
   const generatedTopUpAction = buildTopUpAction(adFunds, store?.name ?? "Selected store");
-  const visibleClientActions = generatedTopUpAction ? [generatedTopUpAction, ...clientActions.filter((action:any)=>action.type !== "Top-up" || !action.generated)] : clientActions;
+  const visibleClientActionsBase = [...driveActions, ...clientActions];
+  const visibleClientActions = generatedTopUpAction ? [generatedTopUpAction, ...visibleClientActionsBase.filter((action:ClientAction)=>action.type !== "Top-up" || !action.generated)] : visibleClientActionsBase;
   const warningOrders = orders.filter((order:any) => order.status === "Expired" || order.status === "Urgent");
   const importantWarningCount = warningOrders.length + (adFunds.lowBalance ? 1 : 0);
   const updated = allStoresSelected ? "17 Jul 2026, 3:13 am" : (live.sourceUpdated ?? (data?.snapshot?.importedAt ? new Date(data.snapshot.importedAt).toLocaleString("en-MY", { dateStyle:"medium", timeStyle:"short" }) : "Awaiting store import"));

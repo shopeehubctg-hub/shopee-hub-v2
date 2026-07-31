@@ -98,6 +98,11 @@ export function calculateFeesForPrice(price, fees) {
   return { feeBase, transactionFee, commissionFee, serviceFee, uncappedServiceFee, preorderFee, payout };
 }
 
+/**
+ * @param {Record<string, any>} row
+ * @param {Record<string, any>} fees
+ * @param {number | null | undefined} markupOverride
+ */
 export function calculateShopeePrice(row, fees, markupOverride = null) {
   const uncappedRate = (fees.transaction + fees.commission + (fees.isPreorder ? fees.preorder : 0)) / 100;
   const valid = uncappedRate >= 0 && uncappedRate < 1 && fees.service >= 0;

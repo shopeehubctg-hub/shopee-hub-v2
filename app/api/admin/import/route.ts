@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Tenant, customer email, store and period are required" }, { status: 400 });
   }
 
-  const db = getDb();
+  const db = await getDb();
   await db.insert(tenants).values({ id: body.tenant.id, name: body.tenant.name }).onConflictDoUpdate({
     target: tenants.id,
     set: { name: body.tenant.name, active: true },

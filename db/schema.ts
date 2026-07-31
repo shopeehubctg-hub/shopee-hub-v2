@@ -36,6 +36,18 @@ export const dashboardSnapshots = sqliteTable("dashboard_snapshots", {
   importedAt: text("imported_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const adBalances = sqliteTable("ad_balances", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  tenantId: text("tenant_id").notNull().references(() => tenants.id),
+  storeId: text("store_id").notNull().references(() => stores.id),
+  sourceStoreName: text("source_store_name").notNull(),
+  balanceCents: integer("balance_cents").notNull(),
+  balanceDate: text("balance_date").notNull(),
+  importedAt: text("imported_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("ad_balance_store_date_idx").on(table.storeId, table.balanceDate),
+]);
+
 export const managementActions = sqliteTable("management_actions", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   tenantId: text("tenant_id").notNull().references(() => tenants.id),

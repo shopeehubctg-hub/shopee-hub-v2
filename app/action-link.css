@@ -18,6 +18,7 @@
 }
 
 .type.campaign { background: #e9eff4; color: #16465d; }
+.type.drive { background: #eaf4ef; color: #1f6b44; }
 
 .logo img {
   background: transparent !important;

@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { customerUsers, dashboardSnapshots, managementActions, stores, tenants } from "../../../db/schema";
+import { adBalances, customerUsers, dashboardSnapshots, managementActions, stores, tenants } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { contactsForStore } from "../../project-group-links";
 
@@ -22,7 +22,7 @@ export async function GET(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error: "Authentication required" }, { status: 401 });
 
-  const db = getDb();
+  const db = await getDb();
   const [membership] = await db.select({ tenantId: customerUsers.tenantId })
     .from(customerUsers)
     .where(eq(customerUsers.email, user.email.toLowerCase()))
@@ -49,6 +49,10 @@ export async function GET(request: Request) {
       : eq(dashboardSnapshots.tenantId, tenant.id))
     .orderBy(desc(dashboardSnapshots.importedAt), desc(dashboardSnapshots.id))
     .limit(1);
+  const latestBalance = allStoresRequested || !selectedStore ? [] : await db.select().from(adBalances)
+    .where(and(eq(adBalances.tenantId, tenant.id), eq(adBalances.storeId, selectedStore.id)))
+    .orderBy(desc(adBalances.balanceDate), desc(adBalances.importedAt), desc(adBalances.id))
+    .limit(1);
   const actions = await db.select().from(managementActions)
     .where(selectedStore
       ? and(eq(managementActions.tenantId, tenant.id), eq(managementActions.storeId, selectedStore.id))
@@ -61,6 +65,13 @@ export async function GET(request: Request) {
     stores: visibleStores.map(({ id, name, platform }) => ({ id, name, platform, contacts: contactsForStore(name) })),
     selectedStoreId: allStoresRequested ? "all" : (selectedStore?.id ?? null),
     snapshot: latest[0] ?? null,
+    adBalance: latestBalance[0] ? {
+      balance: latestBalance[0].balanceCents / 100,
+      balanceDate: latestBalance[0].balanceDate,
+      sourceStoreName: latestBalance[0].sourceStoreName,
+      sourceUpdatedAt: `${latestBalance[0].balanceDate} · 9:00 am`,
+      syncStatus: "current",
+    } : null,
     actions,
   }, { headers: { "Cache-Control": "private, no-store" } });
 }

@@ -49,7 +49,7 @@ const seedPackages = [
 ];
 
 async function membershipFor(email: string) {
-  const db = getDb();
+  const db = await getDb();
   const [membership] = await db.select({ tenantId:customerUsers.tenantId, role:customerUsers.role })
     .from(customerUsers).where(eq(customerUsers.email, email.toLowerCase())).limit(1);
   return membership;
@@ -105,7 +105,7 @@ export async function GET(request: Request) {
   const membership = await membershipFor(user.email);
   if (!membership) return Response.json({ error:"No workspace assigned" }, { status:403 });
   const storeId = new URL(request.url).searchParams.get("storeId");
-  const db = getDb();
+  const db = await getDb();
   const rows = await db.select().from(packages)
     .where(storeId && storeId !== "all"
       ? and(eq(packages.tenantId, membership.tenantId), eq(packages.storeId, storeId))
@@ -219,7 +219,7 @@ export async function POST(request: Request) {
     return Response.json({ error:"Prices must be positive and selling price cannot exceed original price" }, { status:400 });
   }
 
-  const db = getDb();
+  const db = await getDb();
   const requestedPackageId = body.packageId ? String(body.packageId) : null;
   for (const line of platforms) {
     const conflict = await db.select({ packageId:packagePlatformSkus.packageId }).from(packagePlatformSkus)

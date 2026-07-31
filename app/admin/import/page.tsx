@@ -34,6 +34,8 @@ const pilotPayload = {
 export default function AdminImportPage() {
   const [payload, setPayload] = useState(JSON.stringify(pilotPayload, null, 2));
   const [status, setStatus] = useState("");
+  const [balancePayload, setBalancePayload] = useState('{"rows":[]}');
+  const [balanceStatus, setBalanceStatus] = useState("");
 
   async function importData() {
     setStatus("正在更新…");
@@ -51,6 +53,22 @@ export default function AdminImportPage() {
     }
   }
 
+  async function importBalances() {
+    setBalanceStatus("正在更新…");
+    try {
+      const response = await fetch("/api/admin/ad-balances", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: balancePayload,
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "更新失败");
+      setBalanceStatus(`完成：${result.updatedCount} 家店${result.unmatched?.length ? `；${result.unmatched.length} 家未匹配` : ""}`);
+    } catch (error) {
+      setBalanceStatus(error instanceof Error ? error.message : "更新失败");
+    }
+  }
+
   return (
     <main style={{ maxWidth: 960, margin: "40px auto", padding: 24, fontFamily: "Arial, sans-serif" }}>
       <p style={{ color: "#6b7280", letterSpacing: 1 }}>NORTHSTAR 管理员工具</p>
@@ -60,6 +78,14 @@ export default function AdminImportPage() {
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 16 }}>
         <button onClick={importData} style={{ background: "#111827", color: "white", border: 0, borderRadius: 10, padding: "12px 22px", fontWeight: 700, cursor: "pointer" }}>更新客户 Dashboard</button>
         <span>{status}</span>
+      </div>
+      <hr style={{ margin: "40px 0", border: 0, borderTop: "1px solid #e5e7eb" }} />
+      <h2>Ad Balance 批量更新</h2>
+      <p>从 Shopee Ads Report 读取当天数据后，只更新余额，不覆盖广告表现。</p>
+      <textarea aria-label="Ad Balance 批量数据" value={balancePayload} onChange={(event) => setBalancePayload(event.target.value)} style={{ width: "100%", minHeight: 260, padding: 16, border: "1px solid #d1d5db", borderRadius: 12, fontFamily: "monospace" }} />
+      <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 16 }}>
+        <button onClick={importBalances} style={{ background: "#111827", color: "white", border: 0, borderRadius: 10, padding: "12px 22px", fontWeight: 700, cursor: "pointer" }}>更新 Ad Balance</button>
+        <span>{balanceStatus}</span>
       </div>
     </main>
   );
