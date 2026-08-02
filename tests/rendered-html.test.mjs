@@ -75,9 +75,11 @@ test("Shopee calculator reverse-solves listing price and itemized fees", async (
 
 test("Shopee calculator applies category SST, pre-order fee and RM108 service cap", async () => {
   const { calculateShopeePrice, commissionRateFor, COMMISSION_CATEGORIES, SERVICE_MODES } = await import("../app/price-calculator-model.js");
-  const beauty = COMMISSION_CATEGORIES.findIndex(item=>item.name==="Beauty");
-  assert.ok(Math.abs(commissionRateFor(beauty,true) - 12.96) < 0.000001);
-  assert.ok(Math.abs(commissionRateFor(beauty,false) - 18.36) < 0.000001);
+  const beauty = COMMISSION_CATEGORIES.findIndex(item=>item.name.startsWith("Beauty ›"));
+  assert.equal(COMMISSION_CATEGORIES.length, 428);
+  assert.ok(Math.abs(commissionRateFor(beauty,true,"","2026-08-13") - 12.96) < 0.000001);
+  assert.ok(Math.abs(commissionRateFor(beauty,true,"","2026-08-14") - 16.2) < 0.000001);
+  assert.ok(Math.abs(commissionRateFor(beauty,false,"","2026-08-14") - 18.36) < 0.000001);
   assert.equal(commissionRateFor(beauty,true,"9.25"), 9.25);
   assert.deepEqual(Object.keys(SERVICE_MODES), ["nonCampaign","campaign"]);
   const base = {
@@ -141,8 +143,9 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /2\.14%/);
   assert.match(calculator, /需要 Markup/);
   assert.match(calculator, /Pre-Order Listing/);
-  assert.match(calculator, /markupRate >= 30/);
-  assert.match(calculator, /if \(result\.markupRate >= 30\) return/);
+  assert.match(calculator, /result\.markupRate >= 30/);
+  assert.match(calculator, /positive\(enteredMarkup\) >= 30/);
+  assert.match(calculator, /if \(markupBlocked\(row,mode,result\)\) return/);
   assert.match(calculator, /Markup ≥ 30% · Cannot create/);
   assert.match(calculator, /markup-editor/);
   assert.match(model, /markupOverride/);
