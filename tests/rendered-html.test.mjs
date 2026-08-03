@@ -43,10 +43,13 @@ test("store selector follows the Link Directory store names", async () => {
   assert.match(route, /header\.indexOf\("Project Group Link"\)/);
   assert.match(route, /header\.indexOf\("Google Drive Link"\)/);
   assert.match(route, /directoryStores\.map/);
+  assert.match(route, /tenantStores[\s\S]*\.map\(\(stored\)/);
+  assert.match(route, /stored\.id !== "shopee-kata-care-malaysia"/);
+  assert.match(route, /"shopee-kata-marine-malaysia": "Kata Skincare Malaysia"/);
+  assert.match(route, /"shopee-kata-singapore": "Kata Skincare Singapore"/);
   assert.match(route, /cache: "no-store"/);
   assert.doesNotMatch(route, /connectedShopeeStoreNames\.map/);
-  assert.match(page, /\{s\.name\}<\/option>/);
-  assert.doesNotMatch(page, /\{s\.name\} · \{s\.platform\}/);
+  assert.match(page, /\{s\.name\} · \{s\.platform\.replace\("Shopee ", ""\)\}<\/option>/);
   assert.doesNotMatch(page, /62 connected Shopee stores/);
 });
 

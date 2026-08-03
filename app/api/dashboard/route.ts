@@ -2,7 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { adBalances, customerUsers, dashboardSnapshots, managementActions, stores, tenants } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
-import { contactsForStore } from "../../project-group-links";
+import { contactsForStore, directoryStoreNameFor } from "../../project-group-links";
 
 export const dynamic = "force-dynamic";
 
@@ -173,17 +173,29 @@ export async function GET(request: Request) {
 
   const tenantStores = await db.select().from(stores).where(eq(stores.tenantId, tenant.id));
   const directoryStores = await readLinkDirectory();
-  const storedByDirectoryName = new Map<string, typeof tenantStores[number]>();
-  for (const store of tenantStores) {
-    if (!storedByDirectoryName.has(store.name)) storedByDirectoryName.set(store.name, store);
-    if (store.bigSellerName && !storedByDirectoryName.has(store.bigSellerName)) storedByDirectoryName.set(store.bigSellerName, store);
-  }
   const directoryByName = new Map(directoryStores.map((store) => [store.name, store]));
-  const visibleStores = directoryStores.map(({ name }) => {
-    const stored = storedByDirectoryName.get(name);
-    return stored ? { ...stored, storedName: stored.name, name } : {
-      id: storeIdFor(name), tenantId: tenant.id, name, storedName: name, platform: isSingaporeStore(name) ? "Shopee SG" : "Shopee MY", bigSellerName: name, createdAt: "",
+  const directoryOrder = new Map(directoryStores.map((store, index) => [store.name, index]));
+  const kataDisplayNames: Record<string, string> = {
+    "shopee-kata-marine-malaysia": "Kata Skincare Malaysia",
+    "shopee-kata-singapore": "Kata Skincare Singapore",
+  };
+  const visibleStores = (tenantStores.length ? tenantStores
+    .filter((stored) => stored.id !== "shopee-kata-care-malaysia")
+    .map((stored) => {
+    const candidates = [stored.bigSellerName, stored.name, directoryStoreNameFor(stored.bigSellerName ?? ""), directoryStoreNameFor(stored.name)];
+    const directoryName = candidates.find((name) => name && directoryByName.has(name)) ?? directoryStoreNameFor(stored.name);
+    return {
+      ...stored,
+      storedName: stored.name,
+      directoryName,
+      name: kataDisplayNames[stored.id] ?? directoryByName.get(directoryName)?.name ?? stored.name,
     };
+  }) : directoryStores.map(({ name }) => ({
+    id: storeIdFor(name), tenantId: tenant.id, name, storedName: name, directoryName: name,
+    platform: isSingaporeStore(name) ? "Shopee SG" : "Shopee MY", bigSellerName: name, createdAt: "",
+  }))).sort((a, b) => {
+    const directoryDifference = (directoryOrder.get(a.directoryName) ?? Number.MAX_SAFE_INTEGER) - (directoryOrder.get(b.directoryName) ?? Number.MAX_SAFE_INTEGER);
+    return directoryDifference || a.platform.localeCompare(b.platform) || a.name.localeCompare(b.name);
   });
   const requestedStoreId = new URL(request.url).searchParams.get("storeId");
   const allStoresRequested = !requestedStoreId || requestedStoreId === "all";
@@ -203,7 +215,7 @@ export async function GET(request: Request) {
     .limit(1);
   const sheetBalance = selectedStore ? await readSheetBalance(selectedStore.name, selectedStore.storedName) : null;
   const topUpOwner = selectedStore
-    ? directoryByName.get(selectedStore.name)?.topUpOwner ?? topUpOwnerFallbacks[selectedStore.name] ?? null
+    ? directoryByName.get(selectedStore.directoryName)?.topUpOwner ?? topUpOwnerFallbacks[selectedStore.directoryName] ?? null
     : null;
   const actions = await db.select().from(managementActions)
     .where(selectedStore
@@ -214,8 +226,8 @@ export async function GET(request: Request) {
 
   return Response.json({
     customer: { id: tenant.id, name: tenant.name },
-    stores: visibleStores.map(({ id, name, platform }) => {
-      const directory = directoryByName.get(name);
+    stores: visibleStores.map(({ id, name, platform, directoryName }) => {
+      const directory = directoryByName.get(directoryName);
       return {
         id,
         name,

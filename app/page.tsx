@@ -186,7 +186,7 @@ export default function Home() {
       <header className="header">
         <div><p className="kicker">SHOPEE HUB PERFORMANCE</p><h1>{allStoresSelected ? "All Stores" : (store?.name ?? "J Packaging")}</h1></div>
         <div className="toolbar">
-          <label>Store<select value={storeId} onChange={e=>{setStoreId(e.target.value);setAdPage(1);load(e.target.value)}}><option value="all">All Stores</option>{data?.stores.map(s=><option key={s.id} value={s.id}>{s.name}</option>) ?? <option value="j-packaging-shopee">J Packaging</option>}</select></label>
+          <label>Store<select value={storeId} onChange={e=>{setStoreId(e.target.value);setAdPage(1);load(e.target.value)}}><option value="all">All Stores</option>{data?.stores.map(s=><option key={s.id} value={s.id}>{s.name} · {s.platform.replace("Shopee ", "")}</option>) ?? <option value="j-packaging-shopee">J Packaging · MY</option>}</select></label>
           <button onClick={()=>load(storeId)} disabled={loading}>{loading?"Updating…":"Update data"}</button>
         </div>
       </header>

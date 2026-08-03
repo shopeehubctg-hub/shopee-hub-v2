@@ -15,8 +15,9 @@ const links: Record<string, ProjectContact[]> = {
 };
 const aliases: Record<string,string> = {
   "Berlanco SG":"Berlanco Beauty Official", "Beyoute Singapore":"Beyoute Official Store", "Bonlife SG":"Bonlife Official Store", "Bugucare by Naturelish":"Naturelish Bugucare by CTG4u", "CTG4U Malaysia":"CTG4u Malaysia", "Dr Smile Whitening SG by CTG4u.sg":"Dr Smile Whitening by CTG4u", "Eco Plus by Naturelish":"Naturelish Eco Plus by CTG4u", "Go Herb Singapore":"GoHerb Official Store",
-  "iLady Haircare SG by CTG4u":"iLady Haircare by CTG4u", "ILady SG":"iLady Haircare by CTG4u", "KATA Care Malaysia":"Kata Skincare Malaysia", "KATA Marine Malaysia":"Kata Skincare Malaysia", "KATA Singapore":"Kata Skincare Malaysia", "livact.os.sg":"LivAct Official Store", "M Formula SG":"MFormula Official", "MCS Malaysia":"MCS Skincare by CTG4u", "MCS Singapore":"MCS Skincare by CTG4u",
+  "iLady Haircare SG by CTG4u":"iLady Haircare by CTG4u", "ILady SG":"iLady Haircare by CTG4u", "KATA Care Malaysia":"Kata Skincare Malaysia", "KATA Marine Malaysia":"Kata Skincare Malaysia", "KATA Singapore":"Kata Skincare Malaysia", "Kata Skincare Singapore":"Kata Skincare Malaysia", "livact.os.sg":"LivAct Official Store", "M Formula SG":"MFormula Official", "MCS Malaysia":"MCS Skincare by CTG4u", "MCS Singapore":"MCS Skincare by CTG4u",
   "NatureLish Healthcare":"NatureLish Recovit by CTG4u", "Naturelish Healthcare Singapore":"NatureLish Recovit by CTG4u", "Ninoko Singapore":"NINOKO Official Store", "NomoQ Malaysia":"NomoQ by CTG4u", "Scale Gem SG":"Scale Gem Collagen by CTG4u", "Scale Story SG":"Scale Story Official Store", "SkinDae Official Store":"SkinDae MY by CTG4u", "SkinDae SG":"SkinDae MY by CTG4u",
   "Uro360 by CTG4u":"Naturelish Uro360 by CTG4u", "Zeero MY":"Zeero Skincare Official", "Zeero SG":"Zeero Skincare Official", "Zeero Skincare SG":"Zeero Skincare Official",
 };
-export function contactsForStore(storeName: string): ProjectContact[] { return links[aliases[storeName] ?? storeName] ?? []; }
+export function directoryStoreNameFor(storeName: string): string { return aliases[storeName] ?? storeName; }
+export function contactsForStore(storeName: string): ProjectContact[] { return links[directoryStoreNameFor(storeName)] ?? []; }
