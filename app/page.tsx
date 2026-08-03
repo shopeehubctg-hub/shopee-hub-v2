@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import adsData from "./ads-data.json";
+import fullAdHistory from "./full-ad-history.json";
 import { PackageControl } from "./package-control";
 import { PriceCalculator } from "./price-calculator";
 import { DesignChecker } from "./design-checker";
@@ -14,6 +15,7 @@ type Store = { id: string; name: string; platform: string; contacts: { project: 
 type ManagementAction = { actionDate: string; category: string; title: string; detail: string };
 type DashboardResponse = { stores: Store[]; selectedStoreId: string | null; snapshot: { payload: any; importedAt: string } | null; adBalance: { balance:number; balanceDate:string; sourceUpdatedAt:string; syncStatus:string; topUpOwner?:string | null } | null; actions?: ManagementAction[] };
 type ClientAction = { title: string; client: string; due: string; type: string; action: string; href?: string; message?: string; generated?: boolean };
+type DailyAd = { date:string; store:string; spend:number; sales:number; roas:number; views:number; clicks:number; ctr:number; conversion:number; sold:number; acos:number };
 
 const overviewFallback = [
   ["Valid Order Sales", "RM 18,711.82", "+21.4%"], ["Valid Orders", "654", "+20.7%"],
@@ -61,6 +63,20 @@ function parseCurrency(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function formatMoney(value: number) {
+  return `RM ${value.toLocaleString("en-MY", { minimumFractionDigits:2, maximumFractionDigits:2 })}`;
+}
+
+function aggregateDailyAds(rows: DailyAd[]) {
+  const spend = rows.reduce((sum, row) => sum + row.spend, 0);
+  const sales = rows.reduce((sum, row) => sum + row.sales, 0);
+  const views = rows.reduce((sum, row) => sum + row.views, 0);
+  const clicks = rows.reduce((sum, row) => sum + row.clicks, 0);
+  const conversion = rows.reduce((sum, row) => sum + row.conversion, 0);
+  const sold = rows.reduce((sum, row) => sum + row.sold, 0);
+  return { spend, sales, views, clicks, conversion, sold, roas:spend > 0 ? sales / spend : 0, ctr:views > 0 ? clicks / views : 0, acos:sales > 0 ? spend / sales : 0 };
+}
+
 function managementActionToClientAction(action: ManagementAction, client: string): ClientAction {
   return {
     title: action.title,
@@ -80,6 +96,7 @@ export default function Home() {
   const [adStatusFilter, setAdStatusFilter] = useState("All");
   const [adSearch, setAdSearch] = useState("");
   const [adPage, setAdPage] = useState(1);
+  const [adDate, setAdDate] = useState("");
   const [packagePrefills, setPackagePrefills] = useState<PackagePrefill[]>([]);
 
   async function load(id?: string) {
@@ -100,10 +117,27 @@ export default function Home() {
   const overview = Array.isArray(live.overview) ? live.overview : overviewFallback;
   const adsBase = live.advertising ?? (allStoresSelected ? allStoresAdvertising : adFallback);
   const importedStoreAds = adsData.filter((ad:any) => allStoresSelected || ad.store === store?.name);
-  const importedAverageDailySpend = importedStoreAds.reduce((total:number, ad:any) => total + parseCurrency(ad.spend), 0) / 30;
-  const ads = data?.adBalance && !allStoresSelected
-    ? { ...adsBase, balance:data.adBalance.balance, averageDailySpend30d:adsBase.averageDailySpend30d ?? importedAverageDailySpend, sourceUpdatedAt:data.adBalance.sourceUpdatedAt, syncStatus:data.adBalance.syncStatus, topUpOwner:data.adBalance.topUpOwner ?? adsBase.topUpOwner }
+  const relevantDailyAds = (fullAdHistory as DailyAd[]).filter(row => allStoresSelected || row.store === store?.name);
+  const availableAdDates = [...new Set(relevantDailyAds.map(row=>row.date))].sort((a,b)=>b.localeCompare(a));
+  const selectedAdDate = adDate && availableAdDates.includes(adDate) ? adDate : (availableAdDates[0] ?? "");
+  const selectedDailyAds = relevantDailyAds.filter(row=>row.date === selectedAdDate);
+  const dailyAd = selectedDailyAds.length ? aggregateDailyAds(selectedDailyAds) : null;
+  const averageDailySpend = relevantDailyAds.length
+    ? relevantDailyAds.reduce((total,row)=>total+row.spend,0) / Math.max(1, new Set(relevantDailyAds.map(row=>row.date)).size)
+    : importedStoreAds.reduce((total:number, ad:any) => total + parseCurrency(ad.spend), 0) / 30;
+  const balanceAds = data?.adBalance && !allStoresSelected
+    ? { ...adsBase, balance:data.adBalance.balance, averageDailySpend30d:adsBase.averageDailySpend30d ?? averageDailySpend, sourceUpdatedAt:data.adBalance.sourceUpdatedAt, syncStatus:data.adBalance.syncStatus, topUpOwner:data.adBalance.topUpOwner ?? adsBase.topUpOwner }
     : adsBase;
+  const ads = dailyAd ? {
+    ...balanceAds,
+    averageDailySpend30d:averageDailySpend,
+    spend:formatMoney(dailyAd.spend), sales:formatMoney(dailyAd.sales), roas:`${dailyAd.roas.toFixed(2)}×`,
+    views:dailyAd.views.toLocaleString("en-MY"), clicks:dailyAd.clicks.toLocaleString("en-MY"),
+    ctr:`${(dailyAd.ctr * 100).toFixed(2)}%`, conversion:String(dailyAd.conversion), sold:String(dailyAd.sold),
+    acos:`${(dailyAd.acos * 100).toFixed(2)}%`,
+    cpc:dailyAd.conversion > 0 ? formatMoney(dailyAd.spend / dailyAd.conversion) : "—",
+    conversionRate:dailyAd.clicks > 0 ? `${(dailyAd.conversion / dailyAd.clicks * 100).toFixed(2)}%` : "0.00%",
+  } : balanceAds;
   const adCampaigns = Array.isArray(live.adCampaigns) ? live.adCampaigns : (noSample ? [] : (importedStoreAds.length ? importedStoreAds : adCampaignFallback));
   const filteredAdCampaigns = adCampaigns.filter((ad:any) => (adStatusFilter === "All" || ad.status === adStatusFilter) && `${ad.name} ${ad.store ?? ""}`.toLowerCase().includes(adSearch.toLowerCase()));
   const adPageCount = Math.max(1, Math.ceil(filteredAdCampaigns.length / 25));
@@ -161,11 +195,11 @@ export default function Home() {
       {section==="design" && <div className="page"><DesignChecker storeId={storeId}/></div>}
       {section==="protection" && <div className="page"><FakeSellerReport storeName={store?.name ?? "Selected store"} allStores={allStoresSelected} cases={fakeSellerCases}/></div>}
 
-      {section==="advertising" && <div className="page"><div className="page-title"><div><p className="kicker">ADVERTISING</p><h2>Campaign Performance</h2></div><span className="period">This month</span></div><div className="advertising-summary-stack">
-        <section className={`ad-funds-card ${adFunds.balanceStatus}`}><div className="ad-funds-status"><div><span>{adFunds.syncStatus === "delayed" ? "Data delayed" : (adFunds.lowBalance ? `Top-up ${formatRinggit(adFunds.recommendedTopUp)} required` : "Ads healthy")}</span><small>{adFunds.topUpOwner === "shopee_hub" ? "Managed by Shopee Hub" : (adFunds.approvalRequired ? "Approval needed" : "Client action")}</small></div><time>{adFunds.sourceUpdatedAt ? `Last updated ${adFunds.sourceUpdatedAt}` : "Last update unavailable"}</time></div><div className="fund-metric"><span>Ad Balance</span><strong>{formatRinggit(adFunds.balance, 2)}</strong></div><div className="fund-metric"><span>Ad Spend</span><strong>{formatRinggit(adFunds.averageDailySpend30d, 2)}</strong></div><div className="fund-metric"><span>Runway</span><strong>{adFunds.runwayDays == null ? "—" : `${Math.floor(adFunds.runwayDays)} days`}</strong></div><div className="fund-metric topup"><span>Top-up</span><strong>{formatRinggit(adFunds.recommendedTopUp)}</strong></div></section>
+      {section==="advertising" && <div className="page"><div className="page-title"><div><p className="kicker">ADVERTISING</p><h2>Daily Performance</h2></div><label className="ad-date-selector"><span>Date</span><select aria-label="Advertising date" value={selectedAdDate} onChange={event=>setAdDate(event.target.value)} disabled={!availableAdDates.length}>{availableAdDates.map(date=><option key={date} value={date}>{new Date(`${date}T00:00:00`).toLocaleDateString("en-MY",{day:"2-digit",month:"short",year:"numeric"})}</option>)}</select></label></div><div className="advertising-summary-stack">
+        <section className={`ad-funds-card ${adFunds.balanceStatus}`}><div className="ad-funds-status"><div><span>{adFunds.syncStatus === "delayed" ? "Data delayed" : (adFunds.lowBalance ? `Top-up ${formatRinggit(adFunds.recommendedTopUp)} required` : "Ads healthy")}</span><small>{adFunds.topUpOwner === "shopee_hub" ? "Managed by Shopee Hub" : (adFunds.approvalRequired ? "Approval needed" : "Client action")}</small></div><time>{adFunds.sourceUpdatedAt ? `Last updated ${adFunds.sourceUpdatedAt}` : "Last update unavailable"}</time></div><div className="fund-metric"><span>Ad Balance</span><strong>{formatRinggit(adFunds.balance, 2)}</strong></div><div className="fund-metric"><span>Daily Spend</span><strong>{ads.spend ?? "—"}</strong></div><div className="fund-metric"><span>Runway</span><strong>{adFunds.runwayDays == null ? "—" : `${Math.floor(adFunds.runwayDays)} days`}</strong></div><div className="fund-metric topup"><span>Top-up</span><strong>{formatRinggit(adFunds.recommendedTopUp)}</strong></div></section>
         <section className="metric-grid ads ad-primary-grid">{[["Ad Sales",ads.sales,"sales"],["ROAS",ads.roas,"roas"],["ACOS",ads.acos,"acos"],["Cost Per Conversion",ads.cpc,"cost"]].map(m=><article className={`metric ad-metric ${m[2]}`} key={m[0]}><span>{m[0]}</span><strong>{money(m[1])}</strong></article>)}</section>
         <section className="metric-grid ads ad-secondary-grid">{[["Views",ads.views,"reach",null],["Clicks",ads.clicks,"reach",null],["CTR",ads.ctr,"rate",parseFloat(ads.ctr)<2],["Conversion Rate",ads.conversionRate,"rate",parseFloat(ads.conversionRate)<2]].map(m=><article className={`metric ad-metric ${m[2]} ${m[3]===true?"danger":""}`} key={m[0] as string}><span>{m[0]}</span><strong>{money(m[1] as string)}</strong>{m[3]!==null&&<em>{m[3]?"Warning":"Normal"}</em>}</article>)}</section></div>
-        <section className="campaign-section"><div className="campaign-heading"><div><p className="kicker">EVERY AD</p><h3>Individual advertisement data</h3><small>{adCampaigns.length} ads · {adCampaigns.filter((a:any)=>a.status==="Ongoing").length} ongoing · {adCampaigns.filter((a:any)=>a.status==="Paused").length} paused · {adCampaigns.filter((a:any)=>a.status==="Ended").length} ended</small></div><div className="campaign-counts"><span>{adCampaigns.filter((a:any)=>a.status==="Active"||a.status==="Ongoing").length} Active</span><span className="paused-count">{adCampaigns.filter((a:any)=>a.status==="Paused").length} Paused</span></div></div><div className="ad-controls"><div>{["All","Ongoing","Paused","Ended"].map(status=><button key={status} className={adStatusFilter===status?"active":""} onClick={()=>{setAdStatusFilter(status);setAdPage(1)}}>{status}</button>)}</div><input value={adSearch} onChange={e=>{setAdSearch(e.target.value);setAdPage(1)}} placeholder="Search ad or store" aria-label="Search advertisements"/></div><div className="card table-card"><table className="campaign-table"><thead><tr><th>Advertisement</th><th>Status</th><th>Budget</th><th>Spend</th><th>Ad Sales</th><th>ROAS</th><th>Views</th><th>Clicks</th><th>CTR</th><th>Conversion</th><th>Sold</th><th>ACOS</th></tr></thead><tbody>{visibleAdCampaigns.map((a:any)=><tr key={a.id ?? a.name} className={a.status==="Paused"?"paused-row":""}><td><b>{a.name}</b><small>{a.store ? `${a.store} · ${a.type}` : a.type}</small></td><td><span className={`ad-status ${a.status.toLowerCase()}`}>{a.status}</span></td><td>{a.budget}</td><td>{a.spend}</td><td>{a.sales}</td><td><b>{a.roas}</b></td><td>{a.views}</td><td>{a.clicks}</td><td className={parseFloat(a.ctr)<2?"cell-warning":""}>{a.ctr}</td><td className={parseFloat(a.conversionRate)<2?"cell-warning":""}>{a.conversionRate}</td><td>{a.sold}</td><td>{a.acos}</td></tr>)}</tbody></table></div><div className="ad-pagination"><button disabled={adPage===1} onClick={()=>setAdPage(p=>Math.max(1,p-1))}>← Previous</button><span>Page {adPage} of {adPageCount} · {filteredAdCampaigns.length} ads</span><button disabled={adPage===adPageCount} onClick={()=>setAdPage(p=>Math.min(adPageCount,p+1))}>Next →</button></div></section>
+        <section className="campaign-section"><div className="campaign-heading"><div><p className="kicker">EVERY AD</p><h3>Individual advertisement data</h3><small>Latest campaign snapshot · date selector applies to summary metrics only · {adCampaigns.length} ads</small></div><div className="campaign-counts"><span>{adCampaigns.filter((a:any)=>a.status==="Active"||a.status==="Ongoing").length} Active</span><span className="paused-count">{adCampaigns.filter((a:any)=>a.status==="Paused").length} Paused</span></div></div><div className="ad-controls"><div>{["All","Ongoing","Paused","Ended"].map(status=><button key={status} className={adStatusFilter===status?"active":""} onClick={()=>{setAdStatusFilter(status);setAdPage(1)}}>{status}</button>)}</div><input value={adSearch} onChange={e=>{setAdSearch(e.target.value);setAdPage(1)}} placeholder="Search ad or store" aria-label="Search advertisements"/></div><div className="card table-card"><table className="campaign-table"><thead><tr><th>Advertisement</th><th>Status</th><th>Budget</th><th>Spend</th><th>Ad Sales</th><th>ROAS</th><th>Views</th><th>Clicks</th><th>CTR</th><th>Conversion</th><th>Sold</th><th>ACOS</th></tr></thead><tbody>{visibleAdCampaigns.map((a:any)=><tr key={a.id ?? a.name} className={a.status==="Paused"?"paused-row":""}><td><b>{a.name}</b><small>{a.store ? `${a.store} · ${a.type}` : a.type}</small></td><td><span className={`ad-status ${a.status.toLowerCase()}`}>{a.status}</span></td><td>{a.budget}</td><td>{a.spend}</td><td>{a.sales}</td><td><b>{a.roas}</b></td><td>{a.views}</td><td>{a.clicks}</td><td className={parseFloat(a.ctr)<2?"cell-warning":""}>{a.ctr}</td><td className={parseFloat(a.conversionRate)<2?"cell-warning":""}>{a.conversionRate}</td><td>{a.sold}</td><td>{a.acos}</td></tr>)}</tbody></table></div><div className="ad-pagination"><button disabled={adPage===1} onClick={()=>setAdPage(p=>Math.max(1,p-1))}>← Previous</button><span>Page {adPage} of {adPageCount} · {filteredAdCampaigns.length} ads</span><button disabled={adPage===adPageCount} onClick={()=>setAdPage(p=>Math.min(adPageCount,p+1))}>Next →</button></div></section>
       </div>}
 
       {section==="orders" && <div className="page"><div className="page-title"><div><p className="kicker">ORDERS & INVENTORY</p><h2>Today’s orders & deadlines</h2></div></div><section className="metric-grid three"><article className="metric"><span>Today’s Orders</span><strong>{orderSummary?.today ?? (noSample ? "暂无数据" : 98)}</strong></article><article className="metric warn"><span>Expiring Today</span><strong>{orderSummary?.expiringToday ?? (noSample ? "暂无数据" : 7)}</strong></article><article className="metric danger"><span>Expired</span><strong>{orderSummary?.expired ?? (noSample ? "暂无数据" : 2)}</strong></article></section><div className="card table-card"><table><thead><tr><th>Order</th><th>Buyer</th><th>Product</th><th>Order Time</th><th>Order Value</th><th>Expire Time</th><th>Time Left</th><th>Status</th></tr></thead><tbody>{orders.map((o:any)=><tr key={o.id}><td><b>{o.id}</b></td><td>{o.buyer}</td><td>{o.product}</td><td>{o.time}</td><td>{o.value}</td><td>{o.expire}</td><td>{o.left}</td><td><span className={`badge ${o.status.toLowerCase()}`}>{o.status}</span></td></tr>)}{noSample && !orders.length && <tr><td colSpan={8}>暂无数据</td></tr>}</tbody></table></div></div>}
