@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { calculateShopeePrice, COMMISSION_CATEGORIES, COMMISSION_SOURCE, commissionRateFor, SERVICE_MODES } from "./price-calculator-model";
+import { calculateShopeePrice, COMMISSION_CATEGORIES, commissionRateFor, SERVICE_MODES } from "./price-calculator-model";
 import type { CalculatorSnapshot, PackagePrefill } from "./calculator-types";
 
 type ServiceMode = keyof typeof SERVICE_MODES;
@@ -129,9 +129,9 @@ export function PriceCalculator({ onCreatePackage, onCreatePackages }:Props) {
         </label>
         <label className="commission-field">Custom Commission Fee (%)
           <input type="number" min="0" step=".01" value={customCommission} placeholder={`Auto: ${pct(commissionRateFor(category,true))}`} onChange={event=>setCustomCommission(event.target.value)}/>
-          <small>{usingCustomCommission?"Custom rate is active · 输入最终含 SST 的费率":`Marketplace Fee · ${COMMISSION_CATEGORIES[Number(category)]?.effectiveDate} 自动生效 · 已含 8% SST`}</small>
+          {usingCustomCommission&&<small>Custom rate is active · 输入最终含 SST 的费率</small>}
         </label>
-        <label>Shopee Voucher Discount (%)<input type="number" min="0" step=".01" value={fees.shopeeVoucher} onChange={event=>updateFee("shopeeVoucher",event.target.value)}/></label>
+        <label>Shopee Voucher Disc. (%)<input type="number" min="0" step=".01" value={fees.shopeeVoucher} onChange={event=>updateFee("shopeeVoucher",event.target.value)}/></label>
         <label>Co-Fund Voucher (RM)<input type="number" min="0" step=".01" value={fees.cofundVoucher} onChange={event=>updateFee("cofundVoucher",event.target.value)}/></label>
         <div className="setup-toggle-field"><label className="setup-toggle"><input type="checkbox" checked={fees.isPreorder} onChange={event=>updateFee("isPreorder",event.target.checked)}/><span><b>Pre-Order Listing</b></span></label><small>额外 {pct(fees.preorder)}</small></div>
       </div>
@@ -139,7 +139,7 @@ export function PriceCalculator({ onCreatePackage, onCreatePackages }:Props) {
 
     <section className="fee-strip">
       <article><span>Transaction Fee</span><strong>3.78%</strong><small>Default</small></article>
-      <article><span>Commission Fee</span><strong>{pct(commission)}</strong><small>{usingCustomCommission?"Customized rate":`Marketplace Fee · Sheet updated ${COMMISSION_SOURCE.updated}`}</small></article>
+      <article><span>Commission Fee</span><strong>{pct(commission)}</strong><small>{usingCustomCommission?"Customized rate":"Cashback ON + Category + SST"}</small></article>
       <article><span>Service Fee</span><strong>5.94% / 8.10%</strong><small>Non-Campaign / Campaign · Capped at RM108</small></article>
       <article><span>Pre-Order Service Fee</span><strong>{fees.isPreorder?pct(fees.preorder):"OFF"}</strong><small>Default 2.14%</small></article>
       <article className="fee-total"><span>Platform Support Fee</span><strong>RM 0.54</strong><small>Per order</small></article>

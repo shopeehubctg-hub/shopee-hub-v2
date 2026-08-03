@@ -153,8 +153,12 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /SCENARIOS\.map/);
   assert.match(calculator, /Non-Campaign Day/);
   assert.match(calculator, /Campaign Day/);
-  assert.match(calculator, /Shopee Voucher Discount/);
+  assert.match(calculator, /Shopee Voucher Disc\. \(%\)/);
   assert.match(calculator, /Co-Fund Voucher/);
+  assert.doesNotMatch(calculator, /自动生效/);
+  assert.match(packageControl, /Calculator package/);
+  assert.match(packageControl, /prefillBatch/);
+  assert.match(packageControl, /Selling Price 与 Calculator Settings 已全部保留/);
   assert.doesNotMatch(calculator, /showAdvanced/);
   assert.match(calculator, /suggestedShopeePrice:result\.requiredPrice/);
   assert.match(page, /setPackagePrefill/);

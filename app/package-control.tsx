@@ -52,6 +52,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   const [platforms,setPlatforms] = useState<PlatformLine[]>([{platform:"Shopee",packageSku:""}]);
   const [calculatorSettings,setCalculatorSettings] = useState<CalculatorSnapshot|null>(null);
   const [prefillQueue,setPrefillQueue] = useState<PackagePrefill[]>([]);
+  const [prefillBatch,setPrefillBatch] = useState<PackagePrefill[]>([]);
 
   async function load() {
     const response = await fetch(`/api/packages?storeId=${encodeURIComponent(storeId || "all")}`,{cache:"no-store"});
@@ -74,6 +75,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     if (!prefills.length) return;
     openPrefill(prefills[0]);
     setPrefillQueue(prefills.slice(1));
+    setPrefillBatch(prefills);
     onPrefillsAccepted?.();
   },[prefills[0]?.requestId]);
 
@@ -95,6 +97,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
 
   function openNew() {
     setPrefillQueue([]);
+    setPrefillBatch([]);
     resetForm();
     setMessage("");
     setShowCreate(true);
@@ -103,6 +106,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   function closeCreate() {
     setShowCreate(false);
     setPrefillQueue([]);
+    setPrefillBatch([]);
     resetForm();
   }
 
@@ -136,9 +140,11 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       const next = prefillQueue[0];
       if (next) {
         setPrefillQueue(current=>current.slice(1));
+        setPrefillBatch(current=>current.slice(1));
         openPrefill(next);
       } else {
         setShowCreate(false);
+        setPrefillBatch([]);
         resetForm();
       }
     }
@@ -146,6 +152,8 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   }
 
   function startVersion(item:PackageItem) {
+    setPrefillQueue([]);
+    setPrefillBatch([]);
     const stored = source === "database";
     const month = item.promotionType==="monthly" ? item.effectiveFrom.slice(0,7) : "";
     setEditingPackageId(stored ? item.id : null);
@@ -212,6 +220,8 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
 
     {showCreate&&<div className="package-modal" role="dialog" aria-modal="true"><div className="package-form">
       <div className="package-form-head"><div><p className="kicker">{editingPackageId?"NEW VERSION":"NEW PACKAGE"}</p><h3>{editingPackageId?"Create next version":"Create a package"}</h3><span>{storeName}{prefillQueue.length?` · ${prefillQueue.length} ready package${prefillQueue.length===1?"":"s"} remaining`:""}</span></div><button onClick={closeCreate} aria-label="Close">×</button></div>
+
+      {prefillBatch.length>0&&<section className="calculator-batch-transfer"><div><b>✓ {prefillBatch.length} Calculator package{prefillBatch.length===1?"":"s"} brought over</b><span>名称、Selling Price 与 Calculator Settings 已全部保留；完成当前表单后会自动继续下一项。</span></div><div className="calculator-batch-list">{prefillBatch.map((item,index)=><div className={index===0?"current":""} key={item.requestId}><span>{index===0?"Current":"Queued"}</span><b>{item.name}</b><strong>{money(item.sellingPrice,"MY")}</strong><small>{item.calculatorSettings.serviceScenario}</small></div>)}</div></section>}
 
       <section className="form-section"><div className="form-section-title"><span>1</span><div><h4>Package details</h4><p>名称、市场与价格</p></div></div>
         <div className="form-grid">
