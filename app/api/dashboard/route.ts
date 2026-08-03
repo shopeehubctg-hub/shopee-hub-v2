@@ -6,9 +6,6 @@ import { contactsForStore } from "../../project-group-links";
 
 export const dynamic = "force-dynamic";
 
-const connectedShopeeStoreNames = [
-  "AgePros By Swissmed","Berlanco Beauty Official","Berlanco SG","Beyoute Official Store","Beyoute Singapore","BioTech by Swissmed","Bonlife Official Store","Bonlife SG","Bugucare by Naturelish","CTG4U Malaysia","Daionica Official Store","Dancoly Paris HQ","Dr Smile Whitening by CTG4u","Dr Smile Whitening SG by CTG4u.sg","Eco Plus by Naturelish","Funffy by CTG4u","Go Herb Singapore","GoHerb Official Store","Hair Factory Official","iLady Haircare by CTG4u","iLady Haircare SG by CTG4u","ILady SG","J Packaging","Jeeroul by CTG4u","Jen Mommy Essential Oil","Jourish Natural Wellness","KATA Care Malaysia","KATA Marine Malaysia","KATA Singapore","LivAct Official Store","livact.os.sg","M Formula SG","M+ SkinPro by CTG4u","Master Nerv Official Store","MCS Malaysia","MCS Singapore","MFormula Official","Mizino Official Store","Mizino Premium","Moesie Malaysia","NatureLish Healthcare","Naturelish Healthcare Singapore","Naturelish Isokae by CTG4u","NINOKO Official Store","Ninoko Singapore","NomoQ Malaysia","PAW PAWs Official","Petavit Official Store","Scale Gem Collagen by CTG4u","Scale Gem SG","Scale Story Official Store","Scale Story SG","SkinDae Official Store","SkinDae SG","True Golden Care by Naturelish","Uro360 by CTG4u","White Skin Care","Wiluv Official","Yuan Chuan Tang Herbal by CTG4u","Zeero MY","Zeero SG","Zeero Skincare SG",
-];
 const AD_BALANCE_SHEET_CSV = "https://docs.google.com/spreadsheets/d/13NOwTGkbDjW8y869CvS6lr6H8I7XRn3I0urt_-rqkgs/gviz/tq?tqx=out:csv&sheet=Sheet1";
 const LINK_DIRECTORY_CSV = "https://docs.google.com/spreadsheets/d/1iMNKdNs5tqgXgWUQhtg-UhWcb0mP3SlGYbTOyx4avkc/gviz/tq?tqx=out:csv&sheet=WhatsApp%20Group";
 const adBalanceAliases: Record<string, string> = {
@@ -46,6 +43,7 @@ const topUpOwnerFallbacks: Record<string, string> = {
   "Scale Gem Collagen by CTG4u":"shopee_hub", "Scale Story Official Store":"shopee_hub", "SkinDae MY by CTG4u":"shopee_hub",
   "True Golden Care by Naturelish":"client", "White Skin Care":"shopee_hub", "Yuan Chuan Tang Herbal by CTG4u":"client", "Zeero Skincare Official":"client",
 };
+const fallbackConnectedShopeeStoreNames = Object.keys(topUpOwnerFallbacks);
 
 function parseCsvLine(line: string) {
   const cells: string[] = [];
@@ -66,12 +64,69 @@ function parseCsvLine(line: string) {
   return cells;
 }
 
-async function readSheetBalance(storeName: string) {
+type LinkDirectoryContact = { project: string; href: string };
+type LinkDirectoryStore = {
+  name: string;
+  topUpOwner: string | null;
+  contacts: LinkDirectoryContact[];
+  storeGroupLink: string | null;
+  driveLink: string | null;
+};
+
+function fallbackDirectoryStores(): LinkDirectoryStore[] {
+  return fallbackConnectedShopeeStoreNames.map((name) => ({
+    name,
+    topUpOwner: topUpOwnerFallbacks[name] ?? null,
+    contacts: contactsForStore(name),
+    storeGroupLink: null,
+    driveLink: null,
+  }));
+}
+
+async function readLinkDirectory(): Promise<LinkDirectoryStore[]> {
+  try {
+    const response = await fetch(LINK_DIRECTORY_CSV, { cache: "no-store" });
+    if (!response.ok) return fallbackDirectoryStores();
+    const rows = (await response.text()).trim().split(/\r?\n/).map(parseCsvLine);
+    const header = rows[0] ?? [];
+    const nameIndex = header.indexOf("Store Name");
+    const projectIndex = header.indexOf("Project");
+    const projectGroupIndex = header.indexOf("Project Group Link");
+    const storeGroupIndex = header.indexOf("Store Group Link");
+    const driveIndex = header.indexOf("Google Drive Link");
+    const ownerIndex = header.indexOf("Ads Top Up List");
+    if (nameIndex < 0) return fallbackDirectoryStores();
+
+    const stores = new Map<string, LinkDirectoryStore>();
+    for (const row of rows.slice(1)) {
+      const name = row[nameIndex]?.trim();
+      if (!name) continue;
+      const existing = stores.get(name);
+      const projectGroupLink = row[projectGroupIndex]?.trim();
+      const contacts = existing?.contacts ? [...existing.contacts] : [];
+      if (projectGroupLink && !contacts.some((contact) => contact.href === projectGroupLink)) {
+        contacts.push({ project: row[projectIndex]?.trim() || name, href: projectGroupLink });
+      }
+      stores.set(name, {
+        name,
+        topUpOwner: existing?.topUpOwner ?? normalizeTopUpOwner(row[ownerIndex]),
+        contacts,
+        storeGroupLink: existing?.storeGroupLink ?? row[storeGroupIndex]?.trim() ?? null,
+        driveLink: existing?.driveLink ?? row[driveIndex]?.trim() ?? null,
+      });
+    }
+    return stores.size ? [...stores.values()] : fallbackDirectoryStores();
+  } catch {
+    return fallbackDirectoryStores();
+  }
+}
+
+async function readSheetBalance(storeName: string, storedName = storeName) {
   try {
     const response = await fetch(AD_BALANCE_SHEET_CSV, { cache: "no-store" });
     if (!response.ok) return null;
     const lines = (await response.text()).trim().split(/\r?\n/).slice(1);
-    const matches = lines.map(parseCsvLine).filter((row) => (adBalanceAliases[row[1]] ?? row[1]) === storeName);
+    const matches = lines.map(parseCsvLine).filter((row) => row[1] === storeName || (adBalanceAliases[row[1]] ?? row[1]) === storedName);
     const latest = matches.sort((a, b) => b[0].localeCompare(a[0]))[0];
     const balance = Number(latest?.[2]);
     if (!latest || !Number.isFinite(balance) || balance < 0) return null;
@@ -92,18 +147,6 @@ function normalizeTopUpOwner(value?: string | null) {
   if (/shopee\s*hub/i.test(value ?? "")) return "shopee_hub";
   if (/client/i.test(value ?? "")) return "client";
   return null;
-}
-
-async function readTopUpOwner(storeName: string) {
-  try {
-    const response = await fetch(LINK_DIRECTORY_CSV, { cache: "no-store" });
-    if (!response.ok) return topUpOwnerFallbacks[storeName] ?? null;
-    const rows = (await response.text()).trim().split(/\r?\n/).slice(1).map(parseCsvLine);
-    const match = rows.find((row) => row[0] === storeName);
-    return normalizeTopUpOwner(match?.[5]) ?? topUpOwnerFallbacks[storeName] ?? null;
-  } catch {
-    return topUpOwnerFallbacks[storeName] ?? null;
-  }
 }
 
 function storeIdFor(name: string) {
@@ -129,10 +172,19 @@ export async function GET(request: Request) {
   if (!tenant) return Response.json({ error: "Customer dashboard is inactive" }, { status: 403 });
 
   const tenantStores = await db.select().from(stores).where(eq(stores.tenantId, tenant.id));
-  const storedByName = new Map(tenantStores.map((store) => [store.name, store]));
-  const visibleStores = connectedShopeeStoreNames.map((name) => storedByName.get(name) ?? ({
-    id: storeIdFor(name), tenantId: tenant.id, name, platform: isSingaporeStore(name) ? "Shopee SG" : "Shopee MY", bigSellerName: name, createdAt: "",
-  }));
+  const directoryStores = await readLinkDirectory();
+  const storedByDirectoryName = new Map<string, typeof tenantStores[number]>();
+  for (const store of tenantStores) {
+    if (!storedByDirectoryName.has(store.name)) storedByDirectoryName.set(store.name, store);
+    if (store.bigSellerName && !storedByDirectoryName.has(store.bigSellerName)) storedByDirectoryName.set(store.bigSellerName, store);
+  }
+  const directoryByName = new Map(directoryStores.map((store) => [store.name, store]));
+  const visibleStores = directoryStores.map(({ name }) => {
+    const stored = storedByDirectoryName.get(name);
+    return stored ? { ...stored, storedName: stored.name, name } : {
+      id: storeIdFor(name), tenantId: tenant.id, name, storedName: name, platform: isSingaporeStore(name) ? "Shopee SG" : "Shopee MY", bigSellerName: name, createdAt: "",
+    };
+  });
   const requestedStoreId = new URL(request.url).searchParams.get("storeId");
   const allStoresRequested = !requestedStoreId || requestedStoreId === "all";
   const selectedStore = requestedStoreId && !allStoresRequested
@@ -149,8 +201,10 @@ export async function GET(request: Request) {
     .where(and(eq(adBalances.tenantId, tenant.id), eq(adBalances.storeId, selectedStore.id)))
     .orderBy(desc(adBalances.balanceDate), desc(adBalances.importedAt), desc(adBalances.id))
     .limit(1);
-  const sheetBalance = selectedStore ? await readSheetBalance(selectedStore.name) : null;
-  const topUpOwner = selectedStore ? await readTopUpOwner(selectedStore.name) : null;
+  const sheetBalance = selectedStore ? await readSheetBalance(selectedStore.name, selectedStore.storedName) : null;
+  const topUpOwner = selectedStore
+    ? directoryByName.get(selectedStore.name)?.topUpOwner ?? topUpOwnerFallbacks[selectedStore.name] ?? null
+    : null;
   const actions = await db.select().from(managementActions)
     .where(selectedStore
       ? and(eq(managementActions.tenantId, tenant.id), eq(managementActions.storeId, selectedStore.id))
@@ -160,7 +214,17 @@ export async function GET(request: Request) {
 
   return Response.json({
     customer: { id: tenant.id, name: tenant.name },
-    stores: visibleStores.map(({ id, name, platform }) => ({ id, name, platform, contacts: contactsForStore(name) })),
+    stores: visibleStores.map(({ id, name, platform }) => {
+      const directory = directoryByName.get(name);
+      return {
+        id,
+        name,
+        platform,
+        contacts: directory?.contacts.length ? directory.contacts : contactsForStore(name),
+        storeGroupLink: directory?.storeGroupLink ?? null,
+        driveLink: directory?.driveLink ?? null,
+      };
+    }),
     selectedStoreId: allStoresRequested ? "all" : (selectedStore?.id ?? null),
     snapshot: latest[0] ?? null,
     adBalance: sheetBalance ? { ...sheetBalance, topUpOwner } : (latestBalance[0] ? {

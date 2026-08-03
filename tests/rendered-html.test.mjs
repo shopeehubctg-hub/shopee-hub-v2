@@ -33,6 +33,23 @@ test("sidebar contacts the selected project's Shopee Hub specialist", async () =
   assert.match(links, /Mizino SlimPro/);
 });
 
+test("store selector follows the Link Directory store names", async () => {
+  const [route, page] = await Promise.all([
+    readFile(new URL("app/api/dashboard/route.ts", root), "utf8"),
+    readFile(new URL("app/page.tsx", root), "utf8"),
+  ]);
+  assert.match(route, /readLinkDirectory/);
+  assert.match(route, /header\.indexOf\("Store Name"\)/);
+  assert.match(route, /header\.indexOf\("Project Group Link"\)/);
+  assert.match(route, /header\.indexOf\("Google Drive Link"\)/);
+  assert.match(route, /directoryStores\.map/);
+  assert.match(route, /cache: "no-store"/);
+  assert.doesNotMatch(route, /connectedShopeeStoreNames\.map/);
+  assert.match(page, /\{s\.name\}<\/option>/);
+  assert.doesNotMatch(page, /\{s\.name\} · \{s\.platform\}/);
+  assert.doesNotMatch(page, /62 connected Shopee stores/);
+});
+
 test("package API enforces platform SKUs and persists component history", async () => {
   const [route, schema, baseMigration, platformMigration] = await Promise.all([
     readFile(new URL("app/api/packages/route.ts", root), "utf8"),
@@ -183,15 +200,18 @@ test("advertising summary keeps one balance and removes low-priority cards", asy
   assert.doesNotMatch(summary, /\["Ad Spend"/);
 });
 
-test("advertising uses three evenly spaced summary rows with rates on row three", async () => {
+test("advertising supports date, month and custom range aggregation", async () => {
   const [page, css] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("app/globals.css", root), "utf8"),
   ]);
-  assert.match(page, /<h2>Campaign Performance<\/h2>/);
-  assert.match(page, /<span>Ad Spend<\/span>/);
-  assert.equal((page.match(/<span>Ad Spend<\/span>/g) ?? []).length, 1);
-  assert.doesNotMatch(page, /<span>Daily Spend<\/span>/);
+  assert.match(page, /<h2>Performance<\/h2>/);
+  assert.match(page, /<option value="month">Month<\/option>/);
+  assert.match(page, /<option value="date">Date<\/option>/);
+  assert.match(page, /<option value="range">Custom range<\/option>/);
+  assert.match(page, /row\.date\.startsWith\(selectedAdMonth\)/);
+  assert.match(page, /row\.date >= selectedRangeStart && row\.date <= selectedRangeEnd/);
+  assert.match(page, /periodSpendLabel/);
   assert.match(page, /ad-secondary-grid[\s\S]*\["CTR"[\s\S]*\["Conversion Rate"/);
   assert.doesNotMatch(page, /<section className="rule-grid">/);
   assert.match(css, /\.advertising-summary-stack\{display:grid;gap:18px\}/);
