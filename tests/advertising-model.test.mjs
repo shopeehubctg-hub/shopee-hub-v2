@@ -22,6 +22,18 @@ test("Shopee Hub-owned and delayed records do not create client actions", () => 
 });
 
 test("approval flag creates an approval action", () => {
-  const funds = buildAdvertisingFunds({ balance:20, averageDailySpend30d:5, approvalRequired:true });
-  assert.equal(buildTopUpAction(funds, "Store").type, "Approval");
+  const funds = buildAdvertisingFunds({ balance:20, averageDailySpend30d:5, topUpOwner:"client_approval" });
+  const action = buildTopUpAction(funds, "Store", { projectGroupHref:"https://chat.whatsapp.com/example" });
+  assert.equal(action.type, "Urgent");
+  assert.equal(action.action, "Approve");
+  assert.equal(action.href, "https://chat.whatsapp.com/example");
+  assert.equal(action.message, "麻烦你们帮我 top up 广告费");
+});
+
+test("client-owned top-ups link to Shopee seller login", () => {
+  const funds = buildAdvertisingFunds({ balance:20, averageDailySpend30d:5, topUpOwner:"client" });
+  const action = buildTopUpAction(funds, "Store");
+  assert.equal(action.type, "Top-up");
+  assert.equal(action.action, "Top Up");
+  assert.equal(action.href, "https://accounts.shopee.com.my/seller/login");
 });

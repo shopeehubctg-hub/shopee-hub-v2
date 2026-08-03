@@ -19,6 +19,8 @@
 
 .type.campaign { background: #e9eff4; color: #16465d; }
 .type.drive { background: #eaf4ef; color: #1f6b44; }
+.type.top-up { background: #fff4e5; color: #bd7517; }
+.action-message { margin-top: 6px !important; color: #172033 !important; font-weight: 700; }
 
 .logo img {
   background: transparent !important;

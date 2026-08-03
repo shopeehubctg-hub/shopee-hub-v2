@@ -31,8 +31,8 @@ export function buildAdvertisingFunds(advertising = {}) {
     runwayDays,
     recommendedTopUp,
     balanceStatus: syncStatus === "delayed" ? "delayed" : (lowBalance ? "low" : "healthy"),
-    topUpOwner: advertising.topUpOwner === "shopee_hub" ? "shopee_hub" : "client",
-    approvalRequired: Boolean(advertising.approvalRequired),
+    topUpOwner: ["shopee_hub", "client_approval", "client"].includes(advertising.topUpOwner) ? advertising.topUpOwner : "client",
+    approvalRequired: advertising.topUpOwner === "client_approval" || Boolean(advertising.approvalRequired),
     sourceUpdatedAt: advertising.sourceUpdatedAt ?? null,
     syncStatus,
     lowBalance,
@@ -44,14 +44,18 @@ export function formatRinggit(value, digits = 0) {
   return `RM${value.toLocaleString("en-MY", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
 }
 
-export function buildTopUpAction(funds, storeName) {
+export function buildTopUpAction(funds, storeName, options = {}) {
   if (!funds.lowBalance || funds.topUpOwner === "shopee_hub" || funds.recommendedTopUp == null) return null;
+  const amount = formatRinggit(funds.recommendedTopUp);
+  const isApproval = funds.topUpOwner === "client_approval" || funds.approvalRequired;
   return {
-    title: `Top-up ${formatRinggit(funds.recommendedTopUp)} required`,
+    title: `待批准广告预算 ${amount}`,
     client: storeName,
     due: "Now",
-    type: funds.approvalRequired ? "Approval" : "Top-up",
-    action: funds.approvalRequired ? "Approve" : "Confirm",
+    type: isApproval ? "Urgent" : "Top-up",
+    action: isApproval ? "Approve" : "Top Up",
+    href: isApproval ? options.projectGroupHref : "https://accounts.shopee.com.my/seller/login",
+    message: isApproval ? "麻烦你们帮我 top up 广告费" : undefined,
     generated: true,
   };
 }
