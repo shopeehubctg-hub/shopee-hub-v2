@@ -21,6 +21,9 @@
 .type.drive { background: #eaf4ef; color: #1f6b44; }
 .type.top-up { background: #fff4e5; color: #bd7517; }
 .action-message { margin-top: 6px !important; color: #172033 !important; font-weight: 700; }
+.empty-actions { display: grid; gap: 6px; color: #7d8797; }
+.empty-actions h3 { margin: 0; color: #172033; }
+.empty-actions p { margin: 0; font-size: 10px; }
 
 .logo img {
   background: transparent !important;

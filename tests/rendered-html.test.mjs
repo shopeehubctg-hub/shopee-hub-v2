@@ -198,3 +198,11 @@ test("advertising uses three evenly spaced summary rows with rates on row three"
   assert.match(css, /\.ad-primary-grid,\.ad-secondary-grid\{grid-template-columns:repeat\(4[^}]*gap:18px/);
   assert.match(css, /page-title h2[^}]*text-transform:capitalize/);
 });
+
+test("client action center uses imported actions instead of sample fallback", async () => {
+  const page = await readFile(new URL("app/page.tsx", root), "utf8");
+  assert.match(page, /data\?\.actions\?\.map/);
+  assert.match(page, /managementActionToClientAction/);
+  assert.match(page, /No client action needed/);
+  assert.doesNotMatch(page, /driveActions\.length \|\| noSample \? \[\] : actionFallback/);
+});

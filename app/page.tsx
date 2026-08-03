@@ -11,7 +11,8 @@ import { storeSnapshots } from "./store-snapshots";
 import { buildAdvertisingFunds, buildTopUpAction, formatRinggit } from "./advertising-model.js";
 
 type Store = { id: string; name: string; platform: string; contacts: { project: string; href: string }[] };
-type DashboardResponse = { stores: Store[]; selectedStoreId: string | null; snapshot: { payload: any; importedAt: string } | null; adBalance: { balance:number; balanceDate:string; sourceUpdatedAt:string; syncStatus:string; topUpOwner?:string | null } | null };
+type ManagementAction = { actionDate: string; category: string; title: string; detail: string };
+type DashboardResponse = { stores: Store[]; selectedStoreId: string | null; snapshot: { payload: any; importedAt: string } | null; adBalance: { balance:number; balanceDate:string; sourceUpdatedAt:string; syncStatus:string; topUpOwner?:string | null } | null; actions?: ManagementAction[] };
 type ClientAction = { title: string; client: string; due: string; type: string; action: string; href?: string; message?: string; generated?: boolean };
 
 const overviewFallback = [
@@ -53,6 +54,23 @@ const projectDriveActions: Record<string, ClientAction[]> = {
 };
 
 function money(value: string) { return value; }
+function parseCurrency(value: unknown) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value !== "string") return 0;
+  const parsed = Number(value.replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function managementActionToClientAction(action: ManagementAction, client: string): ClientAction {
+  return {
+    title: action.title,
+    client,
+    due: action.actionDate,
+    type: action.category,
+    action: "Review",
+    message: action.detail,
+  };
+}
 
 export default function Home() {
   const [section, setSection] = useState("overview");
@@ -81,17 +99,19 @@ export default function Home() {
   const noSample = Boolean(live.noSample);
   const overview = Array.isArray(live.overview) ? live.overview : overviewFallback;
   const adsBase = live.advertising ?? (allStoresSelected ? allStoresAdvertising : adFallback);
-  const ads = data?.adBalance && !allStoresSelected
-    ? { ...adsBase, balance:data.adBalance.balance, sourceUpdatedAt:data.adBalance.sourceUpdatedAt, syncStatus:data.adBalance.syncStatus, topUpOwner:data.adBalance.topUpOwner ?? adsBase.topUpOwner }
-    : adsBase;
   const importedStoreAds = adsData.filter((ad:any) => allStoresSelected || ad.store === store?.name);
+  const importedAverageDailySpend = importedStoreAds.reduce((total:number, ad:any) => total + parseCurrency(ad.spend), 0) / 30;
+  const ads = data?.adBalance && !allStoresSelected
+    ? { ...adsBase, balance:data.adBalance.balance, averageDailySpend30d:adsBase.averageDailySpend30d ?? importedAverageDailySpend, sourceUpdatedAt:data.adBalance.sourceUpdatedAt, syncStatus:data.adBalance.syncStatus, topUpOwner:data.adBalance.topUpOwner ?? adsBase.topUpOwner }
+    : adsBase;
   const adCampaigns = Array.isArray(live.adCampaigns) ? live.adCampaigns : (noSample ? [] : (importedStoreAds.length ? importedStoreAds : adCampaignFallback));
   const filteredAdCampaigns = adCampaigns.filter((ad:any) => (adStatusFilter === "All" || ad.status === adStatusFilter) && `${ad.name} ${ad.store ?? ""}`.toLowerCase().includes(adSearch.toLowerCase()));
   const adPageCount = Math.max(1, Math.ceil(filteredAdCampaigns.length / 25));
   const visibleAdCampaigns = filteredAdCampaigns.slice((adPage - 1) * 25, adPage * 25);
   const orders = Array.isArray(live.orders) ? live.orders : (noSample ? [] : ordersFallback);
   const driveActions = store ? (projectDriveActions[store.name] ?? []) : [];
-  const clientActions = Array.isArray(live.clientActions) ? live.clientActions : (driveActions.length || noSample ? [] : actionFallback);
+  const importedClientActions = data?.actions?.map(action=>managementActionToClientAction(action, store?.name ?? "Selected store")) ?? [];
+  const clientActions = Array.isArray(live.clientActions) ? live.clientActions : importedClientActions;
   const adFunds = buildAdvertisingFunds(ads);
   const generatedTopUpAction = buildTopUpAction(adFunds, store?.name ?? "Selected store", { projectGroupHref:store?.contacts[0]?.href });
   const visibleClientActionsBase = [...driveActions, ...clientActions];
@@ -99,7 +119,7 @@ export default function Home() {
   const warningOrders = orders.filter((order:any) => order.status === "Expired" || order.status === "Urgent");
   const importantWarningCount = warningOrders.length + (adFunds.lowBalance ? 1 : 0);
   const updated = allStoresSelected ? "17 Jul 2026, 3:13 am" : (live.sourceUpdated ?? (data?.snapshot?.importedAt ? new Date(data.snapshot.importedAt).toLocaleString("en-MY", { dateStyle:"medium", timeStyle:"short" }) : "Awaiting store import"));
-  const hasRealData = Boolean(data?.snapshot || staticSnapshot);
+  const hasRealData = Boolean(data?.snapshot || staticSnapshot || data?.adBalance || importedClientActions.length || driveActions.length);
   const target = live.target;
   const losses = live.losses;
   const orderSummary = live.orderSummary;
@@ -152,7 +172,7 @@ export default function Home() {
 
       {section==="health" && noSample ? <div className="page"><div className="page-title"><div><p className="kicker">STORE HEALTH</p><h2>Reputation & compliance</h2></div></div><article className="card"><h3>暂无数据</h3><p>本次来源没有提供 Mizino Premium 的店铺健康指标。</p></article></div> : section==="health" && <div className="page"><div className="page-title"><div><p className="kicker">STORE HEALTH</p><h2>Reputation & compliance</h2></div><span className="health-status">Healthy</span></div><section className="metric-grid"><article className="metric"><span>Reviews</span><strong>4,286</strong><em>+182 this month</em></article><article className="metric danger"><span>Bad Reviews</span><strong>37</strong><em>0.86%</em></article><article className="metric"><span>Buyer Overall Rating</span><strong>4.92 / 5</strong></article><article className="metric"><span>Penalty Points</span><strong>0</strong><em>Normal</em></article></section><section className="health-grid"><article className="card reviews"><p className="kicker">RATING DISTRIBUTION</p>{[["5 stars",88],["4 stars",9],["1–3 stars",3]].map(r=><div key={r[0]}><span>{r[0]}</span><i><b style={{width:`${r[1]}%`}}/></i><strong>{r[1]}%</strong></div>)}</article><article className="card quality"><p className="kicker">SERVICE QUALITY</p>{[["Fast Handover Rate","96.8%"],["Chat Satisfaction","94.2%"],["Response Rate","98.1%"],["Late Shipment Rate","1.2%"]].map(r=><div key={r[0]}><span>{r[0]}</span><strong>{r[1]}</strong></div>)}</article><article className="card violations"><p className="kicker">LISTING VIOLATIONS</p><strong>0</strong><span>No active listing violations</span></article></section></div>}
 
-      {section==="actions" && <div className="page"><div className="page-title"><div><p className="kicker">CLIENT ACTION CENTER</p><h2>What we need from the client</h2></div><span className="warning-pill">{visibleClientActions.length} open items</span></div>{adFunds.topUpOwner === "shopee_hub" && adFunds.lowBalance && <div className="managed-note">Top-up {formatRinggit(adFunds.recommendedTopUp)} · Managed by Shopee Hub</div>}<div className="action-list">{visibleClientActions.map((a:any)=><article className="card action" key={a.title}><div className={`type ${a.type.toLowerCase()}`}>{a.type.slice(0,1)}</div><div><span className="category">{a.type}</span><h3>{a.title}</h3><p>{a.client} · Due {a.due}</p>{a.message&&<p className="action-message">{a.message}</p>}</div>{a.href?<a className="action-link" href={a.href} target="_blank" rel="noopener noreferrer">{a.action}</a>:<button>{a.action}</button>}</article>)}</div></div>}
+      {section==="actions" && <div className="page"><div className="page-title"><div><p className="kicker">CLIENT ACTION CENTER</p><h2>What we need from the client</h2></div><span className="warning-pill">{visibleClientActions.length} open items</span></div>{adFunds.topUpOwner === "shopee_hub" && adFunds.lowBalance && <div className="managed-note">Top-up {formatRinggit(adFunds.recommendedTopUp)} · Managed by Shopee Hub</div>}{visibleClientActions.length ? <div className="action-list">{visibleClientActions.map((a:any)=><article className="card action" key={a.title}><div className={`type ${a.type.toLowerCase()}`}>{a.type.slice(0,1)}</div><div><span className="category">{a.type}</span><h3>{a.title}</h3><p>{a.client} · Due {a.due}</p>{a.message&&<p className="action-message">{a.message}</p>}</div>{a.href?<a className="action-link" href={a.href} target="_blank" rel="noopener noreferrer">{a.action}</a>:<button>{a.action}</button>}</article>)}</div> : <article className="card empty-actions"><h3>No client action needed</h3><p>当前没有需要客户处理的事项。</p></article>}</div>}
       <footer>Shopee Hub · 62 connected Shopee stores · 2 pending connection · Private command center</footer>
     </section>
   </main>;
