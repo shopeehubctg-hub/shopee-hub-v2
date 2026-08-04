@@ -130,7 +130,7 @@ test("Shopee calculator accepts a user-adjusted markup rate", async () => {
 });
 
 test("price calculator is available in navigation with all required outputs", async () => {
-  const [page, calculator, packageControl, packageRoute, schema, migration, model] = await Promise.all([
+  const [page, calculator, packageControl, packageRoute, schema, migration, model, voucherPresets] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("app/price-calculator.tsx", root), "utf8"),
     readFile(new URL("app/package-control.tsx", root), "utf8"),
@@ -138,6 +138,7 @@ test("price calculator is available in navigation with all required outputs", as
     readFile(new URL("db/schema.ts", root), "utf8"),
     readFile(new URL("drizzle/0003_zippy_bullseye.sql", root), "utf8"),
     readFile(new URL("app/price-calculator-model.js", root), "utf8"),
+    readFile(new URL("app/voucher-presets.js", root), "utf8"),
   ]);
   assert.match(page, /Price Calculator/);
   assert.match(page, /<PriceCalculator/);
@@ -151,7 +152,7 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /Commission Fee/);
   assert.match(calculator, /Service Fee/);
   assert.match(calculator, /Product Category/);
-  assert.match(calculator, /Cashback Program 已固定开启/);
+  assert.match(calculator, /Cashback Program ON/);
   assert.match(calculator, /cashbackProgramme:true/);
   assert.doesNotMatch(calculator, /checked=\{onCashback\}/);
   assert.doesNotMatch(calculator, /Service Fee Scenario/);
@@ -173,7 +174,13 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /SCENARIOS\.map/);
   assert.match(calculator, /Non-Campaign Day/);
   assert.match(calculator, /Campaign Day/);
-  assert.match(calculator, /Shopee Voucher Disc\. \(%\)/);
+  assert.doesNotMatch(calculator, /Shopee Voucher Disc\. \(%\)/);
+  assert.match(calculator, /Shopee Voucher preset/);
+  assert.match(calculator, /voucherRates\[mode\]/);
+  assert.match(page, /storeName=\{allStoresSelected/);
+  assert.match(voucherPresets, /Rounded Up Buffer/);
+  assert.match(voucherPresets, /Mizino Premium/);
+  assert.match(voucherPresets, /normal:13,campaign:20/);
   assert.match(calculator, /Co-Fund Voucher/);
   assert.doesNotMatch(calculator, /自动生效/);
   assert.match(packageControl, /Calculator package/);

@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { calculateShopeePrice, COMMISSION_CATEGORIES, commissionRateFor, SERVICE_MODES } from "./price-calculator-model";
 import type { CalculatorSnapshot, PackagePrefill } from "./calculator-types";
+import { VOUCHER_PRESET_SOURCE, voucherPresetFor } from "./voucher-presets.js";
 
 type ServiceMode = keyof typeof SERVICE_MODES;
 type PackageRow = { id:number; name:string; facebookPrice:number; markupRates:Record<ServiceMode,string|null> };
@@ -12,7 +13,7 @@ type FeeSettings = {
   shopeeVoucher:number; sellerVoucher:number; cofundVoucher:number;
   sellerShipping:number; facebookShipping:number; extraProfit:number;
 };
-type Props = { onCreatePackage?:(prefill:PackagePrefill)=>void; onCreatePackages?:(prefills:PackagePrefill[])=>void };
+type Props = { storeName?:string; onCreatePackage?:(prefill:PackagePrefill)=>void; onCreatePackages?:(prefills:PackagePrefill[])=>void };
 
 const blankMarkups = ():Record<ServiceMode,string|null> => ({nonCampaign:null,campaign:null});
 const INITIAL_PACKAGES:PackageRow[] = [
@@ -25,28 +26,35 @@ const money = (value:number) => `RM ${Number.isFinite(value) ? value.toFixed(2) 
 const pct = (value:number) => `${Number.isFinite(value) ? value.toFixed(2) : "0.00"}%`;
 const positive = (value:string) => Math.max(0, Number(value) || 0);
 
-export function PriceCalculator({ onCreatePackage, onCreatePackages }:Props) {
+export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackages }:Props) {
   const [packages,setPackages] = useState(INITIAL_PACKAGES);
   const [category,setCategory] = useState<string>(()=>String(Math.max(0,COMMISSION_CATEGORIES.findIndex(item=>item.cluster==="FMCG"&&item.name.startsWith("Beauty ›")))));
   const [customCommission,setCustomCommission] = useState("");
   const commission = commissionRateFor(category,true,customCommission);
   const usingCustomCommission = customCommission !== "";
+  const storeVoucherPreset = voucherPresetFor(storeName);
+  const [voucherRates,setVoucherRates] = useState<Record<ServiceMode,number>>({nonCampaign:storeVoucherPreset.normal,campaign:storeVoucherPreset.campaign});
   const [fees,setFees] = useState<Omit<FeeSettings,"commission"|"service">>({
     transaction:3.78, serviceCap:108, preorder:2.14, isPreorder:false, platformSupport:0.54,
-    shopeeVoucher:16, sellerVoucher:0, cofundVoucher:20,
+    shopeeVoucher:0, sellerVoucher:0, cofundVoucher:20,
     sellerShipping:0, facebookShipping:10, extraProfit:0,
   });
   const calculations = useMemo(()=>packages.map(row=>({
     row,
     scenarios:SCENARIOS.map(mode=>{
-      const activeFees:FeeSettings = {...fees,commission,service:SERVICE_MODES[mode].rate};
+      const activeFees:FeeSettings = {...fees,commission,service:SERVICE_MODES[mode].rate,shopeeVoucher:voucherRates[mode]};
       const suggested = calculateShopeePrice(row,activeFees);
       const customMarkup = row.markupRates[mode];
       const result = customMarkup === null ? suggested : calculateShopeePrice(row,activeFees,positive(customMarkup));
       return {mode,activeFees,suggested,result};
     }),
-  })),[packages,fees,commission]);
+  })),[packages,fees,commission,voucherRates]);
   const headlineRate = fees.transaction + commission + SERVICE_MODES.campaign.rate + (fees.isPreorder?fees.preorder:0);
+
+  useEffect(()=>{
+    const preset = voucherPresetFor(storeName);
+    setVoucherRates({nonCampaign:preset.normal,campaign:preset.campaign});
+  },[storeName]);
 
   function updateFee(key:keyof typeof fees, value:string|boolean) {
     setFees(current=>({...current,[key]:typeof value==="boolean"?value:positive(value)}));
@@ -56,6 +64,9 @@ export function PriceCalculator({ onCreatePackage, onCreatePackages }:Props) {
   }
   function updateMarkup(id:number, mode:ServiceMode, value:string) {
     setPackages(current=>current.map(row=>row.id===id?{...row,markupRates:{...row.markupRates,[mode]:value===""?null:value}}:row));
+  }
+  function updateVoucher(mode:ServiceMode, value:string) {
+    setVoucherRates(current=>({...current,[mode]:Math.min(100,positive(value))}));
   }
   function addPackage() {
     setPackages(current=>[...current,{id:Math.max(0,...current.map(row=>row.id))+1,name:`Package ${String.fromCharCode(65+current.length)}`,facebookPrice:0,markupRates:blankMarkups()}]);
@@ -75,13 +86,13 @@ export function PriceCalculator({ onCreatePackage, onCreatePackages }:Props) {
       customCommission:usingCustomCommission ? Number(customCommission) : null,
       commissionRate:commission,
       transactionRate:fees.transaction,
-      serviceScenario:SERVICE_MODES[mode].label,
+      serviceScenario:SERVICE_MODES[mode].label as CalculatorSnapshot["serviceScenario"],
       serviceRate:SERVICE_MODES[mode].rate,
       serviceCap:fees.serviceCap,
       preorderListing:fees.isPreorder,
       preorderRate:fees.preorder,
       platformSupportFee:fees.platformSupport,
-      shopeeVoucherRate:fees.shopeeVoucher,
+      shopeeVoucherRate:voucherRates[mode],
       sellerVoucher:fees.sellerVoucher,
       cofundVoucher:fees.cofundVoucher,
       sellerShipping:fees.sellerShipping,
@@ -113,7 +124,7 @@ export function PriceCalculator({ onCreatePackage, onCreatePackages }:Props) {
 
   return <div className="price-calculator">
     <section className="calculator-hero">
-      <div><p className="kicker">SHOPEE MY · MARKUP CALCULATOR</p><h2>配套卖价倒推计算机</h2><p>Cashback Program 已固定开启；系统会同时计算 Campaign Day 与 Non-Campaign Day 的建议卖价。</p></div>
+      <div><p className="kicker">SHOPEE MY · MARKUP CALCULATOR</p><h2>配套卖价倒推计算机</h2><p>{storeName||"Selected store"} · Voucher preset 根据 {VOUCHER_PRESET_SOURCE.month} 店铺记录；Campaign Day 与 Non-Campaign Day 分开计算。</p></div>
       <div className="calculator-hero-result"><span>Campaign Day 最高百分比收费</span><strong>{pct(headlineRate)}</strong><small>Service Fee 达 RM108 后会停止增加</small></div>
     </section>
 
@@ -131,7 +142,6 @@ export function PriceCalculator({ onCreatePackage, onCreatePackages }:Props) {
           <input type="number" min="0" step=".01" value={customCommission} placeholder={`Auto: ${pct(commissionRateFor(category,true))}`} onChange={event=>setCustomCommission(event.target.value)}/>
           {usingCustomCommission&&<small>Custom rate is active · 输入最终含 SST 的费率</small>}
         </label>
-        <label>Shopee Voucher Disc. (%)<input type="number" min="0" step=".01" value={fees.shopeeVoucher} onChange={event=>updateFee("shopeeVoucher",event.target.value)}/></label>
         <label>Co-Fund Voucher (RM)<input type="number" min="0" step=".01" value={fees.cofundVoucher} onChange={event=>updateFee("cofundVoucher",event.target.value)}/></label>
         <div className="setup-toggle-field"><label className="setup-toggle"><input type="checkbox" checked={fees.isPreorder} onChange={event=>updateFee("isPreorder",event.target.checked)}/><span><b>Pre-Order Listing</b></span></label><small>额外 {pct(fees.preorder)}</small></div>
       </div>
@@ -153,7 +163,7 @@ export function PriceCalculator({ onCreatePackage, onCreatePackages }:Props) {
         <label>Facebook Shipping (RM)<input type="number" min="0" step=".01" value={fees.facebookShipping} onChange={event=>updateFee("facebookShipping",event.target.value)}/></label>
         <label>Extra Profit Target (RM)<input type="number" min="0" step=".01" value={fees.extraProfit} onChange={event=>updateFee("extraProfit",event.target.value)}/></label>
       </div>
-      <p className="formula-note">Default：Cashback Program ON · Transaction 3.78% · Platform Support RM0.54 · Pre-Order 2.14% · Non-Campaign 5.94% / Campaign 8.10%，两种 Service Fee 均 capped at RM108。</p>
+      <p className="formula-note">Voucher 指标：{storeVoucherPreset.available?`${storeVoucherPreset.store} · Normal ${pct(voucherRates.nonCampaign)} / Campaign ${pct(voucherRates.campaign)}`:"此店暂时没有 Voucher preset · 两种情境以 0% 开始"}。来源：{VOUCHER_PRESET_SOURCE.month} · {VOUCHER_PRESET_SOURCE.metric}。</p>
     </section>
 
     <section className="calculator-table calculator-results card">
@@ -170,7 +180,7 @@ export function PriceCalculator({ onCreatePackage, onCreatePackages }:Props) {
           const payoutProtected = result.payout >= result.targetPayout - .005;
           return <div className={`scenario-result${isMarkupBlocked?" markup-blocked":""}`} key={mode}>
             <div className="scenario-result-main">
-              <div className={`scenario-badge ${mode}`}><b>{SERVICE_MODES[mode].label}</b><small>Service Fee {pct(SERVICE_MODES[mode].rate)}</small></div>
+              <div className={`scenario-badge ${mode}`}><b>{SERVICE_MODES[mode].label}</b><small>Service Fee {pct(SERVICE_MODES[mode].rate)}</small><label className="scenario-voucher"><span>Shopee Voucher preset</span><div><input type="number" min="0" max="100" step=".01" value={voucherRates[mode]} onChange={event=>updateVoucher(mode,event.target.value)}/><strong>%</strong></div></label></div>
               <div className="result-metric suggested-price"><span>建议 Shopee 卖价</span><strong>{money(result.requiredPrice)}</strong><small>Listing price</small></div>
               <div className="result-metric"><span>顾客 Voucher 后价钱</span><strong>{money(result.customerPrice)}</strong><small>顾客实际看到</small></div>
               <label className="result-metric markup-editor"><span>需要 Markup</span><div><input type="number" min="0" step=".01" value={row.markupRates[mode] ?? suggested.markupRate.toFixed(2)} onChange={event=>updateMarkup(row.id,mode,event.target.value)}/><b>%</b></div><small>{row.markupRates[mode]===null?`系统建议 · ${money(suggested.markupAmount)}`:`自订 · ${money(result.markupAmount)}`}</small></label>

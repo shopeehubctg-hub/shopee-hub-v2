@@ -205,7 +205,7 @@ export default function Home() {
       </div>}
 
       {section==="packages" && <div className="page"><PackageControl storeId={storeId || "all"} storeName={allStoresSelected ? "All stores" : (store?.name ?? "Selected store")} prefills={packagePrefills} onPrefillsAccepted={()=>setPackagePrefills([])} /></div>}
-      {section==="calculator" && <div className="page"><PriceCalculator onCreatePackage={prefill=>{setPackagePrefills([prefill]);setSection("packages")}} onCreatePackages={prefills=>{setPackagePrefills(prefills);setSection("packages")}} /></div>}
+      {section==="calculator" && <div className="page"><PriceCalculator storeName={allStoresSelected?"":(store?.name??"")} onCreatePackage={prefill=>{setPackagePrefills([prefill]);setSection("packages")}} onCreatePackages={prefills=>{setPackagePrefills(prefills);setSection("packages")}} /></div>}
       {section==="design" && <div className="page"><DesignChecker storeId={storeId}/></div>}
       {section==="protection" && <div className="page"><FakeSellerReport storeName={store?.name ?? "Selected store"} allStores={allStoresSelected} cases={fakeSellerCases}/></div>}
 
