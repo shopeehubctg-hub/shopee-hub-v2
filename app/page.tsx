@@ -102,6 +102,7 @@ export default function Home() {
   const [adRangeStart, setAdRangeStart] = useState("");
   const [adRangeEnd, setAdRangeEnd] = useState("");
   const [packagePrefills, setPackagePrefills] = useState<PackagePrefill[]>([]);
+  const [standalonePackageCreate, setStandalonePackageCreate] = useState(false);
 
   async function load(id?: string) {
     setLoading(true);
@@ -112,7 +113,33 @@ export default function Home() {
       }
     } finally { setLoading(false); }
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const draftKey = params.get("packageDraft");
+    if (params.get("section") === "packages") setSection("packages");
+    if (draftKey) {
+      try {
+        const saved = window.localStorage.getItem(`package-draft:${draftKey}`);
+        if (saved) {
+          const draft = JSON.parse(saved) as { prefills:PackagePrefill[]; storeId?:string };
+          setPackagePrefills(draft.prefills ?? []);
+          setStandalonePackageCreate(true);
+          window.localStorage.removeItem(`package-draft:${draftKey}`);
+          load(draft.storeId && draft.storeId !== "all" ? draft.storeId : undefined);
+          return;
+        }
+      } catch {
+        // Fall back to the regular Packages page if the transferred draft is unavailable.
+      }
+    }
+    load();
+  }, []);
+
+  function openPackageDraft(prefills:PackagePrefill[]) {
+    const draftKey = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    window.localStorage.setItem(`package-draft:${draftKey}`, JSON.stringify({ prefills, storeId }));
+    window.open(`${window.location.pathname}?section=packages&packageDraft=${encodeURIComponent(draftKey)}`, "_blank", "noopener,noreferrer");
+  }
   const allStoresSelected = storeId === "all";
   const store = allStoresSelected ? null : (data?.stores.find(s => s.id === storeId) ?? data?.stores[0]);
   const staticSnapshot = store ? storeSnapshots[store.name] : null;
@@ -204,8 +231,8 @@ export default function Home() {
         </section>
       </div>}
 
-      {section==="packages" && <div className="page"><PackageControl storeId={storeId || "all"} storeName={allStoresSelected ? "All stores" : (store?.name ?? "Selected store")} prefills={packagePrefills} onPrefillsAccepted={()=>setPackagePrefills([])} /></div>}
-      {section==="calculator" && <div className="page"><PriceCalculator storeName={allStoresSelected?"":(store?.name??"")} onCreatePackage={prefill=>{setPackagePrefills([prefill]);setSection("packages")}} onCreatePackages={prefills=>{setPackagePrefills(prefills);setSection("packages")}} /></div>}
+      {section==="packages" && <div className="page"><PackageControl storeId={storeId || "all"} storeName={allStoresSelected ? "All Stores" : (store?.name ?? "Selected Store")} prefills={packagePrefills} standaloneCreate={standalonePackageCreate} onPrefillsAccepted={()=>setPackagePrefills([])} /></div>}
+      {section==="calculator" && <div className="page"><PriceCalculator storeName={allStoresSelected?"":(store?.name??"")} onCreatePackage={prefill=>openPackageDraft([prefill])} onCreatePackages={openPackageDraft} /></div>}
       {section==="design" && <div className="page"><DesignChecker storeId={storeId}/></div>}
       {section==="protection" && <div className="page"><FakeSellerReport storeName={store?.name ?? "Selected store"} allStores={allStoresSelected} cases={fakeSellerCases}/></div>}
 
