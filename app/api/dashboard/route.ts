@@ -3,6 +3,7 @@ import { getDb } from "../../../db";
 import { adBalances, customerUsers, dashboardSnapshots, managementActions, stores, tenants } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { contactsForStore, directoryStoreNameFor } from "../../project-group-links";
+import { storeSnapshots } from "../../store-snapshots";
 
 export const dynamic = "force-dynamic";
 
@@ -158,6 +159,48 @@ function isSingaporeStore(name: string) {
 }
 
 export async function GET(request: Request) {
+  // Vercel cannot access the Cloudflare D1 binding used by the ChatGPT Sites
+  // deployment. Keep the public mirror useful by reading the two live Google
+  // Sheets sources and serving the portable snapshots bundled with the app.
+  if (process.env.VERCEL === "1") {
+    const directoryStores = await readLinkDirectory();
+    const visibleStores = directoryStores.map(({ name }) => ({
+      id: storeIdFor(name),
+      name,
+      platform: isSingaporeStore(name) ? "Shopee SG" : "Shopee MY",
+    }));
+    const requestedStoreId = new URL(request.url).searchParams.get("storeId");
+    const allStoresRequested = !requestedStoreId || requestedStoreId === "all";
+    const selectedStore = allStoresRequested ? undefined : visibleStores.find((store) => store.id === requestedStoreId);
+    if (requestedStoreId && !allStoresRequested && !selectedStore) {
+      return Response.json({ error: "Store access denied" }, { status: 403 });
+    }
+    const selectedDirectory = selectedStore ? directoryStores.find((store) => store.name === selectedStore.name) : undefined;
+    const snapshotPayload = selectedStore ? storeSnapshots[selectedStore.name] ?? null : null;
+    const sheetBalance = selectedStore ? await readSheetBalance(selectedStore.name) : null;
+    return Response.json({
+      customer: { id: "shopee-hub", name: "Shopee Hub" },
+      stores: visibleStores.map((store) => {
+        const directory = directoryStores.find((item) => item.name === store.name);
+        return {
+          ...store,
+          contacts: directory?.contacts.length ? directory.contacts : contactsForStore(store.name),
+          storeGroupLink: directory?.storeGroupLink ?? null,
+          driveLink: directory?.driveLink ?? null,
+        };
+      }),
+      selectedStoreId: allStoresRequested ? "all" : selectedStore?.id ?? null,
+      snapshot: snapshotPayload ? { payload: snapshotPayload, importedAt: snapshotPayload.sourceUpdated ?? new Date().toISOString() } : null,
+      adBalance: sheetBalance ? { ...sheetBalance, topUpOwner: selectedDirectory?.topUpOwner ?? topUpOwnerFallbacks[selectedStore?.name ?? ""] ?? null } : null,
+      actions: [],
+      dataSources: {
+        directory: "Google Sheets · WhatsApp Group / Link Directory",
+        advertisingBalance: "Google Sheets · Ad Balance Sheet1",
+        performance: snapshotPayload ? "Portable snapshot exported from the ChatGPT Sites dashboard" : "Advertising exports and bundled dashboard data",
+      },
+    }, { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=3600" } });
+  }
+
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error: "Authentication required" }, { status: 401 });
 
