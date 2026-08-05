@@ -49,6 +49,7 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
       return {mode,activeFees,suggested,result};
     }),
   })),[packages,fees,commission,voucherRates]);
+  const headlineRate = fees.transaction + commission + SERVICE_MODES.campaign.rate + (fees.isPreorder?fees.preorder:0);
   useEffect(()=>{
     const preset = voucherPresetFor(storeName);
     setVoucherRates({nonCampaign:preset.normal,campaign:preset.campaign});
@@ -122,13 +123,15 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
 
   return <div className="price-calculator">
     <section className="calculator-hero">
-      <div><p className="kicker">SHOPEE MY · MARKUP CALCULATOR</p><h2>配套卖价倒推计算机</h2><p>{storeName||"Selected store"} · Voucher preset 根据 {VOUCHER_PRESET_SOURCE.month} 店铺记录；Campaign Day 与 Non-Campaign Day 分开计算。</p></div>
-      <div className={`calculator-hero-result voucher-hero-result${storeVoucherPreset.available?"":" unavailable"}`}>
-        <div className="voucher-hero-head"><span>Shopee Voucher %</span><small>{storeVoucherPreset.available?`${storeVoucherPreset.store} · ${VOUCHER_PRESET_SOURCE.month}`:"No preset for this store"}</small></div>
-        <div className="voucher-hero-values">
-          <div><span>Non-Campaign Day</span><strong>{storeVoucherPreset.available?pct(voucherRates.nonCampaign):"—"}</strong></div>
-          <i>vs</i>
-          <div><span>Campaign Day</span><strong>{storeVoucherPreset.available?pct(voucherRates.campaign):"—"}</strong></div>
+      <div><p className="kicker">SHOPEE MY · MARKUP CALCULATOR</p><h2>Markup Calculator</h2><p>{storeName||"Selected store"} · Voucher preset 根据 {VOUCHER_PRESET_SOURCE.month} 店铺记录，修改一次会套用全部配套。</p></div>
+      <div className="calculator-hero-metrics">
+        <div className="calculator-hero-result total-fee-result"><span>Total Commission Fee %</span><strong>{pct(headlineRate)}</strong><small>Campaign Day · Service Fee capped at RM108</small></div>
+        <div className={`calculator-hero-result voucher-hero-result${storeVoucherPreset.available?"":" unavailable"}`}>
+          <div className="voucher-hero-head"><span>Shopee Voucher %</span><small>{storeVoucherPreset.available?`${VOUCHER_PRESET_SOURCE.month} preset`:"No preset"}</small></div>
+          <div className="voucher-hero-inputs">
+            <label><span>Non-Campaign Day</span><div><input aria-label="Non-Campaign Shopee Voucher percentage" type="number" min="0" max="100" step=".01" value={voucherRates.nonCampaign} onChange={event=>updateVoucher("nonCampaign",event.target.value)}/><b>%</b></div></label>
+            <label><span>Campaign Day</span><div><input aria-label="Campaign Shopee Voucher percentage" type="number" min="0" max="100" step=".01" value={voucherRates.campaign} onChange={event=>updateVoucher("campaign",event.target.value)}/><b>%</b></div></label>
+          </div>
         </div>
       </div>
     </section>
@@ -185,7 +188,7 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
           const payoutProtected = result.payout >= result.targetPayout - .005;
           return <div className={`scenario-result${isMarkupBlocked?" markup-blocked":""}`} key={mode}>
             <div className="scenario-result-main">
-              <div className={`scenario-badge ${mode}`}><b>{SERVICE_MODES[mode].label}</b><small>Service Fee {pct(SERVICE_MODES[mode].rate)}</small><label className="scenario-voucher"><span>Shopee Voucher preset</span><div><input type="number" min="0" max="100" step=".01" value={voucherRates[mode]} onChange={event=>updateVoucher(mode,event.target.value)}/><strong>%</strong></div></label></div>
+              <div className={`scenario-badge ${mode}`}><b>{SERVICE_MODES[mode].label}</b><small>Service Fee {pct(SERVICE_MODES[mode].rate)} · Voucher {pct(voucherRates[mode])}</small></div>
               <div className="result-metric suggested-price"><span>建议 Shopee 卖价</span><strong>{money(result.requiredPrice)}</strong><small>Listing price</small></div>
               <div className="result-metric"><span>顾客 Voucher 后价钱</span><strong>{money(result.customerPrice)}</strong><small>顾客实际看到</small></div>
               <label className="result-metric markup-editor"><span>需要 Markup</span><div><input type="number" min="0" step=".01" value={row.markupRates[mode] ?? suggested.markupRate.toFixed(2)} onChange={event=>updateMarkup(row.id,mode,event.target.value)}/><b>%</b></div><small>{row.markupRates[mode]===null?`系统建议 · ${money(suggested.markupAmount)}`:`自订 · ${money(result.markupAmount)}`}</small></label>

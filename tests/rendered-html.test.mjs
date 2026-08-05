@@ -175,11 +175,14 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /Non-Campaign Day/);
   assert.match(calculator, /Campaign Day/);
   assert.doesNotMatch(calculator, /Shopee Voucher Disc\. \(%\)/);
-  assert.match(calculator, /Shopee Voucher preset/);
+  assert.match(calculator, /Shopee Voucher %/);
   assert.match(calculator, /voucherRates\[mode\]/);
-  assert.match(calculator, /voucher-hero-values/);
+  assert.match(calculator, /voucher-hero-inputs/);
   assert.match(calculator, /voucherRates\.nonCampaign/);
   assert.match(calculator, /voucherRates\.campaign/);
+  assert.match(calculator, /Total Commission Fee %/);
+  assert.match(calculator, /<h2>Markup Calculator<\/h2>/);
+  assert.doesNotMatch(calculator, /scenario-voucher/);
   assert.doesNotMatch(calculator, /Campaign Day 最高百分比收费/);
   assert.match(page, /storeName=\{allStoresSelected/);
   assert.match(voucherPresets, /Rounded Up Buffer/);
