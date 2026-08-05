@@ -8,6 +8,7 @@ type PlatformName = "Shopee"|"Lazada"|"TikTok Shop";
 type PlatformLine = { platform:PlatformName; packageSku:string };
 type MarketName = "MY"|"SG";
 type PriceType = "non_campaign"|"campaign";
+type CampaignEvent = "dday"|"mid_month"|"payday";
 type PriceSchedule = {
   market:MarketName; priceType:PriceType; originalPrice:number; sellingPrice:number;
   promotionType:"monthly"|"custom"; effectiveFrom:string; effectiveTo:string;
@@ -33,7 +34,7 @@ const blankLine = ():ComponentLine => ({ inventorySku:"", name:"", quantity:1, k
 const blankPeriod = () => ({ promotionType:"monthly" as "monthly"|"custom", promotionMonth:"", effectiveFrom:"", effectiveTo:"" });
 const blankForm = () => ({
   name:"", status:"draft", markets:["MY"] as MarketName[],
-  nonCampaign:blankPeriod(), campaign:blankPeriod(),
+  nonCampaign:blankPeriod(), campaign:{...blankPeriod(),promotionType:"custom" as const,campaignEvent:"dday" as CampaignEvent},
   prices:{
     MY:{ nonCampaignOriginal:"", nonCampaignSelling:"", campaignOriginal:"", campaignSelling:"" },
     SG:{ nonCampaignOriginal:"", nonCampaignSelling:"", campaignOriginal:"", campaignSelling:"" },
@@ -49,6 +50,20 @@ function monthDates(month:string) {
   const [year, monthNumber] = month.split("-").map(Number);
   const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
   return { from:`${month}-01`, to:`${month}-${String(lastDay).padStart(2,"0")}` };
+}
+
+function campaignDates(month:string,event:CampaignEvent) {
+  if (!/^\d{4}-\d{2}$/.test(month)) return { from:"", to:"" };
+  const monthNumber=Number(month.slice(5));
+  const [startDay,endDay]=event==="dday"?[Math.max(1,monthNumber-2),monthNumber]:event==="mid_month"?[14,15]:[24,25];
+  const day=(value:number)=>String(value).padStart(2,"0");
+  return {from:`${month}-${day(startDay)}`,to:`${month}-${day(endDay)}`};
+}
+
+function campaignEventForDates(from:string,to:string):CampaignEvent {
+  if (from.slice(-2)==="14"&&to.slice(-2)==="15") return "mid_month";
+  if (from.slice(-2)==="24"&&to.slice(-2)==="25") return "payday";
+  return "dday";
 }
 
 export function PackageControl({ storeId, storeName, canCreate=true, prefills=[], standaloneCreate=false, onPrefillsAccepted }:Props) {
@@ -94,8 +109,8 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     const nonCampaignPrice=nonCampaign.sellingPrice.toFixed(2);
     const campaignPrice=campaign.sellingPrice.toFixed(2);
     setForm(current=>({...current,name:first.name,prices:{...current.prices,MY:{
-      nonCampaignOriginal:nonCampaignPrice,nonCampaignSelling:nonCampaignPrice,
-      campaignOriginal:campaignPrice,campaignSelling:campaignPrice,
+      nonCampaignOriginal:"",nonCampaignSelling:nonCampaignPrice,
+      campaignOriginal:"",campaignSelling:campaignPrice,
     }},changeNote:"Created from Shopee Pricing Calculator"}));
     setCalculatorSettings(first.calculatorSettings);
     setMessage("");
@@ -152,8 +167,13 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   }
 
   function updatePromotionMonth(period:"nonCampaign"|"campaign",month:string) {
-    const dates = monthDates(month);
+    const dates = period==="campaign"?campaignDates(month,form.campaign.campaignEvent):monthDates(month);
     setForm(current=>({...current,[period]:{...current[period],promotionMonth:month,effectiveFrom:dates.from,effectiveTo:dates.to}}));
+  }
+
+  function updateCampaignEvent(campaignEvent:CampaignEvent) {
+    const dates=campaignDates(form.campaign.promotionMonth,campaignEvent);
+    setForm(current=>({...current,campaign:{...current.campaign,campaignEvent,effectiveFrom:dates.from,effectiveTo:dates.to}}));
   }
 
   function toggleMarket(market:MarketName) {
@@ -231,7 +251,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     setForm({
       name:item.name,status:"draft",markets,
       nonCampaign:{promotionType:nc.promotionType,promotionMonth:nc.promotionType==="monthly"?nc.effectiveFrom.slice(0,7):"",effectiveFrom:nc.effectiveFrom,effectiveTo:nc.effectiveTo},
-      campaign:{promotionType:campaign.promotionType,promotionMonth:campaign.promotionType==="monthly"?campaign.effectiveFrom.slice(0,7):"",effectiveFrom:campaign.effectiveFrom,effectiveTo:campaign.effectiveTo},
+      campaign:{promotionType:"custom",promotionMonth:campaign.effectiveFrom.slice(0,7),campaignEvent:campaignEventForDates(campaign.effectiveFrom,campaign.effectiveTo),effectiveFrom:campaign.effectiveFrom,effectiveTo:campaign.effectiveTo},
       prices:{MY:{nonCampaignOriginal:String(priceFor("MY","non_campaign")?.originalPrice??""),nonCampaignSelling:String(priceFor("MY","non_campaign")?.sellingPrice??""),campaignOriginal:String(priceFor("MY","campaign")?.originalPrice??""),campaignSelling:String(priceFor("MY","campaign")?.sellingPrice??"")},SG:{nonCampaignOriginal:String(priceFor("SG","non_campaign")?.originalPrice??""),nonCampaignSelling:String(priceFor("SG","non_campaign")?.sellingPrice??""),campaignOriginal:String(priceFor("SG","campaign")?.originalPrice??""),campaignSelling:String(priceFor("SG","campaign")?.sellingPrice??"")}},
       changeNote:stored ? `Changes from Version ${item.version}` : "Migrated from Fulfillment Sheet",
     });
@@ -287,7 +307,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     {showCreate&&<div className={`package-modal${standaloneCreate?" standalone":""}`} role={standaloneCreate?undefined:"dialog"} aria-modal={standaloneCreate?undefined:"true"}><div className="package-form">
       <div className="package-form-head"><div><p className="kicker">{editingPackageId?"NEW VERSION":"NEW PACKAGE"}</p><h3>{editingPackageId?"Create Next Version":"Create A Package"}</h3><span>{storeName}{prefillQueue.length?` · ${prefillQueue.length} Ready Package${prefillQueue.length===1?"":"s"} Remaining`:""}</span></div><button onClick={closeCreate} aria-label="Close">×</button></div>
 
-      {prefillBatch.length>0&&<section className="calculator-batch-transfer"><div><b>✓ {prefillBatch.length} Calculator Package{prefillBatch.length===1?"":"s"} Brought Over</b><span>名称、Selling Price 与 Calculator Settings 已全部保留；完成当前表单后会自动继续下一项。</span></div><div className="calculator-batch-list">{prefillBatch.map((item,index)=><div className={index===0?"current":""} key={item.requestId}><span>{index===0?"Current":"Queued"}</span><b>{item.name}</b><strong>{money(item.sellingPrice,"MY")}</strong><small>{item.calculatorSettings.serviceScenario}</small></div>)}</div></section>}
+      {prefillBatch.length>0&&<section className="calculator-batch-transfer"><div><b>✓ {groupPrefills(prefillBatch).length} Calculator Package{groupPrefills(prefillBatch).length===1?"":"s"} Brought Over</b><span>同一个 Package 的 Non-Campaign 与 Campaign 价格已合并；完成当前表单后会自动继续下一项。</span></div><div className="calculator-batch-list">{groupPrefills(prefillBatch).map((group,index)=>{const nonCampaign=group.find(item=>item.calculatorSettings.serviceScenario==="Non-Campaign Day")??group[0];const campaign=group.find(item=>item.calculatorSettings.serviceScenario==="Campaign Day")??group[0];return <div className={index===0?"current":""} key={group[0].name}><span>{index===0?"Current":"Queued"}</span><b>{group[0].name}</b><strong><small>Non-Campaign</small>{money(nonCampaign.sellingPrice,"MY")}</strong><strong><small>Campaign</small>{money(campaign.sellingPrice,"MY")}</strong></div>})}</div></section>}
 
       <section className="form-section"><div className="form-section-title"><span>1</span><div><h4>Package Details</h4><p>名称与销售市场；MY / SG 共用同一个配套内容与活动日期</p></div></div>
         <div className="form-grid package-detail-grid">
@@ -316,7 +336,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         {([['nonCampaign','Non-Campaign'],['campaign','Campaign']] as const).map(([periodKey,title])=>{
           const period=form[periodKey];
           return <div className={`scenario-editor ${periodKey}`} key={periodKey}>
-            <div className="scenario-editor-head"><div><b>{title}</b><span>{title==="Campaign"?"Campaign Day Price & Dates":"Always-On Price & Dates"}</span></div><div className="promotion-toggle"><button type="button" className={period.promotionType==="monthly"?"active":""} onClick={()=>setForm({...form,[periodKey]:{...period,promotionType:"monthly"}})}>Full Month</button><button type="button" className={period.promotionType==="custom"?"active":""} onClick={()=>setForm({...form,[periodKey]:{...period,promotionType:"custom"}})}>Custom Dates</button></div></div>
+            <div className="scenario-editor-head"><div><b>{title}</b><span>{title==="Campaign"?"Campaign Day Price & Dates":"Always-On Price & Dates"}</span></div>{periodKey==="nonCampaign"&&<div className="promotion-toggle"><button type="button" className={period.promotionType==="monthly"?"active":""} onClick={()=>setForm({...form,[periodKey]:{...period,promotionType:"monthly"}})}>Full Month</button><button type="button" className={period.promotionType==="custom"?"active":""} onClick={()=>setForm({...form,[periodKey]:{...period,promotionType:"custom"}})}>Custom Dates</button></div>}</div>
             <div className="scenario-body"><div className="market-price-grid">{form.markets.map(market=>{
               const prefix=periodKey==="campaign"?"campaign":"nonCampaign";
               const originalKey=`${prefix}Original` as keyof typeof form.prices.MY;
@@ -324,7 +344,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
               const same=Boolean(form.prices[market][originalKey])&&Number(form.prices[market][originalKey])===Number(form.prices[market][sellingKey]);
               return <div className={`market-price-card ${same?"same-price-warning":""}`} key={market}><strong>{market} <small>{market==="MY"?"RM":"S$"}</small></strong><label>Original Price <em>*</em><input required type="number" min="0.01" step="0.01" value={form.prices[market][originalKey]} onChange={event=>updatePrice(market,originalKey,event.target.value)}/></label><label>Selling Price<input required type="number" min="0.01" step="0.01" value={form.prices[market][sellingKey]} onChange={event=>updatePrice(market,sellingKey,event.target.value)}/></label>{same&&<div className="same-price-alert">⚠️ Original Price equals Selling Price — please double-check.</div>}</div>;
             })}</div>
-            {period.promotionType==="monthly"?<div className="date-fields"><label>Promotion Month<input type="month" value={period.promotionMonth} onChange={event=>updatePromotionMonth(periodKey,event.target.value)}/></label><div className="date-preview"><span>Start <b>{period.effectiveFrom||"—"}</b></span><span>End <b>{period.effectiveTo||"—"}</b></span></div></div>:<div className="date-fields"><label>Start Date<input type="date" value={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveFrom:event.target.value}})}/></label><label>End Date<input type="date" value={period.effectiveTo} min={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveTo:event.target.value}})}/></label></div>}
+            {periodKey==="campaign"?<div className="campaign-date-controls"><label>Campaign Month<input type="month" value={period.promotionMonth} onChange={event=>updatePromotionMonth(periodKey,event.target.value)}/></label><fieldset><legend>Campaign Event</legend>{([['dday','D-Day'],['mid_month','Mid Month Madness'],['payday','Payday']] as const).map(([value,label])=><label key={value} className={form.campaign.campaignEvent===value?"selected":""}><input type="radio" name="campaign-event" checked={form.campaign.campaignEvent===value} onChange={()=>updateCampaignEvent(value)}/><span><b>{label}</b><small>{value==="dday"?"2 Days Before To Double Day":value==="mid_month"?"14th–15th":"24th–25th"}</small></span></label>)}</fieldset><div className="date-preview"><span>Start <b>{period.effectiveFrom||"—"}</b></span><span>End <b>{period.effectiveTo||"—"}</b></span></div></div>:period.promotionType==="monthly"?<div className="date-fields"><label>Promotion Month<input type="month" value={period.promotionMonth} onChange={event=>updatePromotionMonth(periodKey,event.target.value)}/></label><div className="date-preview"><span>Start <b>{period.effectiveFrom||"—"}</b></span><span>End <b>{period.effectiveTo||"—"}</b></span></div></div>:<div className="date-fields"><label>Start Date<input type="date" value={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveFrom:event.target.value}})}/></label><label>End Date<input type="date" value={period.effectiveTo} min={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveTo:event.target.value}})}/></label></div>}
             </div>
           </div>;
         })}

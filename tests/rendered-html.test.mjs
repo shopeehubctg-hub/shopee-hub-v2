@@ -22,6 +22,11 @@ test("package control is wired into the command center", async () => {
   assert.match(component, /Custom Dates/);
   assert.match(component, /Non-Campaign/);
   assert.match(component, /Campaign/);
+  assert.match(component, /D-Day/);
+  assert.match(component, /Mid Month Madness/);
+  assert.match(component, /Payday/);
+  assert.match(component, /campaignDates/);
+  assert.match(component, /nonCampaignOriginal:""/);
   assert.match(component, /Selling Markets/);
   assert.match(component, /Original Price <em>\*<\/em>/);
   assert.match(component, /Original Price equals Selling Price/);
@@ -213,7 +218,7 @@ test("price calculator is available in navigation with all required outputs", as
   assert.doesNotMatch(calculator, /自动生效/);
   assert.match(packageControl, /Calculator Package/);
   assert.match(packageControl, /prefillBatch/);
-  assert.match(packageControl, /Selling Price 与 Calculator Settings 已全部保留/);
+  assert.match(packageControl, /Non-Campaign 与 Campaign 价格已合并/);
   assert.doesNotMatch(calculator, /showAdvanced/);
   assert.match(calculator, /suggestedShopeePrice:result\.requiredPrice/);
   assert.match(page, /openPackageDraft/);
