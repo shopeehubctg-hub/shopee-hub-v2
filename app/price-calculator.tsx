@@ -17,7 +17,7 @@ type FeeSettings = {
 type FeeDraft = {
   serviceCap:NumberValue; preorder:NumberValue; isPreorder:boolean; isSpayLater:boolean; platformSupport:NumberValue;
   shopeeVoucher:NumberValue; sellerVoucher:NumberValue; cofundVoucher:NumberValue;
-  sellerShipping:NumberValue; facebookShipping:NumberValue; extraProfit:NumberValue;
+  sellerShipping:NumberValue; facebookShipping:NumberValue;
 };
 type Props = { storeName?:string; onCreatePackage?:(prefill:PackagePrefill)=>void; onCreatePackages?:(prefills:PackagePrefill[])=>void };
 
@@ -44,7 +44,7 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
   const [fees,setFees] = useState<FeeDraft>({
     serviceCap:108, preorder:2.14, isPreorder:false, isSpayLater:false, platformSupport:0.54,
     shopeeVoucher:0, sellerVoucher:0, cofundVoucher:20,
-    sellerShipping:0, facebookShipping:10, extraProfit:0,
+    sellerShipping:0, facebookShipping:10,
   });
   const transactionRate = fees.isSpayLater?4.86:3.78;
   const calculations = useMemo(()=>packages.map(row=>({
@@ -55,7 +55,7 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
         serviceCap:positive(fees.serviceCap), preorder:positive(fees.preorder), isPreorder:fees.isPreorder,
         platformSupport:positive(fees.platformSupport), shopeeVoucher:positive(voucherRates[mode]),
         sellerVoucher:positive(fees.sellerVoucher), cofundVoucher:positive(fees.cofundVoucher),
-        sellerShipping:positive(fees.sellerShipping), facebookShipping:positive(fees.facebookShipping), extraProfit:positive(fees.extraProfit),
+        sellerShipping:positive(fees.sellerShipping), facebookShipping:positive(fees.facebookShipping), extraProfit:0,
       };
       const pricedRow = {...row,facebookPrice:positive(row.facebookPrice)};
       const suggested = calculateShopeePrice(pricedRow,activeFees);
@@ -107,7 +107,7 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
       cofundVoucher:positive(fees.cofundVoucher),
       sellerShipping:positive(fees.sellerShipping),
       facebookShipping:positive(fees.facebookShipping),
-      extraProfit:positive(fees.extraProfit),
+      extraProfit:0,
       facebookPrice:positive(row.facebookPrice),
       suggestedShopeePrice:result.requiredPrice,
       customerVoucherPrice:result.customerPrice,
@@ -170,7 +170,6 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
           <label>Seller Bear Shipping (RM)<input type="number" min="0" step=".01" value={fees.sellerShipping} onChange={event=>updateFee("sellerShipping",event.target.value)}/></label>
           <label>Facebook Shipping (RM)<input type="number" min="0" step=".01" value={fees.facebookShipping} onChange={event=>updateFee("facebookShipping",event.target.value)}/></label>
           <label>CoFund Voucher (RM)<input type="number" min="0" step=".01" value={fees.cofundVoucher} onChange={event=>updateFee("cofundVoucher",event.target.value)}/></label>
-          <label>Extra Profit Target (RM)<input type="number" min="0" step=".01" value={fees.extraProfit} onChange={event=>updateFee("extraProfit",event.target.value)}/></label>
         </div>
         <p className="formula-note">Voucher 指标：{storeVoucherPreset.available?`${storeVoucherPreset.store} · Normal ${pct(positive(voucherRates.nonCampaign))} / Campaign ${pct(positive(voucherRates.campaign))}`:"此店暂时没有 Voucher preset · 两种情境以 0% 开始"}。来源：{VOUCHER_PRESET_SOURCE.month} · {VOUCHER_PRESET_SOURCE.metric}。</p>
       </div>

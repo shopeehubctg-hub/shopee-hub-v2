@@ -191,6 +191,7 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(voucherPresets, /Mizino Premium/);
   assert.match(voucherPresets, /normal:13,campaign:20/);
   assert.match(calculator, /CoFund Voucher/);
+  assert.doesNotMatch(calculator, /Extra Profit Target/);
   assert.match(calculator, /SPayLater/);
   assert.match(calculator, /fees\.isSpayLater\?4\.86:3\.78/);
   assert.match(calculator, /editableNumber/);
