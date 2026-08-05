@@ -182,7 +182,7 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /Select Category for Actual Commission Fee/);
   assert.doesNotMatch(calculator, /其他计算设定/);
   assert.doesNotMatch(calculator, /Voucher preset 根据/);
-  assert.match(voucherPresets, /Last 30 Days Avg\./);
+  assert.match(voucherPresets, /Last Month Avg\./);
   assert.match(calculator, /<h2>Markup Calculator<\/h2>/);
   assert.doesNotMatch(calculator, /scenario-voucher/);
   assert.doesNotMatch(calculator, /Campaign Day 最高百分比收费/);
@@ -190,7 +190,12 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(voucherPresets, /Rounded Up Buffer/);
   assert.match(voucherPresets, /Mizino Premium/);
   assert.match(voucherPresets, /normal:13,campaign:20/);
-  assert.match(calculator, /Co-Fund Voucher/);
+  assert.match(calculator, /CoFund Voucher/);
+  assert.match(calculator, /SPayLater/);
+  assert.match(calculator, /fees\.isSpayLater\?4\.86:3\.78/);
+  assert.match(calculator, /editableNumber/);
+  assert.match(calculator, /Facebook 到手/);
+  assert.match(calculator, /positive\(row\.facebookPrice\)-positive\(fees\.facebookShipping\)/);
   assert.doesNotMatch(calculator, /自动生效/);
   assert.match(packageControl, /Calculator package/);
   assert.match(packageControl, /prefillBatch/);
