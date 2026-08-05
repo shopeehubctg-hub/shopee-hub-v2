@@ -110,7 +110,7 @@ export const packagePlatformSkus = sqliteTable("package_platform_skus", {
   packageSku: text("package_sku").notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
-  uniqueIndex("package_platform_version_idx").on(table.versionId, table.platform),
+  uniqueIndex("package_platform_version_sku_idx").on(table.versionId, table.platform, table.packageSku),
 ]);
 
 export const packagePrices = sqliteTable("package_prices", {
@@ -127,7 +127,7 @@ export const packagePrices = sqliteTable("package_prices", {
   effectiveTo: text("effective_to"),
   createdBy: text("created_by").notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-}, (table) => [uniqueIndex("package_price_version_market_type_idx").on(table.versionId, table.market, table.priceType)]);
+}, (table) => [uniqueIndex("package_price_version_market_type_period_idx").on(table.versionId, table.market, table.priceType, table.effectiveFrom, table.effectiveTo)]);
 
 export const packageAuditLog = sqliteTable("package_audit_log", {
   id: integer("id").primaryKey({ autoIncrement: true }),

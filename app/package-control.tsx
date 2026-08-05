@@ -34,7 +34,7 @@ const blankLine = ():ComponentLine => ({ inventorySku:"", name:"", quantity:1, k
 const blankPeriod = () => ({ promotionType:"monthly" as "monthly"|"custom", promotionMonth:"", effectiveFrom:"", effectiveTo:"" });
 const blankForm = () => ({
   name:"", status:"draft", markets:["MY"] as MarketName[],
-  nonCampaign:blankPeriod(), campaign:{...blankPeriod(),promotionType:"custom" as const,campaignEvent:"dday" as CampaignEvent},
+  nonCampaign:blankPeriod(), campaign:{...blankPeriod(),promotionType:"custom" as const,campaignEvents:["dday"] as CampaignEvent[]},
   prices:{
     MY:{ nonCampaignOriginal:"", nonCampaignSelling:"", campaignOriginal:"", campaignSelling:"" },
     SG:{ nonCampaignOriginal:"", nonCampaignSelling:"", campaignOriginal:"", campaignSelling:"" },
@@ -166,14 +166,32 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       : [...current,{platform,packageSku:""}]);
   }
 
+  function addPlatformListing(platform:PlatformName) {
+    setPlatforms(current=>[...current,{platform,packageSku:""}]);
+  }
+
+  function updatePlatformSku(index:number,packageSku:string) {
+    setPlatforms(current=>current.map((item,itemIndex)=>itemIndex===index?{...item,packageSku}:item));
+  }
+
+  function removePlatformListing(index:number) {
+    setPlatforms(current=>current.filter((_,itemIndex)=>itemIndex!==index));
+  }
+
   function updatePromotionMonth(period:"nonCampaign"|"campaign",month:string) {
-    const dates = period==="campaign"?campaignDates(month,form.campaign.campaignEvent):monthDates(month);
+    const dates = period==="campaign"?campaignDates(month,form.campaign.campaignEvents[0]??"dday"):monthDates(month);
     setForm(current=>({...current,[period]:{...current[period],promotionMonth:month,effectiveFrom:dates.from,effectiveTo:dates.to}}));
   }
 
   function updateCampaignEvent(campaignEvent:CampaignEvent) {
-    const dates=campaignDates(form.campaign.promotionMonth,campaignEvent);
-    setForm(current=>({...current,campaign:{...current.campaign,campaignEvent,effectiveFrom:dates.from,effectiveTo:dates.to}}));
+    setForm(current=>{
+      const selected=current.campaign.campaignEvents.includes(campaignEvent)
+        ? current.campaign.campaignEvents.filter(item=>item!==campaignEvent)
+        : [...current.campaign.campaignEvents,campaignEvent];
+      const campaignEvents=selected.length?selected:[campaignEvent];
+      const dates=campaignDates(current.campaign.promotionMonth,campaignEvents[0]);
+      return {...current,campaign:{...current.campaign,campaignEvents,effectiveFrom:dates.from,effectiveTo:dates.to}};
+    });
   }
 
   function toggleMarket(market:MarketName) {
@@ -189,7 +207,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   function priceSchedules() {
     return form.markets.flatMap(market=>([
       {market,priceType:"non_campaign" as const,originalPrice:form.prices[market].nonCampaignOriginal,sellingPrice:form.prices[market].nonCampaignSelling,...form.nonCampaign},
-      {market,priceType:"campaign" as const,originalPrice:form.prices[market].campaignOriginal,sellingPrice:form.prices[market].campaignSelling,...form.campaign},
+      ...form.campaign.campaignEvents.map(campaignEvent=>({market,priceType:"campaign" as const,originalPrice:form.prices[market].campaignOriginal,sellingPrice:form.prices[market].campaignSelling,promotionType:form.campaign.promotionType,...campaignDates(form.campaign.promotionMonth,campaignEvent)})).map(item=>({...item,effectiveFrom:item.from,effectiveTo:item.to})),
     ]));
   }
 
@@ -251,7 +269,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     setForm({
       name:item.name,status:"draft",markets,
       nonCampaign:{promotionType:nc.promotionType,promotionMonth:nc.promotionType==="monthly"?nc.effectiveFrom.slice(0,7):"",effectiveFrom:nc.effectiveFrom,effectiveTo:nc.effectiveTo},
-      campaign:{promotionType:"custom",promotionMonth:campaign.effectiveFrom.slice(0,7),campaignEvent:campaignEventForDates(campaign.effectiveFrom,campaign.effectiveTo),effectiveFrom:campaign.effectiveFrom,effectiveTo:campaign.effectiveTo},
+      campaign:{promotionType:"custom",promotionMonth:campaign.effectiveFrom.slice(0,7),campaignEvents:[...new Set(schedules.filter(line=>line.priceType==="campaign").map(line=>campaignEventForDates(line.effectiveFrom,line.effectiveTo)))],effectiveFrom:campaign.effectiveFrom,effectiveTo:campaign.effectiveTo},
       prices:{MY:{nonCampaignOriginal:String(priceFor("MY","non_campaign")?.originalPrice??""),nonCampaignSelling:String(priceFor("MY","non_campaign")?.sellingPrice??""),campaignOriginal:String(priceFor("MY","campaign")?.originalPrice??""),campaignSelling:String(priceFor("MY","campaign")?.sellingPrice??"")},SG:{nonCampaignOriginal:String(priceFor("SG","non_campaign")?.originalPrice??""),nonCampaignSelling:String(priceFor("SG","non_campaign")?.sellingPrice??""),campaignOriginal:String(priceFor("SG","campaign")?.originalPrice??""),campaignSelling:String(priceFor("SG","campaign")?.sellingPrice??"")}},
       changeNote:stored ? `Changes from Version ${item.version}` : "Migrated from Fulfillment Sheet",
     });
@@ -314,6 +332,13 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
           <label>Package Name<input value={form.name} onChange={event=>setForm({...form,name:event.target.value})} placeholder="Customer-Facing Package Name"/></label>
           <fieldset className="market-selector"><legend>Selling Markets</legend>{(["MY","SG"] as MarketName[]).map(market=><label key={market}><input type="checkbox" checked={form.markets.includes(market)} onChange={()=>toggleMarket(market)}/><b>{market}</b><small>{market==="MY"?"RM":"S$"}</small></label>)}</fieldset>
         </div>
+        <div className="inline-platforms">{PLATFORM_NAMES.map(platform=>{
+          const selected=platforms.some(item=>item.platform===platform);
+          return <div className={selected?"selected":""} key={platform}>
+            <div className="inline-platform-head"><label><input type="checkbox" checked={selected} onChange={()=>togglePlatform(platform)}/><b>{platform}</b></label>{selected&&<button type="button" onClick={()=>addPlatformListing(platform)}>+ Add Listing</button>}</div>
+            {selected&&<div className="listing-skus">{platforms.map((line,index)=>line.platform===platform?<div key={`${platform}-${index}`}><input aria-label={`${platform} Listing ${platforms.filter((item,itemIndex)=>item.platform===platform&&itemIndex<=index).length} SKU`} value={line.packageSku} onChange={event=>updatePlatformSku(index,event.target.value)} placeholder={`Listing ${platforms.filter((item,itemIndex)=>item.platform===platform&&itemIndex<=index).length} SKU`}/>{platforms.filter(item=>item.platform===platform).length>1&&<button type="button" aria-label={`Remove ${platform} listing`} onClick={()=>removePlatformListing(index)}>×</button>}</div>:null)}</div>}
+          </div>;
+        })}</div>
         {calculatorSettings&&<div className="calculator-prefill">
           <div><b>✓ Calculator Settings Attached</b><span>保存 Package 后会一起记录在 Package History</span></div>
           <span>{calculatorSettings.category}</span>
@@ -322,17 +347,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         </div>}
       </section>
 
-      <section className="form-section"><div className="form-section-title"><span>2</span><div><h4>Selling Platforms</h4><p>勾选平台；每个平台必须填写不同的 Package SKU</p></div></div>
-        <div className="platform-picker">{PLATFORM_NAMES.map(platform=>{
-          const selected = platforms.find(item=>item.platform===platform);
-          return <div className={selected?"selected":""} key={platform}>
-            <label className="platform-check"><input type="checkbox" checked={Boolean(selected)} onChange={()=>togglePlatform(platform)}/><b>{platform}</b></label>
-            {selected&&<label>Package SKU<input value={selected.packageSku} onChange={event=>setPlatforms(current=>current.map(item=>item.platform===platform?{...item,packageSku:event.target.value}:item))} placeholder={`${platform} SKU`}/></label>}
-          </div>;
-        })}</div>
-      </section>
-
-      <section className="form-section pricing-section"><div className="form-section-title"><span>3</span><div><h4>Pricing & Promotion Periods</h4><p>同一个 Package 同时设定 Non-Campaign 与 Campaign；MY / SG 日期共用、价格分开</p></div></div>
+      <section className="form-section pricing-section"><div className="form-section-title"><span>2</span><div><h4>Pricing & Promotion Periods</h4><p>同一个 Package 同时设定 Non-Campaign 与 Campaign；MY / SG 日期共用、价格分开</p></div></div>
         {([['nonCampaign','Non-Campaign'],['campaign','Campaign']] as const).map(([periodKey,title])=>{
           const period=form[periodKey];
           return <div className={`scenario-editor ${periodKey}`} key={periodKey}>
@@ -344,13 +359,13 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
               const same=Boolean(form.prices[market][originalKey])&&Number(form.prices[market][originalKey])===Number(form.prices[market][sellingKey]);
               return <div className={`market-price-card ${same?"same-price-warning":""}`} key={market}><strong>{market} <small>{market==="MY"?"RM":"S$"}</small></strong><label>Original Price <em>*</em><input required type="number" min="0.01" step="0.01" value={form.prices[market][originalKey]} onChange={event=>updatePrice(market,originalKey,event.target.value)}/></label><label>Selling Price<input required type="number" min="0.01" step="0.01" value={form.prices[market][sellingKey]} onChange={event=>updatePrice(market,sellingKey,event.target.value)}/></label>{same&&<div className="same-price-alert">⚠️ Original Price equals Selling Price — please double-check.</div>}</div>;
             })}</div>
-            {periodKey==="campaign"?<div className="campaign-date-controls"><label>Campaign Month<input type="month" value={period.promotionMonth} onChange={event=>updatePromotionMonth(periodKey,event.target.value)}/></label><fieldset><legend>Campaign Event</legend>{([['dday','D-Day'],['mid_month','Mid Month Madness'],['payday','Payday']] as const).map(([value,label])=><label key={value} className={form.campaign.campaignEvent===value?"selected":""}><input type="radio" name="campaign-event" checked={form.campaign.campaignEvent===value} onChange={()=>updateCampaignEvent(value)}/><span><b>{label}</b><small>{value==="dday"?"2 Days Before To Double Day":value==="mid_month"?"14th–15th":"24th–25th"}</small></span></label>)}</fieldset><div className="date-preview"><span>Start <b>{period.effectiveFrom||"—"}</b></span><span>End <b>{period.effectiveTo||"—"}</b></span></div></div>:period.promotionType==="monthly"?<div className="date-fields"><label>Promotion Month<input type="month" value={period.promotionMonth} onChange={event=>updatePromotionMonth(periodKey,event.target.value)}/></label><div className="date-preview"><span>Start <b>{period.effectiveFrom||"—"}</b></span><span>End <b>{period.effectiveTo||"—"}</b></span></div></div>:<div className="date-fields"><label>Start Date<input type="date" value={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveFrom:event.target.value}})}/></label><label>End Date<input type="date" value={period.effectiveTo} min={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveTo:event.target.value}})}/></label></div>}
+            {periodKey==="campaign"?<div className="campaign-date-controls"><label>Campaign Month<input type="month" value={period.promotionMonth} onChange={event=>updatePromotionMonth(periodKey,event.target.value)}/></label><fieldset><legend>Campaign Events · Multi-Select</legend>{([['dday','D-Day'],['mid_month','Mid Month Madness'],['payday','Payday']] as const).map(([value,label])=><label key={value} className={form.campaign.campaignEvents.includes(value)?"selected":""}><input type="checkbox" checked={form.campaign.campaignEvents.includes(value)} onChange={()=>updateCampaignEvent(value)}/><span><b>{label}</b><small>{value==="dday"?"2 Days Before To Double Day":value==="mid_month"?"14th–15th":"24th–25th"}</small></span></label>)}</fieldset><div className="campaign-date-list">{form.campaign.campaignEvents.map(event=>{const dates=campaignDates(period.promotionMonth,event);return <span key={event}><b>{event==="dday"?"D-Day":event==="mid_month"?"Mid Month":"Payday"}</b>{dates.from||"—"} → {dates.to||"—"}</span>})}</div></div>:period.promotionType==="monthly"?<div className="date-fields"><label>Promotion Month<input type="month" value={period.promotionMonth} onChange={event=>updatePromotionMonth(periodKey,event.target.value)}/></label><div className="date-preview"><span>Start <b>{period.effectiveFrom||"—"}</b></span><span>End <b>{period.effectiveTo||"—"}</b></span></div></div>:<div className="date-fields"><label>Start Date<input type="date" value={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveFrom:event.target.value}})}/></label><label>End Date<input type="date" value={period.effectiveTo} min={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveTo:event.target.value}})}/></label></div>}
             </div>
           </div>;
         })}
       </section>
 
-      <section className="form-section"><div className="form-section-title"><span>4</span><div><h4>OXM Inventory SKU Items</h4><p>新增、删除或改变数量都会记录在 History</p></div><button className="add-item-button" onClick={()=>setComponents([...components,blankLine()])}>+ Add Item</button></div>
+      <section className="form-section"><div className="form-section-title"><span>3</span><div><h4>OXM Inventory SKU Items</h4><p>新增、删除或改变数量都会记录在 History</p></div><button className="add-item-button" onClick={()=>setComponents([...components,blankLine()])}>+ Add Item</button></div>
         <div className="component-editor">{components.map((line,index)=><div className="component-row" key={index}>
           <input value={line.inventorySku} onChange={event=>setComponents(components.map((item,itemIndex)=>itemIndex===index?{...item,inventorySku:event.target.value}:item))} placeholder="OXM Inventory SKU"/>
           <input value={line.name} onChange={event=>setComponents(components.map((item,itemIndex)=>itemIndex===index?{...item,name:event.target.value}:item))} placeholder="Item Name"/>

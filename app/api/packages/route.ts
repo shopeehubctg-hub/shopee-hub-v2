@@ -226,23 +226,22 @@ export async function POST(request: Request) {
   if (markets.some(market=>!["MY","SG"].includes(market)) || schedules.some(item=>!markets.includes(item.market))) {
     return Response.json({ error:"Markets must be MY or SG and match the enabled price cards" }, { status:400 });
   }
-  if (!markets.length || schedules.length!==markets.length*2 || markets.some(market=>!schedules.some(item=>item.market===market&&item.priceType==="campaign")||!schedules.some(item=>item.market===market&&item.priceType==="non_campaign"))) {
+  if (!markets.length || markets.some(market=>schedules.filter(item=>item.market===market&&item.priceType==="non_campaign").length!==1||!schedules.some(item=>item.market===market&&item.priceType==="campaign"))) {
     return Response.json({ error:"Choose at least one market and complete both Campaign and Non-Campaign pricing" }, { status:400 });
   }
   if (schedules.some(item=>!["MY","SG"].includes(item.market)||!["campaign","non_campaign"].includes(item.priceType)||!["monthly","custom"].includes(item.promotionType)||!item.effectiveFrom||!item.effectiveTo||item.effectiveTo<item.effectiveFrom)) {
     return Response.json({ error:"Every price scenario requires a valid promotion period" }, { status:400 });
   }
-  for (const priceType of ["non_campaign","campaign"] as const) {
-    const rows=schedules.filter(item=>item.priceType===priceType);
-    const periods=new Set(rows.map(item=>`${item.promotionType}|${item.effectiveFrom}|${item.effectiveTo}`));
-    if (periods.size!==1) return Response.json({ error:"MY and SG must share the same dates for each pricing scenario" }, { status:400 });
+  const periodKeys=(market:string,priceType:"non_campaign"|"campaign")=>schedules.filter(item=>item.market===market&&item.priceType===priceType).map(item=>`${item.promotionType}|${item.effectiveFrom}|${item.effectiveTo}`).sort().join(",");
+  if (markets.some(market=>periodKeys(market,"non_campaign")!==periodKeys(markets[0],"non_campaign")||periodKeys(market,"campaign")!==periodKeys(markets[0],"campaign"))) {
+    return Response.json({ error:"MY and SG must share the same selected dates for each pricing scenario" }, { status:400 });
   }
   if (platforms.some(item => !["Shopee","Lazada","TikTok Shop"].includes(item.platform) || !item.packageSku)) {
-    return Response.json({ error:"Every selected platform requires its own Package SKU" }, { status:400 });
+    return Response.json({ error:"Every selected listing requires its own SKU" }, { status:400 });
   }
   const normalizedSkus = platforms.map(item => item.packageSku.toUpperCase());
   if (new Set(normalizedSkus).size !== normalizedSkus.length) {
-    return Response.json({ error:"Each platform must use a different Package SKU" }, { status:400 });
+    return Response.json({ error:"Every listing SKU must be different" }, { status:400 });
   }
   const components = body.components.map(item => ({
     inventorySku:String(item.inventorySku ?? "").trim(),
@@ -340,7 +339,7 @@ export async function POST(request: Request) {
     }),
   ]);
 
-  const platformMap = Object.fromEntries(platforms.map(item => [item.platform, item.packageSku]));
+  const platformMap = Object.fromEntries(["Shopee","Lazada","TikTok Shop"].map(platform=>[platform,platforms.filter(item=>item.platform===platform).map(item=>item.packageSku).join(" | ")]));
   const changeId = `${packageId}-v${nextVersion}`;
   const sync = await syncHistoryToGoogleSheet({
     timestamp:now,

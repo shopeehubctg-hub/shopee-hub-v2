@@ -14,7 +14,9 @@ test("package control is wired into the command center", async () => {
   assert.match(component, /OXM PACKAGE CONTROL/);
   assert.match(component, /Migrate & Edit/);
   assert.match(component, /Create Next Version/);
-  assert.match(component, /Selling Platforms/);
+  assert.match(component, /Add Listing/);
+  assert.match(component, /Multi-Select/);
+  assert.match(component, /type="checkbox" checked=\{form\.campaign\.campaignEvents\.includes/);
   assert.match(component, /Shopee/);
   assert.match(component, /Lazada/);
   assert.match(component, /TikTok Shop/);
@@ -65,20 +67,21 @@ test("store selector follows the Link Directory store names", async () => {
   assert.doesNotMatch(page, /62 connected Shopee stores/);
 });
 
-test("package API enforces platform SKUs and persists component history", async () => {
-  const [route, schema, baseMigration, platformMigration, pricingMigration] = await Promise.all([
+test("package API enforces listing SKUs and persists component history", async () => {
+  const [route, schema, baseMigration, platformMigration, pricingMigration, multiListingMigration] = await Promise.all([
     readFile(new URL("app/api/packages/route.ts", root), "utf8"),
     readFile(new URL("db/schema.ts", root), "utf8"),
     readFile(new URL("drizzle/0001_orange_ultron.sql", root), "utf8"),
     readFile(new URL("drizzle/0002_green_blink.sql", root), "utf8"),
     readFile(new URL("drizzle/0005_package_scenario_pricing.sql", root), "utf8"),
+    readFile(new URL("drizzle/0007_first_ultron.sql", root), "utf8"),
   ]);
   assert.match(route, /nextVersion/);
   assert.match(route, /packageAuditLog/);
   assert.match(route, /Selling Price cannot exceed it/);
   assert.match(route, /priceType.*"non_campaign"/);
   assert.match(route, /priceType.*"campaign"/);
-  assert.match(route, /Each platform must use a different Package SKU/);
+  assert.match(route, /Every listing SKU must be different/);
   assert.match(route, /componentDiff/);
   assert.match(route, /syncHistoryToGoogleSheet/);
   assert.match(schema, /packageVersions/);
@@ -91,6 +94,8 @@ test("package API enforces platform SKUs and persists component history", async 
   assert.match(platformMigration, /CREATE TABLE `package_platform_skus`/);
   assert.match(pricingMigration, /ADD `market`/);
   assert.match(pricingMigration, /ADD `price_type`/);
+  assert.match(multiListingMigration, /package_platform_version_sku_idx/);
+  assert.match(multiListingMigration, /package_price_version_market_type_period_idx/);
 });
 
 test("Shopee calculator reverse-solves listing price and itemized fees", async () => {
