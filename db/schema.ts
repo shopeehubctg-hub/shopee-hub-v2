@@ -118,13 +118,16 @@ export const packagePrices = sqliteTable("package_prices", {
   packageId: text("package_id").notNull().references(() => packages.id),
   versionId: text("version_id").notNull().references(() => packageVersions.id),
   currency: text("currency").notNull().default("MYR"),
+  market: text("market", { enum: ["MY", "SG"] }).notNull().default("MY"),
+  priceType: text("price_type", { enum: ["non_campaign", "campaign"] }).notNull().default("campaign"),
+  promotionType: text("promotion_type", { enum: ["monthly", "custom"] }).notNull().default("custom"),
   originalPrice: integer("original_price").notNull(),
   sellingPrice: integer("selling_price").notNull(),
   effectiveFrom: text("effective_from").notNull(),
   effectiveTo: text("effective_to"),
   createdBy: text("created_by").notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-});
+}, (table) => [uniqueIndex("package_price_version_market_type_idx").on(table.versionId, table.market, table.priceType)]);
 
 export const packageAuditLog = sqliteTable("package_audit_log", {
   id: integer("id").primaryKey({ autoIncrement: true }),

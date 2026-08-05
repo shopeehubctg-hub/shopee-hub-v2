@@ -6,28 +6,43 @@ import type { CalculatorSnapshot, PackagePrefill } from "./calculator-types";
 type ComponentLine = { inventorySku:string; name:string; quantity:number; kind:"product"|"gift" };
 type PlatformName = "Shopee"|"Lazada"|"TikTok Shop";
 type PlatformLine = { platform:PlatformName; packageSku:string };
+type MarketName = "MY"|"SG";
+type PriceType = "non_campaign"|"campaign";
+type PriceSchedule = {
+  market:MarketName; priceType:PriceType; originalPrice:number; sellingPrice:number;
+  promotionType:"monthly"|"custom"; effectiveFrom:string; effectiveTo:string;
+};
+type CalculatorHistorySettings = CalculatorSnapshot | { scenarios:CalculatorSnapshot[] };
 type HistoryLine = {
   version:number; changeNote:string; promotionType:"monthly"|"custom"; effectiveFrom:string; effectiveTo?:string|null;
   addedComponents?:ComponentLine[]; removedComponents?:ComponentLine[]; platforms?:PlatformLine[];
   sheetSyncStatus?:"pending"|"synced"|"failed"; createdAt:string; createdBy:string;
-  calculatorSettings?:CalculatorSnapshot|null;
+  calculatorSettings?:CalculatorHistorySettings|null;
 };
 type PackageItem = {
   id:string; storeId:string; packageSku:string; name:string; market:string; status:string; version:number;
   promotionType:"monthly"|"custom"; originalPrice:number; sellingPrice:number; effectiveFrom:string; effectiveTo?:string|null;
   components:ComponentLine[]; platforms:PlatformLine[]; sheetSyncStatus?:"pending"|"synced"|"failed"; history?:HistoryLine[];
+  priceSchedules?:PriceSchedule[];
 };
 type Props = { storeId:string; storeName:string; canCreate?:boolean; prefills?:PackagePrefill[]; onPrefillsAccepted?:()=>void };
 
 const PLATFORM_NAMES:PlatformName[] = ["Shopee","Lazada","TikTok Shop"];
 const HISTORY_SHEET_URL = "https://docs.google.com/spreadsheets/d/1mpB7KVCGzP_9IXYVbhJZsLsndM4ladU3cJre5cfALAA/edit#gid=2129880014";
 const blankLine = ():ComponentLine => ({ inventorySku:"", name:"", quantity:1, kind:"product" });
+const blankPeriod = () => ({ promotionType:"monthly" as "monthly"|"custom", promotionMonth:"", effectiveFrom:"", effectiveTo:"" });
 const blankForm = () => ({
-  name:"", market:"MY", status:"draft", promotionType:"monthly" as "monthly"|"custom", promotionMonth:"",
-  effectiveFrom:"", effectiveTo:"", originalPrice:"", sellingPrice:"", changeNote:"Initial version",
+  name:"", status:"draft", markets:["MY"] as MarketName[],
+  nonCampaign:blankPeriod(), campaign:blankPeriod(),
+  prices:{
+    MY:{ nonCampaignOriginal:"", nonCampaignSelling:"", campaignOriginal:"", campaignSelling:"" },
+    SG:{ nonCampaignOriginal:"", nonCampaignSelling:"", campaignOriginal:"", campaignSelling:"" },
+  },
+  changeNote:"Initial version",
 });
 const money = (value:number, market:string, stored=false) => `${market === "SG" ? "S$" : "RM"} ${(stored ? value / 100 : value).toFixed(2)}`;
 const lineText = (line:ComponentLine) => `${line.inventorySku} ×${line.quantity}`;
+const calculatorSnapshots = (settings:CalculatorHistorySettings) => "scenarios" in settings ? settings.scenarios : [settings];
 
 function monthDates(month:string) {
   if (!/^\d{4}-\d{2}$/.test(month)) return { from:"", to:"" };
@@ -51,7 +66,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   const [components,setComponents] = useState<ComponentLine[]>([blankLine()]);
   const [platforms,setPlatforms] = useState<PlatformLine[]>([{platform:"Shopee",packageSku:""}]);
   const [calculatorSettings,setCalculatorSettings] = useState<CalculatorSnapshot|null>(null);
-  const [prefillQueue,setPrefillQueue] = useState<PackagePrefill[]>([]);
+  const [prefillQueue,setPrefillQueue] = useState<PackagePrefill[][]>([]);
   const [prefillBatch,setPrefillBatch] = useState<PackagePrefill[]>([]);
 
   async function load() {
@@ -63,18 +78,34 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     }
   }
   useEffect(()=>{ load(); },[storeId]);
-  function openPrefill(prefill:PackagePrefill) {
+  function groupPrefills(input:PackagePrefill[]) {
+    const groups = new Map<string,PackagePrefill[]>();
+    input.forEach(item=>{
+      const key=item.name.trim().toLowerCase();
+      groups.set(key,[...(groups.get(key)??[]),item]);
+    });
+    return [...groups.values()];
+  }
+  function openPrefill(group:PackagePrefill[]) {
     resetForm();
-    const price = prefill.sellingPrice.toFixed(2);
-    setForm(current=>({...current,name:prefill.name,originalPrice:price,sellingPrice:price,changeNote:"Created from Shopee Pricing Calculator"}));
-    setCalculatorSettings(prefill.calculatorSettings);
+    const first=group[0];
+    const nonCampaign=group.find(item=>item.calculatorSettings.serviceScenario==="Non-Campaign Day")??first;
+    const campaign=group.find(item=>item.calculatorSettings.serviceScenario==="Campaign Day")??first;
+    const nonCampaignPrice=nonCampaign.sellingPrice.toFixed(2);
+    const campaignPrice=campaign.sellingPrice.toFixed(2);
+    setForm(current=>({...current,name:first.name,prices:{...current.prices,MY:{
+      nonCampaignOriginal:nonCampaignPrice,nonCampaignSelling:nonCampaignPrice,
+      campaignOriginal:campaignPrice,campaignSelling:campaignPrice,
+    }},changeNote:"Created from Shopee Pricing Calculator"}));
+    setCalculatorSettings(first.calculatorSettings);
     setMessage("");
     setShowCreate(true);
   }
   useEffect(()=>{
     if (!prefills.length) return;
-    openPrefill(prefills[0]);
-    setPrefillQueue(prefills.slice(1));
+    const grouped=groupPrefills(prefills);
+    openPrefill(grouped[0]);
+    setPrefillQueue(grouped.slice(1));
     setPrefillBatch(prefills);
     onPrefillsAccepted?.();
   },[prefills[0]?.requestId]);
@@ -116,9 +147,26 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       : [...current,{platform,packageSku:""}]);
   }
 
-  function updatePromotionMonth(month:string) {
+  function updatePromotionMonth(period:"nonCampaign"|"campaign",month:string) {
     const dates = monthDates(month);
-    setForm(current=>({...current,promotionMonth:month,effectiveFrom:dates.from,effectiveTo:dates.to}));
+    setForm(current=>({...current,[period]:{...current[period],promotionMonth:month,effectiveFrom:dates.from,effectiveTo:dates.to}}));
+  }
+
+  function toggleMarket(market:MarketName) {
+    setForm(current=>({...current,markets:current.markets.includes(market)
+      ? current.markets.filter(item=>item!==market)
+      : [...current.markets,market]}));
+  }
+
+  function updatePrice(market:MarketName,key:keyof ReturnType<typeof blankForm>["prices"]["MY"],value:string) {
+    setForm(current=>({...current,prices:{...current.prices,[market]:{...current.prices[market],[key]:value}}}));
+  }
+
+  function priceSchedules() {
+    return form.markets.flatMap(market=>([
+      {market,priceType:"non_campaign" as const,originalPrice:form.prices[market].nonCampaignOriginal,sellingPrice:form.prices[market].nonCampaignSelling,...form.nonCampaign},
+      {market,priceType:"campaign" as const,originalPrice:form.prices[market].campaignOriginal,sellingPrice:form.prices[market].campaignSelling,...form.campaign},
+    ]));
   }
 
   async function save() {
@@ -127,7 +175,9 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     const response = await fetch("/api/packages",{
       method:"POST",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({...form,storeId,storeName,components,platforms,packageId:editingPackageId,calculatorSettings}),
+      body:JSON.stringify({name:form.name,status:form.status,markets:form.markets,changeNote:form.changeNote,
+        priceSchedules:priceSchedules(),storeId,storeName,components,platforms,packageId:editingPackageId,
+        calculatorSettings:calculatorSettings?{scenarios:prefillBatch.filter(item=>item.name===form.name).map(item=>item.calculatorSettings)}:null}),
     });
     const data = await response.json();
     if (!response.ok) {
@@ -140,7 +190,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       const next = prefillQueue[0];
       if (next) {
         setPrefillQueue(current=>current.slice(1));
-        setPrefillBatch(current=>current.slice(1));
+        setPrefillBatch(current=>current.filter(item=>item.name!==form.name));
         openPrefill(next);
       } else {
         setShowCreate(false);
@@ -155,13 +205,26 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     setPrefillQueue([]);
     setPrefillBatch([]);
     const stored = source === "database";
-    const month = item.promotionType==="monthly" ? item.effectiveFrom.slice(0,7) : "";
+    const storedSchedules=item.priceSchedules??[];
+    const legacyMarket=(item.market==="SG"?"SG":"MY") as MarketName;
+    const fallbackSchedule=(priceType:PriceType):PriceSchedule=>({market:legacyMarket,priceType,originalPrice:stored?item.originalPrice/100:item.originalPrice,sellingPrice:stored?item.sellingPrice/100:item.sellingPrice,promotionType:item.promotionType,effectiveFrom:item.effectiveFrom,effectiveTo:item.effectiveTo??""});
+    const sourceSchedules=storedSchedules.length?storedSchedules:[fallbackSchedule("non_campaign"),fallbackSchedule("campaign")];
+    const sourceMarkets=[...new Set(sourceSchedules.map(line=>line.market))] as MarketName[];
+    const schedules=sourceMarkets.flatMap(market=>{
+      const available=sourceSchedules.filter(line=>line.market===market);
+      const base=available[0]??fallbackSchedule("campaign");
+      return (["non_campaign","campaign"] as PriceType[]).map(priceType=>available.find(line=>line.priceType===priceType)??{...base,priceType,market});
+    });
+    const nc=schedules.find(line=>line.priceType==="non_campaign")??fallbackSchedule("non_campaign");
+    const campaign=schedules.find(line=>line.priceType==="campaign")??fallbackSchedule("campaign");
+    const markets=[...new Set(schedules.map(line=>line.market))] as MarketName[];
+    const priceFor=(market:MarketName,type:PriceType)=>schedules.find(line=>line.market===market&&line.priceType===type);
     setEditingPackageId(stored ? item.id : null);
     setForm({
-      name:item.name, market:item.market, status:"draft", promotionType:item.promotionType ?? "custom",
-      promotionMonth:month, originalPrice:String(stored ? item.originalPrice/100 : item.originalPrice),
-      sellingPrice:String(stored ? item.sellingPrice/100 : item.sellingPrice),
-      effectiveFrom:item.effectiveFrom, effectiveTo:item.effectiveTo ?? "",
+      name:item.name,status:"draft",markets,
+      nonCampaign:{promotionType:nc.promotionType,promotionMonth:nc.promotionType==="monthly"?nc.effectiveFrom.slice(0,7):"",effectiveFrom:nc.effectiveFrom,effectiveTo:nc.effectiveTo},
+      campaign:{promotionType:campaign.promotionType,promotionMonth:campaign.promotionType==="monthly"?campaign.effectiveFrom.slice(0,7):"",effectiveFrom:campaign.effectiveFrom,effectiveTo:campaign.effectiveTo},
+      prices:{MY:{nonCampaignOriginal:String(priceFor("MY","non_campaign")?.originalPrice??""),nonCampaignSelling:String(priceFor("MY","non_campaign")?.sellingPrice??""),campaignOriginal:String(priceFor("MY","campaign")?.originalPrice??""),campaignSelling:String(priceFor("MY","campaign")?.sellingPrice??"")},SG:{nonCampaignOriginal:String(priceFor("SG","non_campaign")?.originalPrice??""),nonCampaignSelling:String(priceFor("SG","non_campaign")?.sellingPrice??""),campaignOriginal:String(priceFor("SG","campaign")?.originalPrice??""),campaignSelling:String(priceFor("SG","campaign")?.sellingPrice??"")}},
       changeNote:stored ? `Changes from Version ${item.version}` : "Migrated from Fulfillment Sheet",
     });
     setComponents(item.components.map(line=>({...line})));
@@ -198,6 +261,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         <div><span className={`package-status ${item.status}`}>{item.status}</span><span className={`sync-status ${item.sheetSyncStatus ?? "pending"}`}>Sheet {item.sheetSyncStatus ?? "preview"}</span><h3>{item.name}</h3></div>
         <div className="package-price"><small>{item.market}</small><del>{money(item.originalPrice,item.market,source==="database")}</del><strong>{money(item.sellingPrice,item.market,source==="database")}</strong></div>
       </div>
+      {item.priceSchedules?.length?<div className="package-schedule-summary">{item.priceSchedules.map(line=><div key={`${line.market}-${line.priceType}`}><span>{line.market} · {line.priceType==="campaign"?"Campaign":"Non-Campaign"}</span><b>{money(line.sellingPrice,line.market)}</b><small>{line.effectiveFrom} → {line.effectiveTo}</small></div>)}</div>:null}
       <div className="platform-skus">{(item.platforms?.length?item.platforms:[{platform:"Shopee" as const,packageSku:item.packageSku}]).map(platform=><div key={platform.platform}><span>{platform.platform}</span><b>{platform.packageSku}</b></div>)}</div>
       <div className="package-meta"><span>Version <b>v{item.version}</b></span><span>Promotion <b>{item.promotionType==="monthly"?"Full month":"Custom dates"}</b></span><span>Effective <b>{item.effectiveFrom} → {item.effectiveTo || "Open ended"}</b></span><span>Discount <b>{item.originalPrice?Math.round((1-item.sellingPrice/item.originalPrice)*100):0}%</b></span></div>
       <div className="component-list">{item.components.map((line,index)=><div key={`${line.inventorySku}-${index}`}><span className={`component-kind ${line.kind}`}>{line.kind}</span><b>{line.inventorySku}</b><span>{line.name}</span><strong>× {line.quantity}</strong></div>)}</div>
@@ -206,13 +270,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       }]).map(line=><div className="history-entry" key={line.version}>
         <div><b>v{line.version}</b><span>{line.changeNote}</span><small>{line.effectiveFrom} → {line.effectiveTo || "Open ended"} · Sheet {line.sheetSyncStatus ?? "preview"}</small></div>
         <div className="history-diff"><span className="added">+ {(line.addedComponents ?? []).map(lineText).join(", ") || "No additions"}</span><span className="removed">− {(line.removedComponents ?? []).map(lineText).join(", ") || "No removals"}</span></div>
-        {line.calculatorSettings&&<div className="calculator-history">
-          <b>Calculator snapshot</b>
-          <span>{line.calculatorSettings.category}</span>
-          <span>Facebook {money(line.calculatorSettings.facebookPrice,"MY")} → Shopee {money(line.calculatorSettings.suggestedShopeePrice,"MY")}</span>
-          <span>Commission {line.calculatorSettings.commissionRate.toFixed(2)}% · {line.calculatorSettings.serviceScenario} {line.calculatorSettings.serviceRate.toFixed(2)}% · Transaction {line.calculatorSettings.transactionRate.toFixed(2)}%</span>
-          <span>Customer {money(line.calculatorSettings.customerVoucherPrice,"MY")} · Payout {money(line.calculatorSettings.actualPayout,"MY")} · Markup {line.calculatorSettings.markupRate.toFixed(2)}%</span>
-        </div>}
+        {line.calculatorSettings&&<div className="calculator-history"><b>Calculator snapshot</b>{calculatorSnapshots(line.calculatorSettings).map(snapshot=><div key={snapshot.serviceScenario}><strong>{snapshot.serviceScenario}</strong><span>{snapshot.category}</span><span>Facebook {money(snapshot.facebookPrice,"MY")} → Shopee {money(snapshot.suggestedShopeePrice,"MY")}</span><span>Commission {snapshot.commissionRate.toFixed(2)}% · Service {snapshot.serviceRate.toFixed(2)}% · Payout {money(snapshot.actualPayout,"MY")}</span></div>)}</div>}
       </div>)}</div>}
       <div className="package-card-foot"><span>{item.components.length} Inventory SKU lines</span><button onClick={()=>setOpenHistory(openHistory===item.id?null:item.id)}>{openHistory===item.id?"Hide history":"View history"}</button><button onClick={()=>startVersion(item)}>{source==="database"?"New version":"Migrate & edit"}</button></div>
     </article>)}</div>
@@ -223,12 +281,10 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
 
       {prefillBatch.length>0&&<section className="calculator-batch-transfer"><div><b>✓ {prefillBatch.length} Calculator package{prefillBatch.length===1?"":"s"} brought over</b><span>名称、Selling Price 与 Calculator Settings 已全部保留；完成当前表单后会自动继续下一项。</span></div><div className="calculator-batch-list">{prefillBatch.map((item,index)=><div className={index===0?"current":""} key={item.requestId}><span>{index===0?"Current":"Queued"}</span><b>{item.name}</b><strong>{money(item.sellingPrice,"MY")}</strong><small>{item.calculatorSettings.serviceScenario}</small></div>)}</div></section>}
 
-      <section className="form-section"><div className="form-section-title"><span>1</span><div><h4>Package details</h4><p>名称、市场与价格</p></div></div>
-        <div className="form-grid">
+      <section className="form-section"><div className="form-section-title"><span>1</span><div><h4>Package details</h4><p>名称与销售市场；MY / SG 共用同一个配套内容与活动日期</p></div></div>
+        <div className="form-grid package-detail-grid">
           <label>Package name<input value={form.name} onChange={event=>setForm({...form,name:event.target.value})} placeholder="Customer-facing package name"/></label>
-          <label>Market<select value={form.market} onChange={event=>setForm({...form,market:event.target.value})}><option>MY</option><option>SG</option></select></label>
-          <label>Original price<input type="number" min="0" step="0.01" value={form.originalPrice} onChange={event=>setForm({...form,originalPrice:event.target.value})}/></label>
-          <label>Selling price<input type="number" min="0" step="0.01" value={form.sellingPrice} onChange={event=>setForm({...form,sellingPrice:event.target.value})}/></label>
+          <fieldset className="market-selector"><legend>Selling markets</legend>{(["MY","SG"] as MarketName[]).map(market=><label key={market}><input type="checkbox" checked={form.markets.includes(market)} onChange={()=>toggleMarket(market)}/><b>{market}</b><small>{market==="MY"?"RM":"S$"}</small></label>)}</fieldset>
         </div>
         {calculatorSettings&&<div className="calculator-prefill">
           <div><b>✓ Calculator settings attached</b><span>保存 Package 后会一起记录在 Package History</span></div>
@@ -248,14 +304,26 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         })}</div>
       </section>
 
-      <section className="form-section"><div className="form-section-title"><span>3</span><div><h4>Promotion period</h4><p>选择整个月，或为短期活动指定日期</p></div></div>
-        <div className="promotion-toggle"><button className={form.promotionType==="monthly"?"active":""} onClick={()=>setForm({...form,promotionType:"monthly"})}>Full month</button><button className={form.promotionType==="custom"?"active":""} onClick={()=>setForm({...form,promotionType:"custom"})}>Custom dates</button></div>
-        {form.promotionType==="monthly"?<div className="date-fields"><label>Promotion month<input type="month" value={form.promotionMonth} onChange={event=>updatePromotionMonth(event.target.value)}/></label><div className="date-preview"><span>Start <b>{form.effectiveFrom||"—"}</b></span><span>End <b>{form.effectiveTo||"—"}</b></span></div></div>:<div className="date-fields"><label>Start date<input type="date" value={form.effectiveFrom} onChange={event=>setForm({...form,effectiveFrom:event.target.value})}/></label><label>End date<input type="date" value={form.effectiveTo} min={form.effectiveFrom} onChange={event=>setForm({...form,effectiveTo:event.target.value})}/></label></div>}
+      <section className="form-section pricing-section"><div className="form-section-title"><span>3</span><div><h4>Pricing & promotion periods</h4><p>同一个 Package 同时设定 Non-Campaign 与 Campaign；MY / SG 日期共用、价格分开</p></div></div>
+        {([['nonCampaign','Non-Campaign'],['campaign','Campaign']] as const).map(([periodKey,title])=>{
+          const period=form[periodKey];
+          return <div className={`scenario-editor ${periodKey}`} key={periodKey}>
+            <div className="scenario-editor-head"><div><b>{title}</b><span>{title==="Campaign"?"Campaign day price & dates":"Always-on price & dates"}</span></div><div className="promotion-toggle"><button type="button" className={period.promotionType==="monthly"?"active":""} onClick={()=>setForm({...form,[periodKey]:{...period,promotionType:"monthly"}})}>Full month</button><button type="button" className={period.promotionType==="custom"?"active":""} onClick={()=>setForm({...form,[periodKey]:{...period,promotionType:"custom"}})}>Custom dates</button></div></div>
+            <div className="scenario-body"><div className="market-price-grid">{form.markets.map(market=>{
+              const prefix=periodKey==="campaign"?"campaign":"nonCampaign";
+              const originalKey=`${prefix}Original` as keyof typeof form.prices.MY;
+              const sellingKey=`${prefix}Selling` as keyof typeof form.prices.MY;
+              const same=Boolean(form.prices[market][originalKey])&&Number(form.prices[market][originalKey])===Number(form.prices[market][sellingKey]);
+              return <div className={`market-price-card ${same?"same-price-warning":""}`} key={market}><strong>{market} <small>{market==="MY"?"RM":"S$"}</small></strong><label>Original Price <em>*</em><input required type="number" min="0.01" step="0.01" value={form.prices[market][originalKey]} onChange={event=>updatePrice(market,originalKey,event.target.value)}/></label><label>Selling Price<input required type="number" min="0.01" step="0.01" value={form.prices[market][sellingKey]} onChange={event=>updatePrice(market,sellingKey,event.target.value)}/></label>{same&&<div className="same-price-alert">⚠️ Original Price equals Selling Price — please double-check.</div>}</div>;
+            })}</div>
+            {period.promotionType==="monthly"?<div className="date-fields"><label>Promotion month<input type="month" value={period.promotionMonth} onChange={event=>updatePromotionMonth(periodKey,event.target.value)}/></label><div className="date-preview"><span>Start <b>{period.effectiveFrom||"—"}</b></span><span>End <b>{period.effectiveTo||"—"}</b></span></div></div>:<div className="date-fields"><label>Start date<input type="date" value={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveFrom:event.target.value}})}/></label><label>End date<input type="date" value={period.effectiveTo} min={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveTo:event.target.value}})}/></label></div>}
+            </div>
+          </div>;
+        })}
       </section>
 
-      <section className="form-section"><div className="form-section-title"><span>4</span><div><h4>OXM Inventory SKU components</h4><p>新增、删除或改变数量都会记录在 History</p></div><button onClick={()=>setComponents([...components,blankLine()])}>+ Add line</button></div>
+      <section className="form-section"><div className="form-section-title"><span>4</span><div><h4>OXM Inventory SKU items</h4><p>新增、删除或改变数量都会记录在 History</p></div><button className="add-item-button" onClick={()=>setComponents([...components,blankLine()])}>+ Add Item</button></div>
         <div className="component-editor">{components.map((line,index)=><div className="component-row" key={index}>
-          <select value={line.kind} onChange={event=>setComponents(components.map((item,itemIndex)=>itemIndex===index?{...item,kind:event.target.value as "product"|"gift"}:item))}><option value="product">Product</option><option value="gift">Gift</option></select>
           <input value={line.inventorySku} onChange={event=>setComponents(components.map((item,itemIndex)=>itemIndex===index?{...item,inventorySku:event.target.value}:item))} placeholder="OXM Inventory SKU"/>
           <input value={line.name} onChange={event=>setComponents(components.map((item,itemIndex)=>itemIndex===index?{...item,name:event.target.value}:item))} placeholder="Item name"/>
           <input type="number" min="1" value={line.quantity} onChange={event=>setComponents(components.map((item,itemIndex)=>itemIndex===index?{...item,quantity:Number(event.target.value)}:item))}/>

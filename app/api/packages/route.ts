@@ -24,6 +24,16 @@ type PlatformLine = {
   packageSku: string;
 };
 
+type PriceScheduleInput = {
+  market: "MY" | "SG";
+  priceType: "non_campaign" | "campaign";
+  originalPrice: number | string;
+  sellingPrice: number | string;
+  promotionType: "monthly" | "custom";
+  effectiveFrom: string;
+  effectiveTo: string;
+};
+
 const seedPackages = [
   {
     id:"seed-agepros-1", storeId:"shopee-agepros-by-swissmed", packageSku:"AGP01JUN", name:"AgePros · BUY 1 FREE 5",
@@ -100,6 +110,11 @@ async function syncHistoryToGoogleSheet(payload: Record<string, unknown>) {
 }
 
 export async function GET(request: Request) {
+  if (process.env.VERCEL === "1") {
+    const storeId = new URL(request.url).searchParams.get("storeId");
+    const sample = storeId && storeId !== "all" ? seedPackages.filter(item => item.storeId === storeId) : seedPackages;
+    return Response.json({ packages:sample, source:"sheet-migration-preview", canCreate:false });
+  }
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error:"Authentication required" }, { status:401 });
   const membership = await membershipFor(user.email);
@@ -121,12 +136,11 @@ export async function GET(request: Request) {
   const platformRows = await db.select().from(packagePlatformSkus).where(inArray(packagePlatformSkus.packageId, ids));
   const latestVersion = new Map<string, typeof versions[number]>();
   versions.forEach(version => { if (!latestVersion.has(version.packageId)) latestVersion.set(version.packageId, version); });
-  const latestPrice = new Map<string, typeof prices[number]>();
-  prices.forEach(price => { if (!latestPrice.has(price.packageId)) latestPrice.set(price.packageId, price); });
   return Response.json({
     packages:rows.map(row => {
       const version = latestVersion.get(row.id);
-      const price = latestPrice.get(row.id);
+      const versionPrices = version ? prices.filter(item => item.versionId === version.id) : [];
+      const price = versionPrices.find(item => item.priceType === "campaign" && (item.currency === "SGD" ? "SG" : item.market) === "MY") ?? versionPrices[0];
       const currentPlatforms = version ? platformRows.filter(item => item.versionId === version.id).map(({ platform, packageSku }) => ({ platform, packageSku })) : [];
       return {
         ...row,
@@ -144,6 +158,15 @@ export async function GET(request: Request) {
         effectiveTo:version?.effectiveTo ?? price?.effectiveTo ?? null,
         originalPrice:price?.originalPrice ?? 0,
         sellingPrice:price?.sellingPrice ?? 0,
+        priceSchedules:versionPrices.map(item=>({
+          market:item.currency === "SGD" ? "SG" : item.market,
+          priceType:item.priceType,
+          originalPrice:item.originalPrice / 100,
+          sellingPrice:item.sellingPrice / 100,
+          promotionType:item.promotionType,
+          effectiveFrom:item.effectiveFrom,
+          effectiveTo:item.effectiveTo ?? "",
+        })),
         history:versions.filter(item => item.packageId === row.id).map(item => {
           const historyPrice = prices.find(priceItem => priceItem.versionId === item.id);
           return {
@@ -154,6 +177,7 @@ export async function GET(request: Request) {
             effectiveTo:item.effectiveTo,
             originalPrice:historyPrice?.originalPrice,
             sellingPrice:historyPrice?.sellingPrice,
+            priceSchedules:prices.filter(priceItem=>priceItem.versionId===item.id).map(priceItem=>({market:priceItem.currency === "SGD" ? "SG" : priceItem.market,priceType:priceItem.priceType,originalPrice:priceItem.originalPrice/100,sellingPrice:priceItem.sellingPrice/100,promotionType:priceItem.promotionType,effectiveFrom:priceItem.effectiveFrom,effectiveTo:priceItem.effectiveTo??""})),
             addedComponents:item.addedComponents,
             removedComponents:item.removedComponents,
             platforms:platformRows.filter(platformItem => platformItem.versionId === item.id).map(({ platform, packageSku }) => ({ platform, packageSku })),
@@ -180,7 +204,7 @@ export async function POST(request: Request) {
     storeId?: string;
     storeName?: string;
     name?: string;
-    market?: string;
+    markets?: Array<"MY" | "SG">;
     status?: "draft" | "review" | "approved" | "scheduled" | "active" | "expired";
     promotionType?: "monthly" | "custom";
     effectiveFrom?: string;
@@ -191,12 +215,28 @@ export async function POST(request: Request) {
     components?: ComponentLine[];
     platforms?: PlatformLine[];
     calculatorSettings?: Record<string, unknown> | null;
+    priceSchedules?: PriceScheduleInput[];
   };
   const platforms = (body.platforms ?? []).map(item => ({ platform:item.platform, packageSku:String(item.packageSku ?? "").trim() }));
-  if (!body.storeId || !body.name?.trim() || !body.effectiveFrom || !body.effectiveTo || !Array.isArray(body.components) || !body.components.length || !platforms.length) {
-    return Response.json({ error:"Store, package name, promotion dates, at least one platform and components are required" }, { status:400 });
+  if (!body.storeId || !body.name?.trim() || !Array.isArray(body.components) || !body.components.length || !platforms.length) {
+    return Response.json({ error:"Store, package name, at least one platform and items are required" }, { status:400 });
   }
-  if (body.effectiveTo < body.effectiveFrom) return Response.json({ error:"Promotion end date cannot be before the start date" }, { status:400 });
+  const schedules=(body.priceSchedules??[]).map(item=>({...item,originalPrice:Math.round(Number(item.originalPrice)*100),sellingPrice:Math.round(Number(item.sellingPrice)*100)}));
+  const markets=[...new Set(body.markets??[])];
+  if (markets.some(market=>!["MY","SG"].includes(market)) || schedules.some(item=>!markets.includes(item.market))) {
+    return Response.json({ error:"Markets must be MY or SG and match the enabled price cards" }, { status:400 });
+  }
+  if (!markets.length || schedules.length!==markets.length*2 || markets.some(market=>!schedules.some(item=>item.market===market&&item.priceType==="campaign")||!schedules.some(item=>item.market===market&&item.priceType==="non_campaign"))) {
+    return Response.json({ error:"Choose at least one market and complete both Campaign and Non-Campaign pricing" }, { status:400 });
+  }
+  if (schedules.some(item=>!["MY","SG"].includes(item.market)||!["campaign","non_campaign"].includes(item.priceType)||!["monthly","custom"].includes(item.promotionType)||!item.effectiveFrom||!item.effectiveTo||item.effectiveTo<item.effectiveFrom)) {
+    return Response.json({ error:"Every price scenario requires a valid promotion period" }, { status:400 });
+  }
+  for (const priceType of ["non_campaign","campaign"] as const) {
+    const rows=schedules.filter(item=>item.priceType===priceType);
+    const periods=new Set(rows.map(item=>`${item.promotionType}|${item.effectiveFrom}|${item.effectiveTo}`));
+    if (periods.size!==1) return Response.json({ error:"MY and SG must share the same dates for each pricing scenario" }, { status:400 });
+  }
   if (platforms.some(item => !["Shopee","Lazada","TikTok Shop"].includes(item.platform) || !item.packageSku)) {
     return Response.json({ error:"Every selected platform requires its own Package SKU" }, { status:400 });
   }
@@ -213,10 +253,8 @@ export async function POST(request: Request) {
   if (components.some(item => !item.inventorySku || !item.name || !Number.isInteger(item.quantity) || item.quantity < 1)) {
     return Response.json({ error:"Every component requires an Inventory SKU, name and whole-number quantity" }, { status:400 });
   }
-  const originalPrice = Math.round(Number(body.originalPrice) * 100);
-  const sellingPrice = Math.round(Number(body.sellingPrice) * 100);
-  if (!Number.isFinite(originalPrice) || !Number.isFinite(sellingPrice) || originalPrice <= 0 || sellingPrice <= 0 || sellingPrice > originalPrice) {
-    return Response.json({ error:"Prices must be positive and selling price cannot exceed original price" }, { status:400 });
+  if (schedules.some(item=>!Number.isFinite(item.originalPrice)||!Number.isFinite(item.sellingPrice)||item.originalPrice<=0||item.sellingPrice<=0||item.sellingPrice>item.originalPrice)) {
+    return Response.json({ error:"Original Price is required; prices must be positive and Selling Price cannot exceed it" }, { status:400 });
   }
 
   const db = await getDb();
@@ -245,7 +283,7 @@ export async function POST(request: Request) {
     previousComponents = latest?.components ?? [];
     await db.update(packages).set({
       name:body.name.trim(),
-      market:body.market ?? existing.market,
+      market:markets.join(","),
       status:body.status ?? "draft",
       updatedAt:now,
     }).where(eq(packages.id, requestedPackageId));
@@ -257,7 +295,7 @@ export async function POST(request: Request) {
       packageSku:platforms[0].packageSku,
       name:body.name.trim(),
       channel:platforms.map(item => item.platform).join(", "),
-      market:body.market ?? "MY",
+      market:markets.join(","),
       status:body.status ?? "draft",
       createdBy:user.email,
       updatedAt:now,
@@ -271,14 +309,14 @@ export async function POST(request: Request) {
       packageId,
       version:nextVersion,
       components,
-      promotionType:body.promotionType === "custom" ? "custom" : "monthly",
+      promotionType:schedules.find(item=>item.priceType==="campaign")?.promotionType ?? "monthly",
       addedComponents:diff.added,
       removedComponents:diff.removed,
       sheetSyncStatus:"pending",
       calculatorSettings:body.calculatorSettings ?? null,
       changeNote:body.changeNote?.trim() || (nextVersion === 1 ? "Initial version" : `Version ${nextVersion}`),
-      effectiveFrom:body.effectiveFrom,
-      effectiveTo:body.effectiveTo,
+      effectiveFrom:schedules.find(item=>item.priceType==="campaign")!.effectiveFrom,
+      effectiveTo:schedules.find(item=>item.priceType==="campaign")!.effectiveTo,
       createdBy:user.email,
     }),
     ...platforms.map(item => db.insert(packagePlatformSkus).values({
@@ -289,17 +327,11 @@ export async function POST(request: Request) {
       platform:item.platform,
       packageSku:item.packageSku,
     })),
-    db.insert(packagePrices).values({
-      id:crypto.randomUUID(),
-      packageId,
-      versionId,
-      currency:body.market === "SG" ? "SGD" : "MYR",
-      originalPrice,
-      sellingPrice,
-      effectiveFrom:body.effectiveFrom,
-      effectiveTo:body.effectiveTo,
-      createdBy:user.email,
-    }),
+    ...schedules.map(item=>db.insert(packagePrices).values({
+      id:crypto.randomUUID(),packageId,versionId,market:item.market,priceType:item.priceType,promotionType:item.promotionType,
+      currency:item.market === "SG" ? "SGD" : "MYR",originalPrice:item.originalPrice,sellingPrice:item.sellingPrice,
+      effectiveFrom:item.effectiveFrom,effectiveTo:item.effectiveTo,createdBy:user.email,
+    })),
     db.insert(packageAuditLog).values({
       packageId,
       action:nextVersion === 1 ? "created" : "version_created",
@@ -318,9 +350,9 @@ export async function POST(request: Request) {
     packageName:body.name.trim(),
     version:nextVersion,
     action:nextVersion === 1 ? "Created" : "Version Updated",
-    promotionType:body.promotionType === "custom" ? "Custom" : "Monthly",
-    startDate:body.effectiveFrom,
-    endDate:body.effectiveTo,
+    promotionType:schedules.map(item=>`${item.market} ${item.priceType==="campaign"?"Campaign":"Non-Campaign"}: ${item.promotionType==="custom"?"Custom":"Monthly"}`).join(" | "),
+    startDate:schedules.filter(item=>item.market===markets[0]).map(item=>`${item.priceType==="campaign"?"Campaign":"Non-Campaign"} ${item.effectiveFrom}`).join(" | "),
+    endDate:schedules.filter(item=>item.market===markets[0]).map(item=>`${item.priceType==="campaign"?"Campaign":"Non-Campaign"} ${item.effectiveTo}`).join(" | "),
     shopeeSku:platformMap["Shopee"] ?? "",
     lazadaSku:platformMap["Lazada"] ?? "",
     tiktokSku:platformMap["TikTok Shop"] ?? "",

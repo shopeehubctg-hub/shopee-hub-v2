@@ -1,0 +1,1 @@
+ALTER TABLE `package_prices` ADD `promotion_type` text DEFAULT 'custom' NOT NULL;

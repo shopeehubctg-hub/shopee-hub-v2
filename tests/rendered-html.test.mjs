@@ -20,6 +20,13 @@ test("package control is wired into the command center", async () => {
   assert.match(component, /TikTok Shop/);
   assert.match(component, /Full month/);
   assert.match(component, /Custom dates/);
+  assert.match(component, /Non-Campaign/);
+  assert.match(component, /Campaign/);
+  assert.match(component, /Selling markets/);
+  assert.match(component, /Original Price <em>\*<\/em>/);
+  assert.match(component, /Original Price equals Selling Price/);
+  assert.match(component, /Add Item/);
+  assert.doesNotMatch(component, /<option value="gift">Gift<\/option>/);
   assert.match(component, /Google Sheet History/);
 });
 
@@ -54,25 +61,31 @@ test("store selector follows the Link Directory store names", async () => {
 });
 
 test("package API enforces platform SKUs and persists component history", async () => {
-  const [route, schema, baseMigration, platformMigration] = await Promise.all([
+  const [route, schema, baseMigration, platformMigration, pricingMigration] = await Promise.all([
     readFile(new URL("app/api/packages/route.ts", root), "utf8"),
     readFile(new URL("db/schema.ts", root), "utf8"),
     readFile(new URL("drizzle/0001_orange_ultron.sql", root), "utf8"),
     readFile(new URL("drizzle/0002_green_blink.sql", root), "utf8"),
+    readFile(new URL("drizzle/0005_package_scenario_pricing.sql", root), "utf8"),
   ]);
   assert.match(route, /nextVersion/);
   assert.match(route, /packageAuditLog/);
-  assert.match(route, /selling price cannot exceed original price/);
+  assert.match(route, /Selling Price cannot exceed it/);
+  assert.match(route, /priceType.*"non_campaign"/);
+  assert.match(route, /priceType.*"campaign"/);
   assert.match(route, /Each platform must use a different Package SKU/);
   assert.match(route, /componentDiff/);
   assert.match(route, /syncHistoryToGoogleSheet/);
   assert.match(schema, /packageVersions/);
   assert.match(schema, /packagePrices/);
   assert.match(schema, /packagePlatformSkus/);
+  assert.match(schema, /priceType/);
   assert.match(schema, /addedComponents/);
   assert.match(schema, /removedComponents/);
   assert.match(baseMigration, /CREATE TABLE `package_versions`/);
   assert.match(platformMigration, /CREATE TABLE `package_platform_skus`/);
+  assert.match(pricingMigration, /ADD `market`/);
+  assert.match(pricingMigration, /ADD `price_type`/);
 });
 
 test("Shopee calculator reverse-solves listing price and itemized fees", async () => {

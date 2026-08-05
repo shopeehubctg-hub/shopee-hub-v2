@@ -36,6 +36,20 @@
       "when": 1785068949028,
       "tag": "0004_eager_shiver_man",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1785912010987,
+      "tag": "0005_package_scenario_pricing",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1785912113937,
+      "tag": "0006_package_price_period_type",
+      "breakpoints": true
     }
   ]
 }
