@@ -1,6 +1,6 @@
 export const VOUCHER_PRESET_SOURCE = {
   spreadsheetUrl:"https://docs.google.com/spreadsheets/d/1pzXhiklrLR6lrXlxj9zhYumUKw5FxXT3/edit",
-  month:"July 2026",
+  month:"Last 30 Days Avg.",
   metric:"Rounded Up Buffer",
   updated:"2026-08-05",
 };

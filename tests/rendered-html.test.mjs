@@ -164,10 +164,8 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /2\.14%/);
   assert.match(calculator, /需要 Markup/);
   assert.match(calculator, /Pre-Order Listing/);
-  assert.match(calculator, /result\.markupRate >= 30/);
-  assert.match(calculator, /positive\(enteredMarkup\) >= 30/);
-  assert.match(calculator, /if \(markupBlocked\(row,mode,result\)\) return/);
-  assert.match(calculator, /Markup ≥ 30% · Cannot create/);
+  assert.doesNotMatch(calculator, /markupBlocked/);
+  assert.doesNotMatch(calculator, /Markup ≥ 30% · Cannot create/);
   assert.match(calculator, /markup-editor/);
   assert.match(model, /markupOverride/);
   assert.match(calculator, /Create Package/);
@@ -180,7 +178,11 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /voucher-hero-inputs/);
   assert.match(calculator, /voucherRates\.nonCampaign/);
   assert.match(calculator, /voucherRates\.campaign/);
-  assert.match(calculator, /Total Commission Fee %/);
+  assert.match(calculator, /Total Shopee Fee %/);
+  assert.match(calculator, /Select Category for Actual Commission Fee/);
+  assert.doesNotMatch(calculator, /其他计算设定/);
+  assert.doesNotMatch(calculator, /Voucher preset 根据/);
+  assert.match(voucherPresets, /Last 30 Days Avg\./);
   assert.match(calculator, /<h2>Markup Calculator<\/h2>/);
   assert.doesNotMatch(calculator, /scenario-voucher/);
   assert.doesNotMatch(calculator, /Campaign Day 最高百分比收费/);

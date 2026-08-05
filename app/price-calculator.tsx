@@ -70,12 +70,8 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
   function addPackage() {
     setPackages(current=>[...current,{id:Math.max(0,...current.map(row=>row.id))+1,name:`Package ${String.fromCharCode(65+current.length)}`,facebookPrice:0,markupRates:blankMarkups()}]);
   }
-  function markupBlocked(row:PackageRow, mode:ServiceMode, result:ReturnType<typeof calculateShopeePrice>) {
-    const enteredMarkup = row.markupRates[mode];
-    return enteredMarkup === null ? result.markupRate >= 30 : positive(enteredMarkup) >= 30;
-  }
   function packagePrefill(row:PackageRow, mode:ServiceMode, result:ReturnType<typeof calculateShopeePrice>, suggested:ReturnType<typeof calculateShopeePrice>, requestId=Date.now()) {
-    if (!row.name.trim() || !result.valid || markupBlocked(row,mode,result)) return null;
+    if (!row.name.trim() || !result.valid) return null;
     const categoryItem = COMMISSION_CATEGORIES[Number(category)];
     const calculatorSettings:CalculatorSnapshot = {
       source:"Shopee Pricing Calculator",
@@ -111,7 +107,6 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
     return {requestId,name:row.name,sellingPrice:result.requiredPrice,calculatorSettings};
   }
   function createPackage(row:PackageRow, mode:ServiceMode, result:ReturnType<typeof calculateShopeePrice>, suggested:ReturnType<typeof calculateShopeePrice>) {
-    if (markupBlocked(row,mode,result)) return;
     const prefill = packagePrefill(row,mode,result,suggested);
     if (prefill) onCreatePackage?.(prefill);
   }
@@ -123,9 +118,9 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
 
   return <div className="price-calculator">
     <section className="calculator-hero">
-      <div><p className="kicker">SHOPEE MY · MARKUP CALCULATOR</p><h2>Markup Calculator</h2><p>{storeName||"Selected store"} · Voucher preset 根据 {VOUCHER_PRESET_SOURCE.month} 店铺记录，修改一次会套用全部配套。</p></div>
+      <div><p className="kicker">SHOPEE MY · MARKUP CALCULATOR</p><h2>Markup Calculator</h2></div>
       <div className="calculator-hero-metrics">
-        <div className="calculator-hero-result total-fee-result"><span>Total Commission Fee %</span><strong>{pct(headlineRate)}</strong><small>Campaign Day · Service Fee capped at RM108</small></div>
+        <div className="calculator-hero-result total-fee-result"><span>Total Shopee Fee %</span><strong>{pct(headlineRate)}</strong><small>Campaign Day · Service Fee capped at RM108</small></div>
         <div className={`calculator-hero-result voucher-hero-result${storeVoucherPreset.available?"":" unavailable"}`}>
           <div className="voucher-hero-head"><span>Shopee Voucher %</span><small>{storeVoucherPreset.available?`${VOUCHER_PRESET_SOURCE.month} preset`:"No preset"}</small></div>
           <div className="voucher-hero-inputs">
@@ -139,12 +134,13 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
     <section className="calculator-primary card">
       <div className="calculator-section-head"><div><p className="kicker">STEP 1 · YOUR SHOPEE SETUP</p><h3>商品分类、Voucher 与收费设定</h3></div><span>Cashback Program ON · Commission 已包含 8% SST</span></div>
       <div className="primary-fields calculator-primary-fields">
-        <label>Product Category
+        <label className="category-field">Product Category
           <select value={category} onChange={event=>setCategory(event.target.value)}>
             {[...new Set(COMMISSION_CATEGORIES.map(item=>item.cluster))].map(cluster=><optgroup label={cluster} key={cluster}>
               {COMMISSION_CATEGORIES.map((item,index)=>item.cluster===cluster&&<option value={index} key={`${cluster}-${item.name}-${index}`}>{item.name}</option>)}
             </optgroup>)}
           </select>
+          <small>Select Category for Actual Commission Fee, or set Custom Commission Fee.</small>
         </label>
         <label className="commission-field">Custom Commission Fee (%)
           <input type="number" min="0" step=".01" value={customCommission} placeholder={`Auto: ${pct(commissionRateFor(category,true))}`} onChange={event=>setCustomCommission(event.target.value)}/>
@@ -152,6 +148,15 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
         </label>
         <label>Co-Fund Voucher (RM)<input type="number" min="0" step=".01" value={fees.cofundVoucher} onChange={event=>updateFee("cofundVoucher",event.target.value)}/></label>
         <div className="setup-toggle-field"><label className="setup-toggle"><input type="checkbox" checked={fees.isPreorder} onChange={event=>updateFee("isPreorder",event.target.checked)}/><span><b>Pre-Order Listing</b></span></label><small>额外 {pct(fees.preorder)}</small></div>
+      </div>
+      <div className="step-one-extra">
+        <div className="fee-fields advanced-fields">
+          <label>Seller Voucher (RM)<input type="number" min="0" step=".01" value={fees.sellerVoucher} onChange={event=>updateFee("sellerVoucher",event.target.value)}/></label>
+          <label>Seller Bear Shipping (RM)<input type="number" min="0" step=".01" value={fees.sellerShipping} onChange={event=>updateFee("sellerShipping",event.target.value)}/></label>
+          <label>Facebook Shipping (RM)<input type="number" min="0" step=".01" value={fees.facebookShipping} onChange={event=>updateFee("facebookShipping",event.target.value)}/></label>
+          <label>Extra Profit Target (RM)<input type="number" min="0" step=".01" value={fees.extraProfit} onChange={event=>updateFee("extraProfit",event.target.value)}/></label>
+        </div>
+        <p className="formula-note">Voucher 指标：{storeVoucherPreset.available?`${storeVoucherPreset.store} · Normal ${pct(voucherRates.nonCampaign)} / Campaign ${pct(voucherRates.campaign)}`:"此店暂时没有 Voucher preset · 两种情境以 0% 开始"}。来源：{VOUCHER_PRESET_SOURCE.month} · {VOUCHER_PRESET_SOURCE.metric}。</p>
       </div>
     </section>
 
@@ -161,17 +166,6 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
       <article><span>Service Fee</span><strong>5.94% / 8.10%</strong><small>Non-Campaign / Campaign · Capped at RM108</small></article>
       <article><span>Pre-Order Service Fee</span><strong>{fees.isPreorder?pct(fees.preorder):"OFF"}</strong><small>Default 2.14%</small></article>
       <article className="fee-total"><span>Platform Support Fee</span><strong>RM 0.54</strong><small>Per order</small></article>
-    </section>
-
-    <section className="calculator-settings card">
-      <div className="calculator-section-head settings-visible-head"><div><p className="kicker">VOUCHER、运费与利润</p><h3>其他计算设定</h3></div><span>Default 已直接展开</span></div>
-      <div className="fee-fields advanced-fields">
-        <label>Seller Voucher (RM)<input type="number" min="0" step=".01" value={fees.sellerVoucher} onChange={event=>updateFee("sellerVoucher",event.target.value)}/></label>
-        <label>Seller Bear Shipping (RM)<input type="number" min="0" step=".01" value={fees.sellerShipping} onChange={event=>updateFee("sellerShipping",event.target.value)}/></label>
-        <label>Facebook Shipping (RM)<input type="number" min="0" step=".01" value={fees.facebookShipping} onChange={event=>updateFee("facebookShipping",event.target.value)}/></label>
-        <label>Extra Profit Target (RM)<input type="number" min="0" step=".01" value={fees.extraProfit} onChange={event=>updateFee("extraProfit",event.target.value)}/></label>
-      </div>
-      <p className="formula-note">Voucher 指标：{storeVoucherPreset.available?`${storeVoucherPreset.store} · Normal ${pct(voucherRates.nonCampaign)} / Campaign ${pct(voucherRates.campaign)}`:"此店暂时没有 Voucher preset · 两种情境以 0% 开始"}。来源：{VOUCHER_PRESET_SOURCE.month} · {VOUCHER_PRESET_SOURCE.metric}。</p>
     </section>
 
     <section className="calculator-table calculator-results card">
@@ -184,16 +178,15 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
           <button className="remove-row" disabled={packages.length===1} onClick={()=>setPackages(current=>current.filter(item=>item.id!==row.id))} aria-label={`Remove ${row.name}`}>×</button>
         </div>
         <div className="scenario-list">{scenarios.map(({mode,suggested,result})=>{
-          const isMarkupBlocked = markupBlocked(row,mode,result);
           const payoutProtected = result.payout >= result.targetPayout - .005;
-          return <div className={`scenario-result${isMarkupBlocked?" markup-blocked":""}`} key={mode}>
+          return <div className="scenario-result" key={mode}>
             <div className="scenario-result-main">
               <div className={`scenario-badge ${mode}`}><b>{SERVICE_MODES[mode].label}</b><small>Service Fee {pct(SERVICE_MODES[mode].rate)} · Voucher {pct(voucherRates[mode])}</small></div>
               <div className="result-metric suggested-price"><span>建议 Shopee 卖价</span><strong>{money(result.requiredPrice)}</strong><small>Listing price</small></div>
               <div className="result-metric"><span>顾客 Voucher 后价钱</span><strong>{money(result.customerPrice)}</strong><small>顾客实际看到</small></div>
               <label className="result-metric markup-editor"><span>需要 Markup</span><div><input type="number" min="0" step=".01" value={row.markupRates[mode] ?? suggested.markupRate.toFixed(2)} onChange={event=>updateMarkup(row.id,mode,event.target.value)}/><b>%</b></div><small>{row.markupRates[mode]===null?`系统建议 · ${money(suggested.markupAmount)}`:`自订 · ${money(result.markupAmount)}`}</small></label>
               <div className="result-metric payout"><span>实际到手</span><strong>{money(result.payout)}</strong><small>目标 {money(result.targetPayout)} · {payoutProtected?"✓ 利润已保护":"低于目标"}</small></div>
-              <div className="package-result-actions"><button className="create-package-link" disabled={!row.name.trim()||!result.valid||isMarkupBlocked} onClick={()=>createPackage(row,mode,result,suggested)}>Create Package</button>{isMarkupBlocked&&<small className="markup-warning">Markup ≥ 30% · Cannot create</small>}</div>
+              <div className="package-result-actions"><button className="create-package-link" disabled={!row.name.trim()||!result.valid} onClick={()=>createPackage(row,mode,result,suggested)}>Create Package</button></div>
             </div>
             <details className="fee-breakdown"><summary>查看 {SERVICE_MODES[mode].label} Fee Breakdown</summary><div className="fee-breakdown-grid">
               <div><span>Transaction Fee · 3.78%</span><strong>{money(result.transactionFee)}</strong></div>
