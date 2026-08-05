@@ -49,8 +49,6 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
       return {mode,activeFees,suggested,result};
     }),
   })),[packages,fees,commission,voucherRates]);
-  const headlineRate = fees.transaction + commission + SERVICE_MODES.campaign.rate + (fees.isPreorder?fees.preorder:0);
-
   useEffect(()=>{
     const preset = voucherPresetFor(storeName);
     setVoucherRates({nonCampaign:preset.normal,campaign:preset.campaign});
@@ -125,7 +123,14 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
   return <div className="price-calculator">
     <section className="calculator-hero">
       <div><p className="kicker">SHOPEE MY · MARKUP CALCULATOR</p><h2>配套卖价倒推计算机</h2><p>{storeName||"Selected store"} · Voucher preset 根据 {VOUCHER_PRESET_SOURCE.month} 店铺记录；Campaign Day 与 Non-Campaign Day 分开计算。</p></div>
-      <div className="calculator-hero-result"><span>Campaign Day 最高百分比收费</span><strong>{pct(headlineRate)}</strong><small>Service Fee 达 RM108 后会停止增加</small></div>
+      <div className={`calculator-hero-result voucher-hero-result${storeVoucherPreset.available?"":" unavailable"}`}>
+        <div className="voucher-hero-head"><span>Shopee Voucher %</span><small>{storeVoucherPreset.available?`${storeVoucherPreset.store} · ${VOUCHER_PRESET_SOURCE.month}`:"No preset for this store"}</small></div>
+        <div className="voucher-hero-values">
+          <div><span>Non-Campaign Day</span><strong>{storeVoucherPreset.available?pct(voucherRates.nonCampaign):"—"}</strong></div>
+          <i>vs</i>
+          <div><span>Campaign Day</span><strong>{storeVoucherPreset.available?pct(voucherRates.campaign):"—"}</strong></div>
+        </div>
+      </div>
     </section>
 
     <section className="calculator-primary card">

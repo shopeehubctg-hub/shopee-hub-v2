@@ -177,6 +177,10 @@ test("price calculator is available in navigation with all required outputs", as
   assert.doesNotMatch(calculator, /Shopee Voucher Disc\. \(%\)/);
   assert.match(calculator, /Shopee Voucher preset/);
   assert.match(calculator, /voucherRates\[mode\]/);
+  assert.match(calculator, /voucher-hero-values/);
+  assert.match(calculator, /voucherRates\.nonCampaign/);
+  assert.match(calculator, /voucherRates\.campaign/);
+  assert.doesNotMatch(calculator, /Campaign Day 最高百分比收费/);
   assert.match(page, /storeName=\{allStoresSelected/);
   assert.match(voucherPresets, /Rounded Up Buffer/);
   assert.match(voucherPresets, /Mizino Premium/);
