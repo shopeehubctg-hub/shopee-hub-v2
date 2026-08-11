@@ -152,6 +152,20 @@ test("Shopee calculator accepts a user-adjusted markup rate", async () => {
   assert.equal(result.markupRate, 25);
 });
 
+test("Shopee calculator reverse-solves a customer-price target", async () => {
+  const { calculateShopeePriceForCustomerTarget } = await import("../app/price-calculator-model.js");
+  const fees = {
+    transaction:3.78, commission:12.96, service:5.94, serviceCap:108,
+    preorder:2.14, isPreorder:false, platformSupport:0.54,
+    shopeeVoucher:20, sellerVoucher:0, cofundVoucher:20,
+    sellerShipping:0, facebookShipping:10, extraProfit:0,
+  };
+  const result = calculateShopeePriceForCustomerTarget({facebookPrice:289},fees,279);
+  assert.equal(result.valid,true);
+  assert.ok(Math.abs(result.customerPrice-279)<0.000001);
+  assert.ok(Math.abs(result.requiredPrice-368.75)<0.000001);
+});
+
 test("price calculator is available in navigation with all required outputs", async () => {
   const [page, calculator, packageControl, packageRoute, schema, migration, model, voucherPresets] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
@@ -218,7 +232,7 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /SPayLater/);
   assert.match(calculator, /fees\.isSpayLater\?4\.86:3\.78/);
   assert.match(calculator, /editableNumber/);
-  assert.match(calculator, /Facebook 到手/);
+  assert.match(calculator, /Facebook 实际到手/);
   assert.match(calculator, /positive\(row\.facebookPrice\)-positive\(fees\.facebookShipping\)/);
   assert.match(calculator, /主产品数量/);
   assert.match(calculator, /Facebook PPU/);
@@ -229,6 +243,16 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /Confirm & Continue/);
   assert.match(calculator, /setPendingConfirmation/);
   assert.match(packageControl, /Customer PPU/);
+  assert.match(calculator, /保持 Facebook 实际到手/);
+  assert.match(calculator, /顾客价与 Facebook 一样/);
+  assert.match(calculator, /顾客价比 Facebook 便宜/);
+  assert.match(calculator, /discountUnit/);
+  assert.match(calculator, /Markup \(RM\)/);
+  assert.match(calculator, /Facebook 实际到手/);
+  assert.doesNotMatch(calculator, /利润已保护/);
+  assert.match(calculator, /onWheelCapture/);
+  assert.match(calculator, /package-sheet-head/);
+  assert.match(calculator, /ladder-sheet/);
   assert.doesNotMatch(calculator, /自动生效/);
   assert.match(packageControl, /Calculator Package/);
   assert.match(packageControl, /prefillBatch/);

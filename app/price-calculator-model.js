@@ -74,6 +74,22 @@ export function calculatePricePerUnit(amount, quantity) {
   return Number.isFinite(numericAmount) && Number.isFinite(numericQuantity) && numericQuantity > 0 ? numericAmount / numericQuantity : null;
 }
 
+export function calculateShopeePriceForCustomerTarget(row, fees, customerTarget) {
+  const voucherMultiplier = 1 - Math.min(100, Math.max(0, Number(fees.shopeeVoucher) || 0)) / 100;
+  const valid = voucherMultiplier > 0;
+  const requiredPrice = valid
+    ? Math.max(0, Number(customerTarget) || 0) / voucherMultiplier + (Number(fees.sellerVoucher) || 0) + (Number(fees.cofundVoucher) || 0)
+    : 0;
+  const calculated = calculateFeesForPrice(requiredPrice, fees);
+  const customerPrice = calculated.feeBase * voucherMultiplier;
+  const markupAmount = requiredPrice - row.facebookPrice;
+  const markupRate = row.facebookPrice ? markupAmount / row.facebookPrice * 100 : 0;
+  return {
+    valid, targetPayout:calculated.payout, requiredPrice, customerPrice, markupAmount, markupRate,
+    ...calculated, serviceCapped:calculated.uncappedServiceFee > fees.serviceCap,
+  };
+}
+
 export function reviewPriceLadder(rows) {
   return rows
     .filter(row=>Number(row.quantity)>0&&Number.isFinite(Number(row.ppu)))

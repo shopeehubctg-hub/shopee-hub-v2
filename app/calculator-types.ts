@@ -7,6 +7,9 @@ export type CalculatorSnapshot = {
   commissionRate:number;
   transactionRate:number;
   serviceScenario:"Non-Campaign Day"|"Campaign Day";
+  pricingGoal?:"facebookPayout"|"sameCustomerPrice"|"cheaperCustomerPrice";
+  discountUnit?:"rm"|"percent";
+  discountValue?:number;
   serviceRate:number;
   serviceCap:number;
   preorderListing:boolean;
