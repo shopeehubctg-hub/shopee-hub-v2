@@ -19,6 +19,9 @@ export type CalculatorSnapshot = {
   facebookShipping:number;
   extraProfit:number;
   facebookPrice:number;
+  mainProductQuantity?:number;
+  facebookPricePerUnit?:number|null;
+  customerPricePerUnit?:number|null;
   suggestedShopeePrice:number;
   customerVoucherPrice:number;
   markupRate:number;

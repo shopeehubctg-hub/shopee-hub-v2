@@ -220,6 +220,15 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /editableNumber/);
   assert.match(calculator, /Facebook 到手/);
   assert.match(calculator, /positive\(row\.facebookPrice\)-positive\(fees\.facebookShipping\)/);
+  assert.match(calculator, /主产品数量/);
+  assert.match(calculator, /Facebook PPU/);
+  assert.match(calculator, /顾客价 ÷ 主产品数量/);
+  assert.match(calculator, /PACKAGE PRICE LADDER REVIEW/);
+  assert.match(calculator, /ladderReviews\.length>0/);
+  assert.match(calculator, /确认最终配套 & 价钱/);
+  assert.match(calculator, /Confirm & Continue/);
+  assert.match(calculator, /setPendingConfirmation/);
+  assert.match(packageControl, /Customer PPU/);
   assert.doesNotMatch(calculator, /自动生效/);
   assert.match(packageControl, /Calculator Package/);
   assert.match(packageControl, /prefillBatch/);
@@ -235,6 +244,20 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(packageRoute, /calculatorSettings:body\.calculatorSettings/);
   assert.match(schema, /calculatorSettings/);
   assert.match(migration, /calculator_settings/);
+});
+
+test("PPU and price ladder calculations use valid main-product quantities", async () => {
+  const { calculatePricePerUnit, reviewPriceLadder } = await import("../app/price-calculator-model.js");
+  assert.equal(calculatePricePerUnit(289, 2), 144.5);
+  assert.equal(calculatePricePerUnit(289, 0), null);
+  assert.equal(calculatePricePerUnit(289, ""), null);
+  const review = reviewPriceLadder([
+    {name:"Large",quantity:4,ppu:70},
+    {name:"Small",quantity:1,ppu:80},
+    {name:"Medium",quantity:2,ppu:75},
+    {name:"Missing",quantity:0,ppu:null},
+  ]);
+  assert.deepEqual(review.map(item=>[item.name,item.label]),[["Small","Base"],["Medium","Better Value"],["Large","Better Value"]]);
 });
 
 test("advertising summary keeps one balance and removes low-priority cards", async () => {

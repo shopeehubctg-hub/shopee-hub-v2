@@ -67,3 +67,21 @@ export function calculateShopeePrice(row, fees, markupOverride = null) {
     ...calculated, serviceCapped:calculated.uncappedServiceFee > fees.serviceCap,
   };
 }
+
+export function calculatePricePerUnit(amount, quantity) {
+  const numericAmount = Number(amount);
+  const numericQuantity = Number(quantity);
+  return Number.isFinite(numericAmount) && Number.isFinite(numericQuantity) && numericQuantity > 0 ? numericAmount / numericQuantity : null;
+}
+
+export function reviewPriceLadder(rows) {
+  return rows
+    .filter(row=>Number(row.quantity)>0&&Number.isFinite(Number(row.ppu)))
+    .sort((left,right)=>Number(left.quantity)-Number(right.quantity))
+    .map((row,index,sorted)=>{
+      if (index===0) return {...row,status:"base",label:"Base"};
+      const previous = Number(sorted[index-1].ppu);
+      const current = Number(row.ppu);
+      return {...row,status:current<=previous+.005?"better":"higher",label:current<=previous+.005?"Better Value":"Higher PPU"};
+    });
+}
