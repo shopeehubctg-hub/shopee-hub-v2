@@ -90,6 +90,7 @@ function managementActionToClientAction(action: ManagementAction, client: string
 
 export default function Home() {
   const [section, setSection] = useState("overview");
+  const [sidebarCollapsed,setSidebarCollapsed] = useState(false);
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [storeId, setStoreId] = useState("");
   const [loading, setLoading] = useState(false);
@@ -201,9 +202,10 @@ export default function Home() {
   const fakeSellerCases = Array.isArray(live.fakeSellerCases) ? live.fakeSellerCases as FakeSellerCase[] : undefined;
   const nav = useMemo(() => [["overview","Overview"],["design","Design Checker"],["calculator","Price Calculator"],["packages","Packages & Pricing"],["advertising","Advertising"],["orders","Orders & Inventory"],["health","Store Health"],["protection","Fake Seller Reports"],["actions","Client Action Center"]], []);
 
-  return <main className="app-shell">
+  return <main className={`app-shell${sidebarCollapsed?" sidebar-collapsed":""}`}>
     <aside className="side">
       <div className="logo"><img src="/shopee-hub-logo-transparent.png" alt="ShopeeHub"/><small>STORE COMMAND CENTER</small></div>
+      <button className="sidebar-toggle" onClick={()=>setSidebarCollapsed(current=>!current)} aria-label={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"} title={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"}>{sidebarCollapsed?"›":"‹"}</button>
       <nav>{nav.map(([id,label]) => <button key={id} className={section===id?"active":""} onClick={()=>setSection(id)}><span>{label.slice(0,1)}</span>{label}</button>)}</nav>
       <div className="fleet contact-card"><p>Contact Shopee Hub Specialist</p><strong>{allStoresSelected ? "Select a project" : (store?.contacts.length ? store.name : "Link unavailable")}</strong><div>{!allStoresSelected && store?.contacts.map(contact=><a key={contact.href} href={contact.href} target="_blank" rel="noopener noreferrer" title={contact.project}>{store.contacts.length > 1 ? contact.project : "Contact"} →</a>)}</div></div>
       <p className="access">Private access<br/><b>shopeehub.ctg@gmail.com</b></p>

@@ -7,7 +7,7 @@ import { VOUCHER_PRESET_SOURCE, voucherPresetFor } from "./voucher-presets.js";
 
 type ServiceMode = keyof typeof SERVICE_MODES;
 type NumberValue = number|"";
-type PackageRow = { id:number; name:string; facebookPrice:NumberValue; mainProductQuantity:NumberValue; markupRates:Record<ServiceMode,string|null> };
+type PackageRow = { id:number; name:string; facebookPrice:NumberValue; mainProductQuantity:NumberValue; markupRates:Record<ServiceMode,string|null>; customerTargets:Record<ServiceMode,string|null> };
 type FeeSettings = {
   transaction:number; commission:number; service:number; serviceCap:number;
   preorder:number; isPreorder:boolean; platformSupport:number;
@@ -28,10 +28,11 @@ type DiscountUnit = "rm"|"percent";
 type GoalSetting = { goal:PricingGoal; discountUnit:DiscountUnit; discountValue:NumberValue };
 
 const blankMarkups = ():Record<ServiceMode,string|null> => ({nonCampaign:null,campaign:null});
+const blankCustomerTargets = ():Record<ServiceMode,string|null> => ({nonCampaign:null,campaign:null});
 const INITIAL_PACKAGES:PackageRow[] = [
-  { id:1, name:"Package A", facebookPrice:289, mainProductQuantity:"", markupRates:blankMarkups() },
-  { id:2, name:"Package B", facebookPrice:358, mainProductQuantity:"", markupRates:blankMarkups() },
-  { id:3, name:"Package C", facebookPrice:716, mainProductQuantity:"", markupRates:blankMarkups() },
+  { id:1, name:"Package A", facebookPrice:289, mainProductQuantity:"", markupRates:blankMarkups(), customerTargets:blankCustomerTargets() },
+  { id:2, name:"Package B", facebookPrice:358, mainProductQuantity:"", markupRates:blankMarkups(), customerTargets:blankCustomerTargets() },
+  { id:3, name:"Package C", facebookPrice:716, mainProductQuantity:"", markupRates:blankMarkups(), customerTargets:blankCustomerTargets() },
 ];
 const SCENARIOS = Object.keys(SERVICE_MODES) as ServiceMode[];
 const money = (value:number) => `RM ${Number.isFinite(value) ? value.toFixed(2) : "0.00"}`;
@@ -71,7 +72,9 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
       const pricedRow = {...row,facebookPrice:positive(row.facebookPrice)};
       const goalSetting = pricingGoals[mode];
       const discount = positive(goalSetting.discountValue);
-      const customerTarget = goalSetting.goal==="sameCustomerPrice" ? pricedRow.facebookPrice : goalSetting.discountUnit==="rm" ? Math.max(0,pricedRow.facebookPrice-discount) : pricedRow.facebookPrice*(1-Math.min(100,discount)/100);
+      const defaultCustomerTarget = goalSetting.goal==="sameCustomerPrice" ? pricedRow.facebookPrice : goalSetting.discountUnit==="rm" ? Math.max(0,pricedRow.facebookPrice-discount) : pricedRow.facebookPrice*(1-Math.min(100,discount)/100);
+      const packageCustomerTarget = row.customerTargets[mode];
+      const customerTarget = goalSetting.goal==="cheaperCustomerPrice"&&packageCustomerTarget!==null&&packageCustomerTarget!=="" ? positive(packageCustomerTarget) : defaultCustomerTarget;
       const suggested = goalSetting.goal==="facebookPayout" ? calculateShopeePrice(pricedRow,activeFees) : calculateShopeePriceForCustomerTarget(pricedRow,activeFees,customerTarget);
       const customMarkup = row.markupRates[mode];
       const result = customMarkup === null ? suggested : calculateShopeePrice(pricedRow,activeFees,positive(customMarkup));
@@ -93,15 +96,18 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
   function updateMarkup(id:number, mode:ServiceMode, value:string) {
     setPackages(current=>current.map(row=>row.id===id?{...row,markupRates:{...row.markupRates,[mode]:value}}:row));
   }
+  function updateCustomerTarget(id:number, mode:ServiceMode, value:string) {
+    setPackages(current=>current.map(row=>row.id===id?{...row,customerTargets:{...row.customerTargets,[mode]:value},markupRates:{...row.markupRates,[mode]:null}}:row));
+  }
   function updateVoucher(mode:ServiceMode, value:string) {
     setVoucherRates(current=>({...current,[mode]:value===""?"":Math.min(100,positive(value))}));
   }
   function updatePricingGoal(mode:ServiceMode, patch:Partial<GoalSetting>) {
     setPricingGoals(current=>({...current,[mode]:{...current[mode],...patch}}));
-    setPackages(current=>current.map(row=>({...row,markupRates:{...row.markupRates,[mode]:null}})));
+    setPackages(current=>current.map(row=>({...row,markupRates:{...row.markupRates,[mode]:null},customerTargets:{...row.customerTargets,[mode]:null}})));
   }
   function addPackage() {
-    setPackages(current=>[...current,{id:Math.max(0,...current.map(row=>row.id))+1,name:`Package ${String.fromCharCode(65+current.length)}`,facebookPrice:0,mainProductQuantity:"",markupRates:blankMarkups()}]);
+    setPackages(current=>[...current,{id:Math.max(0,...current.map(row=>row.id))+1,name:`Package ${String.fromCharCode(65+current.length)}`,facebookPrice:0,mainProductQuantity:"",markupRates:blankMarkups(),customerTargets:blankCustomerTargets()}]);
   }
   function packagePrefill(row:PackageRow, mode:ServiceMode, result:ReturnType<typeof calculateShopeePrice>, suggested:ReturnType<typeof calculateShopeePrice>, requestId=Date.now()) {
     if (!row.name.trim() || !result.valid) return null;
@@ -169,10 +175,10 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
   }
   function pricingGoalSummary(mode:ServiceMode) {
     const setting = pricingGoals[mode];
-    if (setting.goal==="facebookPayout") return "保持 Facebook 实际到手";
-    if (setting.goal==="sameCustomerPrice") return "顾客价与 Facebook 一样";
+    if (setting.goal==="facebookPayout") return "跟 Meta 实际到手价一样";
+    if (setting.goal==="sameCustomerPrice") return "顾客价与 Meta 一样";
     const discount = positive(setting.discountValue);
-    return `顾客价比 Facebook 便宜 ${setting.discountUnit==="rm"?money(discount):pct(discount)}`;
+    return `顾客价比 Meta 便宜 ${setting.discountUnit==="rm"?money(discount):pct(discount)}`;
   }
 
   return <div className="price-calculator" onWheelCapture={event=>{const target=event.target as HTMLInputElement;if(target.tagName==="INPUT"&&target.type==="number")target.blur();}}>
@@ -213,14 +219,14 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
           <div className="pricing-goal-heading"><b>定价目标</b><span>Campaign 与 Non-Campaign 可分别设定</span></div>
           <div className="pricing-goal-grid">{SCENARIOS.map(mode=>{const setting=pricingGoals[mode];return <article className={mode} key={mode}>
             <div><b>{SERVICE_MODES[mode].label}</b><small>系统会按这个目标倒推 Shopee 卖价</small></div>
-            <label>目标<select value={setting.goal} onChange={event=>updatePricingGoal(mode,{goal:event.target.value as PricingGoal})}><option value="facebookPayout">保持 Facebook 实际到手</option><option value="sameCustomerPrice">顾客价与 Facebook 一样</option><option value="cheaperCustomerPrice">顾客价比 Facebook 便宜</option></select></label>
+            <label>目标<select value={setting.goal} onChange={event=>updatePricingGoal(mode,{goal:event.target.value as PricingGoal})}><option value="facebookPayout">跟 Meta 实际到手价一样</option><option value="sameCustomerPrice">顾客价与 Meta 一样</option><option value="cheaperCustomerPrice">顾客价比 Meta 便宜</option></select></label>
             {setting.goal==="cheaperCustomerPrice"&&<label>便宜多少<div className="discount-target-input"><select aria-label={`${SERVICE_MODES[mode].label} discount unit`} value={setting.discountUnit} onChange={event=>updatePricingGoal(mode,{discountUnit:event.target.value as DiscountUnit})}><option value="rm">RM</option><option value="percent">%</option></select><input aria-label={`${SERVICE_MODES[mode].label} discount value`} type="number" min="0" step=".01" placeholder="填写数值" value={setting.discountValue} onChange={event=>updatePricingGoal(mode,{discountValue:editableNumber(event.target.value)})}/></div></label>}
           </article>})}</div>
         </div>
         <div className="fee-fields advanced-fields">
           <label>Seller Voucher (RM)<input type="number" min="0" step=".01" value={fees.sellerVoucher} onChange={event=>updateFee("sellerVoucher",event.target.value)}/></label>
           <label>Seller Bear Shipping (RM)<input type="number" min="0" step=".01" value={fees.sellerShipping} onChange={event=>updateFee("sellerShipping",event.target.value)}/></label>
-          <label>Facebook Shipping (RM)<input type="number" min="0" step=".01" value={fees.facebookShipping} onChange={event=>updateFee("facebookShipping",event.target.value)}/></label>
+          <label>Meta Shipping (RM)<input type="number" min="0" step=".01" value={fees.facebookShipping} onChange={event=>updateFee("facebookShipping",event.target.value)}/></label>
           <label>CoFund Voucher (RM)<input type="number" min="0" step=".01" value={fees.cofundVoucher} onChange={event=>updateFee("cofundVoucher",event.target.value)}/></label>
         </div>
         <p className="formula-note">Voucher 指标：{storeVoucherPreset.available?`${storeVoucherPreset.store} · Normal ${pct(positive(voucherRates.nonCampaign))} / Campaign ${pct(positive(voucherRates.campaign))}`:"此店暂时没有 Voucher preset · 两种情境以 0% 开始"}。来源：{VOUCHER_PRESET_SOURCE.month} · {VOUCHER_PRESET_SOURCE.metric}。</p>
@@ -240,9 +246,9 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
       <div className="package-result-list">{calculations.map(({row,scenarios})=><article className="package-result-card dual-package-card" key={row.id}>
         <div className="dual-package-inputs">
           <label className="result-input"><span>配套</span><input className="package-name-input" value={row.name} onChange={event=>updatePackage(row.id,"name",event.target.value)}/></label>
-          <label className="result-input facebook-price-field"><span>Facebook 卖价</span><div className="money-input"><span>RM</span><input aria-label={`${row.name} Facebook price`} type="number" step=".01" value={row.facebookPrice} onChange={event=>updatePackage(row.id,"facebookPrice",event.target.value)}/></div></label>
+          <label className="result-input facebook-price-field"><span>Meta 卖价</span><div className="money-input"><span>RM</span><input aria-label={`${row.name} Meta price`} type="number" step=".01" value={row.facebookPrice} onChange={event=>updatePackage(row.id,"facebookPrice",event.target.value)}/></div></label>
           <label className="result-input main-product-quantity"><span>主产品数量</span><input aria-label={`${row.name} main product quantity`} type="number" min="1" step="1" placeholder="填写数量" value={row.mainProductQuantity} onChange={event=>updatePackage(row.id,"mainProductQuantity",event.target.value)}/></label>
-          <div className="facebook-ppu"><span>Facebook PPU</span><strong>{calculatePricePerUnit(row.facebookPrice,row.mainProductQuantity)===null?"—":money(calculatePricePerUnit(row.facebookPrice,row.mainProductQuantity)!)}</strong><small>卖价 ÷ 主产品数量</small></div>
+          <div className="facebook-ppu"><span>Meta PPU</span><strong>{calculatePricePerUnit(row.facebookPrice,row.mainProductQuantity)===null?"—":money(calculatePricePerUnit(row.facebookPrice,row.mainProductQuantity)!)}</strong><small>卖价 ÷ 主产品数量</small></div>
           <button className="remove-row" disabled={packages.length===1} onClick={()=>setPackages(current=>current.filter(item=>item.id!==row.id))} aria-label={`Remove ${row.name}`}>×</button>
         </div>
         <div className="package-sheet-head" aria-hidden="true"><span>情境与目标</span><span>Shopee 卖价</span><span>顾客付款价</span><span>Markup</span><span>实际到手</span><span>PPU</span><span>操作</span></div>
@@ -250,10 +256,10 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
           return <div className="scenario-result" key={mode}>
             <div className="scenario-result-main">
               <div className={`scenario-badge ${mode}`}><b>{SERVICE_MODES[mode].label}</b><small>{pricingGoalSummary(mode)}</small></div>
-              <div className="result-metric suggested-price"><span>建议 Shopee 卖价</span><strong>{money(result.requiredPrice)}</strong><small>Listing price</small></div>
-              <div className="result-metric"><span>顾客 Voucher 后价钱</span><strong>{money(result.customerPrice)}</strong><small>顾客实际看到</small></div>
+              <div className="result-metric suggested-price"><span>建议 Shopee 卖价</span><strong>{money(result.requiredPrice)}</strong><small>Listing Price</small></div>
+              {pricingGoals[mode].goal==="cheaperCustomerPrice"?<label className="result-metric customer-price-editor"><span>顾客付款价</span><div className="money-input"><b>RM</b><input aria-label={`${row.name} ${SERVICE_MODES[mode].label} customer price`} type="number" min="0" step=".01" value={row.customerTargets[mode]??result.customerPrice.toFixed(2)} onChange={event=>updateCustomerTarget(row.id,mode,event.target.value)}/></div><small>可按配套自订</small></label>:<div className="result-metric"><span>顾客 Voucher 后价钱</span><strong>{money(result.customerPrice)}</strong><small>顾客实际看到</small></div>}
               <label className="result-metric markup-editor"><span>需要 Markup</span><div><input type="number" min="0" step=".01" value={row.markupRates[mode] ?? suggested.markupRate.toFixed(2)} onChange={event=>updateMarkup(row.id,mode,event.target.value)}/><b>%</b></div><small>Markup (RM) · {money(result.markupAmount)}</small></label>
-              <div className="result-metric payout"><span>实际到手</span><strong>{money(result.payout)}</strong><small className="facebook-payout">Facebook 实际到手 {money(positive(row.facebookPrice)-positive(fees.facebookShipping))}</small></div>
+              <div className="result-metric payout"><span>实际到手</span><strong>{money(result.payout)}</strong><small className="facebook-payout">Meta 实际到手 {money(positive(row.facebookPrice)-positive(fees.facebookShipping))}</small></div>
               <div className="result-metric customer-ppu"><span>PPU</span><strong>{calculatePricePerUnit(result.customerPrice,row.mainProductQuantity)===null?"—":money(calculatePricePerUnit(result.customerPrice,row.mainProductQuantity)!)}</strong><small>顾客价 ÷ 主产品数量</small></div>
               <div className="package-result-actions"><button className="create-package-link" disabled={!row.name.trim()||!result.valid} onClick={()=>{const item=confirmationRow(row,mode,result,suggested);if(item)setPendingConfirmation({kind:"single",rows:[item]});}}>Create Package</button></div>
             </div>
@@ -269,6 +275,6 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
       </article>)}</div>
     </section>
     {ladderReviews.length>0&&<section className="package-ladder-review card"><div className="calculator-section-head"><div><p className="kicker">PACKAGE PRICE LADDER REVIEW</p><h3>配套 PPU 对比</h3><span>只比较已填写主产品数量的配套</span></div><button className="create-all-packages" disabled={!readyPackages.length} onClick={()=>setPendingConfirmation({kind:"batch",rows:readyConfirmationRows})}>Create All Ready ({readyPackages.length})</button></div><div className="ladder-sheet"><div className="ladder-sheet-head"><span>配套</span><span>数量</span><span>Non-Campaign PPU</span><span>Campaign PPU</span><span>价格阶梯</span></div>{packages.flatMap(row=>{const nonCampaign=ladderReviews.find(review=>review.mode==="nonCampaign")?.rows.find(item=>item.name===row.name);const campaign=ladderReviews.find(review=>review.mode==="campaign")?.rows.find(item=>item.name===row.name);if(!nonCampaign||!campaign)return[];return [<div className="ladder-sheet-row" key={row.id}><b>{row.name}</b><span>{positive(row.mainProductQuantity)}</span><strong>{money(nonCampaign.ppu)}</strong><strong>{money(campaign.ppu)}</strong><em className={nonCampaign.status}>{nonCampaign.label}</em></div>];})}</div></section>}
-    {pendingConfirmation&&<div className="calculator-confirm-overlay" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setPendingConfirmation(null);}}><section className="calculator-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="calculator-confirm-title"><header><div><p className="kicker">FINAL CHECK</p><h3 id="calculator-confirm-title">确认最终配套 & 价钱</h3><span>确认后才会带到 Package & Pricing。</span></div><button aria-label="Close confirmation" onClick={()=>setPendingConfirmation(null)}>×</button></header><div className="calculator-confirm-table"><table><thead><tr><th>配套</th><th>收费情境</th><th>主产品数量</th><th>Facebook 卖价</th><th>Facebook PPU</th><th>Shopee 卖价</th><th>顾客价</th><th>PPU</th></tr></thead><tbody>{pendingConfirmation.rows.map((item,index)=><tr key={`${item.prefill.requestId}-${index}`}><td><b>{item.prefill.name}</b></td><td>{item.scenario}</td><td>{item.quantity||"—"}</td><td>{money(item.prefill.calculatorSettings.facebookPrice)}</td><td>{item.facebookPpu===null?"—":money(item.facebookPpu)}</td><td><strong>{money(item.prefill.sellingPrice)}</strong></td><td>{money(item.prefill.calculatorSettings.customerVoucherPrice)}</td><td>{item.customerPpu===null?"—":money(item.customerPpu)}</td></tr>)}</tbody></table></div><footer><button className="confirm-cancel" onClick={()=>setPendingConfirmation(null)}>Back to Edit</button><button className="confirm-create" onClick={confirmCreate}>Confirm & Continue</button></footer></section></div>}
+    {pendingConfirmation&&<div className="calculator-confirm-overlay" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setPendingConfirmation(null);}}><section className="calculator-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="calculator-confirm-title"><header><div><p className="kicker">FINAL CHECK</p><h3 id="calculator-confirm-title">确认最终配套 & 价钱</h3><span>确认后才会带到 Package & Pricing。</span></div><button aria-label="Close confirmation" onClick={()=>setPendingConfirmation(null)}>×</button></header><div className="calculator-confirm-table"><table><thead><tr><th>配套</th><th>收费情境</th><th>主产品数量</th><th>Meta 卖价</th><th>Meta PPU</th><th>Shopee 卖价</th><th>顾客价</th><th>PPU</th></tr></thead><tbody>{pendingConfirmation.rows.map((item,index)=><tr key={`${item.prefill.requestId}-${index}`}><td><b>{item.prefill.name}</b></td><td>{item.scenario}</td><td>{item.quantity||"—"}</td><td>{money(item.prefill.calculatorSettings.facebookPrice)}</td><td>{item.facebookPpu===null?"—":money(item.facebookPpu)}</td><td><strong>{money(item.prefill.sellingPrice)}</strong></td><td>{money(item.prefill.calculatorSettings.customerVoucherPrice)}</td><td>{item.customerPpu===null?"—":money(item.customerPpu)}</td></tr>)}</tbody></table></div><footer><button className="confirm-cancel" onClick={()=>setPendingConfirmation(null)}>Back to Edit</button><button className="confirm-create" onClick={confirmCreate}>Confirm & Continue</button></footer></section></div>}
   </div>;
 }
