@@ -171,6 +171,10 @@ body{background:var(--paper);color:var(--ink)}
 .calculator-prefill,.calculator-history{background:#e7f7f0;border-color:#c9eadb}.calculator-prefill b,.calculator-history b,.payout strong,.payout small{color:var(--green)!important}
 @media(max-width:1100px){.side{background:#fff}.side nav button.active{background:#fff1f0;color:var(--red)}}
 
+/* Keep the complete desktop navigation visible while long dashboard pages scroll. */
+@media(min-width:681px){.side{position:fixed;inset:0 auto 0 0;z-index:20;width:250px;height:100dvh;overflow-y:auto}.workspace{grid-column:2}.app-shell.sidebar-collapsed .side{width:76px}}
+@media(min-width:681px) and (max-width:1100px){.side{width:82px}}
+
 /* Calculator toggle captions and editable markup guardrail. */
 .setup-toggle-field{display:grid;grid-template-rows:74px auto}.setup-toggle-field>small{margin-top:8px;color:#667781;font-size:10px;line-height:1.35}.setup-toggle-field .setup-toggle{color:#536570;font-weight:800}.setup-toggle-field .setup-toggle span{display:grid}.markup-editor>div{height:38px;display:flex;align-items:center;border:1px solid #d8dde3;border-radius:9px;background:#fff;overflow:hidden}.markup-editor input{width:100%;min-width:0;height:36px;border:0;padding:8px 4px 8px 9px;color:var(--red);font:800 14px/1 "Noto Sans",sans-serif}.markup-editor b{padding-right:9px;color:var(--red);font-size:12px}.markup-blocked{border-color:#efb5b2}.markup-warning{grid-column:1/-1;display:block;margin-top:1px;color:var(--red);font-size:8px;font-weight:800;line-height:1.35;text-align:left;white-space:normal}
 @media(max-width:680px){.setup-toggle-field{grid-template-rows:auto auto}.setup-toggle-field>small{margin-bottom:6px}}
