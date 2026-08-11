@@ -22,6 +22,7 @@ type FeeDraft = {
 type Props = { storeName?:string; onCreatePackage?:(prefill:PackagePrefill)=>void; onCreatePackages?:(prefills:PackagePrefill[])=>void };
 type ConfirmationRow = { prefill:PackagePrefill; scenario:string; quantity:number; facebookPpu:number|null; customerPpu:number|null };
 type PendingConfirmation = { kind:"single"|"batch"; rows:ConfirmationRow[] };
+type LadderRow = { name:string; quantity:number; customerPrice:number; ppu:number; status:"base"|"better"|"higher"; label:string };
 
 const blankMarkups = ():Record<ServiceMode,string|null> => ({nonCampaign:null,campaign:null});
 const INITIAL_PACKAGES:PackageRow[] = [
@@ -142,7 +143,7 @@ export function PriceCalculator({ storeName="", onCreatePackage, onCreatePackage
     const quantity = positive(row.mainProductQuantity);
     if (!scenario || quantity<=0) return [];
     return [{name:row.name,quantity,customerPrice:scenario.result.customerPrice,ppu:calculatePricePerUnit(scenario.result.customerPrice,quantity)}];
-  }))})).filter(review=>review.rows.length>=2);
+  })) as LadderRow[]})).filter(review=>review.rows.length>=2);
   function confirmCreate() {
     if (!pendingConfirmation) return;
     if (pendingConfirmation.kind==="single") onCreatePackage?.(pendingConfirmation.rows[0].prefill);
