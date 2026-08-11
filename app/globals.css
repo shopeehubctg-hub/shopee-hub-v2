@@ -145,6 +145,11 @@ html,body,button,select,input,textarea,.header h1,.page-title h2,.card h3,.metri
 @media(max-width:1100px){.app-shell.sidebar-collapsed{grid-template-columns:76px minmax(0,1fr)}}
 @media(max-width:680px){.sidebar-toggle{display:none}.app-shell.sidebar-collapsed{display:block}.sidebar-collapsed .side{padding:13px 16px}.sidebar-collapsed .logo img{width:auto}.sidebar-collapsed .side nav button.active{font-size:8px}}
 
+/* Keep the calculator inside the viewport at every desktop width. */
+.app-shell,.workspace,.page,.price-calculator,.calculator-hero,.calculator-primary,.calculator-results,.fee-strip{min-width:0;max-width:100%}.app-shell{width:100%;overflow-x:hidden}.workspace{width:100%;max-width:none;margin:0;overflow:hidden}.price-calculator{width:100%;overflow:hidden}.calculator-hero>*{min-width:0}.pricing-goal-grid article{grid-template-columns:minmax(145px,1fr) minmax(190px,270px) minmax(155px,220px);justify-content:start}.pricing-goal-grid article>label{min-width:0}.pricing-goal-grid select{min-width:0}.scenario-badge .scenario-goal{color:#82919a}.scenario-badge.campaign .scenario-goal{color:#a56f6c}
+@media(max-width:1350px){.calculator-hero{align-items:stretch;flex-direction:column}.calculator-hero-metrics{width:100%;grid-template-columns:minmax(180px,.7fr) minmax(300px,1.3fr)}.pricing-goal-grid{grid-template-columns:1fr}.pricing-goal-grid article{grid-template-columns:180px minmax(190px,270px) minmax(155px,220px)}}
+@media(max-width:760px){.calculator-hero-metrics{grid-template-columns:1fr}.pricing-goal-grid article{grid-template-columns:1fr 1fr}.pricing-goal-grid article>div:first-child{grid-column:1/-1}}
+
 /* Dashboard palette aligned with the Shopee Hub client dashboard reference. */
 :root{--orange:#d9302c;--navy:#084e70;--ink:#17202d;--muted:#73808f;--line:#e8ebef;--paper:#f5f7f9;--card:#fff;--green:#169b68;--red:#d9302c;--amber:#e09a2b}
 body{background:var(--paper);color:var(--ink)}

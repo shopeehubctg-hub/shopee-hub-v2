@@ -281,7 +281,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
 
   return <div className={`package-control${standaloneCreate?" standalone-create":""}`}>
     <div className="package-hero">
-      <div><p className="kicker">OXM PACKAGE CONTROL</p><h2>Packages & Pricing</h2><p>负责人可以建立配套、选择平台与促销日期；每次组件增减都会留下版本历史。</p></div>
+      <div><p className="kicker">OXM PACKAGE CONTROL</p><h2>Packages & Pricing</h2><p>Create packages, choose platforms and set promotion dates. Every change is saved in history.</p></div>
       <div className="package-hero-actions">
         <a href={HISTORY_SHEET_URL} target="_blank" rel="noopener noreferrer">Google Sheet History</a>
         <span>{source==="sheet-migration-preview"?"Sheet Migration Preview":"Live Database"}</span>
@@ -316,7 +316,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       }]).map(line=><div className="history-entry" key={line.version}>
         <div><b>v{line.version}</b><span>{line.changeNote}</span><small>{line.effectiveFrom} → {line.effectiveTo || "Open Ended"} · Sheet {line.sheetSyncStatus ?? "preview"}</small></div>
         <div className="history-diff"><span className="added">+ {(line.addedComponents ?? []).map(lineText).join(", ") || "No Additions"}</span><span className="removed">− {(line.removedComponents ?? []).map(lineText).join(", ") || "No Removals"}</span></div>
-        {line.calculatorSettings&&<div className="calculator-history"><b>Calculator Snapshot</b>{calculatorSnapshots(line.calculatorSettings).map(snapshot=><div key={snapshot.serviceScenario}><strong>{snapshot.serviceScenario}</strong><span>{snapshot.category}</span>{snapshot.pricingGoal?<span>Goal · {snapshot.pricingGoal==="facebookPayout"?"跟 Meta 实际到手价一样":snapshot.pricingGoal==="sameCustomerPrice"?"顾客价与 Meta 一样":`顾客价比 Meta 便宜 ${snapshot.discountUnit==="rm"?money(snapshot.discountValue??0,"MY"):`${(snapshot.discountValue??0).toFixed(2)}%`}`}</span>:null}<span>Meta {money(snapshot.facebookPrice,"MY")} → Shopee {money(snapshot.suggestedShopeePrice,"MY")}</span>{snapshot.mainProductQuantity?<span>主产品 {snapshot.mainProductQuantity} · Meta PPU {snapshot.facebookPricePerUnit==null?"—":money(snapshot.facebookPricePerUnit,"MY")} · Customer PPU {snapshot.customerPricePerUnit==null?"—":money(snapshot.customerPricePerUnit,"MY")}</span>:null}<span>Commission {snapshot.commissionRate.toFixed(2)}% · Service {snapshot.serviceRate.toFixed(2)}% · Payout {money(snapshot.actualPayout,"MY")}</span></div>)}</div>}
+        {line.calculatorSettings&&<div className="calculator-history"><b>Calculator Snapshot</b>{calculatorSnapshots(line.calculatorSettings).map(snapshot=><div key={snapshot.serviceScenario}><strong>{snapshot.serviceScenario}</strong><span>{snapshot.category}</span>{snapshot.pricingGoal?<span>Goal · {snapshot.pricingGoal==="facebookPayout"?"Match Meta Take-Home":snapshot.pricingGoal==="sameCustomerPrice"?"Match Meta Customer Price":`Lower Than Meta by ${snapshot.discountUnit==="rm"?money(snapshot.discountValue??0,"MY"):`${(snapshot.discountValue??0).toFixed(2)}%`}`}</span>:null}<span>Meta {money(snapshot.facebookPrice,"MY")} → Shopee {money(snapshot.suggestedShopeePrice,"MY")}</span>{snapshot.mainProductQuantity?<span>Main Product Qty {snapshot.mainProductQuantity} · Meta Unit Price {snapshot.facebookPricePerUnit==null?"—":money(snapshot.facebookPricePerUnit,"MY")} · Customer Unit Price {snapshot.customerPricePerUnit==null?"—":money(snapshot.customerPricePerUnit,"MY")}</span>:null}<span>Commission {snapshot.commissionRate.toFixed(2)}% · Service {snapshot.serviceRate.toFixed(2)}% · Payout {money(snapshot.actualPayout,"MY")}</span></div>)}</div>}
       </div>)}</div>}
       <div className="package-card-foot"><span>{item.components.length} Inventory SKU Lines</span><button onClick={()=>setOpenHistory(openHistory===item.id?null:item.id)}>{openHistory===item.id?"Hide History":"View History"}</button><button onClick={()=>startVersion(item)}>{source==="database"?"New Version":"Migrate & Edit"}</button></div>
     </article>)}</div>
@@ -325,9 +325,9 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     {showCreate&&<div className={`package-modal${standaloneCreate?" standalone":""}`} role={standaloneCreate?undefined:"dialog"} aria-modal={standaloneCreate?undefined:"true"}><div className="package-form">
       <div className="package-form-head"><div><p className="kicker">{editingPackageId?"NEW VERSION":"NEW PACKAGE"}</p><h3>{editingPackageId?"Create Next Version":"Create A Package"}</h3><span>{storeName}{prefillQueue.length?` · ${prefillQueue.length} Ready Package${prefillQueue.length===1?"":"s"} Remaining`:""}</span></div><button onClick={closeCreate} aria-label="Close">×</button></div>
 
-      {prefillBatch.length>0&&<section className="calculator-batch-transfer"><div><b>✓ {groupPrefills(prefillBatch).length} Calculator Package{groupPrefills(prefillBatch).length===1?"":"s"} Brought Over</b><span>同一个 Package 的 Non-Campaign 与 Campaign 价格已合并；完成当前表单后会自动继续下一项。</span></div><div className="calculator-batch-list">{groupPrefills(prefillBatch).map((group,index)=>{const nonCampaign=group.find(item=>item.calculatorSettings.serviceScenario==="Non-Campaign Day")??group[0];const campaign=group.find(item=>item.calculatorSettings.serviceScenario==="Campaign Day")??group[0];return <div className={index===0?"current":""} key={group[0].name}><span>{index===0?"Current":"Queued"}</span><b>{group[0].name}</b><strong><small>Non-Campaign</small>{money(nonCampaign.sellingPrice,"MY")}</strong><strong><small>Campaign</small>{money(campaign.sellingPrice,"MY")}</strong></div>})}</div></section>}
+      {prefillBatch.length>0&&<section className="calculator-batch-transfer"><div><b>✓ {groupPrefills(prefillBatch).length} Calculator Package{groupPrefills(prefillBatch).length===1?"":"s"} Brought Over</b><span>Non-Campaign and Campaign prices are grouped by package. The next package opens after you save this one.</span></div><div className="calculator-batch-list">{groupPrefills(prefillBatch).map((group,index)=>{const nonCampaign=group.find(item=>item.calculatorSettings.serviceScenario==="Non-Campaign Day")??group[0];const campaign=group.find(item=>item.calculatorSettings.serviceScenario==="Campaign Day")??group[0];return <div className={index===0?"current":""} key={group[0].name}><span>{index===0?"Current":"Queued"}</span><b>{group[0].name}</b><strong><small>Non-Campaign</small>{money(nonCampaign.sellingPrice,"MY")}</strong><strong><small>Campaign</small>{money(campaign.sellingPrice,"MY")}</strong></div>})}</div></section>}
 
-      <section className="form-section"><div className="form-section-title"><span>1</span><div><h4>Package Details</h4><p>名称与销售市场；MY / SG 共用同一个配套内容与活动日期</p></div></div>
+      <section className="form-section"><div className="form-section-title"><span>1</span><div><h4>Package Details</h4><p>Name, markets and shared promotion dates</p></div></div>
         <div className="form-grid package-detail-grid">
           <label>Package Name<input value={form.name} onChange={event=>setForm({...form,name:event.target.value})} placeholder="Customer-Facing Package Name"/></label>
           <fieldset className="market-selector"><legend>Selling Markets</legend>{(["MY","SG"] as MarketName[]).map(market=><label key={market}><input type="checkbox" checked={form.markets.includes(market)} onChange={()=>toggleMarket(market)}/><b>{market}</b><small>{market==="MY"?"RM":"S$"}</small></label>)}</fieldset>
@@ -340,15 +340,15 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
           </div>;
         })}</div>
         {calculatorSettings&&<div className="calculator-prefill">
-          <div><b>✓ Calculator Settings Attached</b><span>保存 Package 后会一起记录在 Package History</span></div>
+          <div><b>✓ Calculator Settings Attached</b><span>Saved in Package History with this package</span></div>
           <span>{calculatorSettings.category}</span>
           <span>Meta {money(calculatorSettings.facebookPrice,"MY")} → Suggested Shopee {money(calculatorSettings.suggestedShopeePrice,"MY")}</span>
-          {calculatorSettings.mainProductQuantity?<span>主产品 {calculatorSettings.mainProductQuantity} · Meta PPU {calculatorSettings.facebookPricePerUnit==null?"—":money(calculatorSettings.facebookPricePerUnit,"MY")} · Customer PPU {calculatorSettings.customerPricePerUnit==null?"—":money(calculatorSettings.customerPricePerUnit,"MY")}</span>:null}
+          {calculatorSettings.mainProductQuantity?<span>Main Product Qty {calculatorSettings.mainProductQuantity} · Meta Unit Price {calculatorSettings.facebookPricePerUnit==null?"—":money(calculatorSettings.facebookPricePerUnit,"MY")} · Customer Unit Price {calculatorSettings.customerPricePerUnit==null?"—":money(calculatorSettings.customerPricePerUnit,"MY")}</span>:null}
           <span>Commission {calculatorSettings.commissionRate.toFixed(2)}% · {calculatorSettings.serviceScenario} {calculatorSettings.serviceRate.toFixed(2)}% · Payout {money(calculatorSettings.actualPayout,"MY")}</span>
         </div>}
       </section>
 
-      <section className="form-section pricing-section"><div className="form-section-title"><span>2</span><div><h4>Pricing & Promotion Periods</h4><p>同一个 Package 同时设定 Non-Campaign 与 Campaign；MY / SG 日期共用、价格分开</p></div></div>
+      <section className="form-section pricing-section"><div className="form-section-title"><span>2</span><div><h4>Pricing & Promotion Periods</h4><p>Set Non-Campaign and Campaign prices for each market</p></div></div>
         {([['nonCampaign','Non-Campaign'],['campaign','Campaign']] as const).map(([periodKey,title])=>{
           const period=form[periodKey];
           return <div className={`scenario-editor ${periodKey}`} key={periodKey}>
@@ -366,7 +366,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         })}
       </section>
 
-      <section className="form-section"><div className="form-section-title"><span>3</span><div><h4>OXM Inventory SKU Items</h4><p>新增、删除或改变数量都会记录在 History</p></div><button className="add-item-button" onClick={()=>setComponents([...components,blankLine()])}>+ Add Item</button></div>
+      <section className="form-section"><div className="form-section-title"><span>3</span><div><h4>OXM Inventory SKU Items</h4><p>Added, removed and updated items are saved in History</p></div><button className="add-item-button" onClick={()=>setComponents([...components,blankLine()])}>+ Add Item</button></div>
         <div className="component-editor">{components.map((line,index)=><div className="component-row" key={index}>
           <input value={line.inventorySku} onChange={event=>setComponents(components.map((item,itemIndex)=>itemIndex===index?{...item,inventorySku:event.target.value}:item))} placeholder="OXM Inventory SKU"/>
           <input value={line.name} onChange={event=>setComponents(components.map((item,itemIndex)=>itemIndex===index?{...item,name:event.target.value}:item))} placeholder="Item Name"/>
