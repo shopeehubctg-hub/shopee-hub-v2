@@ -17,7 +17,7 @@ type FeeSettings = {
 };
 type FeeDraft = {
   serviceCap:NumberValue; preorder:NumberValue; isPreorder:boolean; isSpayLater:boolean; platformSupport:NumberValue;
-  shopeeVoucher:NumberValue; sellerVoucher:NumberValue; autoTopUp:NumberValue;
+  shopeeVoucher:NumberValue; sellerVoucher:NumberValue;
   sellerShipping:NumberValue; facebookShipping:NumberValue;
 };
 type CoFundVoucher = { id:number; campaignName:string; campaignDate:string|null; voucherName:string; discountAmount:number; currency:string; quantity:number };
@@ -70,14 +70,14 @@ export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[
   const [voucherRates,setVoucherRates] = useState<Record<ServiceMode,NumberValue>>({nonCampaign:storeVoucherPreset.normal,campaign:storeVoucherPreset.campaign});
   const [fees,setFees] = useState<FeeDraft>({
     serviceCap:108, preorder:2.14, isPreorder:false, isSpayLater:false, platformSupport:0.54,
-    shopeeVoucher:0, sellerVoucher:0, autoTopUp:0,
+    shopeeVoucher:0, sellerVoucher:0,
     sellerShipping:0, facebookShipping:10,
   });
   const transactionRate = fees.isSpayLater?4.86:3.78;
   const selectedCoFund = maximumCoFundVoucher(coFundVouchers) as CoFundVoucher|null;
   const cofundVoucher = positive(selectedCoFund?.discountAmount ?? 0);
   const autoTopUpEligible = autoTopUpEligibleForStore(storeName);
-  const autoTopUpRate = autoTopUpEligible ? positive(fees.autoTopUp) : 0;
+  const autoTopUpRate = autoTopUpEligible ? 5 : 0;
   const calculations = useMemo(()=>packages.map(row=>({
     row,
     scenarios:SCENARIOS.map(mode=>{
@@ -262,7 +262,7 @@ export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[
       <article><span>Service Fee</span><strong>5.94% / 8.10%</strong><small>Non-Campaign / Campaign · Capped at RM108</small></article>
       <article><span>Pre-Order Service Fee</span><strong>{fees.isPreorder?pct(positive(fees.preorder)):"OFF"}</strong><small>Default 2.14%</small></article>
       <article><span>Platform Support Fee</span><strong>RM 0.54</strong><small>Per order</small></article>
-      {autoTopUpEligible?<article className="auto-top-up-card"><span>Auto Top Up</span><div className="fee-card-percent-input"><input aria-label="Auto Top Up percentage" type="number" min="0" max="100" step=".01" value={fees.autoTopUp} onChange={event=>updateFee("autoTopUp",Math.min(100,positive(event.target.value)).toString())}/><b>%</b></div><small>Included in Total Shopee Charges &amp; Markup</small></article>:null}
+      {autoTopUpEligible?<article className="auto-top-up-card"><span>Auto Top Up</span><strong>5.00%</strong><small>Fixed · Included in Total Shopee Charges &amp; Markup</small></article>:null}
     </section>
 
     <section className="calculator-table calculator-results card">
