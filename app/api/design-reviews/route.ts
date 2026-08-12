@@ -1,10 +1,23 @@
 import {eq} from "drizzle-orm";
-import {getCloudflareEnv,getDb} from "../../../db";
+import {getDb} from "../../../db";
 import {customerUsers,designReviewImages,designReviews} from "../../../db/schema";
 import {getChatGPTUser} from "../../chatgpt-auth";
+import {canAccessModule,canAccessStore} from "../../module-access";
 export const dynamic="force-dynamic";
 type Meta={name:string;width:number;height:number;size:number;type:string};
 type Finding={level:"pass"|"warning"|"fail";title:string;detail:string};
+
+async function uploadDesignFile(file:File,objectKey:string){
+  const projectUrl=process.env.SUPABASE_URL;
+  const secretKey=process.env.SUPABASE_SECRET_KEY;
+  if(!projectUrl||!secretKey)throw new Error("Supabase Storage is not configured");
+  const response=await fetch(`${projectUrl}/storage/v1/object/design-uploads/${objectKey.split("/").map(encodeURIComponent).join("/")}`,{
+    method:"POST",
+    headers:{Authorization:`Bearer ${secretKey}`,apikey:secretKey,"Content-Type":file.type,"x-upsert":"false"},
+    body:file,
+  });
+  if(!response.ok)throw new Error(`Supabase Storage upload failed (${response.status})`);
+}
 
 const categoryNames={package:"配套图",product:"产品图（9张图）",description:"Description 图",banner:"Shop Banner",cover:"Cover Photo"} as const;
 const categoryRules={
@@ -33,9 +46,11 @@ async function analyse(files:File[],metas:Meta[],category:Category){
 }
 export async function POST(request:Request){
   const user=await getChatGPTUser();if(!user)return Response.json({error:"请先登录后再上传图片。"},{status:401});
-  const db=await getDb();const [member]=await db.select({tenantId:customerUsers.tenantId}).from(customerUsers).where(eq(customerUsers.email,user.email.toLowerCase())).limit(1);
+  const db=await getDb();const [member]=await db.select({id:customerUsers.id,tenantId:customerUsers.tenantId,role:customerUsers.role,active:customerUsers.active,moduleAccessMode:customerUsers.moduleAccessMode,storeAccessMode:customerUsers.storeAccessMode}).from(customerUsers).where(eq(customerUsers.email,user.email.toLowerCase())).limit(1);
   if(!member)return Response.json({error:"此帐号还没有获分配顾客项目。"},{status:403});
+  if(!await canAccessModule(db,member,"design"))return Response.json({error:"Design Checker is not enabled for this account"},{status:403});
   const form=await request.formData();const files=form.getAll("images").filter(v=>v instanceof File) as File[];
+  if(!await canAccessStore(db,member,String(form.get("storeId")||"all")))return Response.json({error:"Store access denied"},{status:403});
   const category=String(form.get("category")||"") as Category;
   if(!(category in categoryNames))return Response.json({error:"请先选择图片用途。"},{status:400});
   if(!files.length||files.length>20)return Response.json({error:"每次请上传 1 至 20 张图片。"},{status:400});
@@ -47,9 +62,8 @@ export async function POST(request:Request){
   const images=files.map((file,index)=>{const t=technical(metas[index],category),a=ai?.images?.[index];return{id:crypto.randomUUID(),fileName:file.name,detectedCategory:categoryNames[category],productType:a?.productType||"自动识别待 Shopee Hub 确认",grammar:a?.grammar?.length?a.grammar:[{level:"warning" as const,title:"AI 文字检查待连接",detail:"技术检查已完成；AI 文字服务连接后会自动显示完整结果。"}],technical:t,creative:a?.creative?.length?a.creative:[{level:"warning" as const,title:"等待 Shopee Hub 检查",detail:"画面吸引力、场景感和卖点清晰度需要最终人工确认。"}]}})
   const status=images.some(image=>image.technical.some(f=>f.level==="fail"))?"technical_failed" as const:"awaiting_review" as const;
   const advice=ai?.advice?.length?ai.advice:status==="technical_failed"?["先修正所有 FAILED 的尺寸或容量问题，再提交 Shopee Hub。","配置品牌标准 Logo 与 Watermark 后，可自动核对正确版本。","技术标准通过后，再优化手机阅读效果和场景感。"]:["当前没有硬性技术失败，已可提交 Shopee Hub 最终检查。","建议配置品牌标准 Logo 与 Watermark，提高一致性判断准确度。","最终确认时重点查看手机尺寸下的卖点清晰度。"];
-  const {env}=await getCloudflareEnv();const bucket=(env as unknown as {DESIGN_UPLOADS?:R2Bucket}).DESIGN_UPLOADS;if(!bucket)return Response.json({error:"图片存储尚未连接，请稍后再试。"},{status:503});
   const keys=files.map((file,index)=>member.tenantId+"/"+reviewId+"/"+images[index].id+"-"+file.name.replace(/[^a-zA-Z0-9._-]/g,"_"));
-  await Promise.all(files.map((file,index)=>bucket.put(keys[index],file.stream(),{httpMetadata:{contentType:file.type}})));
+  try{await Promise.all(files.map((file,index)=>uploadDesignFile(file,keys[index])))}catch{return Response.json({error:"图片存储尚未连接，请稍后再试。"},{status:503})}
   await db.insert(designReviews).values({id:reviewId,tenantId:member.tenantId,storeId:String(form.get("storeId")||"all"),submittedBy:user.email,status,summary:{advice,imageCount:images.length,category},createdAt});
   await Promise.all(images.map((image,index)=>db.insert(designReviewImages).values({id:image.id,reviewId,fileName:files[index].name,objectKey:keys[index],contentType:files[index].type,width:metas[index].width,height:metas[index].height,byteSize:files[index].size,detectedCategory:image.detectedCategory,result:image,createdAt})));
   return Response.json({reviewId,status,images,advice},{headers:{"Cache-Control":"private, no-store"}});
