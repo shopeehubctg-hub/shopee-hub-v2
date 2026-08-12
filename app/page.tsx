@@ -10,10 +10,14 @@ import { FakeSellerReport, type FakeSellerCase } from "./fake-seller-report";
 import type { PackagePrefill } from "./calculator-types";
 import { storeSnapshots } from "./store-snapshots";
 import { buildAdvertisingFunds, buildTopUpAction, formatRinggit } from "./advertising-model.js";
+import type { ProjectProductProfile } from "./product-catalog";
+import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
+import { PermissionSettings } from "./permission-settings";
 
 type Store = { id: string; name: string; platform: string; contacts: { project: string; href: string }[] };
 type ManagementAction = { actionDate: string; category: string; title: string; detail: string };
-type DashboardResponse = { stores: Store[]; selectedStoreId: string | null; snapshot: { payload: any; importedAt: string } | null; adBalance: { balance:number; balanceDate:string; sourceUpdatedAt:string; syncStatus:string; topUpOwner?:string | null } | null; actions?: ManagementAction[] };
+type CoFundVoucher = { id:number; campaignName:string; campaignDate:string|null; voucherName:string; discountAmount:number; currency:string; quantity:number };
+type DashboardResponse = { stores: Store[]; selectedStoreId: string | null; snapshot: { payload: any; importedAt: string } | null; adBalance: { balance:number; balanceDate:string; sourceUpdatedAt:string; syncStatus:string; topUpOwner?:string | null } | null; actions?: ManagementAction[]; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; access?:{ role:string; enabledModules:PortalModuleId[]; clientEnabledModules:PortalModuleId[]; canManagePermissions:boolean } };
 type ClientAction = { title: string; client: string; due: string; type: string; action: string; href?: string; message?: string; generated?: boolean };
 type DailyAd = { date:string; store:string; spend:number; sales:number; roas:number; views:number; clicks:number; ctr:number; conversion:number; sold:number; acos:number };
 
@@ -136,6 +140,14 @@ export default function Home() {
     load();
   }, []);
 
+  useEffect(() => {
+    if (!data?.access) return;
+    const allowed = new Set(data.access.enabledModules);
+    if (section !== "permissions" && !allowed.has(section as PortalModuleId)) {
+      setSection(data.access.enabledModules[0] ?? (data.access.canManagePermissions ? "permissions" : "overview"));
+    }
+  }, [data?.access, section]);
+
   function openPackageDraft(prefills:PackagePrefill[]) {
     const draftKey = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     window.localStorage.setItem(`package-draft:${draftKey}`, JSON.stringify({ prefills, storeId }));
@@ -200,15 +212,19 @@ export default function Home() {
   const losses = live.losses;
   const orderSummary = live.orderSummary;
   const fakeSellerCases = Array.isArray(live.fakeSellerCases) ? live.fakeSellerCases as FakeSellerCase[] : undefined;
-  const nav = useMemo(() => [["overview","Overview"],["design","Design Checker"],["calculator","Price Calculator"],["packages","Packages & Pricing"],["advertising","Advertising"],["orders","Orders & Inventory"],["health","Store Health"],["protection","Fake Seller Reports"],["actions","Client Action Center"]], []);
-
+  const nav = useMemo(() => {
+    const allowed = new Set(data?.access?.enabledModules ?? PORTAL_MODULES.map(({ id }) => id));
+    const items: (readonly [string, string])[] = PORTAL_MODULES.filter(({ id }) => allowed.has(id)).map(({ id, label }) => [id, id === "packages" ? "Packages & Pricing" : label] as const);
+    if (data?.access?.canManagePermissions) items.push(["permissions", "Permission Settings"] as const);
+    return items;
+  }, [data?.access]);
   return <main className={`app-shell${sidebarCollapsed?" sidebar-collapsed":""}`}>
     <aside className="side">
       <div className="logo"><img src="/shopee-hub-logo-transparent.png" alt="ShopeeHub"/><small>STORE COMMAND CENTER</small></div>
       <button className="sidebar-toggle" onClick={()=>setSidebarCollapsed(current=>!current)} aria-label={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"} title={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"}>{sidebarCollapsed?"›":"‹"}</button>
       <nav>{nav.map(([id,label]) => <button key={id} className={section===id?"active":""} onClick={()=>setSection(id)}><span>{label.slice(0,1)}</span>{label}</button>)}</nav>
       <div className="fleet contact-card"><p>Contact Shopee Hub Specialist</p><strong>{allStoresSelected ? "Select a project" : (store?.contacts.length ? store.name : "Link unavailable")}</strong><div>{!allStoresSelected && store?.contacts.map(contact=><a key={contact.href} href={contact.href} target="_blank" rel="noopener noreferrer" title={contact.project}>{store.contacts.length > 1 ? contact.project : "Contact"} →</a>)}</div></div>
-      <p className="access">Private access<br/><b>shopeehub.ctg@gmail.com</b></p>
+      <p className="access">{data?.access?.role === "superadmin" ? "Super Admin access" : "Private access"}<br/><b>shopeehub.ctg@gmail.com</b></p>
     </aside>
 
     <section className="workspace">
@@ -234,9 +250,10 @@ export default function Home() {
       </div>}
 
       {section==="packages" && <div className="page"><PackageControl storeId={storeId || "all"} storeName={allStoresSelected ? "All Stores" : (store?.name ?? "Selected Store")} prefills={packagePrefills} standaloneCreate={standalonePackageCreate} onPrefillsAccepted={()=>setPackagePrefills([])} /></div>}
-      {section==="calculator" && <div className="page"><PriceCalculator storeName={allStoresSelected?"":(store?.name??"")} onCreatePackage={prefill=>openPackageDraft([prefill])} onCreatePackages={openPackageDraft} /></div>}
+      {section==="calculator" && <div className="page" aria-label="Price Calculator"><PriceCalculator storeName={allStoresSelected?"":(store?.name??"")} productProfile={allStoresSelected?null:data?.productProfile} coFundVouchers={allStoresSelected?[]:data?.coFundVouchers} onCreatePackage={prefill=>openPackageDraft([prefill])} onCreatePackages={openPackageDraft} /></div>}
       {section==="design" && <div className="page"><DesignChecker storeId={storeId}/></div>}
       {section==="protection" && <div className="page"><FakeSellerReport storeName={store?.name ?? "Selected store"} allStores={allStoresSelected} cases={fakeSellerCases}/></div>}
+      {section==="permissions" && data?.access?.canManagePermissions && <div className="page"><PermissionSettings initialEnabledModules={data.access.clientEnabledModules}/></div>}
 
       {section==="advertising" && <div className="page"><div className="page-title ad-page-title"><div><p className="kicker">ADVERTISING</p><h2>Performance</h2></div><div className="ad-period-controls"><label><span>View by</span><select aria-label="Advertising period type" value={adPeriodMode} onChange={event=>setAdPeriodMode(event.target.value as "month"|"date"|"range")}><option value="month">Month</option><option value="date">Date</option><option value="range">Custom range</option></select></label>{adPeriodMode === "month" && <label><span>Month</span><input aria-label="Advertising month" type="month" value={selectedAdMonth} min={availableAdMonths[availableAdMonths.length-1]} max={availableAdMonths[0]} onChange={event=>setAdMonth(event.target.value)}/></label>}{adPeriodMode === "date" && <label><span>Date</span><select aria-label="Advertising date" value={selectedAdDate} onChange={event=>setAdDate(event.target.value)} disabled={!availableAdDates.length}>{availableAdDates.map(date=><option key={date} value={date}>{new Date(`${date}T00:00:00`).toLocaleDateString("en-MY",{day:"2-digit",month:"short",year:"numeric"})}</option>)}</select></label>}{adPeriodMode === "range" && <><label><span>From</span><input aria-label="Advertising range start" type="date" value={selectedRangeStart} min={earliestAdDate} max={selectedRangeEnd} onChange={event=>setAdRangeStart(event.target.value)}/></label><label><span>To</span><input aria-label="Advertising range end" type="date" value={selectedRangeEnd} min={selectedRangeStart} max={availableAdDates[0]} onChange={event=>setAdRangeEnd(event.target.value)}/></label></>}</div></div><div className="advertising-summary-stack">
         <section className={`ad-funds-card ${adFunds.balanceStatus}`}><div className="ad-funds-status"><div><span>{adFunds.syncStatus === "delayed" ? "Data delayed" : (adFunds.lowBalance ? `Top-up ${formatRinggit(adFunds.recommendedTopUp)} required` : "Ads healthy")}</span><small>{adFunds.topUpOwner === "shopee_hub" ? "Managed by Shopee Hub" : (adFunds.approvalRequired ? "Approval needed" : "Client action")}</small></div><time>{adFunds.sourceUpdatedAt ? `Last updated ${adFunds.sourceUpdatedAt}` : "Last update unavailable"}</time></div><div className="fund-metric"><span>Ad Balance</span><strong>{formatRinggit(adFunds.balance, 2)}</strong></div><div className="fund-metric"><span>{periodSpendLabel}</span><strong>{ads.spend ?? "—"}</strong></div><div className="fund-metric"><span>Runway</span><strong>{adFunds.runwayDays == null ? "—" : `${Math.floor(adFunds.runwayDays)} days`}</strong></div><div className="fund-metric topup"><span>Top-up</span><strong>{formatRinggit(adFunds.recommendedTopUp)}</strong></div></section>

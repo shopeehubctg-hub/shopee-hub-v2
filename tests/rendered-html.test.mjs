@@ -152,6 +152,19 @@ test("Shopee calculator accepts a user-adjusted markup rate", async () => {
   assert.equal(result.markupRate, 25);
 });
 
+test("Shopee calculator applies Auto Top Up as a percentage fee", async () => {
+  const { calculateFeesForPrice } = await import("../app/price-calculator-model.js");
+  const result = calculateFeesForPrice(100, {
+    transaction:0, commission:0, service:0, serviceCap:108,
+    preorder:0, isPreorder:false, platformSupport:0,
+    sellerProductDiscount:10, sellerVoucher:5, cofundVoucher:20, autoTopUp:2.5,
+    sellerShipping:0,
+  });
+  assert.equal(result.autoTopUpBase, 85);
+  assert.equal(result.autoTopUpFee, 2.125);
+  assert.equal(result.payout, 72.875);
+});
+
 test("Shopee calculator reverse-solves a customer-price target", async () => {
   const { calculateShopeePriceForCustomerTarget } = await import("../app/price-calculator-model.js");
   const fees = {
@@ -189,11 +202,19 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /Commission Fee/);
   assert.match(calculator, /Service Fee/);
   assert.match(calculator, /Product Category/);
+  assert.match(calculator, /Categories with the same Commission Rate are grouped/);
+  assert.match(calculator, /rates\.has\(rateKey\)/);
+  assert.match(calculator, /categoryIndexForProduct\(product\.productCategory,null,product\.productName\)/);
+  assert.doesNotMatch(calculator, /resolvedCategoryForProduct\(product\.productCategory,product\.commissionFeeRate/);
+  assert.doesNotMatch(calculator, /Choose a Main Product only/);
   assert.match(calculator, /Cashback Program ON/);
   assert.match(calculator, /cashbackProgramme:true/);
   assert.doesNotMatch(calculator, /checked=\{onCashback\}/);
   assert.doesNotMatch(calculator, /Service Fee Scenario/);
-  assert.match(calculator, /Custom Commission Fee/);
+  assert.match(calculator, /Commission Fee Rate/);
+  assert.match(calculator, /PRODUCT &amp; COMMISSION PROFILE/);
+  assert.match(calculator, /calculator-product-profile/);
+  assert.doesNotMatch(calculator, /<details className="calculator-product-profile card" open>/);
   assert.doesNotMatch(calculator, /No campaign service fee/);
   assert.match(model, /Essential Goods/);
   assert.match(model, /Cheese & Cheese Powder/);
@@ -216,7 +237,7 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /voucherRates\.nonCampaign/);
   assert.match(calculator, /voucherRates\.campaign/);
   assert.match(calculator, /Total Shopee Charges %/);
-  assert.match(calculator, /Select Category for Actual Commission Fee/);
+  assert.match(calculator, /Categories with the same Commission Rate are grouped/);
   assert.doesNotMatch(calculator, /其他计算设定/);
   assert.doesNotMatch(calculator, /Voucher preset 根据/);
   assert.match(voucherPresets, /Last Month Avg\./);

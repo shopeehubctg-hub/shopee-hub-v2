@@ -1,9 +1,11 @@
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { adBalances, customerUsers, dashboardSnapshots, managementActions, stores, tenants } from "../../../db/schema";
+import { adBalances, coFundVouchers, customerUsers, dashboardSnapshots, managementActions, projectProductCatalog, stores, tenantModulePermissions, tenants, userModulePermissions, userStoreAccess } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
+import { ALL_PORTAL_MODULE_IDS } from "../../module-permissions";
 import { contactsForStore, directoryStoreNameFor } from "../../project-group-links";
 import { storeSnapshots } from "../../store-snapshots";
+import { readProductCatalogSheet, sourceShopNameFor } from "../../product-catalog";
 
 export const dynamic = "force-dynamic";
 
@@ -158,6 +160,25 @@ function isSingaporeStore(name: string) {
   return /\bSG\b|Singapore|\.sg$/i.test(name);
 }
 
+async function readCoFundVouchers(storeId:string, tenantId?:string) {
+  try {
+    const db=await getDb();
+    return await db.select({
+      id:coFundVouchers.id,
+      campaignName:coFundVouchers.campaignName,
+      campaignDate:coFundVouchers.campaignDate,
+      voucherName:coFundVouchers.voucherName,
+      discountAmount:coFundVouchers.discountAmount,
+      currency:coFundVouchers.currency,
+      quantity:coFundVouchers.quantity,
+    }).from(coFundVouchers)
+      .where(tenantId?and(eq(coFundVouchers.tenantId,tenantId),eq(coFundVouchers.storeId,storeId)):eq(coFundVouchers.storeId,storeId))
+      .orderBy(desc(coFundVouchers.campaignDate),desc(coFundVouchers.id));
+  } catch {
+    return [];
+  }
+}
+
 export async function GET(request: Request) {
   // Vercel cannot access the Cloudflare D1 binding used by the ChatGPT Sites
   // deployment. Keep the public mirror useful by reading the two live Google
@@ -178,6 +199,8 @@ export async function GET(request: Request) {
     const selectedDirectory = selectedStore ? directoryStores.find((store) => store.name === selectedStore.name) : undefined;
     const snapshotPayload = selectedStore ? storeSnapshots[selectedStore.name] ?? null : null;
     const sheetBalance = selectedStore ? await readSheetBalance(selectedStore.name) : null;
+    const productProfile = selectedStore ? await readProductCatalogSheet(selectedStore.name) : null;
+    const selectedCoFundVouchers = selectedStore ? await readCoFundVouchers(selectedStore.id) : [];
     return Response.json({
       customer: { id: "shopee-hub", name: "Shopee Hub" },
       stores: visibleStores.map((store) => {
@@ -193,6 +216,9 @@ export async function GET(request: Request) {
       snapshot: snapshotPayload ? { payload: snapshotPayload, importedAt: snapshotPayload.sourceUpdated ?? new Date().toISOString() } : null,
       adBalance: sheetBalance ? { ...sheetBalance, topUpOwner: selectedDirectory?.topUpOwner ?? topUpOwnerFallbacks[selectedStore?.name ?? ""] ?? null } : null,
       actions: [],
+      productProfile,
+      coFundVouchers:selectedCoFundVouchers,
+      access: { role: "public", enabledModules: ALL_PORTAL_MODULE_IDS, clientEnabledModules: ALL_PORTAL_MODULE_IDS, canManagePermissions: false },
       dataSources: {
         directory: "Google Sheets · WhatsApp Group / Link Directory",
         advertisingBalance: "Google Sheets · Ad Balance Sheet1",
@@ -205,16 +231,26 @@ export async function GET(request: Request) {
   if (!user) return Response.json({ error: "Authentication required" }, { status: 401 });
 
   const db = await getDb();
-  const [membership] = await db.select({ tenantId: customerUsers.tenantId })
+  const [membership] = await db.select({ id:customerUsers.id, tenantId: customerUsers.tenantId, role: customerUsers.role, active:customerUsers.active, moduleAccessMode:customerUsers.moduleAccessMode, storeAccessMode:customerUsers.storeAccessMode })
     .from(customerUsers)
     .where(eq(customerUsers.email, user.email.toLowerCase()))
     .limit(1);
-  if (!membership) return Response.json({ error: "No customer dashboard is assigned to this account" }, { status: 403 });
+  if (!membership?.active) return Response.json({ error: "This portal account is inactive or has not been assigned" }, { status: 403 });
 
   const [tenant] = await db.select().from(tenants).where(and(eq(tenants.id, membership.tenantId), eq(tenants.active, true))).limit(1);
   if (!tenant) return Response.json({ error: "Customer dashboard is inactive" }, { status: 403 });
 
-  const tenantStores = await db.select().from(stores).where(eq(stores.tenantId, tenant.id));
+  const allTenantStores = await db.select().from(stores).where(eq(stores.tenantId, tenant.id));
+  const assignedStoreRows = membership.storeAccessMode === "selected" ? await db.select({ storeId:userStoreAccess.storeId }).from(userStoreAccess).where(eq(userStoreAccess.userId,membership.id)) : [];
+  const assignedStoreIds = new Set(assignedStoreRows.map(row=>row.storeId));
+  const tenantStores = membership.role === "superadmin" || membership.storeAccessMode === "all" ? allTenantStores : allTenantStores.filter(store=>assignedStoreIds.has(store.id));
+  const modulePermissionRows = await db.select().from(tenantModulePermissions).where(eq(tenantModulePermissions.tenantId, tenant.id));
+  const configuredModules = new Map(modulePermissionRows.map((row) => [row.moduleId, row.enabled]));
+  const clientEnabledModules = ALL_PORTAL_MODULE_IDS.filter((moduleId) => configuredModules.get(moduleId) !== false);
+  const userModuleRows = membership.moduleAccessMode === "custom" ? await db.select().from(userModulePermissions).where(eq(userModulePermissions.userId,membership.id)) : [];
+  const enabledModules = membership.role === "superadmin" ? ALL_PORTAL_MODULE_IDS : membership.moduleAccessMode === "custom"
+    ? ALL_PORTAL_MODULE_IDS.filter(moduleId=>userModuleRows.find(row=>row.moduleId===moduleId)?.enabled===true)
+    : membership.role === "customer" ? clientEnabledModules : ALL_PORTAL_MODULE_IDS;
   const directoryStores = await readLinkDirectory();
   const directoryByName = new Map(directoryStores.map((store) => [store.name, store]));
   const directoryOrder = new Map(directoryStores.map((store, index) => [store.name, index]));
@@ -266,6 +302,30 @@ export async function GET(request: Request) {
       : eq(managementActions.tenantId, tenant.id))
     .orderBy(desc(managementActions.actionDate), desc(managementActions.id))
     .limit(20);
+  const selectedCoFundVouchers = selectedStore ? await readCoFundVouchers(selectedStore.id,tenant.id) : [];
+  const sourceShopName=selectedStore?sourceShopNameFor(selectedStore.name):null;
+  const storedProducts=!sourceShopName?[]:await db.select().from(projectProductCatalog)
+    .where(eq(projectProductCatalog.sourceShopName,sourceShopName))
+    .orderBy(desc(projectProductCatalog.mainProduct),projectProductCatalog.productName);
+  const sheetProductProfile=selectedStore&&!storedProducts.length?await readProductCatalogSheet(selectedStore.name):null;
+  const productProfile=storedProducts.length?{
+    shopName:sourceShopName!,
+    products:storedProducts.map(product=>({
+      itemId:product.itemId,
+      productName:product.productName,
+      productCategory:product.productCategory,
+      commissionFeeRate:product.commissionFeeRateBps/100,
+      mainProduct:product.mainProduct,
+    })),
+    mainProducts:storedProducts.filter(product=>product.mainProduct).map(product=>({
+      itemId:product.itemId,
+      productName:product.productName,
+      productCategory:product.productCategory,
+      commissionFeeRate:product.commissionFeeRateBps/100,
+      mainProduct:true,
+    })),
+    syncedAt:storedProducts[0].syncedAt,
+  }:sheetProductProfile;
 
   return Response.json({
     customer: { id: tenant.id, name: tenant.name },
@@ -291,5 +351,8 @@ export async function GET(request: Request) {
       topUpOwner,
     } : null),
     actions,
+    productProfile,
+    coFundVouchers:selectedCoFundVouchers,
+    access: { role: membership.role, enabledModules, clientEnabledModules, canManagePermissions: membership.role === "superadmin" },
   }, { headers: { "Cache-Control": "private, no-store" } });
 }

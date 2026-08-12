@@ -22,17 +22,81 @@ export function commissionRateFor(categoryIndex, onCashback, customRate = "", as
   return baseRate * 1.08;
 }
 
+function normalizedCategoryPath(value="") {
+  return String(value).replaceAll(" > "," › ").replace(/\s*›\s*/g," › ").trim().toLowerCase();
+}
+
+/**
+ * @param {string} productCategory
+ * @param {number | null} commissionRatePercent
+ * @param {string} productName
+ */
+export function categoryIndexForProduct(productCategory, commissionRatePercent=null, productName="") {
+  const requested=normalizedCategoryPath(productCategory);
+  if(!requested)return 0;
+  const candidates=COMMISSION_CATEGORIES.map((category,index)=>{
+    const path=normalizedCategoryPath(category.name);
+    const fullPath=normalizedCategoryPath(`${category.cluster} › ${category.name}`);
+    return {category,index,path,paths:path===fullPath?[path]:[path,fullPath]};
+  });
+  const exact=candidates.find(candidate=>candidate.paths.includes(requested));
+  if(exact)return exact.index;
+  const related=candidates.filter(candidate=>candidate.paths.some(path=>path.startsWith(`${requested} › `)||requested.startsWith(`${path} › `)));
+  if(related.length){
+    const normalizedProduct=String(productName).toLowerCase();
+    if(requested==="health › personal care › oral care"){
+      const oralCategory = normalizedProduct.includes("mouthwash") || normalizedProduct.includes("mouth wash")
+        ? "Mouth Wash"
+        : normalizedProduct.includes("whitening strip") || normalizedProduct.includes("teeth whitening")
+          ? "Teeth Whitening"
+          : normalizedProduct.includes("toothbrush")
+            ? "Manual Toothbrushes"
+            : normalizedProduct.includes("toothpaste") || normalizedProduct.includes("tooth powder") || normalizedProduct.includes("tooth gel")
+              ? "Toothpastes"
+              : "";
+      const oralMatch=related.find(candidate=>candidate.category.name.endsWith(`› ${oralCategory}`));
+      if(oralMatch)return oralMatch.index;
+    }
+    if(requested==="food & beverages › dairy & eggs › milk"&&normalizedProduct.includes("powder")){
+      const milkMatch=related.find(candidate=>candidate.category.name.endsWith("› Powdered Milk"));
+      if(milkMatch)return milkMatch.index;
+    }
+    return related.sort((left,right)=>{
+      const leftDistance=Math.min(...left.paths.map(path=>Math.abs(requested.length-path.length)));
+      const rightDistance=Math.min(...right.paths.map(path=>Math.abs(requested.length-path.length)));
+      return leftDistance-rightDistance;
+    })[0].index;
+  }
+  const topLevel=requested.split(" › ")[0];
+  return candidates.find(candidate=>candidate.paths.some(path=>path.startsWith(`${topLevel} › `)))?.index??0;
+}
+
+/**
+ * @param {string} productCategory
+ * @param {number | null} commissionRatePercent
+ * @param {string} productName
+ */
+export function resolvedCategoryForProduct(productCategory, commissionRatePercent=null, productName="") {
+  const index=categoryIndexForProduct(productCategory,commissionRatePercent,productName);
+  const category=COMMISSION_CATEGORIES[index];
+  return category ? `${category.cluster} › ${category.name}` : String(productCategory).replaceAll(" > "," › ");
+}
+
 export function calculateFeesForPrice(price, fees) {
-  const feeBase = Math.max(0, price - fees.sellerVoucher - fees.cofundVoucher);
+  const sellerProductDiscount = Math.max(0, Number(fees.sellerProductDiscount) || 0);
+  const sellerVoucher = Math.max(0, Number(fees.sellerVoucher) || 0);
+  const feeBase = Math.max(0, price - sellerProductDiscount - sellerVoucher - fees.cofundVoucher);
   const transactionFee = feeBase * fees.transaction / 100;
   const commissionFee = feeBase * fees.commission / 100;
   const uncappedServiceFee = feeBase * fees.service / 100;
   const serviceFee = Math.min(uncappedServiceFee, fees.serviceCap);
   const preorderFee = fees.isPreorder ? feeBase * fees.preorder / 100 : 0;
-  const payout = price - fees.sellerVoucher - fees.cofundVoucher / 2 -
-    transactionFee - commissionFee - serviceFee - preorderFee -
+  const autoTopUpBase = Math.max(0, price - sellerProductDiscount - sellerVoucher);
+  const autoTopUpFee = autoTopUpBase * Math.max(0, Number(fees.autoTopUp) || 0) / 100;
+  const payout = price - sellerProductDiscount - sellerVoucher - fees.cofundVoucher / 2 -
+    transactionFee - commissionFee - serviceFee - preorderFee - autoTopUpFee -
     fees.platformSupport - fees.sellerShipping;
-  return { feeBase, transactionFee, commissionFee, serviceFee, uncappedServiceFee, preorderFee, payout };
+  return { feeBase, autoTopUpBase, transactionFee, commissionFee, serviceFee, uncappedServiceFee, preorderFee, autoTopUpFee, payout };
 }
 
 /**
@@ -45,7 +109,7 @@ export function calculateShopeePrice(row, fees, markupOverride = null) {
   const valid = uncappedRate >= 0 && uncappedRate < 1 && fees.service >= 0;
   const targetPayout = Math.max(0, row.facebookPrice - fees.facebookShipping + fees.extraProfit);
   let low = 0;
-  let high = Math.max(100, targetPayout * 2 + fees.serviceCap + fees.cofundVoucher + fees.sellerVoucher);
+  let high = Math.max(100, targetPayout * 2 + fees.serviceCap + fees.cofundVoucher + fees.sellerVoucher + (Number(fees.sellerProductDiscount) || 0));
   if (valid) {
     while (calculateFeesForPrice(high, fees).payout < targetPayout && high < 1_000_000) high *= 2;
     for (let index=0; index<80; index++) {
@@ -78,7 +142,7 @@ export function calculateShopeePriceForCustomerTarget(row, fees, customerTarget)
   const voucherMultiplier = 1 - Math.min(100, Math.max(0, Number(fees.shopeeVoucher) || 0)) / 100;
   const valid = voucherMultiplier > 0;
   const requiredPrice = valid
-    ? Math.max(0, Number(customerTarget) || 0) / voucherMultiplier + (Number(fees.sellerVoucher) || 0) + (Number(fees.cofundVoucher) || 0)
+    ? Math.max(0, Number(customerTarget) || 0) / voucherMultiplier + (Number(fees.sellerProductDiscount) || 0) + (Number(fees.sellerVoucher) || 0) + (Number(fees.cofundVoucher) || 0)
     : 0;
   const calculated = calculateFeesForPrice(requiredPrice, fees);
   const customerPrice = calculated.feeBase * voucherMultiplier;
