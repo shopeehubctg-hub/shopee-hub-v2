@@ -17,7 +17,6 @@ export type CalculatorSnapshot = {
   platformSupportFee:number;
   shopeeVoucherRate:number;
   sellerVoucher:number;
-  sellerProductDiscount:number;
   cofundVoucher:number;
   autoTopUpRate:number;
   sellerShipping:number;

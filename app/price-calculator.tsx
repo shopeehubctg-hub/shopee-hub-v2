@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { calculatePricePerUnit, calculateShopeePrice, calculateShopeePriceForCustomerTarget, categoryIndexForProduct, COMMISSION_CATEGORIES, commissionRateFor, resolvedCategoryForProduct, reviewPriceLadder, SERVICE_MODES } from "./price-calculator-model";
+import { autoTopUpEligibleForStore, calculatePricePerUnit, calculateShopeePrice, calculateShopeePriceForCustomerTarget, categoryIndexForProduct, COMMISSION_CATEGORIES, commissionRateFor, maximumCoFundVoucher, resolvedCategoryForProduct, reviewPriceLadder, SERVICE_MODES } from "./price-calculator-model";
 import type { CalculatorSnapshot, PackagePrefill } from "./calculator-types";
 import type { ProjectProductProfile } from "./product-catalog";
 import { VOUCHER_PRESET_SOURCE, voucherPresetFor } from "./voucher-presets.js";
@@ -13,12 +13,12 @@ type FeeSettings = {
   transaction:number; commission:number; service:number; serviceCap:number;
   preorder:number; isPreorder:boolean; platformSupport:number;
   shopeeVoucher:number; sellerVoucher:number; cofundVoucher:number; autoTopUp:number;
-  sellerProductDiscount:number; sellerShipping:number; facebookShipping:number; extraProfit:number;
+  sellerShipping:number; facebookShipping:number; extraProfit:number;
 };
 type FeeDraft = {
   serviceCap:NumberValue; preorder:NumberValue; isPreorder:boolean; isSpayLater:boolean; platformSupport:NumberValue;
   shopeeVoucher:NumberValue; sellerVoucher:NumberValue; autoTopUp:NumberValue;
-  sellerProductDiscount:NumberValue; sellerShipping:NumberValue; facebookShipping:NumberValue;
+  sellerShipping:NumberValue; facebookShipping:NumberValue;
 };
 type CoFundVoucher = { id:number; campaignName:string; campaignDate:string|null; voucherName:string; discountAmount:number; currency:string; quantity:number };
 type Props = { storeName?:string; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; onCreatePackage?:(prefill:PackagePrefill)=>void; onCreatePackages?:(prefills:PackagePrefill[])=>void };
@@ -70,15 +70,14 @@ export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[
   const [voucherRates,setVoucherRates] = useState<Record<ServiceMode,NumberValue>>({nonCampaign:storeVoucherPreset.normal,campaign:storeVoucherPreset.campaign});
   const [fees,setFees] = useState<FeeDraft>({
     serviceCap:108, preorder:2.14, isPreorder:false, isSpayLater:false, platformSupport:0.54,
-    shopeeVoucher:0, sellerVoucher:0, autoTopUp:0, sellerProductDiscount:0,
+    shopeeVoucher:0, sellerVoucher:0, autoTopUp:0,
     sellerShipping:0, facebookShipping:10,
   });
   const transactionRate = fees.isSpayLater?4.86:3.78;
-  const latestCampaignDate = coFundVouchers[0]?.campaignDate ?? null;
-  const currentCoFundOptions = (latestCampaignDate ? coFundVouchers.filter(item=>item.campaignDate===latestCampaignDate) : coFundVouchers).toSorted((left,right)=>right.discountAmount-left.discountAmount);
-  const [selectedCoFundId,setSelectedCoFundId] = useState<number|null>(null);
-  const selectedCoFund = currentCoFundOptions.find(item=>item.id===selectedCoFundId) ?? currentCoFundOptions[0] ?? null;
+  const selectedCoFund = maximumCoFundVoucher(coFundVouchers) as CoFundVoucher|null;
   const cofundVoucher = positive(selectedCoFund?.discountAmount ?? 0);
+  const autoTopUpEligible = autoTopUpEligibleForStore(storeName);
+  const autoTopUpRate = autoTopUpEligible ? positive(fees.autoTopUp) : 0;
   const calculations = useMemo(()=>packages.map(row=>({
     row,
     scenarios:SCENARIOS.map(mode=>{
@@ -86,7 +85,7 @@ export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[
         transaction:transactionRate, commission, service:SERVICE_MODES[mode].rate,
         serviceCap:positive(fees.serviceCap), preorder:positive(fees.preorder), isPreorder:fees.isPreorder,
         platformSupport:positive(fees.platformSupport), shopeeVoucher:positive(voucherRates[mode]),
-        sellerVoucher:positive(fees.sellerVoucher), cofundVoucher, autoTopUp:positive(fees.autoTopUp), sellerProductDiscount:positive(fees.sellerProductDiscount),
+        sellerVoucher:positive(fees.sellerVoucher), cofundVoucher, autoTopUp:autoTopUpRate,
         sellerShipping:positive(fees.sellerShipping), facebookShipping:positive(fees.facebookShipping), extraProfit:0,
       };
       const pricedRow = {...row,facebookPrice:positive(row.facebookPrice)};
@@ -100,8 +99,8 @@ export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[
       const result = customMarkup === null ? suggested : calculateShopeePrice(pricedRow,activeFees,positive(customMarkup));
       return {mode,activeFees,suggested,result,goalSetting};
     }),
-  })),[packages,fees,commission,voucherRates,transactionRate,pricingGoals,cofundVoucher]);
-  const headlineRate = transactionRate + commission + SERVICE_MODES.campaign.rate + (fees.isPreorder?positive(fees.preorder):0) + positive(fees.autoTopUp);
+  })),[packages,fees,commission,voucherRates,transactionRate,pricingGoals,cofundVoucher,autoTopUpRate]);
+  const headlineRate = transactionRate + commission + SERVICE_MODES.campaign.rate + (fees.isPreorder?positive(fees.preorder):0) + autoTopUpRate;
   useEffect(()=>{
     const preset = voucherPresetFor(storeName);
     setVoucherRates({nonCampaign:preset.normal,campaign:preset.campaign});
@@ -151,9 +150,8 @@ export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[
       platformSupportFee:positive(fees.platformSupport),
       shopeeVoucherRate:positive(voucherRates[mode]),
       sellerVoucher:positive(fees.sellerVoucher),
-      sellerProductDiscount:positive(fees.sellerProductDiscount),
       cofundVoucher,
-      autoTopUpRate:positive(fees.autoTopUp),
+      autoTopUpRate,
       sellerShipping:positive(fees.sellerShipping),
       facebookShipping:positive(fees.facebookShipping),
       extraProfit:0,
@@ -249,11 +247,10 @@ export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[
           </article>})}</div>
         </div>
         <div className="fee-fields advanced-fields">
-          <label>Seller Product Discount (RM)<input type="number" min="0" step=".01" value={fees.sellerProductDiscount} onChange={event=>updateFee("sellerProductDiscount",event.target.value)}/></label>
           <label>Seller Voucher (RM)<input type="number" min="0" step=".01" value={fees.sellerVoucher} onChange={event=>updateFee("sellerVoucher",event.target.value)}/></label>
           <label>Seller Bear Shipping (RM)<input type="number" min="0" step=".01" value={fees.sellerShipping} onChange={event=>updateFee("sellerShipping",event.target.value)}/></label>
           <label>Meta Shipping Fee (RM)<input type="number" min="0" step=".01" value={fees.facebookShipping} onChange={event=>updateFee("facebookShipping",event.target.value)}/></label>
-          <label>Auto Top Up (%)<div className="percent-input"><input aria-label="Auto Top Up percentage" type="number" min="0" max="100" step=".01" value={fees.autoTopUp} onChange={event=>updateFee("autoTopUp",Math.min(100,positive(event.target.value)).toString())}/><b>%</b></div></label>
+          <label>CoFund Voucher (RM)<div className="auto-profile-value">{cofundVoucher.toFixed(2)}</div></label>
         </div>
         <p className="formula-note">Voucher guide: {storeVoucherPreset.available?`${storeVoucherPreset.store} · Normal ${pct(positive(voucherRates.nonCampaign))} / Campaign ${pct(positive(voucherRates.campaign))}`:"No voucher preset · Both start at 0%"}. Source: {VOUCHER_PRESET_SOURCE.month} · {VOUCHER_PRESET_SOURCE.metric}.</p>
       </div>
@@ -265,7 +262,7 @@ export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[
       <article><span>Service Fee</span><strong>5.94% / 8.10%</strong><small>Non-Campaign / Campaign · Capped at RM108</small></article>
       <article><span>Pre-Order Service Fee</span><strong>{fees.isPreorder?pct(positive(fees.preorder)):"OFF"}</strong><small>Default 2.14%</small></article>
       <article><span>Platform Support Fee</span><strong>RM 0.54</strong><small>Per order</small></article>
-      <article className="cofund-fee-card"><span>CoFund Voucher</span><strong>{money(cofundVoucher)}</strong>{currentCoFundOptions.length>1?<select aria-label="CoFund voucher" value={selectedCoFund?.id??""} onChange={event=>setSelectedCoFundId(Number(event.target.value))}>{currentCoFundOptions.map(item=><option key={item.id} value={item.id}>{item.voucherName} · {money(item.discountAmount)}</option>)}</select>:<small>{selectedCoFund?`${selectedCoFund.campaignName} · Qty ${selectedCoFund.quantity}`:"Not in CoFund list · RM 0.00"}</small>}</article>
+      {autoTopUpEligible?<article className="auto-top-up-card"><span>Auto Top Up</span><div className="fee-card-percent-input"><input aria-label="Auto Top Up percentage" type="number" min="0" max="100" step=".01" value={fees.autoTopUp} onChange={event=>updateFee("autoTopUp",Math.min(100,positive(event.target.value)).toString())}/><b>%</b></div><small>Included in Total Shopee Charges &amp; Markup</small></article>:null}
     </section>
 
     <section className="calculator-table calculator-results card">
@@ -296,7 +293,7 @@ export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[
               <div><span>Service Fee · {result.serviceCapped?"RM108 cap":pct(SERVICE_MODES[mode].rate)}</span><strong>{money(result.serviceFee)}</strong></div>
               <div><span>Pre-Order · {fees.isPreorder?pct(positive(fees.preorder)):"OFF"}</span><strong>{money(result.preorderFee)}</strong></div>
               <div><span>Platform Support</span><strong>{money(positive(fees.platformSupport))}</strong></div>
-              <div><span>Auto Top Up · {pct(positive(fees.autoTopUp))}</span><strong>{money(result.autoTopUpFee)}</strong></div>
+              {autoTopUpEligible?<div><span>Auto Top Up · {pct(autoTopUpRate)}</span><strong>{money(result.autoTopUpFee)}</strong></div>:null}
               <div><span>CoFund Voucher</span><strong>{money(cofundVoucher)}</strong></div>
             </div></details>
           </div>;

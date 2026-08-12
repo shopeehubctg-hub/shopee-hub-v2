@@ -83,20 +83,27 @@ export function resolvedCategoryForProduct(productCategory, commissionRatePercen
 }
 
 export function calculateFeesForPrice(price, fees) {
-  const sellerProductDiscount = Math.max(0, Number(fees.sellerProductDiscount) || 0);
   const sellerVoucher = Math.max(0, Number(fees.sellerVoucher) || 0);
-  const feeBase = Math.max(0, price - sellerProductDiscount - sellerVoucher - fees.cofundVoucher);
+  const feeBase = Math.max(0, price - sellerVoucher - fees.cofundVoucher);
   const transactionFee = feeBase * fees.transaction / 100;
   const commissionFee = feeBase * fees.commission / 100;
   const uncappedServiceFee = feeBase * fees.service / 100;
   const serviceFee = Math.min(uncappedServiceFee, fees.serviceCap);
   const preorderFee = fees.isPreorder ? feeBase * fees.preorder / 100 : 0;
-  const autoTopUpBase = Math.max(0, price - sellerProductDiscount - sellerVoucher);
+  const autoTopUpBase = Math.max(0, price - sellerVoucher);
   const autoTopUpFee = autoTopUpBase * Math.max(0, Number(fees.autoTopUp) || 0) / 100;
-  const payout = price - sellerProductDiscount - sellerVoucher - fees.cofundVoucher / 2 -
+  const payout = price - sellerVoucher - fees.cofundVoucher / 2 -
     transactionFee - commissionFee - serviceFee - preorderFee - autoTopUpFee -
     fees.platformSupport - fees.sellerShipping;
   return { feeBase, autoTopUpBase, transactionFee, commissionFee, serviceFee, uncappedServiceFee, preorderFee, autoTopUpFee, payout };
+}
+
+export function autoTopUpEligibleForStore(storeName) {
+  return /dr\s*smile|zeero/i.test(String(storeName));
+}
+
+export function maximumCoFundVoucher(vouchers) {
+  return [...(vouchers ?? [])].sort((left,right)=>(Number(right?.discountAmount)||0)-(Number(left?.discountAmount)||0))[0] ?? null;
 }
 
 /**
@@ -109,7 +116,7 @@ export function calculateShopeePrice(row, fees, markupOverride = null) {
   const valid = uncappedRate >= 0 && uncappedRate < 1 && fees.service >= 0;
   const targetPayout = Math.max(0, row.facebookPrice - fees.facebookShipping + fees.extraProfit);
   let low = 0;
-  let high = Math.max(100, targetPayout * 2 + fees.serviceCap + fees.cofundVoucher + fees.sellerVoucher + (Number(fees.sellerProductDiscount) || 0));
+  let high = Math.max(100, targetPayout * 2 + fees.serviceCap + fees.cofundVoucher + fees.sellerVoucher);
   if (valid) {
     while (calculateFeesForPrice(high, fees).payout < targetPayout && high < 1_000_000) high *= 2;
     for (let index=0; index<80; index++) {
@@ -142,7 +149,7 @@ export function calculateShopeePriceForCustomerTarget(row, fees, customerTarget)
   const voucherMultiplier = 1 - Math.min(100, Math.max(0, Number(fees.shopeeVoucher) || 0)) / 100;
   const valid = voucherMultiplier > 0;
   const requiredPrice = valid
-    ? Math.max(0, Number(customerTarget) || 0) / voucherMultiplier + (Number(fees.sellerProductDiscount) || 0) + (Number(fees.sellerVoucher) || 0) + (Number(fees.cofundVoucher) || 0)
+    ? Math.max(0, Number(customerTarget) || 0) / voucherMultiplier + (Number(fees.sellerVoucher) || 0) + (Number(fees.cofundVoucher) || 0)
     : 0;
   const calculated = calculateFeesForPrice(requiredPrice, fees);
   const customerPrice = calculated.feeBase * voucherMultiplier;

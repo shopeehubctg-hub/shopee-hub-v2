@@ -153,16 +153,21 @@ test("Shopee calculator accepts a user-adjusted markup rate", async () => {
 });
 
 test("Shopee calculator applies Auto Top Up as a percentage fee", async () => {
-  const { calculateFeesForPrice } = await import("../app/price-calculator-model.js");
+  const { autoTopUpEligibleForStore, calculateFeesForPrice, maximumCoFundVoucher } = await import("../app/price-calculator-model.js");
   const result = calculateFeesForPrice(100, {
     transaction:0, commission:0, service:0, serviceCap:108,
     preorder:0, isPreorder:false, platformSupport:0,
-    sellerProductDiscount:10, sellerVoucher:5, cofundVoucher:20, autoTopUp:2.5,
+    sellerVoucher:5, cofundVoucher:20, autoTopUp:2.5,
     sellerShipping:0,
   });
-  assert.equal(result.autoTopUpBase, 85);
-  assert.equal(result.autoTopUpFee, 2.125);
-  assert.equal(result.payout, 72.875);
+  assert.equal(result.autoTopUpBase, 95);
+  assert.equal(result.autoTopUpFee, 2.375);
+  assert.equal(result.payout, 82.625);
+  assert.equal(autoTopUpEligibleForStore("Dr Smile Whitening by CTG4u"),true);
+  assert.equal(autoTopUpEligibleForStore("Zeero Skincare Official"),true);
+  assert.equal(autoTopUpEligibleForStore("AgePros By Swissmed"),false);
+  assert.equal(maximumCoFundVoucher([{discountAmount:22},{discountAmount:30},{discountAmount:3}]).discountAmount,30);
+  assert.equal(maximumCoFundVoucher([]),null);
 });
 
 test("Shopee calculator reverse-solves a customer-price target", async () => {
