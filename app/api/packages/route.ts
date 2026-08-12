@@ -9,6 +9,7 @@ import {
   packageVersions,
 } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
+import { canAccessModule, canAccessStore } from "../../module-access";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +61,7 @@ const seedPackages = [
 
 async function membershipFor(email: string) {
   const db = await getDb();
-  const [membership] = await db.select({ tenantId:customerUsers.tenantId, role:customerUsers.role })
+  const [membership] = await db.select({ id:customerUsers.id, tenantId:customerUsers.tenantId, role:customerUsers.role, active:customerUsers.active, moduleAccessMode:customerUsers.moduleAccessMode, storeAccessMode:customerUsers.storeAccessMode })
     .from(customerUsers).where(eq(customerUsers.email, email.toLowerCase())).limit(1);
   return membership;
 }
@@ -110,17 +111,14 @@ async function syncHistoryToGoogleSheet(payload: Record<string, unknown>) {
 }
 
 export async function GET(request: Request) {
-  if (process.env.VERCEL === "1") {
-    const storeId = new URL(request.url).searchParams.get("storeId");
-    const sample = storeId && storeId !== "all" ? seedPackages.filter(item => item.storeId === storeId) : seedPackages;
-    return Response.json({ packages:sample, source:"sheet-migration-preview", canCreate:false });
-  }
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error:"Authentication required" }, { status:401 });
   const membership = await membershipFor(user.email);
   if (!membership) return Response.json({ error:"No workspace assigned" }, { status:403 });
   const storeId = new URL(request.url).searchParams.get("storeId");
   const db = await getDb();
+  if (!await canAccessModule(db, membership, "packages")) return Response.json({ error:"Packages & Pricing is not enabled for this account" }, { status:403 });
+  if (storeId && !await canAccessStore(db,membership,storeId)) return Response.json({ error:"Store access denied" }, { status:403 });
   const rows = await db.select().from(packages)
     .where(storeId && storeId !== "all"
       ? and(eq(packages.tenantId, membership.tenantId), eq(packages.storeId, storeId))
@@ -199,6 +197,8 @@ export async function POST(request: Request) {
   if (!user) return Response.json({ error:"Authentication required" }, { status:401 });
   const membership = await membershipFor(user.email);
   if (!membership) return Response.json({ error:"Project owner access required" }, { status:403 });
+  const accessDb = await getDb();
+  if (!await canAccessModule(accessDb, membership, "packages")) return Response.json({ error:"Packages & Pricing is not enabled for this account" }, { status:403 });
   const body = await request.json() as {
     packageId?: string;
     storeId?: string;
@@ -221,6 +221,7 @@ export async function POST(request: Request) {
   if (!body.storeId || !body.name?.trim() || !Array.isArray(body.components) || !body.components.length || !platforms.length) {
     return Response.json({ error:"Store, package name, at least one platform and items are required" }, { status:400 });
   }
+  if (!await canAccessStore(accessDb,membership,body.storeId)) return Response.json({ error:"Store access denied" }, { status:403 });
   const schedules=(body.priceSchedules??[]).map(item=>({...item,originalPrice:Math.round(Number(item.originalPrice)*100),sellingPrice:Math.round(Number(item.sellingPrice)*100)}));
   const markets=[...new Set(body.markets??[])];
   if (markets.some(market=>!["MY","SG"].includes(market)) || schedules.some(item=>!markets.includes(item.market))) {
@@ -302,8 +303,8 @@ export async function POST(request: Request) {
   }
 
   const diff = componentDiff(previousComponents, components);
-  await db.batch([
-    db.insert(packageVersions).values({
+  await db.transaction(async tx => {
+    await tx.insert(packageVersions).values({
       id:versionId,
       packageId,
       version:nextVersion,
@@ -317,27 +318,22 @@ export async function POST(request: Request) {
       effectiveFrom:schedules.find(item=>item.priceType==="campaign")!.effectiveFrom,
       effectiveTo:schedules.find(item=>item.priceType==="campaign")!.effectiveTo,
       createdBy:user.email,
-    }),
-    ...platforms.map(item => db.insert(packagePlatformSkus).values({
-      id:crypto.randomUUID(),
-      packageId,
-      versionId,
-      storeId:body.storeId!,
-      platform:item.platform,
-      packageSku:item.packageSku,
-    })),
-    ...schedules.map(item=>db.insert(packagePrices).values({
+    });
+    for (const item of platforms) await tx.insert(packagePlatformSkus).values({
+      id:crypto.randomUUID(), packageId, versionId, storeId:body.storeId!, platform:item.platform, packageSku:item.packageSku,
+    });
+    for (const item of schedules) await tx.insert(packagePrices).values({
       id:crypto.randomUUID(),packageId,versionId,market:item.market,priceType:item.priceType,promotionType:item.promotionType,
       currency:item.market === "SG" ? "SGD" : "MYR",originalPrice:item.originalPrice,sellingPrice:item.sellingPrice,
       effectiveFrom:item.effectiveFrom,effectiveTo:item.effectiveTo,createdBy:user.email,
-    })),
-    db.insert(packageAuditLog).values({
+    });
+    await tx.insert(packageAuditLog).values({
       packageId,
       action:nextVersion === 1 ? "created" : "version_created",
       detail:`Version ${nextVersion}: +${diff.added.length} / -${diff.removed.length}; ${platforms.map(item => `${item.platform}=${item.packageSku}`).join(", ")}`,
       actor:user.email,
-    }),
-  ]);
+    });
+  });
 
   const platformMap = Object.fromEntries(["Shopee","Lazada","TikTok Shop"].map(platform=>[platform,platforms.filter(item=>item.platform===platform).map(item=>item.packageSku).join(" | ")]));
   const changeId = `${packageId}-v${nextVersion}`;
