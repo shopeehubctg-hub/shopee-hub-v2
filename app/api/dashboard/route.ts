@@ -175,7 +175,19 @@ async function readCoFundVouchers(storeId:string, tenantId?:string) {
       .where(tenantId?and(eq(coFundVouchers.tenantId,tenantId),eq(coFundVouchers.storeId,storeId)):eq(coFundVouchers.storeId,storeId))
       .orderBy(desc(coFundVouchers.campaignDate),desc(coFundVouchers.id));
   } catch {
-    return [];
+    const projectUrl=process.env.SUPABASE_URL;
+    const secretKey=process.env.SUPABASE_SECRET_KEY;
+    if(!projectUrl||!secretKey)return [];
+    try {
+      const query=new URLSearchParams({select:"id,campaign_name,campaign_date,voucher_name,discount_amount,currency,quantity",store_id:`eq.${storeId}`,order:"campaign_date.desc,id.desc"});
+      if(tenantId)query.set("tenant_id",`eq.${tenantId}`);
+      const response=await fetch(`${projectUrl}/rest/v1/co_fund_vouchers?${query}`,{headers:{Authorization:`Bearer ${secretKey}`,apikey:secretKey},cache:"no-store"});
+      if(!response.ok)return [];
+      const rows=await response.json() as Array<{id:number;campaign_name:string;campaign_date:string|null;voucher_name:string;discount_amount:string|number;currency:string;quantity:number}>;
+      return rows.map(row=>({id:row.id,campaignName:row.campaign_name,campaignDate:row.campaign_date,voucherName:row.voucher_name,discountAmount:String(row.discount_amount),currency:row.currency,quantity:row.quantity}));
+    } catch {
+      return [];
+    }
   }
 }
 
