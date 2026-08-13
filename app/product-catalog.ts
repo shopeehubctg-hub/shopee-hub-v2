@@ -83,7 +83,7 @@ export function productRowsFromCsv(text:string):Array<ProjectProduct&{shopName:s
 export async function readProductCatalogSheet(storeName?:string):Promise<ProjectProductProfile|null> {
   try{
     const url=`https://docs.google.com/spreadsheets/d/${PRODUCT_CATALOG_SOURCE.sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(PRODUCT_CATALOG_SOURCE.tab)}`;
-    const response=await fetch(url,{cache:"no-store"});
+    const response=await fetch(url,{cache:"no-store",signal:AbortSignal.timeout(5_000)});
     if(!response.ok)return null;
     const rows=productRowsFromCsv(await response.text());
     if(!storeName)return {shopName:"All Stores",products:rows,mainProducts:rows.filter(row=>row.mainProduct)};

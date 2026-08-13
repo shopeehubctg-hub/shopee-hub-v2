@@ -11,6 +11,7 @@ export const dynamic = "force-dynamic";
 
 const AD_BALANCE_SHEET_CSV = "https://docs.google.com/spreadsheets/d/13NOwTGkbDjW8y869CvS6lr6H8I7XRn3I0urt_-rqkgs/gviz/tq?tqx=out:csv&sheet=Sheet1";
 const LINK_DIRECTORY_CSV = "https://docs.google.com/spreadsheets/d/1iMNKdNs5tqgXgWUQhtg-UhWcb0mP3SlGYbTOyx4avkc/gviz/tq?tqx=out:csv&sheet=WhatsApp%20Group";
+const GOOGLE_SHEET_TIMEOUT_MS = 5_000;
 const adBalanceAliases: Record<string, string> = {
   "Scale Story SG by CTG4u": "Scale Story SG",
   "Zeero Skincare SG by CTG4u": "Zeero Skincare SG",
@@ -88,7 +89,10 @@ function fallbackDirectoryStores(): LinkDirectoryStore[] {
 
 async function readLinkDirectory(): Promise<LinkDirectoryStore[]> {
   try {
-    const response = await fetch(LINK_DIRECTORY_CSV, { cache: "no-store" });
+    const response = await fetch(LINK_DIRECTORY_CSV, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(GOOGLE_SHEET_TIMEOUT_MS),
+    });
     if (!response.ok) return fallbackDirectoryStores();
     const rows = (await response.text()).trim().split(/\r?\n/).map(parseCsvLine);
     const header = rows[0] ?? [];
@@ -126,7 +130,10 @@ async function readLinkDirectory(): Promise<LinkDirectoryStore[]> {
 
 async function readSheetBalance(storeName: string, storedName = storeName) {
   try {
-    const response = await fetch(AD_BALANCE_SHEET_CSV, { cache: "no-store" });
+    const response = await fetch(AD_BALANCE_SHEET_CSV, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(GOOGLE_SHEET_TIMEOUT_MS),
+    });
     if (!response.ok) return null;
     const lines = (await response.text()).trim().split(/\r?\n/).slice(1);
     const matches = lines.map(parseCsvLine).filter((row) => row[1] === storeName || (adBalanceAliases[row[1]] ?? row[1]) === storedName);
