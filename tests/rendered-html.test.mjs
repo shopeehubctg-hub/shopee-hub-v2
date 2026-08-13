@@ -356,6 +356,8 @@ test("client action center uses imported actions instead of sample fallback", as
   const page = await readFile(new URL("app/page.tsx", root), "utf8");
   assert.match(page, /data\?\.actions\?\.map/);
   assert.match(page, /managementActionToClientAction/);
+  assert.match(page, /driveActionsForStore/);
+  assert.match(page, /store\.driveLink/);
   assert.match(page, /No client action needed/);
   assert.doesNotMatch(page, /driveActions\.length \|\| noSample \? \[\] : actionFallback/);
 });

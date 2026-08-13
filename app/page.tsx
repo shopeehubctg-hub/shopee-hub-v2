@@ -14,7 +14,7 @@ import type { ProjectProductProfile } from "./product-catalog";
 import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
 import { PermissionSettings } from "./permission-settings";
 
-type Store = { id: string; name: string; platform: string; contacts: { project: string; href: string }[] };
+type Store = { id: string; name: string; platform: string; contacts: { project: string; href: string }[]; driveLink?: string | null };
 type ManagementAction = { actionDate: string; category: string; title: string; detail: string };
 type CoFundVoucher = { id:number; campaignName:string; campaignDate:string|null; voucherName:string; discountAmount:number; currency:string; quantity:number };
 type DashboardResponse = { stores: Store[]; selectedStoreId: string | null; snapshot: { payload: any; importedAt: string } | null; adBalance: { balance:number; balanceDate:string; sourceUpdatedAt:string; syncStatus:string; topUpOwner?:string | null } | null; actions?: ManagementAction[]; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; access?:{ role:string; enabledModules:PortalModuleId[]; clientEnabledModules:PortalModuleId[]; canManagePermissions:boolean } };
@@ -58,6 +58,23 @@ const projectDriveActions: Record<string, ClientAction[]> = {
     { title:"Product Details Folder", client:"AgePros By Swissmed", due:"Available now", type:"Drive", action:"Open Drive", href:"https://drive.google.com/drive/folders/18KuBDljRuXFGYfC-DXdzuxeQSipga91_" },
   ],
 };
+
+function driveActionsForStore(store: Store | null | undefined): ClientAction[] {
+  if (!store) return [];
+  const projectSpecificActions = projectDriveActions[store.name] ?? [];
+  if (projectSpecificActions.length) return projectSpecificActions;
+  if (!store.driveLink) return [];
+  return [
+    {
+      title:"Google Drive Folder",
+      client:store.name,
+      due:"Available now",
+      type:"Drive",
+      action:"Open Drive",
+      href:store.driveLink,
+    },
+  ];
+}
 
 function money(value: string) { return value; }
 function parseCurrency(value: unknown) {
@@ -197,7 +214,7 @@ export default function Home() {
   const adPageCount = Math.max(1, Math.ceil(filteredAdCampaigns.length / 25));
   const visibleAdCampaigns = filteredAdCampaigns.slice((adPage - 1) * 25, adPage * 25);
   const orders = Array.isArray(live.orders) ? live.orders : (noSample ? [] : ordersFallback);
-  const driveActions = store ? (projectDriveActions[store.name] ?? []) : [];
+  const driveActions = driveActionsForStore(store);
   const importedClientActions = data?.actions?.map(action=>managementActionToClientAction(action, store?.name ?? "Selected store")) ?? [];
   const clientActions = Array.isArray(live.clientActions) ? live.clientActions : importedClientActions;
   const adFunds = buildAdvertisingFunds(ads);
