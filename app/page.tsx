@@ -13,6 +13,7 @@ import { buildAdvertisingFunds, buildTopUpAction, formatRinggit } from "./advert
 import type { ProjectProductProfile } from "./product-catalog";
 import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
 import { PermissionSettings } from "./permission-settings";
+import { projectDriveFolders } from "./project-drive-folders";
 
 type Store = { id: string; name: string; platform: string; contacts: { project: string; href: string }[]; driveLink?: string | null };
 type ManagementAction = { actionDate: string; category: string; title: string; detail: string };
@@ -52,26 +53,26 @@ const actionFallback = [
   { title:"Join CoFund", client:"J Packaging", due:"Today", type:"Campaign", action:"Review" },
   { title:"待批准广告预算 RM 800", client:"J Packaging", due:"19 Jul", type:"Urgent", action:"Approve" },
 ];
-const projectDriveActions: Record<string, ClientAction[]> = {
-  "AgePros By Swissmed": [
-    { title:"Image Resources Folder", client:"AgePros By Swissmed", due:"Available now", type:"Drive", action:"Open Drive", href:"https://drive.google.com/drive/folders/1Xh9rHfeCym5e_zVVnPWAk6W99l6KrIC_" },
-    { title:"Product Details Folder", client:"AgePros By Swissmed", due:"Available now", type:"Drive", action:"Open Drive", href:"https://drive.google.com/drive/folders/18KuBDljRuXFGYfC-DXdzuxeQSipga91_" },
-  ],
-};
-
 function driveActionsForStore(store: Store | null | undefined): ClientAction[] {
   if (!store) return [];
-  const projectSpecificActions = projectDriveActions[store.name] ?? [];
-  if (projectSpecificActions.length) return projectSpecificActions;
-  if (!store.driveLink) return [];
+  const folders = projectDriveFolders[store.name];
+  if (!folders) return [];
   return [
     {
-      title:"Google Drive Folder",
+      title:"Image Resources Folder",
       client:store.name,
       due:"Available now",
       type:"Drive",
       action:"Open Drive",
-      href:store.driveLink,
+      href:folders.imageResources,
+    },
+    {
+      title:"Product Details Folder",
+      client:store.name,
+      due:"Available now",
+      type:"Drive",
+      action:"Open Drive",
+      href:folders.productDetails,
     },
   ];
 }

@@ -357,7 +357,18 @@ test("client action center uses imported actions instead of sample fallback", as
   assert.match(page, /data\?\.actions\?\.map/);
   assert.match(page, /managementActionToClientAction/);
   assert.match(page, /driveActionsForStore/);
-  assert.match(page, /store\.driveLink/);
+  assert.match(page, /projectDriveFolders/);
+  assert.match(page, /Image Resources Folder/);
+  assert.match(page, /Product Details Folder/);
   assert.match(page, /No client action needed/);
   assert.doesNotMatch(page, /driveActions\.length \|\| noSample \? \[\] : actionFallback/);
+});
+
+test("project drive folder mapping covers every linked project", async () => {
+  const driveFolders = await readFile(new URL("app/project-drive-folders.ts", root), "utf8");
+  const projectCount = [...driveFolders.matchAll(/imageResources: "https:\/\/drive\.google\.com\/drive\/folders\//g)].length;
+  assert.equal(projectCount, 42);
+  assert.equal([...driveFolders.matchAll(/productDetails: "https:\/\/drive\.google\.com\/drive\/folders\//g)].length, projectCount);
+  assert.match(driveFolders, /"AgePros By Swissmed"/);
+  assert.match(driveFolders, /"Zeero Skincare Official"/);
 });
