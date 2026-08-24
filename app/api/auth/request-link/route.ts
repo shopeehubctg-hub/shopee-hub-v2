@@ -12,7 +12,7 @@ export async function POST(request:Request) {
     const redirectTo = `${new URL(request.url).origin}/auth/callback`;
     const response = await fetch(`${url}/auth/v1/otp?redirect_to=${encodeURIComponent(redirectTo)}`,{
       method:"POST",headers:{apikey:secret,Authorization:`Bearer ${secret}`,"Content-Type":"application/json"},
-      body:JSON.stringify({email,create_user:false}),cache:"no-store",
+      body:JSON.stringify({email,create_user:true}),cache:"no-store",
     });
     if (!response.ok) return Response.json({error:"Unable to send sign-in link"},{status:502});
   }
