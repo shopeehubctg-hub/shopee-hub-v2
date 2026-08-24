@@ -21,6 +21,7 @@ type CoFundVoucher = { id:number; campaignName:string; campaignDate:string|null;
 type DashboardResponse = { stores: Store[]; selectedStoreId: string | null; snapshot: { payload: any; importedAt: string } | null; adBalance: { balance:number; balanceDate:string; sourceUpdatedAt:string; syncStatus:string; topUpOwner?:string | null } | null; actions?: ManagementAction[]; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; access?:{ role:string; enabledModules:PortalModuleId[]; clientEnabledModules:PortalModuleId[]; canManagePermissions:boolean } };
 type ClientAction = { title: string; client: string; due: string; type: string; action: string; href?: string; message?: string; generated?: boolean };
 type DailyAd = { date:string; store:string; spend:number; sales:number; roas:number; views:number; clicks:number; ctr:number; conversion:number; sold:number; acos:number };
+type AdsApiResponse = { status:"connected"|"unconfigured"|"unavailable"|"error"; fetchedAt?:string; balance?:number; daily?:DailyAd[]; campaigns?:any[]; error?:string };
 
 const overviewFallback = [
   ["Valid Order Sales", "RM 18,711.82", "+21.4%"], ["Valid Orders", "654", "+20.7%"],
@@ -28,6 +29,7 @@ const overviewFallback = [
 ];
 const adFallback = { balance:"—", averageDailySpend30d:null, syncStatus:"delayed", spend:"RM 2,480.30", sales:"RM 18,922.40", roas:"7.63×", views:"428,190", clicks:"12,846", conversion:"3.18%", sold:"1,106", cpc:"RM 2.24", acos:"13.11%", ctr:"3.00%", conversionRate:"3.18%" };
 const allStoresAdvertising = { balance:"By store", spend:"RM 19,465.75", sales:"RM 347,585.29", roas:"17.86×", views:"703,913", clicks:"19,287", conversion:"1,171", sold:"5,370", cpc:"RM 16.62", acos:"5.60%", ctr:"2.74%", conversionRate:"6.07%" };
+const unavailableAdvertising = { balance:null, averageDailySpend30d:null, syncStatus:"delayed", spend:"—", sales:"—", roas:"—", views:"—", clicks:"—", conversion:"—", sold:"—", cpc:"—", acos:"—", ctr:"—", conversionRate:"—" };
 const adCampaignFallback = [
   { name:"Pizza Box – Search", type:"Product Search", status:"Active", budget:"RM 80/day", spend:"RM 742.18", sales:"RM 6,820.40", roas:"9.19×", views:"126,420", clicks:"4,188", ctr:"3.31%", conversionRate:"3.58%", sold:"302", acos:"10.88%" },
   { name:"Corrugated Tray – Discovery", type:"Discovery", status:"Active", budget:"RM 60/day", spend:"RM 614.92", sales:"RM 4,392.60", roas:"7.14×", views:"98,310", clicks:"2,744", ctr:"2.79%", conversionRate:"2.88%", sold:"216", acos:"14.00%" },
@@ -124,6 +126,8 @@ export default function Home() {
   const [adMonth, setAdMonth] = useState("");
   const [adRangeStart, setAdRangeStart] = useState("");
   const [adRangeEnd, setAdRangeEnd] = useState("");
+  const [adsApi, setAdsApi] = useState<AdsApiResponse | null>(null);
+  const [adsApiLoading, setAdsApiLoading] = useState(false);
   const [packagePrefills, setPackagePrefills] = useState<PackagePrefill[]>([]);
   const [standalonePackageCreate, setStandalonePackageCreate] = useState(false);
 
@@ -131,6 +135,7 @@ export default function Home() {
     setLoading(true);
     try {
       const response = await fetch(`/api/dashboard${id ? `?storeId=${encodeURIComponent(id)}` : ""}`, { cache:"no-store" });
+      if (response.status === 401) { window.location.replace("/login"); return; }
       if (response.ok) {
         const next = await response.json(); setData(next); setStoreId(next.selectedStoreId ?? next.stores?.[0]?.id ?? "");
       }
@@ -138,6 +143,7 @@ export default function Home() {
   }
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    if (params.get("section") === "permissions") setSection("permissions");
     const draftKey = params.get("packageDraft");
     if (params.get("section") === "packages") setSection("packages");
     if (draftKey) {
@@ -159,6 +165,30 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (section !== "advertising" || !storeId || storeId === "all") {
+      setAdsApi(null);
+      return;
+    }
+    const controller = new AbortController();
+    const end = new Date().toISOString().slice(0, 10);
+    const startDate = new Date(`${end}T00:00:00Z`);
+    startDate.setUTCDate(startDate.getUTCDate() - 29);
+    setAdsApiLoading(true);
+    setAdsApi(null);
+    fetch(`/api/shopee/advertising?storeId=${encodeURIComponent(storeId)}&start=${startDate.toISOString().slice(0,10)}&end=${end}`, { cache:"no-store", signal:controller.signal })
+      .then(async response => {
+        const payload = await response.json() as AdsApiResponse;
+        setAdsApi(payload);
+      })
+      .catch(error => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setAdsApi({ status:"error", error:error instanceof Error ? error.message : "Unable to load Shopee Ads" });
+      })
+      .finally(()=>setAdsApiLoading(false));
+    return ()=>controller.abort();
+  }, [section, storeId]);
+
+  useEffect(() => {
     if (!data?.access) return;
     const allowed = new Set(data.access.enabledModules);
     if (section !== "permissions" && !allowed.has(section as PortalModuleId)) {
@@ -177,9 +207,11 @@ export default function Home() {
   const live = data?.snapshot?.payload ?? staticSnapshot ?? {};
   const noSample = Boolean(live.noSample);
   const overview = Array.isArray(live.overview) ? live.overview : overviewFallback;
-  const adsBase = live.advertising ?? (allStoresSelected ? allStoresAdvertising : adFallback);
+  const adsApiUnavailable = Boolean(adsApi && adsApi.status !== "connected");
+  const adsBase = adsApiUnavailable ? unavailableAdvertising : live.advertising ?? (allStoresSelected ? allStoresAdvertising : adFallback);
   const importedStoreAds = adsData.filter((ad:any) => allStoresSelected || ad.store === store?.name);
-  const relevantDailyAds = (fullAdHistory as DailyAd[]).filter(row => allStoresSelected || row.store === store?.name);
+  const adsApiConnected = adsApi?.status === "connected";
+  const relevantDailyAds = adsApiConnected ? (adsApi.daily ?? []) : adsApiUnavailable ? [] : (fullAdHistory as DailyAd[]).filter(row => allStoresSelected || row.store === store?.name);
   const availableAdDates = [...new Set(relevantDailyAds.map(row=>row.date))].sort((a,b)=>b.localeCompare(a));
   const availableAdMonths = [...new Set(availableAdDates.map(date=>date.slice(0,7)))].sort((a,b)=>b.localeCompare(a));
   const selectedAdDate = adDate && availableAdDates.includes(adDate) ? adDate : (availableAdDates[0] ?? "");
@@ -197,8 +229,10 @@ export default function Home() {
   const averageDailySpend = relevantDailyAds.length
     ? relevantDailyAds.reduce((total,row)=>total+row.spend,0) / Math.max(1, new Set(relevantDailyAds.map(row=>row.date)).size)
     : importedStoreAds.reduce((total:number, ad:any) => total + parseCurrency(ad.spend), 0) / 30;
-  const balanceAds = data?.adBalance && !allStoresSelected
-    ? { ...adsBase, balance:data.adBalance.balance, averageDailySpend30d:adsBase.averageDailySpend30d ?? averageDailySpend, sourceUpdatedAt:data.adBalance.sourceUpdatedAt, syncStatus:data.adBalance.syncStatus, topUpOwner:data.adBalance.topUpOwner ?? adsBase.topUpOwner }
+  const apiBalance = adsApiConnected && typeof adsApi.balance === "number" ? { balance:adsApi.balance, balanceDate:new Date().toISOString().slice(0,10), sourceUpdatedAt:adsApi.fetchedAt ?? new Date().toISOString(), syncStatus:"current", topUpOwner:data?.adBalance?.topUpOwner } : null;
+  const effectiveBalance = apiBalance ?? data?.adBalance;
+  const balanceAds = effectiveBalance && !allStoresSelected
+    ? { ...adsBase, balance:effectiveBalance.balance, averageDailySpend30d:adsBase.averageDailySpend30d ?? averageDailySpend, sourceUpdatedAt:effectiveBalance.sourceUpdatedAt, syncStatus:effectiveBalance.syncStatus, topUpOwner:effectiveBalance.topUpOwner ?? adsBase.topUpOwner }
     : adsBase;
   const ads = dailyAd ? {
     ...balanceAds,
@@ -210,7 +244,7 @@ export default function Home() {
     cpc:dailyAd.conversion > 0 ? formatMoney(dailyAd.spend / dailyAd.conversion) : "—",
     conversionRate:dailyAd.clicks > 0 ? `${(dailyAd.conversion / dailyAd.clicks * 100).toFixed(2)}%` : "0.00%",
   } : balanceAds;
-  const adCampaigns = Array.isArray(live.adCampaigns) ? live.adCampaigns : (noSample ? [] : (importedStoreAds.length ? importedStoreAds : adCampaignFallback));
+  const adCampaigns = adsApiConnected ? (adsApi.campaigns ?? []) : adsApiUnavailable ? [] : Array.isArray(live.adCampaigns) ? live.adCampaigns : (noSample ? [] : (importedStoreAds.length ? importedStoreAds : adCampaignFallback));
   const filteredAdCampaigns = adCampaigns.filter((ad:any) => (adStatusFilter === "All" || ad.status === adStatusFilter) && `${ad.name} ${ad.store ?? ""}`.toLowerCase().includes(adSearch.toLowerCase()));
   const adPageCount = Math.max(1, Math.ceil(filteredAdCampaigns.length / 25));
   const visibleAdCampaigns = filteredAdCampaigns.slice((adPage - 1) * 25, adPage * 25);
@@ -236,6 +270,13 @@ export default function Home() {
     if (data?.access?.canManagePermissions) items.push(["permissions", "Permission Settings"] as const);
     return items;
   }, [data?.access]);
+  const adsApiStatusText = allStoresSelected
+    ? "Select one store to load its Shopee Ads API data"
+    : adsApiLoading
+      ? "Connecting to Shopee Ads API…"
+      : adsApiConnected
+        ? `Live Shopee API · synced ${new Date(adsApi.fetchedAt ?? Date.now()).toLocaleString("en-MY", { dateStyle:"medium", timeStyle:"short" })}`
+        : (adsApi?.error ?? "Open Advertising to connect this store");
   return <main className={`app-shell${sidebarCollapsed?" sidebar-collapsed":""}`}>
     <aside className="side">
       <div className="logo"><img src="/shopee-hub-logo-transparent.png" alt="ShopeeHub"/><small>STORE COMMAND CENTER</small></div>
@@ -272,6 +313,8 @@ export default function Home() {
       {section==="design" && <div className="page"><DesignChecker storeId={storeId}/></div>}
       {section==="protection" && <div className="page"><FakeSellerReport storeName={store?.name ?? "Selected store"} allStores={allStoresSelected} cases={fakeSellerCases}/></div>}
       {section==="permissions" && data?.access?.canManagePermissions && <div className="page"><PermissionSettings initialEnabledModules={data.access.clientEnabledModules}/></div>}
+
+      {section==="advertising" && <div className={`ads-api-status ${adsApiConnected?"connected":adsApiLoading?"loading":"attention"}`} role="status"><span/>{adsApiStatusText}</div>}
 
       {section==="advertising" && <div className="page"><div className="page-title ad-page-title"><div><p className="kicker">ADVERTISING</p><h2>Performance</h2></div><div className="ad-period-controls"><label><span>View by</span><select aria-label="Advertising period type" value={adPeriodMode} onChange={event=>setAdPeriodMode(event.target.value as "month"|"date"|"range")}><option value="month">Month</option><option value="date">Date</option><option value="range">Custom range</option></select></label>{adPeriodMode === "month" && <label><span>Month</span><input aria-label="Advertising month" type="month" value={selectedAdMonth} min={availableAdMonths[availableAdMonths.length-1]} max={availableAdMonths[0]} onChange={event=>setAdMonth(event.target.value)}/></label>}{adPeriodMode === "date" && <label><span>Date</span><select aria-label="Advertising date" value={selectedAdDate} onChange={event=>setAdDate(event.target.value)} disabled={!availableAdDates.length}>{availableAdDates.map(date=><option key={date} value={date}>{new Date(`${date}T00:00:00`).toLocaleDateString("en-MY",{day:"2-digit",month:"short",year:"numeric"})}</option>)}</select></label>}{adPeriodMode === "range" && <><label><span>From</span><input aria-label="Advertising range start" type="date" value={selectedRangeStart} min={earliestAdDate} max={selectedRangeEnd} onChange={event=>setAdRangeStart(event.target.value)}/></label><label><span>To</span><input aria-label="Advertising range end" type="date" value={selectedRangeEnd} min={selectedRangeStart} max={availableAdDates[0]} onChange={event=>setAdRangeEnd(event.target.value)}/></label></>}</div></div><div className="advertising-summary-stack">
         <section className={`ad-funds-card ${adFunds.balanceStatus}`}><div className="ad-funds-status"><div><span>{adFunds.syncStatus === "delayed" ? "Data delayed" : (adFunds.lowBalance ? `Top-up ${formatRinggit(adFunds.recommendedTopUp)} required` : "Ads healthy")}</span><small>{adFunds.topUpOwner === "shopee_hub" ? "Managed by Shopee Hub" : (adFunds.approvalRequired ? "Approval needed" : "Client action")}</small></div><time>{adFunds.sourceUpdatedAt ? `Last updated ${adFunds.sourceUpdatedAt}` : "Last update unavailable"}</time></div><div className="fund-metric"><span>Ad Balance</span><strong>{formatRinggit(adFunds.balance, 2)}</strong></div><div className="fund-metric"><span>{periodSpendLabel}</span><strong>{ads.spend ?? "—"}</strong></div><div className="fund-metric"><span>Runway</span><strong>{adFunds.runwayDays == null ? "—" : `${Math.floor(adFunds.runwayDays)} days`}</strong></div><div className="fund-metric topup"><span>Top-up</span><strong>{formatRinggit(adFunds.recommendedTopUp)}</strong></div></section>

@@ -6,6 +6,7 @@ import { ALL_PORTAL_MODULE_IDS } from "../../module-permissions";
 import { contactsForStore, directoryStoreNameFor } from "../../project-group-links";
 import { storeSnapshots } from "../../store-snapshots";
 import { readProductCatalogSheet, sourceShopNameFor } from "../../product-catalog";
+import { supabaseRest } from "../../supabase-rest";
 
 export const dynamic = "force-dynamic";
 
@@ -199,16 +200,29 @@ async function readCoFundVouchers(storeId:string, tenantId?:string) {
 }
 
 export async function GET(request: Request) {
-  // Vercel cannot access the Cloudflare D1 binding used by the ChatGPT Sites
-  // deployment. Keep the public mirror useful by reading the two live Google
-  // Sheets sources and serving the portable snapshots bundled with the app.
+  // Vercel serves the portable dashboard data, while identity and permissions
+  // are read securely from the staging Supabase project.
   if (process.env.VERCEL === "1") {
+    const user = await getChatGPTUser();
+    if (!user) return Response.json({ error:"Authentication required" },{ status:401 });
+    const memberships = await supabaseRest<Array<{id:number;tenant_id:string;role:"customer"|"manager"|"superadmin";active:boolean;module_access_mode:"role_default"|"custom";store_access_mode:"all"|"selected"}>>(`customer_users?select=id,tenant_id,role,active,module_access_mode,store_access_mode&email=eq.${encodeURIComponent(user.email.toLowerCase())}&limit=1`);
+    const membership=memberships[0];
+    if(!membership?.active)return Response.json({error:"Portal access is disabled"},{status:403});
+    const [tenantModules,userModules,userStores]=await Promise.all([
+      supabaseRest<Array<{module_id:string;enabled:boolean}>>(`tenant_module_permissions?select=module_id,enabled&tenant_id=eq.${encodeURIComponent(membership.tenant_id)}`),
+      membership.module_access_mode==="custom"?supabaseRest<Array<{module_id:string;enabled:boolean}>>(`user_module_permissions?select=module_id,enabled&user_id=eq.${membership.id}`):Promise.resolve([]),
+      membership.store_access_mode==="selected"?supabaseRest<Array<{store_id:string}>>(`user_store_access?select=store_id&user_id=eq.${membership.id}`):Promise.resolve([]),
+    ]);
+    const tenantEnabled=new Map(tenantModules.map(row=>[row.module_id,row.enabled]));
+    const customEnabled=new Set(userModules.filter(row=>row.enabled).map(row=>row.module_id));
+    const enabledModules=membership.role==="superadmin"?ALL_PORTAL_MODULE_IDS:membership.module_access_mode==="custom"?ALL_PORTAL_MODULE_IDS.filter(id=>customEnabled.has(id)&&tenantEnabled.get(id)!==false):ALL_PORTAL_MODULE_IDS.filter(id=>tenantEnabled.get(id)!==false);
+    const assignedStoreIds=new Set(userStores.map(row=>row.store_id));
     const directoryStores = await readLinkDirectory();
     const visibleStores = directoryStores.map(({ name }) => ({
       id: storeIdFor(name),
       name,
       platform: isSingaporeStore(name) ? "Shopee SG" : "Shopee MY",
-    }));
+    })).filter(store=>membership.role==="superadmin"||membership.store_access_mode==="all"||assignedStoreIds.has(store.id));
     const requestedStoreId = new URL(request.url).searchParams.get("storeId");
     const allStoresRequested = !requestedStoreId || requestedStoreId === "all";
     const selectedStore = allStoresRequested ? undefined : visibleStores.find((store) => store.id === requestedStoreId);
@@ -237,13 +251,13 @@ export async function GET(request: Request) {
       actions: [],
       productProfile,
       coFundVouchers:selectedCoFundVouchers,
-      access: { role: "public", enabledModules: ALL_PORTAL_MODULE_IDS, clientEnabledModules: ALL_PORTAL_MODULE_IDS, canManagePermissions: false },
+      access: { role:membership.role, enabledModules, clientEnabledModules:enabledModules, canManagePermissions:membership.role==="superadmin" },
       dataSources: {
         directory: "Google Sheets · WhatsApp Group / Link Directory",
         advertisingBalance: "Google Sheets · Ad Balance Sheet1",
         performance: snapshotPayload ? "Portable snapshot exported from the ChatGPT Sites dashboard" : "Advertising exports and bundled dashboard data",
       },
-    }, { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=3600" } });
+    }, { headers: { "Cache-Control":"private, no-store" } });
   }
 
   const user = await getChatGPTUser();
