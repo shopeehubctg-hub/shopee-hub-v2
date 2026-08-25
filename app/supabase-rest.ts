@@ -16,5 +16,6 @@ export async function supabaseRest<T>(path: string, init: RequestInit = {}): Pro
   });
   if (!response.ok) throw new Error(`Supabase REST ${response.status}: ${await response.text()}`);
   if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
+  const text = await response.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
