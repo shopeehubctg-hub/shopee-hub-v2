@@ -17,6 +17,7 @@ const SIGN_IN_PATH = "/signin-with-chatgpt";
 const SIGN_OUT_PATH = "/signout-with-chatgpt";
 const CALLBACK_PATH = "/callback";
 export const PORTAL_SESSION_COOKIE = "shopee_hub_portal_session";
+export const PASSWORD_RESET_COOKIE = "shopee_hub_password_reset";
 
 function sessionSecret() {
   const secret = process.env.SUPABASE_SECRET_KEY;
@@ -28,6 +29,14 @@ export function createPortalSession(email: string, maxAgeSeconds = 60 * 60 * 24 
   const payload = Buffer.from(JSON.stringify({ email:email.toLowerCase(), exp:Math.floor(Date.now()/1000)+maxAgeSeconds })).toString("base64url");
   const signature = createHmac("sha256",sessionSecret()).update(payload).digest("base64url");
   return `${payload}.${signature}`;
+}
+
+export function createPasswordResetRequest(email: string) {
+  return createPortalSession(email, 60 * 30);
+}
+
+export function readPasswordResetRequest(value: string | undefined) {
+  return readPortalSession(value);
 }
 
 function readPortalSession(value: string | undefined): string | null {
