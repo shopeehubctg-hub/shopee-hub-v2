@@ -253,6 +253,7 @@ export async function GET(request: Request) {
       actions: [],
       productProfile,
       coFundVouchers:selectedCoFundVouchers,
+      user: { email: user.email },
       access: { role:membership.role, enabledModules, clientEnabledModules:enabledModules, canManagePermissions:membership.role==="superadmin" },
       dataSources: {
         directory: "Google Sheets · WhatsApp Group / Link Directory",
@@ -388,6 +389,7 @@ export async function GET(request: Request) {
     actions,
     productProfile,
     coFundVouchers:selectedCoFundVouchers,
+    user: { email: user.email },
     access: { role: membership.role, enabledModules, clientEnabledModules, canManagePermissions: membership.role === "superadmin" },
   }, { headers: { "Cache-Control": "private, no-store" } });
 }

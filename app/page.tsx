@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import adsData from "./ads-data.json";
 import fullAdHistory from "./full-ad-history.json";
 import { PackageControl } from "./package-control";
@@ -113,9 +113,14 @@ function managementActionToClientAction(action: ManagementAction, client: string
 }
 
 export default function Home() {
-  const [section, setSection] = useState("overview");
+  const [requestedSection, setSection] = useState("overview");
   const [sidebarCollapsed,setSidebarCollapsed] = useState(false);
-  const [data, setData] = useState<DashboardResponse | null>(null);
+  const [data, setData] = useState<(DashboardResponse & { user: { email:string } }) | null>(null);
+  const [loadError, setLoadError] = useState("");
+  const loadSequence = useRef(0);
+  const allowedSections = data?.access?.enabledModules ?? [];
+  const section = (requestedSection === "permissions" ? data?.access?.canManagePermissions : allowedSections.includes(requestedSection as PortalModuleId))
+    ? requestedSection : allowedSections[0] ?? (data?.access?.canManagePermissions ? "permissions" : "");
   const [storeId, setStoreId] = useState("");
   const [storeSelectionMade,setStoreSelectionMade] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -133,14 +138,23 @@ export default function Home() {
   const [standalonePackageCreate, setStandalonePackageCreate] = useState(false);
 
   async function load(id?: string) {
+    const sequence = ++loadSequence.current;
     setLoading(true);
+    setLoadError("");
     try {
       const response = await fetch(`/api/dashboard${id ? `?storeId=${encodeURIComponent(id)}` : ""}`, { cache:"no-store" });
+      if (sequence !== loadSequence.current) return;
       if (response.status === 401) { window.location.replace("/login"); return; }
-      if (response.ok) {
-        const next = await response.json(); setData(next); setStoreId(next.selectedStoreId ?? next.stores?.[0]?.id ?? "");
-      }
-    } finally { setLoading(false); }
+      if (!response.ok) throw new Error(response.status === 403 ? "Your account does not have access to this dashboard or store." : "Unable to load your dashboard. Please try again.");
+      const next = await response.json();
+      if (sequence !== loadSequence.current) return;
+      if (!next.access || !Array.isArray(next.access.enabledModules) || !next.user?.email || !Array.isArray(next.stores)) throw new Error("Unable to verify your dashboard access. Please try again.");
+      setData(next); setStoreId(next.selectedStoreId ?? next.stores?.[0]?.id ?? "");
+    } catch (error) {
+      if (sequence !== loadSequence.current) return;
+      setData(null);
+      setLoadError(error instanceof Error ? error.message : "Unable to load your dashboard. Please try again.");
+    } finally { if (sequence === loadSequence.current) setLoading(false); }
   }
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -189,14 +203,6 @@ export default function Home() {
       .finally(()=>setAdsApiLoading(false));
     return ()=>controller.abort();
   }, [section, storeId]);
-
-  useEffect(() => {
-    if (!data?.access) return;
-    const allowed = new Set(data.access.enabledModules);
-    if (section !== "permissions" && !allowed.has(section as PortalModuleId)) {
-      setSection(data.access.enabledModules[0] ?? (data.access.canManagePermissions ? "permissions" : "overview"));
-    }
-  }, [data?.access, section]);
 
   function openPackageDraft(prefills:PackagePrefill[]) {
     const draftKey = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -267,7 +273,7 @@ export default function Home() {
   const orderSummary = live.orderSummary;
   const fakeSellerCases = Array.isArray(live.fakeSellerCases) ? live.fakeSellerCases as FakeSellerCase[] : undefined;
   const nav = useMemo(() => {
-    const allowed = new Set(data?.access?.enabledModules ?? PORTAL_MODULES.map(({ id }) => id));
+    const allowed = new Set(data?.access?.enabledModules ?? []);
     const items: (readonly [string, string])[] = PORTAL_MODULES.filter(({ id }) => allowed.has(id)).map(({ id, label }) => [id, id === "packages" ? "Packages & Pricing" : label] as const);
     if (data?.access?.canManagePermissions) items.push(["permissions", "Permission Settings"] as const);
     return items;
@@ -279,13 +285,20 @@ export default function Home() {
       : adsApiConnected
         ? `Live Shopee API · synced ${new Date(adsApi.fetchedAt ?? Date.now()).toLocaleString("en-MY", { dateStyle:"medium", timeStyle:"short" })}`
         : (adsApi?.error ?? "Open Advertising to connect this store");
+  if (!data || !section || loadError) return <main className="login-shell"><section className="login-card" aria-busy={!loadError && !data}>
+    <img src="/shopee-hub-logo-transparent.png" alt="ShopeeHub"/>
+    <h1>{loadError ? "Dashboard unavailable" : !data ? "Loading your dashboard…" : "No modules assigned"}</h1>
+    <p role={loadError ? "alert" : "status"}>{loadError || (!data ? "Preparing your account and workspace." : "Please contact your administrator to request access.")}</p>
+    {loadError && <button onClick={()=>load()} disabled={loading}>Try again</button>}
+    {(loadError || data) && <a href="/login">Back to sign in</a>}
+  </section></main>;
   return <main className={`app-shell${sidebarCollapsed?" sidebar-collapsed":""}`}>
     <aside className="side">
       <div className="logo"><img src="/shopee-hub-logo-transparent.png" alt="ShopeeHub"/><small>STORE COMMAND CENTER</small></div>
       <button className="sidebar-toggle" onClick={()=>setSidebarCollapsed(current=>!current)} aria-label={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"} title={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"}>{sidebarCollapsed?"›":"‹"}</button>
       <nav>{nav.map(([id,label]) => <button key={id} className={section===id?"active":""} onClick={()=>setSection(id)}><span>{label.slice(0,1)}</span>{label}</button>)}</nav>
       <div className="fleet contact-card"><p>Contact Shopee Hub Specialist</p><strong>{allStoresSelected ? "Select a project" : (store?.contacts.length ? store.name : "Link unavailable")}</strong><div>{!allStoresSelected && store?.contacts.map(contact=><a key={contact.href} href={contact.href} target="_blank" rel="noopener noreferrer" title={contact.project}>{store.contacts.length > 1 ? contact.project : "Contact"} →</a>)}</div></div>
-      <p className="access">{data?.access?.role === "superadmin" ? "Super Admin access" : "Private access"}<br/><b>shopeehub.ctg@gmail.com</b></p>
+      <p className="access">{data.access?.role === "superadmin" ? "Super Admin access" : "Private access"}<br/><b>{data.user.email}</b></p>
     </aside>
 
     <section className="workspace">
