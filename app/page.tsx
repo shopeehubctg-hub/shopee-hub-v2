@@ -13,6 +13,7 @@ import { buildAdvertisingFunds, buildTopUpAction, formatRinggit } from "./advert
 import type { ProjectProductProfile } from "./product-catalog";
 import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
 import { PermissionSettings } from "./permission-settings";
+import { DashboardLoading } from "./dashboard-loading";
 import { projectDriveFolders } from "./project-drive-folders";
 
 type Store = { id: string; name: string; platform: string; contacts: { project: string; href: string }[]; driveLink?: string | null };
@@ -285,7 +286,8 @@ export default function Home() {
       : adsApiConnected
         ? `Live Shopee API · synced ${new Date(adsApi.fetchedAt ?? Date.now()).toLocaleString("en-MY", { dateStyle:"medium", timeStyle:"short" })}`
         : (adsApi?.error ?? "Open Advertising to connect this store");
-  if (!data || !section || loadError) return <main className="login-shell"><section className="login-card" aria-busy={!loadError && !data}>
+  if (!data && !loadError) return <DashboardLoading />;
+  if (!data || !section || loadError) return <main className="login-shell"><section className="login-card" aria-busy={false}>
     <img src="/shopee-hub-logo-transparent.png" alt="ShopeeHub"/>
     <h1>{loadError ? "Dashboard unavailable" : !data ? "Loading your dashboard…" : "No modules assigned"}</h1>
     <p role={loadError ? "alert" : "status"}>{loadError || (!data ? "Preparing your account and workspace." : "Please contact your administrator to request access.")}</p>
