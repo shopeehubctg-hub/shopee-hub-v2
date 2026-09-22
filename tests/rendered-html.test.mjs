@@ -98,19 +98,23 @@ test("package API enforces listing SKUs and persists component history", async (
   assert.match(multiListingMigration, /package_price_version_market_type_period_idx/);
 });
 
-test("packages stay empty without a selected store and remain store-scoped", async () => {
+test("packages stay empty until selection and All Stores remains permission-scoped", async () => {
   const [page, component, route, access] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("app/package-control.tsx", root), "utf8"),
     readFile(new URL("app/api/packages/route.ts", root), "utf8"),
     readFile(new URL("app/module-access.ts", root), "utf8"),
   ]);
-  assert.match(page, /No Store Selected/);
-  assert.match(component, /if \(!hasSelectedStore\)/);
+  assert.match(page, /storeSelectionMade/);
+  assert.match(page, /Select a Store/);
+  assert.match(component, /if \(!hasPackageScope\)/);
   assert.match(component, /setItems\(\[\]\)/);
-  assert.match(route, /if \(!storeId \|\| storeId === "all"\)/);
+  assert.match(route, /if \(!storeId\)/);
   assert.match(route, /packages:\[\], source:"store-selection-required", canCreate:false/);
-  assert.match(route, /and\(eq\(packages\.tenantId, membership\.tenantId\), eq\(packages\.storeId, storeId\)\)/);
+  assert.match(route, /membership\.storeAccessMode === "all"/);
+  assert.match(route, /assignedStoreIds\.has\(store\.id\)/);
+  assert.match(route, /inArray\(packages\.storeId, scopedStoreIds\)/);
+  assert.match(component, /editingStore\?\.id\?\?storeId/);
   assert.match(route, /existing\.storeId !== body\.storeId/);
   assert.match(access, /eq\(stores\.tenantId,membership\.tenantId\)/);
   assert.match(access, /storeId==="all"\)return false/);
