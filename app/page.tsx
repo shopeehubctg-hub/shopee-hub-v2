@@ -117,6 +117,7 @@ export default function Home() {
   const [sidebarCollapsed,setSidebarCollapsed] = useState(false);
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [storeId, setStoreId] = useState("");
+  const [storeSelectionMade,setStoreSelectionMade] = useState(false);
   const [loading, setLoading] = useState(false);
   const [adStatusFilter, setAdStatusFilter] = useState("All");
   const [adSearch, setAdSearch] = useState("");
@@ -153,6 +154,7 @@ export default function Home() {
           const draft = JSON.parse(saved) as { prefills:PackagePrefill[]; storeId?:string };
           setPackagePrefills(draft.prefills ?? []);
           setStandalonePackageCreate(true);
+          setStoreSelectionMade(true);
           window.localStorage.removeItem(`package-draft:${draftKey}`);
           load(draft.storeId && draft.storeId !== "all" ? draft.storeId : undefined);
           return;
@@ -288,9 +290,9 @@ export default function Home() {
 
     <section className="workspace">
       <header className="header">
-        <div><p className="kicker">SHOPEE HUB PERFORMANCE</p><h1>{allStoresSelected ? "All Stores" : (store?.name ?? "J Packaging")}</h1></div>
+        <div><p className="kicker">SHOPEE HUB PERFORMANCE</p><h1>{section==="packages"&&!storeSelectionMade?"No Store Selected":allStoresSelected ? "All Stores" : (store?.name ?? "J Packaging")}</h1></div>
         <div className="toolbar">
-          <label>Store<select value={storeId} onChange={e=>{setStoreId(e.target.value);setAdPage(1);load(e.target.value)}}><option value="all">All Stores</option>{data?.stores.map(s=><option key={s.id} value={s.id}>{s.name} · {s.platform.replace("Shopee ", "")}</option>) ?? <option value="j-packaging-shopee">J Packaging · MY</option>}</select></label>
+          <label>Store<select value={section==="packages"&&!storeSelectionMade?"":storeId} onChange={e=>{setStoreSelectionMade(true);setStoreId(e.target.value);setAdPage(1);load(e.target.value)}}><option value="" disabled>Select a Store</option><option value="all">All Stores</option>{data?.stores.map(s=><option key={s.id} value={s.id}>{s.name} · {s.platform.replace("Shopee ", "")}</option>) ?? <option value="j-packaging-shopee">J Packaging · MY</option>}</select></label>
           <button onClick={()=>load(storeId)} disabled={loading}>{loading?"Updating…":"Update data"}</button>
         </div>
       </header>
@@ -308,7 +310,7 @@ export default function Home() {
         </section>
       </div>}
 
-      {section==="packages" && <div className="page"><PackageControl storeId={storeId || "all"} storeName={allStoresSelected ? "All Stores" : (store?.name ?? "Selected Store")} prefills={packagePrefills} standaloneCreate={standalonePackageCreate} onPrefillsAccepted={()=>setPackagePrefills([])} /></div>}
+      {section==="packages" && <div className="page"><PackageControl storeId={storeSelectionMade?storeId:""} storeName={!storeSelectionMade?"No Store Selected":allStoresSelected?"All Accessible Stores":(store?.name ?? "Selected Store")} prefills={packagePrefills} standaloneCreate={standalonePackageCreate} onPrefillsAccepted={()=>setPackagePrefills([])} /></div>}
       {section==="calculator" && <div className="page" aria-label="Price Calculator"><PriceCalculator storeName={allStoresSelected?"":(store?.name??"")} productProfile={allStoresSelected?null:data?.productProfile} coFundVouchers={allStoresSelected?[]:data?.coFundVouchers} onCreatePackage={prefill=>openPackageDraft([prefill])} onCreatePackages={openPackageDraft} /></div>}
       {section==="design" && <div className="page"><DesignChecker storeId={storeId}/></div>}
       {section==="protection" && <div className="page"><FakeSellerReport storeName={store?.name ?? "Selected store"} allStores={allStoresSelected} cases={fakeSellerCases}/></div>}
