@@ -118,15 +118,16 @@ export async function GET(request: Request) {
   const storeId = new URL(request.url).searchParams.get("storeId");
   const db = await getDb();
   if (!await canAccessModule(db, membership, "packages")) return Response.json({ error:"Packages & Pricing is not enabled for this account" }, { status:403 });
-  if (storeId && !await canAccessStore(db,membership,storeId)) return Response.json({ error:"Store access denied" }, { status:403 });
+  if (!storeId || storeId === "all") {
+    return Response.json({ packages:[], source:"store-selection-required", canCreate:false }, { headers:{ "Cache-Control":"private, no-store" } });
+  }
+  if (!await canAccessStore(db,membership,storeId)) return Response.json({ error:"Store access denied" }, { status:403 });
   const rows = await db.select().from(packages)
-    .where(storeId && storeId !== "all"
-      ? and(eq(packages.tenantId, membership.tenantId), eq(packages.storeId, storeId))
-      : eq(packages.tenantId, membership.tenantId))
+    .where(and(eq(packages.tenantId, membership.tenantId), eq(packages.storeId, storeId)))
     .orderBy(desc(packages.updatedAt));
   if (!rows.length) {
-    const sample = storeId && storeId !== "all" ? seedPackages.filter(item => item.storeId === storeId) : seedPackages;
-    return Response.json({ packages:sample, source:"sheet-migration-preview", canCreate:true });
+    const sample = seedPackages.filter(item => item.storeId === storeId);
+    return Response.json({ packages:sample, source:"sheet-migration-preview", canCreate:true }, { headers:{ "Cache-Control":"private, no-store" } });
   }
   const ids = rows.map(row => row.id);
   const versions = await db.select().from(packageVersions).where(inArray(packageVersions.packageId, ids)).orderBy(desc(packageVersions.version));
@@ -277,6 +278,9 @@ export async function POST(request: Request) {
     const [existing] = await db.select().from(packages)
       .where(and(eq(packages.id, requestedPackageId), eq(packages.tenantId, membership.tenantId))).limit(1);
     if (!existing) return Response.json({ error:"Package not found" }, { status:404 });
+    if (existing.storeId !== body.storeId || !await canAccessStore(db,membership,existing.storeId)) {
+      return Response.json({ error:"Store access denied" }, { status:403 });
+    }
     const [latest] = await db.select().from(packageVersions)
       .where(eq(packageVersions.packageId, requestedPackageId)).orderBy(desc(packageVersions.version)).limit(1);
     nextVersion = Number(latest?.version ?? 0) + 1;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CalculatorSnapshot, PackagePrefill } from "./calculator-types";
 
 type ComponentLine = { inventorySku:string; name:string; quantity:number; kind:"product"|"gift" };
@@ -83,9 +83,20 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   const [calculatorSettings,setCalculatorSettings] = useState<CalculatorSnapshot|null>(null);
   const [prefillQueue,setPrefillQueue] = useState<PackagePrefill[][]>([]);
   const [prefillBatch,setPrefillBatch] = useState<PackagePrefill[]>([]);
+  const loadSequence=useRef(0);
+  const hasSelectedStore=Boolean(storeId&&storeId!=="all");
 
   async function load() {
-    const response = await fetch(`/api/packages?storeId=${encodeURIComponent(storeId || "all")}`,{cache:"no-store"});
+    const sequence=++loadSequence.current;
+    if (!hasSelectedStore) {
+      setItems([]);
+      setSource("store-selection-required");
+      return;
+    }
+    setItems([]);
+    setSource("");
+    const response = await fetch(`/api/packages?storeId=${encodeURIComponent(storeId)}`,{cache:"no-store"});
+    if (sequence!==loadSequence.current) return;
     if (response.ok) {
       const data=await response.json();
       setItems(data.packages ?? []);
@@ -284,8 +295,8 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       <div><p className="kicker">OXM PACKAGE CONTROL</p><h2>Packages & Pricing</h2><p>Create packages, choose platforms and set promotion dates. Every change is saved in history.</p></div>
       <div className="package-hero-actions">
         <a href={HISTORY_SHEET_URL} target="_blank" rel="noopener noreferrer">Google Sheet History</a>
-        <span>{source==="sheet-migration-preview"?"Sheet Migration Preview":"Live Database"}</span>
-        {canCreate&&storeId!=="all"&&<button onClick={openNew}>+ New Package</button>}
+        <span>{!hasSelectedStore?"Select a Store":source==="sheet-migration-preview"?"Sheet Migration Preview":"Live Database"}</span>
+        {canCreate&&hasSelectedStore&&<button onClick={openNew}>+ New Package</button>}
       </div>
     </div>
 
@@ -320,7 +331,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       </div>)}</div>}
       <div className="package-card-foot"><span>{item.components.length} Inventory SKU Lines</span><button onClick={()=>setOpenHistory(openHistory===item.id?null:item.id)}>{openHistory===item.id?"Hide History":"View History"}</button><button onClick={()=>startVersion(item)}>{source==="database"?"New Version":"Migrate & Edit"}</button></div>
     </article>)}</div>
-    {!visible.length&&<div className="package-empty"><strong>No Packages In This View</strong><span>Choose another store/filter or create the first package.</span></div>}
+    {!visible.length&&<div className="package-empty"><strong>{hasSelectedStore?"No Packages In This View":"Select a Store"}</strong><span>{hasSelectedStore?"Choose another filter or create the first package.":"Package information will appear after you choose a store."}</span></div>}
 
     {showCreate&&<div className={`package-modal${standaloneCreate?" standalone":""}`} role={standaloneCreate?undefined:"dialog"} aria-modal={standaloneCreate?undefined:"true"}><div className="package-form">
       <div className="package-form-head"><div><p className="kicker">{editingPackageId?"NEW VERSION":"NEW PACKAGE"}</p><h3>{editingPackageId?"Create Next Version":"Create A Package"}</h3><span>{storeName}{prefillQueue.length?` · ${prefillQueue.length} Ready Package${prefillQueue.length===1?"":"s"} Remaining`:""}</span></div><button onClick={closeCreate} aria-label="Close">×</button></div>
