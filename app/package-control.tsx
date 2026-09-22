@@ -13,6 +13,7 @@ type PriceSchedule = {
   market:MarketName; priceType:PriceType; originalPrice:number; sellingPrice:number;
   promotionType:"monthly"|"custom"; effectiveFrom:string; effectiveTo:string;
 };
+type PriceScheduleInput = Omit<PriceSchedule,"originalPrice"|"sellingPrice"> & { originalPrice:string; sellingPrice:string };
 type CalculatorHistorySettings = CalculatorSnapshot | { scenarios:CalculatorSnapshot[] };
 type HistoryLine = {
   version:number; changeNote:string; promotionType:"monthly"|"custom"; effectiveFrom:string; effectiveTo?:string|null;
@@ -34,6 +35,7 @@ const blankLine = ():ComponentLine => ({ inventorySku:"", name:"", quantity:1, k
 const blankPeriod = () => ({ promotionType:"monthly" as "monthly"|"custom", promotionMonth:"", effectiveFrom:"", effectiveTo:"" });
 const blankForm = () => ({
   name:"", status:"draft", markets:["MY"] as MarketName[],
+  samePricing:false,
   nonCampaign:blankPeriod(), campaign:{...blankPeriod(),promotionType:"custom" as const,campaignEvents:["dday"] as CampaignEvent[]},
   prices:{
     MY:{ nonCampaignOriginal:"", nonCampaignSelling:"", campaignOriginal:"", campaignSelling:"" },
@@ -75,6 +77,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   const [saving,setSaving] = useState(false);
   const [message,setMessage] = useState("");
   const [messageType,setMessageType] = useState<"success"|"warning"|"error">("success");
+  const [formErrors,setFormErrors] = useState<string[]>([]);
   const [editingPackageId,setEditingPackageId] = useState<string|null>(null);
   const [editingStore,setEditingStore] = useState<{id:string;name:string}|null>(null);
   const [openHistory,setOpenHistory] = useState<string|null>(null);
@@ -154,6 +157,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     setComponents([blankLine()]);
     setPlatforms([{platform:"Shopee",packageSku:""}]);
     setCalculatorSettings(null);
+    setFormErrors([]);
   }
 
   function openNew() {
@@ -219,28 +223,86 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     setForm(current=>({...current,prices:{...current.prices,[market]:{...current.prices[market],[key]:value}}}));
   }
 
-  function priceSchedules() {
-    return form.markets.flatMap(market=>([
-      {market,priceType:"non_campaign" as const,originalPrice:form.prices[market].nonCampaignOriginal,sellingPrice:form.prices[market].nonCampaignSelling,...form.nonCampaign},
-      ...form.campaign.campaignEvents.map(campaignEvent=>({market,priceType:"campaign" as const,originalPrice:form.prices[market].campaignOriginal,sellingPrice:form.prices[market].campaignSelling,promotionType:form.campaign.promotionType,...campaignDates(form.campaign.promotionMonth,campaignEvent)})).map(item=>({...item,effectiveFrom:item.from,effectiveTo:item.to})),
-    ]));
+  function priceSchedules():PriceScheduleInput[] {
+    const schedules:PriceScheduleInput[]=[];
+    form.markets.forEach(market=>{
+      const nonCampaign:PriceScheduleInput={market,priceType:"non_campaign",originalPrice:form.prices[market].nonCampaignOriginal,sellingPrice:form.prices[market].nonCampaignSelling,promotionType:form.nonCampaign.promotionType,effectiveFrom:form.nonCampaign.effectiveFrom,effectiveTo:form.nonCampaign.effectiveTo};
+      schedules.push(nonCampaign);
+      if (form.samePricing) {
+        schedules.push({...nonCampaign,priceType:"campaign"});
+        return;
+      }
+      form.campaign.campaignEvents.forEach(campaignEvent=>{
+        const dates=campaignDates(form.campaign.promotionMonth,campaignEvent);
+        schedules.push({market,priceType:"campaign",originalPrice:form.prices[market].campaignOriginal,sellingPrice:form.prices[market].campaignSelling,promotionType:form.campaign.promotionType,effectiveFrom:dates.from,effectiveTo:dates.to});
+      });
+    });
+    return schedules;
+  }
+
+  function validateForm() {
+    const errors:string[]=[];
+    if (!form.name.trim()) errors.push("Enter a package name.");
+    if (!form.markets.length) errors.push("Select at least one selling market.");
+    if (!platforms.length) errors.push("Select at least one sales platform.");
+    platforms.forEach((line,index)=>{
+      if (!line.packageSku.trim()) errors.push(`Enter the SKU for ${line.platform} listing ${platforms.filter((item,itemIndex)=>item.platform===line.platform&&itemIndex<=index).length}.`);
+    });
+    const normalizedPlatformSkus=platforms.map(line=>line.packageSku.trim().toLowerCase()).filter(Boolean);
+    if (new Set(normalizedPlatformSkus).size!==normalizedPlatformSkus.length) errors.push("Each platform listing SKU must be unique.");
+
+    const validatePeriod=(label:string,period:typeof form.nonCampaign)=>{
+      if (period.promotionType==="monthly"&&!period.promotionMonth) errors.push(`Select the ${label} promotion month.`);
+      if (period.promotionType==="custom"&&(!period.effectiveFrom||!period.effectiveTo)) errors.push(`Enter both ${label} start and end dates.`);
+      if (period.effectiveFrom&&period.effectiveTo&&period.effectiveTo<period.effectiveFrom) errors.push(`${label} end date cannot be before its start date.`);
+    };
+    validatePeriod("Non-Campaign",form.nonCampaign);
+    if (!form.samePricing) {
+      if (!form.campaign.promotionMonth) errors.push("Select the Campaign month.");
+      if (!form.campaign.campaignEvents.length) errors.push("Select at least one Campaign event.");
+    }
+
+    form.markets.forEach(market=>{
+      const validatePrice=(label:string,originalValue:string,sellingValue:string)=>{
+        const original=Number(originalValue);
+        const selling=Number(sellingValue);
+        if (!originalValue||!Number.isFinite(original)||original<=0) errors.push(`Enter a valid ${market} ${label} original price.`);
+        if (!sellingValue||!Number.isFinite(selling)||selling<=0) errors.push(`Enter a valid ${market} ${label} selling price.`);
+        if (original>0&&selling>original) errors.push(`${market} ${label} selling price cannot be higher than the original price.`);
+      };
+      validatePrice("Non-Campaign",form.prices[market].nonCampaignOriginal,form.prices[market].nonCampaignSelling);
+      if (!form.samePricing) validatePrice("Campaign",form.prices[market].campaignOriginal,form.prices[market].campaignSelling);
+    });
+
+    if (!components.length) errors.push("Add at least one OXM inventory item.");
+    components.forEach((line,index)=>{
+      if (!line.inventorySku.trim()) errors.push(`Enter the OXM inventory SKU for item ${index+1}.`);
+      if (!line.name.trim()) errors.push(`Enter the name for inventory item ${index+1}.`);
+      if (!Number.isInteger(line.quantity)||line.quantity<1) errors.push(`Enter a whole-number quantity of at least 1 for inventory item ${index+1}.`);
+    });
+    if (!form.changeNote.trim()) errors.push("Enter a change note explaining this package version.");
+    setFormErrors([...new Set(errors)]);
+    return errors.length===0;
   }
 
   async function save() {
+    if (!validateForm()) return;
     setSaving(true);
     setMessage("");
-    const response = await fetch("/api/packages",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({name:form.name,status:form.status,markets:form.markets,changeNote:form.changeNote,
-        priceSchedules:priceSchedules(),storeId:editingStore?.id??storeId,storeName:editingStore?.name??storeName,components,platforms,packageId:editingPackageId,
-        calculatorSettings:calculatorSettings?{scenarios:prefillBatch.filter(item=>item.name===form.name).map(item=>item.calculatorSettings)}:null}),
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      setMessageType("error");
-      setMessage(data.error ?? "Unable to save package");
-    } else {
+    setFormErrors([]);
+    try {
+      const response = await fetch("/api/packages",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({name:form.name,status:form.status,markets:form.markets,changeNote:form.changeNote,
+          priceSchedules:priceSchedules(),storeId:editingStore?.id??storeId,storeName:editingStore?.name??storeName,components,platforms,packageId:editingPackageId,
+          calculatorSettings:calculatorSettings?{scenarios:prefillBatch.filter(item=>item.name===form.name).map(item=>item.calculatorSettings)}:null}),
+      });
+      const data = await response.json().catch(()=>null);
+      if (!response.ok) {
+        setFormErrors([data?.error ?? `Unable to save the package (error ${response.status}). Please try again.`]);
+        return;
+      }
       setMessageType(data.sheetSyncStatus==="synced"?"success":"warning");
       setMessage(`Version ${data.version} saved · ${data.added.length} added / ${data.removed.length} removed · Google Sheet ${data.sheetSyncStatus}`);
       await load();
@@ -258,8 +320,11 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         setPrefillBatch([]);
         resetForm();
       }
+    } catch {
+      setFormErrors(["Unable to save the package. Check your connection and try again."]);
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   }
 
   function startVersion(item:PackageItem) {
@@ -280,10 +345,15 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     const campaign=schedules.find(line=>line.priceType==="campaign")??fallbackSchedule("campaign");
     const markets=[...new Set(schedules.map(line=>line.market))] as MarketName[];
     const priceFor=(market:MarketName,type:PriceType)=>schedules.find(line=>line.market===market&&line.priceType===type);
+    const samePricing=markets.every(market=>{
+      const nonCampaign=priceFor(market,"non_campaign");
+      const campaignSchedules=sourceSchedules.filter(line=>line.market===market&&line.priceType==="campaign");
+      return Boolean(nonCampaign&&campaignSchedules.length===1&&campaignSchedules.every(line=>line.originalPrice===nonCampaign.originalPrice&&line.sellingPrice===nonCampaign.sellingPrice&&line.promotionType===nonCampaign.promotionType&&line.effectiveFrom===nonCampaign.effectiveFrom&&line.effectiveTo===nonCampaign.effectiveTo));
+    });
     setEditingPackageId(stored ? item.id : null);
     setEditingStore({id:item.storeId,name:item.storeName??storeName});
     setForm({
-      name:item.name,status:"draft",markets,
+      name:item.name,status:"draft",markets,samePricing,
       nonCampaign:{promotionType:nc.promotionType,promotionMonth:nc.promotionType==="monthly"?nc.effectiveFrom.slice(0,7):"",effectiveFrom:nc.effectiveFrom,effectiveTo:nc.effectiveTo},
       campaign:{promotionType:"custom",promotionMonth:campaign.effectiveFrom.slice(0,7),campaignEvents:[...new Set(schedules.filter(line=>line.priceType==="campaign").map(line=>campaignEventForDates(line.effectiveFrom,line.effectiveTo)))],effectiveFrom:campaign.effectiveFrom,effectiveTo:campaign.effectiveTo},
       prices:{MY:{nonCampaignOriginal:String(priceFor("MY","non_campaign")?.originalPrice??""),nonCampaignSelling:String(priceFor("MY","non_campaign")?.sellingPrice??""),campaignOriginal:String(priceFor("MY","campaign")?.originalPrice??""),campaignSelling:String(priceFor("MY","campaign")?.sellingPrice??"")},SG:{nonCampaignOriginal:String(priceFor("SG","non_campaign")?.originalPrice??""),nonCampaignSelling:String(priceFor("SG","non_campaign")?.sellingPrice??""),campaignOriginal:String(priceFor("SG","campaign")?.originalPrice??""),campaignSelling:String(priceFor("SG","campaign")?.sellingPrice??"")}},
@@ -292,6 +362,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     setComponents(item.components.map(line=>({...line})));
     setPlatforms((item.platforms?.length ? item.platforms : [{platform:"Shopee" as const,packageSku:item.packageSku}]).map(line=>({...line})));
     setCalculatorSettings(null);
+    setFormErrors([]);
     setShowCreate(true);
   }
 
@@ -341,6 +412,8 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     {showCreate&&<div className={`package-modal${standaloneCreate?" standalone":""}`} role={standaloneCreate?undefined:"dialog"} aria-modal={standaloneCreate?undefined:"true"}><div className="package-form">
       <div className="package-form-head"><div><p className="kicker">{editingPackageId?"NEW VERSION":"NEW PACKAGE"}</p><h3>{editingPackageId?"Create Next Version":"Create A Package"}</h3><span>{editingStore?.name??storeName}{prefillQueue.length?` · ${prefillQueue.length} Ready Package${prefillQueue.length===1?"":"s"} Remaining`:""}</span></div><button onClick={closeCreate} aria-label="Close">×</button></div>
 
+      {formErrors.length>0&&<div className="package-error-popout" role="alert" aria-live="assertive"><div><b>Please fix the following before saving:</b><button type="button" onClick={()=>setFormErrors([])} aria-label="Dismiss errors">×</button></div><ul>{formErrors.map(error=><li key={error}>{error}</li>)}</ul></div>}
+
       {prefillBatch.length>0&&<section className="calculator-batch-transfer"><div><b>✓ {groupPrefills(prefillBatch).length} Calculator Package{groupPrefills(prefillBatch).length===1?"":"s"} Brought Over</b><span>Non-Campaign and Campaign prices are grouped by package. The next package opens after you save this one.</span></div><div className="calculator-batch-list">{groupPrefills(prefillBatch).map((group,index)=>{const nonCampaign=group.find(item=>item.calculatorSettings.serviceScenario==="Non-Campaign Day")??group[0];const campaign=group.find(item=>item.calculatorSettings.serviceScenario==="Campaign Day")??group[0];return <div className={index===0?"current":""} key={group[0].name}><span>{index===0?"Current":"Queued"}</span><b>{group[0].name}</b><strong><small>Non-Campaign</small>{money(nonCampaign.sellingPrice,"MY")}</strong><strong><small>Campaign</small>{money(campaign.sellingPrice,"MY")}</strong></div>})}</div></section>}
 
       <section className="form-section"><div className="form-section-title"><span>1</span><div><h4>Package Details</h4><p>Name, markets and shared promotion dates</p></div></div>
@@ -365,7 +438,9 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       </section>
 
       <section className="form-section pricing-section"><div className="form-section-title"><span>2</span><div><h4>Pricing & Promotion Periods</h4><p>Set Non-Campaign and Campaign prices for each market</p></div></div>
-        {([['nonCampaign','Non-Campaign'],['campaign','Campaign']] as const).map(([periodKey,title])=>{
+        <label className={`same-pricing-toggle${form.samePricing?" selected":""}`}><input type="checkbox" checked={form.samePricing} onChange={event=>setForm({...form,samePricing:event.target.checked})}/><span><b>Same for Both Non-Campaign &amp; Campaign Day Pricing</b><small>Use the Non-Campaign prices and promotion dates for Campaign Day too.</small></span></label>
+        {form.samePricing&&<div className="same-pricing-note">Campaign Day pricing is hidden because it will be copied automatically from Non-Campaign when you save.</div>}
+        {([['nonCampaign','Non-Campaign'],...(!form.samePricing?([['campaign','Campaign']] as const):[])] as const).map(([periodKey,title])=>{
           const period=form[periodKey];
           return <div className={`scenario-editor ${periodKey}`} key={periodKey}>
             <div className="scenario-editor-head"><div><b>{title}</b><span>{title==="Campaign"?"Campaign Day Price & Dates":"Always-On Price & Dates"}</span></div>{periodKey==="nonCampaign"&&<div className="promotion-toggle"><button type="button" className={period.promotionType==="monthly"?"active":""} onClick={()=>setForm({...form,[periodKey]:{...period,promotionType:"monthly"}})}>Full Month</button><button type="button" className={period.promotionType==="custom"?"active":""} onClick={()=>setForm({...form,[periodKey]:{...period,promotionType:"custom"}})}>Custom Dates</button></div>}</div>

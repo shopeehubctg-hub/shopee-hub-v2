@@ -32,6 +32,13 @@ test("package control is wired into the command center", async () => {
   assert.match(component, /Selling Markets/);
   assert.match(component, /Original Price <em>\*<\/em>/);
   assert.match(component, /Original Price equals Selling Price/);
+  assert.match(component, /Same for Both Non-Campaign &amp; Campaign Day Pricing/);
+  assert.match(component, /form\.samePricing/);
+  assert.match(component, /schedules\.push\(\{\.\.\.nonCampaign,priceType:"campaign"\}\)/);
+  assert.match(component, /package-error-popout/);
+  assert.match(component, /role="alert"/);
+  assert.match(component, /Please fix the following before saving/);
+  assert.match(component, /Check your connection and try again/);
   assert.match(component, /Add Item/);
   assert.doesNotMatch(component, /<option value="gift">Gift<\/option>/);
   assert.match(component, /Google Sheet History/);
