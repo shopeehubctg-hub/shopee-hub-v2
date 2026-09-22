@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 const SESSION_COOKIE = "shopee_hub_portal_session";
+const STAGING_BYPASS_EMAIL = "shopeehub.ctg@gmail.com";
 const PUBLIC_PAGES = new Set([
   "/login",
   "/forgot-password",
@@ -56,6 +57,24 @@ async function hasValidSession(request: NextRequest) {
 
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
+  const isStaging =
+    process.env.VERCEL_ENV === "preview" &&
+    process.env.VERCEL_GIT_COMMIT_REF === "staging";
+  if (isStaging) {
+    if (pathname === "/login") {
+      const returnTo = request.nextUrl.searchParams.get("returnTo");
+      const destination =
+        returnTo?.startsWith("/") && !returnTo.startsWith("//")
+          ? new URL(returnTo, request.url)
+          : new URL("/", request.url);
+      return NextResponse.redirect(destination);
+    }
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set("x-shopee-hub-staging-user", STAGING_BYPASS_EMAIL);
+    return NextResponse.next({
+      request: { headers: requestHeaders },
+    });
+  }
   if (PUBLIC_PAGES.has(pathname) || PUBLIC_AUTH_APIS.has(pathname)) {
     return NextResponse.next();
   }
