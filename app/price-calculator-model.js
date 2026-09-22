@@ -102,8 +102,16 @@ export function autoTopUpEligibleForStore(storeName) {
   return /dr\s*smile|zeero/i.test(String(storeName));
 }
 
-export function maximumCoFundVoucher(vouchers) {
-  return [...(vouchers ?? [])].sort((left,right)=>(Number(right?.discountAmount)||0)-(Number(left?.discountAmount)||0))[0] ?? null;
+export function maximumCoFundVoucher(vouchers, now = new Date()) {
+  const currentTime = now instanceof Date ? now.getTime() : new Date(now).getTime();
+  return [...(vouchers ?? [])]
+    .filter(voucher=>{
+      if (!voucher?.campaignStartAt || !voucher?.campaignEndAt) return false;
+      const startTime = new Date(voucher.campaignStartAt).getTime();
+      const endTime = new Date(voucher.campaignEndAt).getTime();
+      return Number.isFinite(startTime) && Number.isFinite(endTime) && startTime <= endTime && endTime >= currentTime;
+    })
+    .sort((left,right)=>(Number(right?.discountAmount)||0)-(Number(left?.discountAmount)||0))[0] ?? null;
 }
 
 /**

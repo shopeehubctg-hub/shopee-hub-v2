@@ -166,7 +166,14 @@ test("Shopee calculator applies Auto Top Up as a percentage fee", async () => {
   assert.equal(autoTopUpEligibleForStore("Dr Smile Whitening by CTG4u"),true);
   assert.equal(autoTopUpEligibleForStore("Zeero Skincare Official"),true);
   assert.equal(autoTopUpEligibleForStore("AgePros By Swissmed"),false);
-  assert.equal(maximumCoFundVoucher([{discountAmount:22},{discountAmount:30},{discountAmount:3}]).discountAmount,30);
+  const now = new Date("2026-09-22T00:00:00+08:00");
+  assert.equal(maximumCoFundVoucher([
+    {discountAmount:30,campaignStartAt:"2026-08-14T20:00:00+08:00",campaignEndAt:"2026-08-25T23:59:00+08:00"},
+    {discountAmount:22,campaignStartAt:"2026-09-14T20:00:00+08:00",campaignEndAt:"2026-09-25T23:59:00+08:00"},
+    {discountAmount:3,campaignStartAt:"2026-10-14T20:00:00+08:00",campaignEndAt:"2026-10-25T23:59:00+08:00"},
+  ],now).discountAmount,22);
+  assert.equal(maximumCoFundVoucher([{discountAmount:30,campaignStartAt:null,campaignEndAt:null}],now),null);
+  assert.equal(maximumCoFundVoucher([{discountAmount:30,campaignStartAt:"2026-08-14T20:00:00+08:00",campaignEndAt:"2026-08-25T23:59:00+08:00"}],now),null);
   assert.equal(maximumCoFundVoucher([]),null);
 });
 

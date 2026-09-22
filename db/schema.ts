@@ -175,6 +175,8 @@ export const coFundVouchers = pgTable("co_fund_vouchers", {
   sourceStoreName:text("source_store_name").notNull(),
   campaignName:text("campaign_name").notNull(),
   campaignDate:date("campaign_date", {mode:"string"}),
+  campaignStartAt:timestamp("campaign_start_at", {withTimezone:true,mode:"string"}),
+  campaignEndAt:timestamp("campaign_end_at", {withTimezone:true,mode:"string"}),
   voucherName:text("voucher_name").notNull(),
   discountAmount:numeric("discount_amount", {precision:12,scale:2,mode:"number"}).notNull(),
   currency:text("currency").notNull().default("MYR"),

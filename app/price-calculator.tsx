@@ -20,7 +20,7 @@ type FeeDraft = {
   shopeeVoucher:NumberValue; sellerVoucher:NumberValue;
   sellerShipping:NumberValue; facebookShipping:NumberValue;
 };
-type CoFundVoucher = { id:number; campaignName:string; campaignDate:string|null; voucherName:string; discountAmount:number; currency:string; quantity:number };
+type CoFundVoucher = { id:number; campaignName:string; campaignDate:string|null; campaignStartAt:string|null; campaignEndAt:string|null; voucherName:string; discountAmount:number; currency:string; quantity:number };
 type Props = { storeName?:string; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; onCreatePackage?:(prefill:PackagePrefill)=>void; onCreatePackages?:(prefills:PackagePrefill[])=>void };
 type ConfirmationRow = { prefill:PackagePrefill; scenario:string; quantity:number; facebookPpu:number|null; customerPpu:number|null };
 type PendingConfirmation = { kind:"single"|"batch"; rows:ConfirmationRow[] };
