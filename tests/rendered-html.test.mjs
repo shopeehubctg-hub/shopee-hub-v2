@@ -286,10 +286,10 @@ test("price calculator is available in navigation with all required outputs", as
   assert.doesNotMatch(calculator, /scenario-voucher/);
   assert.doesNotMatch(calculator, /Campaign Day 最高百分比收费/);
   assert.match(page, /storeName=\{allStoresSelected/);
-  assert.match(voucherPresets, /Rounded Up Buffer/);
+  assert.match(voucherPresets, /Average Voucher Rate/);
   assert.match(voucherPresets, /Mizino Premium/);
-  assert.match(voucherPresets, /normal:15,campaign:20/);
-  assert.match(voucherPresets, /"Eco Plus":\{normal:18,campaign:27\}/);
+  assert.match(voucherPresets, /normal:14\.02,campaign:19\.26/);
+  assert.match(voucherPresets, /"Eco Plus":\{normal:17\.61,campaign:26\.16\}/);
   assert.match(calculator, /CoFund Voucher/);
   assert.doesNotMatch(calculator, /Extra Profit Target/);
   assert.match(calculator, /SPayLater/);
@@ -343,13 +343,14 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(migration, /calculator_settings/);
 });
 
-test("voucher presets match the latest Supabase-backed rounded buffers", async () => {
+test("voucher presets match the latest Supabase-backed averages", async () => {
   const { STORE_VOUCHER_PRESETS, voucherPresetFor } = await import("../app/voucher-presets.js");
   assert.equal(Object.keys(STORE_VOUCHER_PRESETS).length, 34);
-  assert.deepEqual(voucherPresetFor("AgePros By Swissmed"), {store:"Agepros",normal:16,campaign:21,available:true});
-  assert.deepEqual(voucherPresetFor("Naturelish Eco Plus by CTG4u"), {store:"Eco Plus",normal:18,campaign:27,available:true});
+  assert.deepEqual(voucherPresetFor("AgePros By Swissmed"), {store:"Agepros",normal:15.62,campaign:20.05,available:true});
+  assert.deepEqual(voucherPresetFor("Naturelish Eco Plus by CTG4u"), {store:"Eco Plus",normal:17.61,campaign:26.16,available:true});
   assert.deepEqual(voucherPresetFor("Supu"), {store:"SUPU",normal:9,campaign:20,available:true});
-  assert.deepEqual(voucherPresetFor("iLady Haircare by CTG4u"), {store:"iLady",normal:16,campaign:22,available:true});
+  assert.deepEqual(voucherPresetFor("SUPU • 食补"), {store:"SUPU",normal:9,campaign:20,available:true});
+  assert.deepEqual(voucherPresetFor("iLady Haircare by CTG4u"), {store:"iLady",normal:15.44,campaign:21.65,available:true});
 });
 
 test("PPU and price ladder calculations use valid main-product quantities", async () => {
