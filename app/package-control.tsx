@@ -9,6 +9,8 @@ type PlatformLine = { platform:PlatformName; packageSku:string };
 type MarketName = "MY"|"SG";
 type PriceType = "non_campaign"|"campaign";
 type CampaignEvent = "dday"|"mid_month"|"payday";
+type FormSection = "Package Details"|"Pricing & Promotion"|"Inventory Items"|"Saving";
+type FormError = { section:FormSection; message:string };
 type PriceSchedule = {
   market:MarketName; priceType:PriceType; originalPrice:number; sellingPrice:number;
   promotionType:"monthly"|"custom"; effectiveFrom:string; effectiveTo:string;
@@ -77,7 +79,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   const [saving,setSaving] = useState(false);
   const [message,setMessage] = useState("");
   const [messageType,setMessageType] = useState<"success"|"warning"|"error">("success");
-  const [formErrors,setFormErrors] = useState<string[]>([]);
+  const [formErrors,setFormErrors] = useState<FormError[]>([]);
   const [editingPackageId,setEditingPackageId] = useState<string|null>(null);
   const [editingStore,setEditingStore] = useState<{id:string;name:string}|null>(null);
   const [openHistory,setOpenHistory] = useState<string|null>(null);
@@ -241,47 +243,48 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   }
 
   function validateForm() {
-    const errors:string[]=[];
-    if (!form.name.trim()) errors.push("Enter a package name.");
-    if (!form.markets.length) errors.push("Select at least one selling market.");
-    if (!platforms.length) errors.push("Select at least one sales platform.");
+    const errors:FormError[]=[];
+    const addError=(section:FormSection,message:string)=>errors.push({section,message});
+    if (!form.name.trim()) addError("Package Details","Enter a package name.");
+    if (!form.markets.length) addError("Package Details","Select at least one selling market.");
+    if (!platforms.length) addError("Package Details","Select at least one sales platform.");
     platforms.forEach((line,index)=>{
-      if (!line.packageSku.trim()) errors.push(`Enter the SKU for ${line.platform} listing ${platforms.filter((item,itemIndex)=>item.platform===line.platform&&itemIndex<=index).length}.`);
+      if (!line.packageSku.trim()) addError("Package Details",`Enter the SKU for ${line.platform} listing ${platforms.filter((item,itemIndex)=>item.platform===line.platform&&itemIndex<=index).length}.`);
     });
     const normalizedPlatformSkus=platforms.map(line=>line.packageSku.trim().toLowerCase()).filter(Boolean);
-    if (new Set(normalizedPlatformSkus).size!==normalizedPlatformSkus.length) errors.push("Each platform listing SKU must be unique.");
+    if (new Set(normalizedPlatformSkus).size!==normalizedPlatformSkus.length) addError("Package Details","Each platform listing SKU must be unique.");
 
     const validatePeriod=(label:string,period:typeof form.nonCampaign)=>{
-      if (period.promotionType==="monthly"&&!period.promotionMonth) errors.push(`Select the ${label} promotion month.`);
-      if (period.promotionType==="custom"&&(!period.effectiveFrom||!period.effectiveTo)) errors.push(`Enter both ${label} start and end dates.`);
-      if (period.effectiveFrom&&period.effectiveTo&&period.effectiveTo<period.effectiveFrom) errors.push(`${label} end date cannot be before its start date.`);
+      if (period.promotionType==="monthly"&&!period.promotionMonth) addError("Pricing & Promotion",`Select the ${label} promotion month.`);
+      if (period.promotionType==="custom"&&(!period.effectiveFrom||!period.effectiveTo)) addError("Pricing & Promotion",`Enter both ${label} start and end dates.`);
+      if (period.effectiveFrom&&period.effectiveTo&&period.effectiveTo<period.effectiveFrom) addError("Pricing & Promotion",`${label} end date cannot be before its start date.`);
     };
     validatePeriod("Non-Campaign",form.nonCampaign);
     if (!form.samePricing) {
-      if (!form.campaign.promotionMonth) errors.push("Select the Campaign month.");
-      if (!form.campaign.campaignEvents.length) errors.push("Select at least one Campaign event.");
+      if (!form.campaign.promotionMonth) addError("Pricing & Promotion","Select the Campaign month.");
+      if (!form.campaign.campaignEvents.length) addError("Pricing & Promotion","Select at least one Campaign event.");
     }
 
     form.markets.forEach(market=>{
       const validatePrice=(label:string,originalValue:string,sellingValue:string)=>{
         const original=Number(originalValue);
         const selling=Number(sellingValue);
-        if (!originalValue||!Number.isFinite(original)||original<=0) errors.push(`Enter a valid ${market} ${label} original price.`);
-        if (!sellingValue||!Number.isFinite(selling)||selling<=0) errors.push(`Enter a valid ${market} ${label} selling price.`);
-        if (original>0&&selling>original) errors.push(`${market} ${label} selling price cannot be higher than the original price.`);
+        if (!originalValue||!Number.isFinite(original)||original<=0) addError("Pricing & Promotion",`Enter a valid ${market} ${label} original price.`);
+        if (!sellingValue||!Number.isFinite(selling)||selling<=0) addError("Pricing & Promotion",`Enter a valid ${market} ${label} selling price.`);
+        if (original>0&&selling>original) addError("Pricing & Promotion",`${market} ${label} selling price cannot be higher than the original price.`);
       };
       validatePrice("Non-Campaign",form.prices[market].nonCampaignOriginal,form.prices[market].nonCampaignSelling);
       if (!form.samePricing) validatePrice("Campaign",form.prices[market].campaignOriginal,form.prices[market].campaignSelling);
     });
 
-    if (!components.length) errors.push("Add at least one OXM inventory item.");
+    if (!components.length) addError("Inventory Items","Add at least one OXM inventory item.");
     components.forEach((line,index)=>{
-      if (!line.inventorySku.trim()) errors.push(`Enter the OXM inventory SKU for item ${index+1}.`);
-      if (!line.name.trim()) errors.push(`Enter the name for inventory item ${index+1}.`);
-      if (!Number.isInteger(line.quantity)||line.quantity<1) errors.push(`Enter a whole-number quantity of at least 1 for inventory item ${index+1}.`);
+      if (!line.inventorySku.trim()) addError("Inventory Items",`Enter the OXM inventory SKU for item ${index+1}.`);
+      if (!line.name.trim()) addError("Inventory Items",`Enter the name for inventory item ${index+1}.`);
+      if (!Number.isInteger(line.quantity)||line.quantity<1) addError("Inventory Items",`Enter a whole-number quantity of at least 1 for inventory item ${index+1}.`);
     });
-    if (!form.changeNote.trim()) errors.push("Enter a change note explaining this package version.");
-    setFormErrors([...new Set(errors)]);
+    if (!form.changeNote.trim()) addError("Package Details","Enter a change note explaining this package version.");
+    setFormErrors(errors.filter((error,index)=>errors.findIndex(item=>item.section===error.section&&item.message===error.message)===index));
     return errors.length===0;
   }
 
@@ -300,7 +303,9 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       });
       const data = await response.json().catch(()=>null);
       if (!response.ok) {
-        setFormErrors([data?.error ?? `Unable to save the package (error ${response.status}). Please try again.`]);
+        const apiErrors=Array.isArray(data?.errors)?data.errors.filter((error:unknown):error is FormError=>Boolean(error&&typeof error==="object"&&"section" in error&&"message" in error)):
+          [{section:(data?.section??"Saving") as FormSection,message:data?.error??`We could not save the package (error ${response.status}). Please try again.`}];
+        setFormErrors(apiErrors.length?apiErrors:[{section:"Saving",message:"We could not save the package. Please try again."}]);
         return;
       }
       setMessageType(data.sheetSyncStatus==="synced"?"success":"warning");
@@ -321,7 +326,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         resetForm();
       }
     } catch {
-      setFormErrors(["Unable to save the package. Check your connection and try again."]);
+      setFormErrors([{section:"Saving",message:"We could not reach the server. Check your internet connection and try again."}]);
     } finally {
       setSaving(false);
     }
@@ -412,7 +417,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     {showCreate&&<div className={`package-modal${standaloneCreate?" standalone":""}`} role={standaloneCreate?undefined:"dialog"} aria-modal={standaloneCreate?undefined:"true"}><div className="package-form">
       <div className="package-form-head"><div><p className="kicker">{editingPackageId?"NEW VERSION":"NEW PACKAGE"}</p><h3>{editingPackageId?"Create Next Version":"Create A Package"}</h3><span>{editingStore?.name??storeName}{prefillQueue.length?` · ${prefillQueue.length} Ready Package${prefillQueue.length===1?"":"s"} Remaining`:""}</span></div><button onClick={closeCreate} aria-label="Close">×</button></div>
 
-      {formErrors.length>0&&<div className="package-error-popout" role="alert" aria-live="assertive"><div><b>Please fix the following before saving:</b><button type="button" onClick={()=>setFormErrors([])} aria-label="Dismiss errors">×</button></div><ul>{formErrors.map(error=><li key={error}>{error}</li>)}</ul></div>}
+      {formErrors.length>0&&<div className="package-error-popout" role="alert" aria-live="assertive"><div><b>We could not save this package. Please check:</b><button type="button" onClick={()=>setFormErrors([])} aria-label="Dismiss errors">×</button></div>{([...new Set(formErrors.map(error=>error.section))] as FormSection[]).map(section=><div className="package-error-group" key={section}><strong>{section}</strong><ul>{formErrors.filter(error=>error.section===section).map(error=><li key={`${error.section}-${error.message}`}>{error.message}</li>)}</ul></div>)}</div>}
 
       {prefillBatch.length>0&&<section className="calculator-batch-transfer"><div><b>✓ {groupPrefills(prefillBatch).length} Calculator Package{groupPrefills(prefillBatch).length===1?"":"s"} Brought Over</b><span>Non-Campaign and Campaign prices are grouped by package. The next package opens after you save this one.</span></div><div className="calculator-batch-list">{groupPrefills(prefillBatch).map((group,index)=>{const nonCampaign=group.find(item=>item.calculatorSettings.serviceScenario==="Non-Campaign Day")??group[0];const campaign=group.find(item=>item.calculatorSettings.serviceScenario==="Campaign Day")??group[0];return <div className={index===0?"current":""} key={group[0].name}><span>{index===0?"Current":"Queued"}</span><b>{group[0].name}</b><strong><small>Non-Campaign</small>{money(nonCampaign.sellingPrice,"MY")}</strong><strong><small>Campaign</small>{money(campaign.sellingPrice,"MY")}</strong></div>})}</div></section>}
 

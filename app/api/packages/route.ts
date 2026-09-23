@@ -37,6 +37,50 @@ type PriceScheduleInput = {
   effectiveTo: string;
 };
 
+type PackageErrorSection = "Package Details" | "Pricing & Promotion" | "Inventory Items" | "Saving";
+type DatabaseError = Error & { code?:string; constraint_name?:string; constraint?:string; table_name?:string; table?:string; column_name?:string; column?:string };
+
+function packageError(section:PackageErrorSection,error:string,status=400) {
+  return Response.json({ section,error,errors:[{ section,message:error }] },{ status });
+}
+
+function saveFailure(error:unknown) {
+  const databaseError=error as DatabaseError;
+  const code=databaseError?.code ?? "unknown";
+  const constraint=databaseError?.constraint_name ?? databaseError?.constraint ?? "";
+  const table=databaseError?.table_name ?? databaseError?.table ?? "";
+  const column=databaseError?.column_name ?? databaseError?.column ?? "";
+  console.error("Package save failed",{ code,constraint,table,column });
+  if (code==="23505"&&(/package_sku_store|package_platform/.test(constraint)||table==="packages")) {
+    return packageError("Package Details","This listing SKU is already used by another package in this store. Enter a different SKU.",409);
+  }
+  if (code==="23505"&&/package_price/.test(constraint)) {
+    return packageError("Pricing & Promotion","The same market and promotion period was added more than once. Check the selected dates and Campaign events.",409);
+  }
+  if (code==="23505"&&/package_version/.test(constraint)) {
+    return packageError("Saving","Someone created a new version of this package at the same time. Refresh the page, review the latest version and try again.",409);
+  }
+  if (code==="23503"&&(/store/.test(constraint)||column==="store_id")) {
+    return packageError("Package Details","This store is no longer available to your account. Select the store again and retry.",409);
+  }
+  if ((code==="23514"||code==="22007"||code==="22008")&&(table==="package_prices"||/price|period/.test(constraint))) {
+    return packageError("Pricing & Promotion","One or more prices or promotion dates are not valid. Check the amount and date range, then try again.");
+  }
+  if (code==="23502"&&table==="package_platform_skus") {
+    return packageError("Package Details","A selected platform is missing its listing SKU. Complete the SKU and try again.");
+  }
+  if (code==="23502"&&table==="package_prices") {
+    return packageError("Pricing & Promotion","A price or promotion date is missing. Complete the Pricing & Promotion section and try again.");
+  }
+  if (code==="23502"&&table==="package_versions") {
+    return packageError("Inventory Items","The package items or version details are incomplete. Check every inventory item and try again.");
+  }
+  if (["57P01","08000","08003","08006","53300","ETIMEDOUT","ECONNREFUSED"].includes(code)) {
+    return packageError("Saving","The database is temporarily unavailable. Your package was not changed. Wait a moment and try again.",503);
+  }
+  return packageError("Saving","We could not save this package. Your changes were not applied. Please try again; if it happens again, contact the Shopee Hub specialist.",500);
+}
+
 const seedPackages = [
   {
     id:"seed-agepros-1", storeId:"shopee-agepros-by-swissmed", packageSku:"AGP01JUN", name:"AgePros · BUY 1 FREE 5",
@@ -216,13 +260,13 @@ export async function GET(request: Request) {
   });
 }
 
-export async function POST(request: Request) {
+async function savePackage(request: Request) {
   const user = await getChatGPTUser();
-  if (!user) return Response.json({ error:"Authentication required" }, { status:401 });
+  if (!user) return packageError("Saving","Your login session has expired. Sign in again, then retry.",401);
   const membership = await membershipFor(user.email);
-  if (!membership) return Response.json({ error:"Project owner access required" }, { status:403 });
+  if (!membership) return packageError("Saving","Your account is not assigned to this workspace. Contact an administrator.",403);
   const accessDb = await getDb();
-  if (!await canAccessModule(accessDb, membership, "packages")) return Response.json({ error:"Packages & Pricing is not enabled for this account" }, { status:403 });
+  if (!await canAccessModule(accessDb, membership, "packages")) return packageError("Saving","Packages & Pricing is not enabled for your account. Contact an administrator.",403);
   const body = await request.json() as {
     packageId?: string;
     storeId?: string;
@@ -243,30 +287,30 @@ export async function POST(request: Request) {
   };
   const platforms = (body.platforms ?? []).map(item => ({ platform:item.platform, packageSku:String(item.packageSku ?? "").trim() }));
   if (!body.storeId || !body.name?.trim() || !Array.isArray(body.components) || !body.components.length || !platforms.length) {
-    return Response.json({ error:"Store, package name, at least one platform and items are required" }, { status:400 });
+    return packageError("Package Details","Complete the store, package name and at least one sales platform before saving.");
   }
-  if (!await canAccessStore(accessDb,membership,body.storeId)) return Response.json({ error:"Store access denied" }, { status:403 });
+  if (!await canAccessStore(accessDb,membership,body.storeId)) return packageError("Package Details","You do not have permission to create packages for this store.",403);
   const schedules=(body.priceSchedules??[]).map(item=>({...item,originalPrice:Math.round(Number(item.originalPrice)*100),sellingPrice:Math.round(Number(item.sellingPrice)*100)}));
   const markets=[...new Set(body.markets??[])];
   if (markets.some(market=>!["MY","SG"].includes(market)) || schedules.some(item=>!markets.includes(item.market))) {
-    return Response.json({ error:"Markets must be MY or SG and match the enabled price cards" }, { status:400 });
+    return packageError("Pricing & Promotion","The selected markets do not match the price cards. Select MY or SG again.");
   }
   if (!markets.length || markets.some(market=>schedules.filter(item=>item.market===market&&item.priceType==="non_campaign").length!==1||!schedules.some(item=>item.market===market&&item.priceType==="campaign"))) {
-    return Response.json({ error:"Choose at least one market and complete both Campaign and Non-Campaign pricing" }, { status:400 });
+    return packageError("Pricing & Promotion","Select at least one market and complete its Non-Campaign and Campaign pricing.");
   }
   if (schedules.some(item=>!["MY","SG"].includes(item.market)||!["campaign","non_campaign"].includes(item.priceType)||!["monthly","custom"].includes(item.promotionType)||!item.effectiveFrom||!item.effectiveTo||item.effectiveTo<item.effectiveFrom)) {
-    return Response.json({ error:"Every price scenario requires a valid promotion period" }, { status:400 });
+    return packageError("Pricing & Promotion","Every price requires a valid start date and end date. The end date cannot be earlier than the start date.");
   }
   const periodKeys=(market:string,priceType:"non_campaign"|"campaign")=>schedules.filter(item=>item.market===market&&item.priceType===priceType).map(item=>`${item.promotionType}|${item.effectiveFrom}|${item.effectiveTo}`).sort().join(",");
   if (markets.some(market=>periodKeys(market,"non_campaign")!==periodKeys(markets[0],"non_campaign")||periodKeys(market,"campaign")!==periodKeys(markets[0],"campaign"))) {
-    return Response.json({ error:"MY and SG must share the same selected dates for each pricing scenario" }, { status:400 });
+    return packageError("Pricing & Promotion","MY and SG must use the same promotion dates for each pricing type.");
   }
   if (platforms.some(item => !["Shopee","Lazada","TikTok Shop"].includes(item.platform) || !item.packageSku)) {
-    return Response.json({ error:"Every selected listing requires its own SKU" }, { status:400 });
+    return packageError("Package Details","Every selected sales platform needs its own listing SKU.");
   }
   const normalizedSkus = platforms.map(item => item.packageSku.toUpperCase());
   if (new Set(normalizedSkus).size !== normalizedSkus.length) {
-    return Response.json({ error:"Every listing SKU must be different" }, { status:400 });
+    return packageError("Package Details","Each platform listing SKU must be different.");
   }
   const components = body.components.map(item => ({
     inventorySku:String(item.inventorySku ?? "").trim(),
@@ -275,20 +319,25 @@ export async function POST(request: Request) {
     kind:item.kind === "gift" ? "gift" as const : "product" as const,
   }));
   if (components.some(item => !item.inventorySku || !item.name || !Number.isInteger(item.quantity) || item.quantity < 1)) {
-    return Response.json({ error:"Every component requires an Inventory SKU, name and whole-number quantity" }, { status:400 });
+    return packageError("Inventory Items","Every inventory item needs an OXM SKU, item name and a whole-number quantity of at least 1.");
   }
   if (schedules.some(item=>!Number.isFinite(item.originalPrice)||!Number.isFinite(item.sellingPrice)||item.originalPrice<=0||item.sellingPrice<=0||item.sellingPrice>item.originalPrice)) {
-    return Response.json({ error:"Original Price is required; prices must be positive and Selling Price cannot exceed it" }, { status:400 });
+    return packageError("Pricing & Promotion","Enter positive Original and Selling prices. Selling Price cannot be higher than Original Price.");
   }
 
   const db = await getDb();
   const requestedPackageId = body.packageId ? String(body.packageId) : null;
+  const [packageSkuConflict] = await db.select({ id:packages.id }).from(packages)
+    .where(and(eq(packages.storeId,body.storeId),eq(packages.packageSku,platforms[0].packageSku))).limit(1);
+  if (packageSkuConflict && (!requestedPackageId || packageSkuConflict.id!==requestedPackageId)) {
+    return packageError("Package Details",`Listing SKU ${platforms[0].packageSku} is already used by another package in this store. Enter a different SKU.`,409);
+  }
   for (const line of platforms) {
     const conflict = await db.select({ packageId:packagePlatformSkus.packageId }).from(packagePlatformSkus)
       .where(and(eq(packagePlatformSkus.storeId, body.storeId), eq(packagePlatformSkus.platform, line.platform), eq(packagePlatformSkus.packageSku, line.packageSku)))
       .limit(1);
     if (conflict[0] && (!requestedPackageId || conflict[0].packageId !== requestedPackageId)) {
-      return Response.json({ error:`${line.platform} Package SKU ${line.packageSku} is already used in this store` }, { status:409 });
+      return packageError("Package Details",`${line.platform} listing SKU ${line.packageSku} is already used by another package in this store. Enter a different SKU.`,409);
     }
   }
 
@@ -300,37 +349,39 @@ export async function POST(request: Request) {
   if (requestedPackageId) {
     const [existing] = await db.select().from(packages)
       .where(and(eq(packages.id, requestedPackageId), eq(packages.tenantId, membership.tenantId))).limit(1);
-    if (!existing) return Response.json({ error:"Package not found" }, { status:404 });
+    if (!existing) return packageError("Saving","This package no longer exists. Refresh the page and try again.",404);
     if (existing.storeId !== body.storeId || !await canAccessStore(db,membership,existing.storeId)) {
-      return Response.json({ error:"Store access denied" }, { status:403 });
+      return packageError("Package Details","You no longer have permission to edit packages for this store.",403);
     }
     const [latest] = await db.select().from(packageVersions)
       .where(eq(packageVersions.packageId, requestedPackageId)).orderBy(desc(packageVersions.version)).limit(1);
     nextVersion = Number(latest?.version ?? 0) + 1;
     previousComponents = latest?.components ?? [];
-    await db.update(packages).set({
-      name:body.name.trim(),
-      market:markets.join(","),
-      status:body.status ?? "draft",
-      updatedAt:now,
-    }).where(eq(packages.id, requestedPackageId));
-  } else {
-    await db.insert(packages).values({
-      id:packageId,
-      tenantId:membership.tenantId,
-      storeId:body.storeId,
-      packageSku:platforms[0].packageSku,
-      name:body.name.trim(),
-      channel:platforms.map(item => item.platform).join(", "),
-      market:markets.join(","),
-      status:body.status ?? "draft",
-      createdBy:user.email,
-      updatedAt:now,
-    });
   }
 
   const diff = componentDiff(previousComponents, components);
   await db.transaction(async tx => {
+    if (requestedPackageId) {
+      await tx.update(packages).set({
+        name:body.name!.trim(),
+        market:markets.join(","),
+        status:body.status ?? "draft",
+        updatedAt:now,
+      }).where(eq(packages.id, requestedPackageId));
+    } else {
+      await tx.insert(packages).values({
+        id:packageId,
+        tenantId:membership.tenantId,
+        storeId:body.storeId!,
+        packageSku:platforms[0].packageSku,
+        name:body.name!.trim(),
+        channel:platforms.map(item => item.platform).join(", "),
+        market:markets.join(","),
+        status:body.status ?? "draft",
+        createdBy:user.email,
+        updatedAt:now,
+      });
+    }
     await tx.insert(packageVersions).values({
       id:versionId,
       packageId,
@@ -396,4 +447,12 @@ export async function POST(request: Request) {
     sheetSyncReason:"reason" in sync ? sync.reason : null,
     historySheetUrl:"https://docs.google.com/spreadsheets/d/1mpB7KVCGzP_9IXYVbhJZsLsndM4ladU3cJre5cfALAA/edit#gid=2129880014",
   }, { status:201 });
+}
+
+export async function POST(request:Request) {
+  try {
+    return await savePackage(request);
+  } catch (error) {
+    return saveFailure(error);
+  }
 }
