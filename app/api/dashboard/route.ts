@@ -201,6 +201,19 @@ async function readCoFundVouchers(storeId:string, tenantId?:string) {
   }
 }
 
+async function readVoucherPreset(storeId:string) {
+  try {
+    const rows=await supabaseRest<Array<{source_store_name:string;non_campaign_rate:number;campaign_rate:number}>>(
+      `store_voucher_presets?select=source_store_name,non_campaign_rate,campaign_rate&store_id=eq.${encodeURIComponent(storeId)}&limit=1`,
+    );
+    const row=rows[0];
+    if(!row)return null;
+    return {store:row.source_store_name,normal:Number(row.non_campaign_rate),campaign:Number(row.campaign_rate),available:true as const};
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(request: Request) {
   // Vercel serves the portable dashboard data, while identity and permissions
   // are read securely from the staging Supabase project.
@@ -235,7 +248,7 @@ export async function GET(request: Request) {
     const snapshotPayload = selectedStore ? storeSnapshots[selectedStore.name] ?? null : null;
     const sheetBalance = selectedStore ? await readSheetBalance(selectedStore.name) : null;
     const productProfile = selectedStore ? await readProductCatalogSheet(selectedStore.name) : null;
-    const selectedCoFundVouchers = selectedStore ? await readCoFundVouchers(selectedStore.id) : [];
+    const [selectedCoFundVouchers,voucherPreset] = selectedStore ? await Promise.all([readCoFundVouchers(selectedStore.id),readVoucherPreset(selectedStore.id)]) : [[],null];
     return Response.json({
       customer: { id: "shopee-hub", name: "Shopee Hub" },
       stores: visibleStores.map((store) => {
@@ -253,6 +266,7 @@ export async function GET(request: Request) {
       actions: [],
       productProfile,
       coFundVouchers:selectedCoFundVouchers,
+      voucherPreset,
       user: { email: user.email },
       access: { role:membership.role, enabledModules, clientEnabledModules:enabledModules, canManagePermissions:membership.role==="superadmin" },
       dataSources: {
@@ -339,6 +353,7 @@ export async function GET(request: Request) {
     .orderBy(desc(managementActions.actionDate), desc(managementActions.id))
     .limit(20);
   const selectedCoFundVouchers = selectedStore ? await readCoFundVouchers(selectedStore.id,tenant.id) : [];
+  const voucherPreset = selectedStore ? await readVoucherPreset(selectedStore.id) : null;
   const sourceShopName=selectedStore?sourceShopNameFor(selectedStore.name):null;
   const storedProducts=!sourceShopName?[]:await db.select().from(projectProductCatalog)
     .where(eq(projectProductCatalog.sourceShopName,sourceShopName))
@@ -389,6 +404,7 @@ export async function GET(request: Request) {
     actions,
     productProfile,
     coFundVouchers:selectedCoFundVouchers,
+    voucherPreset,
     user: { email: user.email },
     access: { role: membership.role, enabledModules, clientEnabledModules, canManagePermissions: membership.role === "superadmin" },
   }, { headers: { "Cache-Control": "private, no-store" } });

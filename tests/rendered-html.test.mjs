@@ -281,14 +281,15 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /Categories with the same Commission Rate are grouped/);
   assert.doesNotMatch(calculator, /其他计算设定/);
   assert.doesNotMatch(calculator, /Voucher preset 根据/);
-  assert.match(voucherPresets, /Last Month Avg\./);
+  assert.match(voucherPresets, /Latest Avg\./);
   assert.match(calculator, /<h2>Markup Calculator<\/h2>/);
   assert.doesNotMatch(calculator, /scenario-voucher/);
   assert.doesNotMatch(calculator, /Campaign Day 最高百分比收费/);
   assert.match(page, /storeName=\{allStoresSelected/);
   assert.match(voucherPresets, /Rounded Up Buffer/);
   assert.match(voucherPresets, /Mizino Premium/);
-  assert.match(voucherPresets, /normal:13,campaign:20/);
+  assert.match(voucherPresets, /normal:15,campaign:20/);
+  assert.match(voucherPresets, /"Eco Plus":\{normal:18,campaign:27\}/);
   assert.match(calculator, /CoFund Voucher/);
   assert.doesNotMatch(calculator, /Extra Profit Target/);
   assert.match(calculator, /SPayLater/);
@@ -340,6 +341,15 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(packageRoute, /calculatorSettings:body\.calculatorSettings/);
   assert.match(schema, /calculatorSettings/);
   assert.match(migration, /calculator_settings/);
+});
+
+test("voucher presets match the latest Supabase-backed rounded buffers", async () => {
+  const { STORE_VOUCHER_PRESETS, voucherPresetFor } = await import("../app/voucher-presets.js");
+  assert.equal(Object.keys(STORE_VOUCHER_PRESETS).length, 34);
+  assert.deepEqual(voucherPresetFor("AgePros By Swissmed"), {store:"Agepros",normal:16,campaign:21,available:true});
+  assert.deepEqual(voucherPresetFor("Naturelish Eco Plus by CTG4u"), {store:"Eco Plus",normal:18,campaign:27,available:true});
+  assert.deepEqual(voucherPresetFor("Supu"), {store:"SUPU",normal:9,campaign:20,available:true});
+  assert.deepEqual(voucherPresetFor("iLady Haircare by CTG4u"), {store:"iLady",normal:16,campaign:22,available:true});
 });
 
 test("PPU and price ladder calculations use valid main-product quantities", async () => {

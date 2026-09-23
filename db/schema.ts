@@ -10,6 +10,7 @@ import {
   jsonb,
   numeric,
   pgTable,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
@@ -167,6 +168,21 @@ export const projectProductCatalog = pgTable("project_product_catalog", {
   uniqueIndex("project_product_catalog_shop_item_idx").on(table.sourceShopName,table.itemId),
   index("project_product_catalog_shop_main_idx").on(table.sourceShopName,table.mainProduct),
 ]);
+
+export const storeVoucherPresets = pgTable("store_voucher_presets", {
+  storeId:text("store_id").primaryKey().references(()=>stores.id,{onDelete:"cascade"}),
+  tenantId:text("tenant_id").notNull().references(()=>tenants.id,{onDelete:"cascade"}),
+  sourceStoreName:text("source_store_name").notNull(),
+  nonCampaignAverage:numeric("non_campaign_average",{precision:5,scale:2,mode:"number"}).notNull(),
+  campaignAverage:numeric("campaign_average",{precision:5,scale:2,mode:"number"}).notNull(),
+  nonCampaignRate:smallint("non_campaign_rate").notNull(),
+  campaignRate:smallint("campaign_rate").notNull(),
+  sourceSheetId:text("source_sheet_id").notNull(),
+  sourceTab:text("source_tab").notNull().default("Final"),
+  sourceRow:integer("source_row").notNull(),
+  sourceUpdatedAt:timestamp("source_updated_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),
+  updatedAt:timestamp("updated_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),
+},table=>[index("store_voucher_presets_tenant_id_idx").on(table.tenantId)]);
 
 export const coFundVouchers = pgTable("co_fund_vouchers", {
   id:bigserial("id", {mode:"number"}).primaryKey(),

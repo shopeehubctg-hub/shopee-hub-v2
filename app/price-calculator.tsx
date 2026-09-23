@@ -21,7 +21,8 @@ type FeeDraft = {
   sellerShipping:NumberValue; facebookShipping:NumberValue;
 };
 type CoFundVoucher = { id:number; campaignName:string; campaignDate:string|null; campaignStartAt:string|null; campaignEndAt:string|null; voucherName:string; discountAmount:number; currency:string; quantity:number };
-type Props = { storeName?:string; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; onCreatePackage?:(prefill:PackagePrefill)=>void; onCreatePackages?:(prefills:PackagePrefill[])=>void };
+type VoucherPreset = { store:string; normal:number; campaign:number; available:true };
+type Props = { storeName?:string; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; voucherPreset?:VoucherPreset|null; onCreatePackage?:(prefill:PackagePrefill)=>void; onCreatePackages?:(prefills:PackagePrefill[])=>void };
 type ConfirmationRow = { prefill:PackagePrefill; scenario:string; quantity:number; facebookPpu:number|null; customerPpu:number|null };
 type PendingConfirmation = { kind:"single"|"batch"; rows:ConfirmationRow[] };
 type LadderRow = { name:string; quantity:number; customerPrice:number; ppu:number; status:"base"|"better"|"higher"; label:string };
@@ -42,7 +43,7 @@ const pct = (value:number) => `${Number.isFinite(value) ? value.toFixed(2) : "0.
 const positive = (value:string|number) => Math.max(0, Number(value) || 0);
 const editableNumber = (value:string):NumberValue => value===""?"":positive(value);
 
-export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[], onCreatePackage, onCreatePackages }:Props) {
+export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[], voucherPreset, onCreatePackage, onCreatePackages }:Props) {
   const [packages,setPackages] = useState(INITIAL_PACKAGES);
   const [pendingConfirmation,setPendingConfirmation] = useState<PendingConfirmation|null>(null);
   const [pricingGoals,setPricingGoals] = useState<Record<ServiceMode,GoalSetting>>({
@@ -66,7 +67,7 @@ export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[
   const category = String(selectedCategoryOption?.categoryIndex ?? Math.max(0,COMMISSION_CATEGORIES.findIndex(item=>item.cluster==="FMCG"&&item.name.startsWith("Beauty ›"))));
   const commission = selectedCategoryOption?.rate ?? commissionRateFor(category,true);
   const selectedCategory = selectedCategoryOption?.name ?? "No Product Category configured";
-  const storeVoucherPreset = voucherPresetFor(storeName);
+  const storeVoucherPreset = voucherPreset ?? voucherPresetFor(storeName);
   const [voucherRates,setVoucherRates] = useState<Record<ServiceMode,NumberValue>>({nonCampaign:storeVoucherPreset.normal,campaign:storeVoucherPreset.campaign});
   const [fees,setFees] = useState<FeeDraft>({
     serviceCap:108, preorder:2.14, isPreorder:false, isSpayLater:false, platformSupport:0.54,
@@ -102,9 +103,9 @@ export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[
   })),[packages,fees,commission,voucherRates,transactionRate,pricingGoals,cofundVoucher,autoTopUpRate]);
   const headlineRate = transactionRate + commission + SERVICE_MODES.campaign.rate + (fees.isPreorder?positive(fees.preorder):0) + autoTopUpRate;
   useEffect(()=>{
-    const preset = voucherPresetFor(storeName);
+    const preset = voucherPreset ?? voucherPresetFor(storeName);
     setVoucherRates({nonCampaign:preset.normal,campaign:preset.campaign});
-  },[storeName]);
+  },[storeName,voucherPreset]);
   useEffect(()=>{setSelectedCategoryKey(categoryOptions[0]?.key ?? "");},[storeName,categoryOptions]);
 
   function updateFee(key:keyof typeof fees, value:string|boolean) {
