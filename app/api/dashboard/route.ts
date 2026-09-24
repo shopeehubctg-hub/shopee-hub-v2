@@ -7,6 +7,7 @@ import { contactsForStore, directoryStoreNameFor } from "../../project-group-lin
 import { storeSnapshots } from "../../store-snapshots";
 import { readProductCatalogSheet, sourceShopNameFor } from "../../product-catalog";
 import { supabaseRest } from "../../supabase-rest";
+import { aggregateAdPerformanceByDate } from "../../ad-performance.js";
 
 export const dynamic = "force-dynamic";
 
@@ -214,6 +215,44 @@ async function readVoucherPreset(storeId:string) {
   }
 }
 
+type AdPerformanceRow = {
+  store_id:string; performance_date:string; spend:string|number; sales:string|number;
+  views:string|number; clicks:string|number; conversions:string|number; sold:string|number;
+};
+
+async function readAdPerformance(storeIds:string[], tenantId:string, allStores:boolean) {
+  if (!storeIds.length) return [];
+  try {
+    const rows:AdPerformanceRow[]=[];
+    const pageSize=1000;
+    for (let offset=0; ; offset+=pageSize) {
+      const query=new URLSearchParams({
+        select:"store_id,performance_date,spend,sales,views,clicks,conversions,sold",
+        tenant_id:`eq.${tenantId}`,
+        store_id:`in.(${storeIds.join(",")})`,
+        order:"performance_date.asc,store_id.asc",
+        limit:String(pageSize),
+        offset:String(offset),
+      });
+      const page=await supabaseRest<AdPerformanceRow[]>(`ad_performance_daily?${query}`);
+      rows.push(...page);
+      if (page.length<pageSize) break;
+    }
+    if (allStores) return aggregateAdPerformanceByDate(rows);
+    return rows.map(row=>({
+      date:row.performance_date,store:storeIds[0],spend:Number(row.spend),sales:Number(row.sales),
+      roas:Number(row.spend)>0?Number(row.sales)/Number(row.spend):0,
+      views:Number(row.views),clicks:Number(row.clicks),
+      ctr:Number(row.views)>0?Number(row.clicks)/Number(row.views):0,
+      conversion:Number(row.conversions),sold:Number(row.sold),
+      acos:Number(row.sales)>0?Number(row.spend)/Number(row.sales):0,
+    }));
+  } catch (error) {
+    console.error("[advertising] FullAd read failed",error);
+    return [];
+  }
+}
+
 export async function GET(request: Request) {
   // Vercel serves the portable dashboard data, while identity and permissions
   // are read securely from the staging Supabase project.
@@ -248,7 +287,11 @@ export async function GET(request: Request) {
     const snapshotPayload = selectedStore ? storeSnapshots[selectedStore.name] ?? null : null;
     const sheetBalance = selectedStore ? await readSheetBalance(selectedStore.name) : null;
     const productProfile = selectedStore ? await readProductCatalogSheet(selectedStore.name) : null;
-    const [selectedCoFundVouchers,voucherPreset] = selectedStore ? await Promise.all([readCoFundVouchers(selectedStore.id),readVoucherPreset(selectedStore.id)]) : [[],null];
+    const [selectedCoFundVouchers,voucherPreset,adPerformance] = await Promise.all([
+      selectedStore?readCoFundVouchers(selectedStore.id):Promise.resolve([]),
+      selectedStore?readVoucherPreset(selectedStore.id):Promise.resolve(null),
+      readAdPerformance(selectedStore?[selectedStore.id]:visibleStores.map(store=>store.id),membership.tenant_id,allStoresRequested),
+    ]);
     return Response.json({
       customer: { id: "shopee-hub", name: "Shopee Hub" },
       stores: visibleStores.map((store) => {
@@ -263,6 +306,7 @@ export async function GET(request: Request) {
       selectedStoreId: allStoresRequested ? "all" : selectedStore?.id ?? null,
       snapshot: snapshotPayload ? { payload: snapshotPayload, importedAt: snapshotPayload.sourceUpdated ?? new Date().toISOString() } : null,
       adBalance: sheetBalance ? { ...sheetBalance, topUpOwner: selectedDirectory?.topUpOwner ?? topUpOwnerFallbacks[selectedStore?.name ?? ""] ?? null } : null,
+      adPerformance,
       actions: [],
       productProfile,
       coFundVouchers:selectedCoFundVouchers,
@@ -378,6 +422,7 @@ export async function GET(request: Request) {
     syncedAt:storedProducts[0].syncedAt,
   }:sheetProductProfile;
 
+  const adPerformance=await readAdPerformance(selectedStore?[selectedStore.id]:visibleStores.map(store=>store.id),tenant.id,allStoresRequested);
   return Response.json({
     customer: { id: tenant.id, name: tenant.name },
     stores: visibleStores.map(({ id, name, platform, directoryName }) => {
@@ -401,6 +446,7 @@ export async function GET(request: Request) {
       syncStatus: "current",
       topUpOwner,
     } : null),
+    adPerformance,
     actions,
     productProfile,
     coFundVouchers:selectedCoFundVouchers,
