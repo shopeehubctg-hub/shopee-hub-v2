@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { aggregateAdPerformanceByDate } from "../app/ad-performance.js";
+import { aggregateAdPerformanceByDate, authorizedAdStoreIds } from "../app/ad-performance.js";
+import { readFile } from "node:fs/promises";
 
 test("FullAd rows from visible stores combine by date with weighted rates", () => {
   const daily = aggregateAdPerformanceByDate([
@@ -13,4 +14,18 @@ test("FullAd rows from visible stores combine by date with weighted rates", () =
     { spend:40, sales:200, roas:5, ctr:25/400, acos:0.2 });
   assert.equal(daily[1].conversion,6);
   assert.equal(daily[1].sold,9);
+});
+
+test("FullAd store scope includes only visible stores and requires Advertising access", () => {
+  const visible=[{id:"store-a"},{id:"store-b"}];
+  assert.deepEqual(authorizedAdStoreIds([],undefined,true),[]);
+  assert.deepEqual(authorizedAdStoreIds(visible,visible[1],true),["store-b"]);
+  assert.deepEqual(authorizedAdStoreIds(visible,undefined,true),["store-a","store-b"]);
+  assert.deepEqual(authorizedAdStoreIds(visible,undefined,false),[]);
+});
+
+test("selected-store membership with no assignments does not fall back to directory stores", async () => {
+  const route=await readFile(new URL("../app/api/dashboard/route.ts",import.meta.url),"utf8");
+  assert.match(route,/membership\.storeAccessMode === "selected" && membership\.role !== "superadmin" \? \[\] : directoryStores\.map/);
+  assert.match(route,/authorizedAdStoreIds\(visibleStores,selectedStore,enabledModules\.includes\("advertising"\)\)/);
 });
