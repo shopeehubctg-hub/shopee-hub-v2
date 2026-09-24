@@ -386,6 +386,9 @@ test("advertising supports date, month and custom range aggregation", async () =
   assert.match(page, /<option value="month">Month<\/option>/);
   assert.match(page, /<option value="date">Date<\/option>/);
   assert.match(page, /<option value="range">Custom range<\/option>/);
+  assert.match(page, /aria-label="Advertising date" type="date"/);
+  assert.match(page, /data\?\.adPerformance \?\? \[\]/);
+  assert.doesNotMatch(page, /fullAdHistory|Select one store to load its Shopee Ads API data/);
   assert.match(page, /row\.date\.startsWith\(selectedAdMonth\)/);
   assert.match(page, /row\.date >= selectedRangeStart && row\.date <= selectedRangeEnd/);
   assert.match(page, /periodSpendLabel/);

@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import adsData from "./ads-data.json";
-import fullAdHistory from "./full-ad-history.json";
 import { PackageControl } from "./package-control";
 import { PriceCalculator } from "./price-calculator";
 import { DesignChecker } from "./design-checker";
@@ -19,10 +18,9 @@ import { projectDriveFolders } from "./project-drive-folders";
 type Store = { id: string; name: string; platform: string; contacts: { project: string; href: string }[]; driveLink?: string | null };
 type ManagementAction = { actionDate: string; category: string; title: string; detail: string };
 type CoFundVoucher = { id:number; campaignName:string; campaignDate:string|null; campaignStartAt:string|null; campaignEndAt:string|null; voucherName:string; discountAmount:number; currency:string; quantity:number };
-type DashboardResponse = { stores: Store[]; selectedStoreId: string | null; snapshot: { payload: any; importedAt: string } | null; adBalance: { balance:number; balanceDate:string; sourceUpdatedAt:string; syncStatus:string; topUpOwner?:string | null } | null; actions?: ManagementAction[]; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; access?:{ role:string; enabledModules:PortalModuleId[]; clientEnabledModules:PortalModuleId[]; canManagePermissions:boolean } };
+type DashboardResponse = { stores: Store[]; selectedStoreId: string | null; snapshot: { payload: any; importedAt: string } | null; adBalance: { balance:number; balanceDate:string; sourceUpdatedAt:string; syncStatus:string; topUpOwner?:string | null } | null; adPerformance?:DailyAd[]; actions?: ManagementAction[]; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; access?:{ role:string; enabledModules:PortalModuleId[]; clientEnabledModules:PortalModuleId[]; canManagePermissions:boolean } };
 type ClientAction = { title: string; client: string; due: string; type: string; action: string; href?: string; message?: string; generated?: boolean };
 type DailyAd = { date:string; store:string; spend:number; sales:number; roas:number; views:number; clicks:number; ctr:number; conversion:number; sold:number; acos:number };
-type AdsApiResponse = { status:"connected"|"unconfigured"|"unavailable"|"error"; fetchedAt?:string; balance?:number; daily?:DailyAd[]; campaigns?:any[]; error?:string };
 
 const overviewFallback = [
   ["Valid Order Sales", "RM 18,711.82", "+21.4%"], ["Valid Orders", "654", "+20.7%"],
@@ -133,8 +131,6 @@ export default function Home() {
   const [adMonth, setAdMonth] = useState("");
   const [adRangeStart, setAdRangeStart] = useState("");
   const [adRangeEnd, setAdRangeEnd] = useState("");
-  const [adsApi, setAdsApi] = useState<AdsApiResponse | null>(null);
-  const [adsApiLoading, setAdsApiLoading] = useState(false);
   const [packagePrefills, setPackagePrefills] = useState<PackagePrefill[]>([]);
   const [standalonePackageCreate, setStandalonePackageCreate] = useState(false);
 
@@ -181,30 +177,6 @@ export default function Home() {
     load();
   }, []);
 
-  useEffect(() => {
-    if (section !== "advertising" || !storeId || storeId === "all") {
-      setAdsApi(null);
-      return;
-    }
-    const controller = new AbortController();
-    const end = new Date().toISOString().slice(0, 10);
-    const startDate = new Date(`${end}T00:00:00Z`);
-    startDate.setUTCDate(startDate.getUTCDate() - 29);
-    setAdsApiLoading(true);
-    setAdsApi(null);
-    fetch(`/api/shopee/advertising?storeId=${encodeURIComponent(storeId)}&start=${startDate.toISOString().slice(0,10)}&end=${end}`, { cache:"no-store", signal:controller.signal })
-      .then(async response => {
-        const payload = await response.json() as AdsApiResponse;
-        setAdsApi(payload);
-      })
-      .catch(error => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        setAdsApi({ status:"error", error:error instanceof Error ? error.message : "Unable to load Shopee Ads" });
-      })
-      .finally(()=>setAdsApiLoading(false));
-    return ()=>controller.abort();
-  }, [section, storeId]);
-
   function openPackageDraft(prefills:PackagePrefill[]) {
     const draftKey = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     window.localStorage.setItem(`package-draft:${draftKey}`, JSON.stringify({ prefills, storeId }));
@@ -216,11 +188,9 @@ export default function Home() {
   const live = data?.snapshot?.payload ?? staticSnapshot ?? {};
   const noSample = Boolean(live.noSample);
   const overview = Array.isArray(live.overview) ? live.overview : overviewFallback;
-  const adsApiUnavailable = Boolean(adsApi && adsApi.status !== "connected");
-  const adsBase = adsApiUnavailable ? unavailableAdvertising : live.advertising ?? (allStoresSelected ? allStoresAdvertising : adFallback);
+  const adsBase = data?.adPerformance?.length ? (live.advertising ?? (allStoresSelected ? allStoresAdvertising : adFallback)) : unavailableAdvertising;
   const importedStoreAds = adsData.filter((ad:any) => allStoresSelected || ad.store === store?.name);
-  const adsApiConnected = adsApi?.status === "connected";
-  const relevantDailyAds = adsApiConnected ? (adsApi.daily ?? []) : adsApiUnavailable ? [] : (fullAdHistory as DailyAd[]).filter(row => allStoresSelected || row.store === store?.name);
+  const relevantDailyAds = data?.adPerformance ?? [];
   const availableAdDates = [...new Set(relevantDailyAds.map(row=>row.date))].sort((a,b)=>b.localeCompare(a));
   const availableAdMonths = [...new Set(availableAdDates.map(date=>date.slice(0,7)))].sort((a,b)=>b.localeCompare(a));
   const selectedAdDate = adDate && availableAdDates.includes(adDate) ? adDate : (availableAdDates[0] ?? "");
@@ -238,8 +208,7 @@ export default function Home() {
   const averageDailySpend = relevantDailyAds.length
     ? relevantDailyAds.reduce((total,row)=>total+row.spend,0) / Math.max(1, new Set(relevantDailyAds.map(row=>row.date)).size)
     : importedStoreAds.reduce((total:number, ad:any) => total + parseCurrency(ad.spend), 0) / 30;
-  const apiBalance = adsApiConnected && typeof adsApi.balance === "number" ? { balance:adsApi.balance, balanceDate:new Date().toISOString().slice(0,10), sourceUpdatedAt:adsApi.fetchedAt ?? new Date().toISOString(), syncStatus:"current", topUpOwner:data?.adBalance?.topUpOwner } : null;
-  const effectiveBalance = apiBalance ?? data?.adBalance;
+  const effectiveBalance = data?.adBalance;
   const balanceAds = effectiveBalance && !allStoresSelected
     ? { ...adsBase, balance:effectiveBalance.balance, averageDailySpend30d:adsBase.averageDailySpend30d ?? averageDailySpend, sourceUpdatedAt:effectiveBalance.sourceUpdatedAt, syncStatus:effectiveBalance.syncStatus, topUpOwner:effectiveBalance.topUpOwner ?? adsBase.topUpOwner }
     : adsBase;
@@ -253,7 +222,7 @@ export default function Home() {
     cpc:dailyAd.conversion > 0 ? formatMoney(dailyAd.spend / dailyAd.conversion) : "—",
     conversionRate:dailyAd.clicks > 0 ? `${(dailyAd.conversion / dailyAd.clicks * 100).toFixed(2)}%` : "0.00%",
   } : balanceAds;
-  const adCampaigns = adsApiConnected ? (adsApi.campaigns ?? []) : adsApiUnavailable ? [] : Array.isArray(live.adCampaigns) ? live.adCampaigns : (noSample ? [] : (importedStoreAds.length ? importedStoreAds : adCampaignFallback));
+  const adCampaigns = Array.isArray(live.adCampaigns) ? live.adCampaigns : (noSample ? [] : (importedStoreAds.length ? importedStoreAds : adCampaignFallback));
   const filteredAdCampaigns = adCampaigns.filter((ad:any) => (adStatusFilter === "All" || ad.status === adStatusFilter) && `${ad.name} ${ad.store ?? ""}`.toLowerCase().includes(adSearch.toLowerCase()));
   const adPageCount = Math.max(1, Math.ceil(filteredAdCampaigns.length / 25));
   const visibleAdCampaigns = filteredAdCampaigns.slice((adPage - 1) * 25, adPage * 25);
@@ -267,8 +236,6 @@ export default function Home() {
   const visibleClientActions = generatedTopUpAction ? [generatedTopUpAction, ...visibleClientActionsBase.filter((action:ClientAction)=>action.type !== "Top-up" || !action.generated)] : visibleClientActionsBase;
   const warningOrders = orders.filter((order:any) => order.status === "Expired" || order.status === "Urgent");
   const importantWarningCount = warningOrders.length + (adFunds.lowBalance ? 1 : 0);
-  const updated = allStoresSelected ? "17 Jul 2026, 3:13 am" : (live.sourceUpdated ?? (data?.snapshot?.importedAt ? new Date(data.snapshot.importedAt).toLocaleString("en-MY", { dateStyle:"medium", timeStyle:"short" }) : "Awaiting store import"));
-  const hasRealData = Boolean(data?.snapshot || staticSnapshot || data?.adBalance || importedClientActions.length || driveActions.length);
   const target = live.target;
   const losses = live.losses;
   const orderSummary = live.orderSummary;
@@ -279,13 +246,6 @@ export default function Home() {
     if (data?.access?.canManagePermissions) items.push(["permissions", "Permission Settings"] as const);
     return items;
   }, [data?.access]);
-  const adsApiStatusText = allStoresSelected
-    ? "Select one store to load its Shopee Ads API data"
-    : adsApiLoading
-      ? "Connecting to Shopee Ads API…"
-      : adsApiConnected
-        ? `Live Shopee API · synced ${new Date(adsApi.fetchedAt ?? Date.now()).toLocaleString("en-MY", { dateStyle:"medium", timeStyle:"short" })}`
-        : (adsApi?.error ?? "Open Advertising to connect this store");
   if (!data && !loadError) return <DashboardLoading />;
   if (!data || !section || loadError) return <main className="login-shell"><section className="login-card" aria-busy={false}>
     <img src="/shopee-hub-logo-transparent.png" alt="ShopeeHub"/>
@@ -311,7 +271,6 @@ export default function Home() {
           <button onClick={()=>load(storeId)} disabled={loading}>{loading?"Updating…":"Update data"}</button>
         </div>
       </header>
-      <div className="statusline"><span className={allStoresSelected||hasRealData?"":"sample"}/>{allStoresSelected?`Data snapshot · ${data?.stores.length ?? 0} stores from Link Directory`:(hasRealData?`Real imported data${live.period ? ` · ${live.period}` : ""}`:"Sample layout — awaiting store import")} · Last updated {updated}</div>
 
       {section==="overview" && <div className="page">
         <div className="page-title"><div><p className="kicker">OVERVIEW</p><h2>Business Pulse</h2></div><div className="warning-pill">{importantWarningCount} important warnings</div></div>
@@ -331,9 +290,7 @@ export default function Home() {
       {section==="protection" && <div className="page"><FakeSellerReport storeName={store?.name ?? "Selected store"} allStores={allStoresSelected} cases={fakeSellerCases}/></div>}
       {section==="permissions" && data?.access?.canManagePermissions && <div className="page"><PermissionSettings initialEnabledModules={data.access.clientEnabledModules}/></div>}
 
-      {section==="advertising" && <div className={`ads-api-status ${adsApiConnected?"connected":adsApiLoading?"loading":"attention"}`} role="status"><span/>{adsApiStatusText}</div>}
-
-      {section==="advertising" && <div className="page"><div className="page-title ad-page-title"><div><p className="kicker">ADVERTISING</p><h2>Performance</h2></div><div className="ad-period-controls"><label><span>View by</span><select aria-label="Advertising period type" value={adPeriodMode} onChange={event=>setAdPeriodMode(event.target.value as "month"|"date"|"range")}><option value="month">Month</option><option value="date">Date</option><option value="range">Custom range</option></select></label>{adPeriodMode === "month" && <label><span>Month</span><input aria-label="Advertising month" type="month" value={selectedAdMonth} min={availableAdMonths[availableAdMonths.length-1]} max={availableAdMonths[0]} onChange={event=>setAdMonth(event.target.value)}/></label>}{adPeriodMode === "date" && <label><span>Date</span><select aria-label="Advertising date" value={selectedAdDate} onChange={event=>setAdDate(event.target.value)} disabled={!availableAdDates.length}>{availableAdDates.map(date=><option key={date} value={date}>{new Date(`${date}T00:00:00`).toLocaleDateString("en-MY",{day:"2-digit",month:"short",year:"numeric"})}</option>)}</select></label>}{adPeriodMode === "range" && <><label><span>From</span><input aria-label="Advertising range start" type="date" value={selectedRangeStart} min={earliestAdDate} max={selectedRangeEnd} onChange={event=>setAdRangeStart(event.target.value)}/></label><label><span>To</span><input aria-label="Advertising range end" type="date" value={selectedRangeEnd} min={selectedRangeStart} max={availableAdDates[0]} onChange={event=>setAdRangeEnd(event.target.value)}/></label></>}</div></div><div className="advertising-summary-stack">
+      {section==="advertising" && <div className="page"><div className="page-title ad-page-title"><div><p className="kicker">ADVERTISING</p><h2>Performance</h2></div><div className="ad-period-controls"><label><span>View by</span><select aria-label="Advertising period type" value={adPeriodMode} onChange={event=>setAdPeriodMode(event.target.value as "month"|"date"|"range")}><option value="month">Month</option><option value="date">Date</option><option value="range">Custom range</option></select></label>{adPeriodMode === "month" && <label><span>Month</span><input aria-label="Advertising month" type="month" value={selectedAdMonth} min={availableAdMonths[availableAdMonths.length-1]} max={availableAdMonths[0]} onChange={event=>setAdMonth(event.target.value)}/></label>}{adPeriodMode === "date" && <label><span>Date</span><input aria-label="Advertising date" type="date" value={selectedAdDate} min={earliestAdDate} max={availableAdDates[0]} onChange={event=>setAdDate(event.target.value)} disabled={!availableAdDates.length}/></label>}{adPeriodMode === "range" && <><label><span>From</span><input aria-label="Advertising range start" type="date" value={selectedRangeStart} min={earliestAdDate} max={selectedRangeEnd} onChange={event=>setAdRangeStart(event.target.value)}/></label><label><span>To</span><input aria-label="Advertising range end" type="date" value={selectedRangeEnd} min={selectedRangeStart} max={availableAdDates[0]} onChange={event=>setAdRangeEnd(event.target.value)}/></label></>}</div></div><div className="advertising-summary-stack">
         <section className={`ad-funds-card ${adFunds.balanceStatus}`}><div className="ad-funds-status"><div><span>{adFunds.syncStatus === "delayed" ? "Data delayed" : (adFunds.lowBalance ? `Top-up ${formatRinggit(adFunds.recommendedTopUp)} required` : "Ads healthy")}</span><small>{adFunds.topUpOwner === "shopee_hub" ? "Managed by Shopee Hub" : (adFunds.approvalRequired ? "Approval needed" : "Client action")}</small></div><time>{adFunds.sourceUpdatedAt ? `Last updated ${adFunds.sourceUpdatedAt}` : "Last update unavailable"}</time></div><div className="fund-metric"><span>Ad Balance</span><strong>{formatRinggit(adFunds.balance, 2)}</strong></div><div className="fund-metric"><span>{periodSpendLabel}</span><strong>{ads.spend ?? "—"}</strong></div><div className="fund-metric"><span>Runway</span><strong>{adFunds.runwayDays == null ? "—" : `${Math.floor(adFunds.runwayDays)} days`}</strong></div><div className="fund-metric topup"><span>Top-up</span><strong>{formatRinggit(adFunds.recommendedTopUp)}</strong></div></section>
         <section className="metric-grid ads ad-primary-grid">{[["Ad Sales",ads.sales,"sales"],["ROAS",ads.roas,"roas"],["ACOS",ads.acos,"acos"],["Cost Per Conversion",ads.cpc,"cost"]].map(m=><article className={`metric ad-metric ${m[2]}`} key={m[0]}><span>{m[0]}</span><strong>{money(m[1])}</strong></article>)}</section>
         <section className="metric-grid ads ad-secondary-grid">{[["Views",ads.views,"reach",null],["Clicks",ads.clicks,"reach",null],["CTR",ads.ctr,"rate",parseFloat(ads.ctr)<2],["Conversion Rate",ads.conversionRate,"rate",parseFloat(ads.conversionRate)<2]].map(m=><article className={`metric ad-metric ${m[2]} ${m[3]===true?"danger":""}`} key={m[0] as string}><span>{m[0]}</span><strong>{money(m[1] as string)}</strong>{m[3]!==null&&<em>{m[3]?"Warning":"Normal"}</em>}</article>)}</section></div>
@@ -345,7 +302,7 @@ export default function Home() {
       {section==="health" && noSample ? <div className="page"><div className="page-title"><div><p className="kicker">STORE HEALTH</p><h2>Reputation & compliance</h2></div></div><article className="card"><h3>暂无数据</h3><p>本次来源没有提供 Mizino Premium 的店铺健康指标。</p></article></div> : section==="health" && <div className="page"><div className="page-title"><div><p className="kicker">STORE HEALTH</p><h2>Reputation & compliance</h2></div><span className="health-status">Healthy</span></div><section className="metric-grid"><article className="metric"><span>Reviews</span><strong>4,286</strong><em>+182 this month</em></article><article className="metric danger"><span>Bad Reviews</span><strong>37</strong><em>0.86%</em></article><article className="metric"><span>Buyer Overall Rating</span><strong>4.92 / 5</strong></article><article className="metric"><span>Penalty Points</span><strong>0</strong><em>Normal</em></article></section><section className="health-grid"><article className="card reviews"><p className="kicker">RATING DISTRIBUTION</p>{[["5 stars",88],["4 stars",9],["1–3 stars",3]].map(r=><div key={r[0]}><span>{r[0]}</span><i><b style={{width:`${r[1]}%`}}/></i><strong>{r[1]}%</strong></div>)}</article><article className="card quality"><p className="kicker">SERVICE QUALITY</p>{[["Fast Handover Rate","96.8%"],["Chat Satisfaction","94.2%"],["Response Rate","98.1%"],["Late Shipment Rate","1.2%"]].map(r=><div key={r[0]}><span>{r[0]}</span><strong>{r[1]}</strong></div>)}</article><article className="card violations"><p className="kicker">LISTING VIOLATIONS</p><strong>0</strong><span>No active listing violations</span></article></section></div>}
 
       {section==="actions" && <div className="page"><div className="page-title"><div><p className="kicker">CLIENT ACTION CENTER</p><h2>What we need from the client</h2></div><span className="warning-pill">{visibleClientActions.length} open items</span></div>{adFunds.topUpOwner === "shopee_hub" && adFunds.lowBalance && <div className="managed-note">Top-up {formatRinggit(adFunds.recommendedTopUp)} · Managed by Shopee Hub</div>}{visibleClientActions.length ? <div className="action-list">{visibleClientActions.map((a:any)=><article className="card action" key={a.title}><div className={`type ${a.type.toLowerCase()}`}>{a.type.slice(0,1)}</div><div><span className="category">{a.type}</span><h3>{a.title}</h3><p>{a.client} · Due {a.due}</p>{a.message&&<p className="action-message">{a.message}</p>}</div>{a.href?<a className="action-link" href={a.href} target="_blank" rel="noopener noreferrer">{a.action}</a>:<button>{a.action}</button>}</article>)}</div> : <article className="card empty-actions"><h3>No client action needed</h3><p>当前没有需要客户处理的事项。</p></article>}</div>}
-      <footer>Shopee Hub · {data?.stores.length ?? 0} stores from Link Directory · Private command center</footer>
+      <footer>Shopee Hub · Private command center</footer>
     </section>
   </main>;
 }
