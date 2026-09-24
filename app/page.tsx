@@ -9,6 +9,7 @@ import { FakeSellerReport, type FakeSellerCase } from "./fake-seller-report";
 import type { PackagePrefill } from "./calculator-types";
 import { storeSnapshots } from "./store-snapshots";
 import { buildAdvertisingFunds, buildTopUpAction, formatRinggit } from "./advertising-model.js";
+import { selectAdRows, selectedAdDateFor } from "./ad-performance.js";
 import type { ProjectProductProfile } from "./product-catalog";
 import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
 import { PermissionSettings } from "./permission-settings";
@@ -30,6 +31,7 @@ const overviewFallback = [
 const adFallback = { balance:"—", averageDailySpend30d:null, syncStatus:"delayed", spend:"RM 2,480.30", sales:"RM 18,922.40", roas:"7.63×", views:"428,190", clicks:"12,846", conversion:"3.18%", sold:"1,106", cpc:"RM 2.24", acos:"13.11%", ctr:"3.00%", conversionRate:"3.18%" };
 const allStoresAdvertising = { balance:"By store", spend:"RM 19,465.75", sales:"RM 347,585.29", roas:"17.86×", views:"703,913", clicks:"19,287", conversion:"1,171", sold:"5,370", cpc:"RM 16.62", acos:"5.60%", ctr:"2.74%", conversionRate:"6.07%" };
 const unavailableAdvertising = { balance:null, averageDailySpend30d:null, syncStatus:"delayed", spend:"—", sales:"—", roas:"—", views:"—", clicks:"—", conversion:"—", sold:"—", cpc:"—", acos:"—", ctr:"—", conversionRate:"—" };
+const emptyAdMetrics = { spend:"—", sales:"—", roas:"—", views:"—", clicks:"—", conversion:"—", sold:"—", cpc:"—", acos:"—", ctr:"—", conversionRate:"—" };
 const adCampaignFallback = [
   { name:"Pizza Box – Search", type:"Product Search", status:"Active", budget:"RM 80/day", spend:"RM 742.18", sales:"RM 6,820.40", roas:"9.19×", views:"126,420", clicks:"4,188", ctr:"3.31%", conversionRate:"3.58%", sold:"302", acos:"10.88%" },
   { name:"Corrugated Tray – Discovery", type:"Discovery", status:"Active", budget:"RM 60/day", spend:"RM 614.92", sales:"RM 4,392.60", roas:"7.14×", views:"98,310", clicks:"2,744", ctr:"2.79%", conversionRate:"2.88%", sold:"216", acos:"14.00%" },
@@ -194,16 +196,12 @@ export default function Home() {
   const relevantDailyAds = data?.adPerformance ?? [];
   const availableAdDates = [...new Set(relevantDailyAds.map(row=>row.date))].sort((a,b)=>b.localeCompare(a));
   const availableAdMonths = [...new Set(availableAdDates.map(date=>date.slice(0,7)))].sort((a,b)=>b.localeCompare(a));
-  const selectedAdDate = adDate && availableAdDates.includes(adDate) ? adDate : (availableAdDates[0] ?? "");
+  const selectedAdDate = selectedAdDateFor(adDate,availableAdDates);
   const selectedAdMonth = adMonth && availableAdMonths.includes(adMonth) ? adMonth : (availableAdMonths[0] ?? "");
   const earliestAdDate = availableAdDates[availableAdDates.length-1] ?? "";
   const selectedRangeStart = adRangeStart || earliestAdDate;
   const selectedRangeEnd = adRangeEnd || (availableAdDates[0] ?? "");
-  const selectedDailyAds = relevantDailyAds.filter(row=>adPeriodMode === "month"
-    ? row.date.startsWith(selectedAdMonth)
-    : adPeriodMode === "range"
-      ? row.date >= selectedRangeStart && row.date <= selectedRangeEnd
-      : row.date === selectedAdDate);
+  const selectedDailyAds = selectAdRows(relevantDailyAds,adPeriodMode,{month:selectedAdMonth,date:selectedAdDate,rangeStart:selectedRangeStart,rangeEnd:selectedRangeEnd});
   const dailyAd = selectedDailyAds.length ? aggregateDailyAds(selectedDailyAds) : null;
   const periodSpendLabel = adPeriodMode === "date" ? "Daily Spend" : "Ad Spend";
   const averageDailySpend = relevantDailyAds.length
@@ -222,7 +220,7 @@ export default function Home() {
     acos:`${(dailyAd.acos * 100).toFixed(2)}%`,
     cpc:dailyAd.conversion > 0 ? formatMoney(dailyAd.spend / dailyAd.conversion) : "—",
     conversionRate:dailyAd.clicks > 0 ? `${(dailyAd.conversion / dailyAd.clicks * 100).toFixed(2)}%` : "0.00%",
-  } : balanceAds;
+  } : { ...balanceAds, ...emptyAdMetrics };
   const adCampaigns = Array.isArray(live.adCampaigns) ? live.adCampaigns : (noSample ? [] : (importedStoreAds.length ? importedStoreAds : adCampaignFallback));
   const filteredAdCampaigns = adCampaigns.filter((ad:any) => (adStatusFilter === "All" || ad.status === adStatusFilter) && `${ad.name} ${ad.store ?? ""}`.toLowerCase().includes(adSearch.toLowerCase()));
   const adPageCount = Math.max(1, Math.ceil(filteredAdCampaigns.length / 25));

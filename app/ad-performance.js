@@ -27,3 +27,17 @@ export function authorizedAdStoreIds(visibleStores, selectedStore, canViewAdvert
   if (!canViewAdvertising) return [];
   return selectedStore ? [selectedStore.id] : visibleStores.map((store) => store.id);
 }
+
+export function selectedAdDateFor(requestedDate, availableDates) {
+  const latest = availableDates[0] ?? "";
+  const earliest = availableDates[availableDates.length - 1] ?? "";
+  return requestedDate && requestedDate >= earliest && requestedDate <= latest ? requestedDate : latest;
+}
+
+export function selectAdRows(rows, mode, { month, date, rangeStart, rangeEnd }) {
+  return rows.filter((row) => mode === "month"
+    ? row.date.startsWith(month)
+    : mode === "range"
+      ? row.date >= rangeStart && row.date <= rangeEnd
+      : row.date === date);
+}
