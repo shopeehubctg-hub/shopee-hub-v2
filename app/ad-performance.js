@@ -22,3 +22,8 @@ export function aggregateAdPerformanceByDate(rows) {
     acos: daily.sales > 0 ? daily.spend / daily.sales : 0,
   })).sort((a, b) => a.date.localeCompare(b.date));
 }
+
+export function authorizedAdStoreIds(visibleStores, selectedStore, canViewAdvertising) {
+  if (!canViewAdvertising) return [];
+  return selectedStore ? [selectedStore.id] : visibleStores.map((store) => store.id);
+}

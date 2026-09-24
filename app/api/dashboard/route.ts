@@ -7,7 +7,7 @@ import { contactsForStore, directoryStoreNameFor } from "../../project-group-lin
 import { storeSnapshots } from "../../store-snapshots";
 import { readProductCatalogSheet, sourceShopNameFor } from "../../product-catalog";
 import { supabaseRest } from "../../supabase-rest";
-import { aggregateAdPerformanceByDate } from "../../ad-performance.js";
+import { aggregateAdPerformanceByDate, authorizedAdStoreIds } from "../../ad-performance.js";
 
 export const dynamic = "force-dynamic";
 
@@ -290,7 +290,7 @@ export async function GET(request: Request) {
     const [selectedCoFundVouchers,voucherPreset,adPerformance] = await Promise.all([
       selectedStore?readCoFundVouchers(selectedStore.id):Promise.resolve([]),
       selectedStore?readVoucherPreset(selectedStore.id):Promise.resolve(null),
-      readAdPerformance(selectedStore?[selectedStore.id]:visibleStores.map(store=>store.id),membership.tenant_id,allStoresRequested),
+      readAdPerformance(authorizedAdStoreIds(visibleStores,selectedStore,enabledModules.includes("advertising")),membership.tenant_id,allStoresRequested),
     ]);
     return Response.json({
       customer: { id: "shopee-hub", name: "Shopee Hub" },
@@ -363,7 +363,7 @@ export async function GET(request: Request) {
       directoryName,
       name: kataDisplayNames[stored.id] ?? directoryByName.get(directoryName)?.name ?? stored.name,
     };
-  }) : directoryStores.map(({ name }) => ({
+  }) : membership.storeAccessMode === "selected" && membership.role !== "superadmin" ? [] : directoryStores.map(({ name }) => ({
     id: storeIdFor(name), tenantId: tenant.id, name, storedName: name, directoryName: name,
     platform: isSingaporeStore(name) ? "Shopee SG" : "Shopee MY", bigSellerName: name, createdAt: "",
   }))).sort((a, b) => {
@@ -422,7 +422,7 @@ export async function GET(request: Request) {
     syncedAt:storedProducts[0].syncedAt,
   }:sheetProductProfile;
 
-  const adPerformance=await readAdPerformance(selectedStore?[selectedStore.id]:visibleStores.map(store=>store.id),tenant.id,allStoresRequested);
+  const adPerformance=await readAdPerformance(authorizedAdStoreIds(visibleStores,selectedStore,enabledModules.includes("advertising")),tenant.id,allStoresRequested);
   return Response.json({
     customer: { id: tenant.id, name: tenant.name },
     stores: visibleStores.map(({ id, name, platform, directoryName }) => {
