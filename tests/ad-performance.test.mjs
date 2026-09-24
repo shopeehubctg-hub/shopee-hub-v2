@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { aggregateAdPerformanceByDate, authorizedAdStoreIds } from "../app/ad-performance.js";
+import { aggregateAdPerformanceByDate, authorizedAdStoreIds, selectAdRows, selectedAdDateFor } from "../app/ad-performance.js";
 import { readFile } from "node:fs/promises";
 
 test("FullAd rows from visible stores combine by date with weighted rates", () => {
@@ -28,4 +28,15 @@ test("selected-store membership with no assignments does not fall back to direct
   const route=await readFile(new URL("../app/api/dashboard/route.ts",import.meta.url),"utf8");
   assert.match(route,/membership\.storeAccessMode === "selected" && membership\.role !== "superadmin" \? \[\] : directoryStores\.map/);
   assert.match(route,/authorizedAdStoreIds\(visibleStores,selectedStore,enabledModules\.includes\("advertising"\)\)/);
+});
+
+test("empty FullAd date and custom range stay empty instead of selecting another day", async () => {
+  const rows=[{date:"2026-09-20",spend:10},{date:"2026-09-24",spend:20}];
+  const dates=["2026-09-24","2026-09-20"];
+  assert.equal(selectedAdDateFor("2026-09-22",dates),"2026-09-22");
+  assert.deepEqual(selectAdRows(rows,"date",{date:"2026-09-22"}),[]);
+  assert.deepEqual(selectAdRows(rows,"range",{rangeStart:"2026-09-21",rangeEnd:"2026-09-23"}),[]);
+  assert.equal(selectedAdDateFor("2026-10-01",dates),"2026-09-24");
+  const page=await readFile(new URL("../app/page.tsx",import.meta.url),"utf8");
+  assert.match(page,/dailyAd \? \{[\s\S]*?\} : \{ \.\.\.balanceAds, \.\.\.emptyAdMetrics \}/);
 });

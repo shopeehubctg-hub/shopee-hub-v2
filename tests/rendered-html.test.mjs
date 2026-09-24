@@ -378,9 +378,10 @@ test("advertising summary keeps one balance and removes low-priority cards", asy
 });
 
 test("advertising supports date, month and custom range aggregation", async () => {
-  const [page, css] = await Promise.all([
+  const [page, css, model] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("app/globals.css", root), "utf8"),
+    readFile(new URL("app/ad-performance.js", root), "utf8"),
   ]);
   assert.match(page, /<h2>Performance<\/h2>/);
   assert.match(page, /<option value="month">Month<\/option>/);
@@ -389,8 +390,8 @@ test("advertising supports date, month and custom range aggregation", async () =
   assert.match(page, /aria-label="Advertising date" type="date"/);
   assert.match(page, /data\?\.adPerformance \?\? \[\]/);
   assert.doesNotMatch(page, /fullAdHistory|Select one store to load its Shopee Ads API data/);
-  assert.match(page, /row\.date\.startsWith\(selectedAdMonth\)/);
-  assert.match(page, /row\.date >= selectedRangeStart && row\.date <= selectedRangeEnd/);
+  assert.match(model, /row\.date\.startsWith\(month\)/);
+  assert.match(model, /row\.date >= rangeStart && row\.date <= rangeEnd/);
   assert.match(page, /periodSpendLabel/);
   assert.match(page, /ad-secondary-grid[\s\S]*\["CTR"[\s\S]*\["Conversion Rate"/);
   assert.doesNotMatch(page, /<section className="rule-grid">/);
