@@ -268,8 +268,6 @@ export default function Home() {
   const visibleClientActions = generatedTopUpAction ? [generatedTopUpAction, ...visibleClientActionsBase.filter((action:ClientAction)=>action.type !== "Top-up" || !action.generated)] : visibleClientActionsBase;
   const warningOrders = orders.filter((order:any) => order.status === "Expired" || order.status === "Urgent");
   const importantWarningCount = warningOrders.length + (adFunds.lowBalance ? 1 : 0);
-  const updated = allStoresSelected ? "17 Jul 2026, 3:13 am" : (live.sourceUpdated ?? (data?.snapshot?.importedAt ? new Date(data.snapshot.importedAt).toLocaleString("en-MY", { dateStyle:"medium", timeStyle:"short" }) : "Awaiting store import"));
-  const hasRealData = Boolean(data?.snapshot || staticSnapshot || data?.adBalance || importedClientActions.length || driveActions.length);
   const target = live.target;
   const losses = live.losses;
   const orderSummary = live.orderSummary;
@@ -312,8 +310,6 @@ export default function Home() {
           <button onClick={()=>load(storeId)} disabled={loading}>{loading?"Updating…":"Update data"}</button>
         </div>
       </header>
-      <div className="statusline"><span className={allStoresSelected||hasRealData?"":"sample"}/>{allStoresSelected?`Data snapshot · ${data?.stores.length ?? 0} stores from Link Directory`:(hasRealData?`Real imported data${live.period ? ` · ${live.period}` : ""}`:"Sample layout — awaiting store import")} · Last updated {updated}</div>
-
       {section==="overview" && <div className="page">
         <div className="page-title"><div><p className="kicker">OVERVIEW</p><h2>Business Pulse</h2></div><div className="warning-pill">{importantWarningCount} important warnings</div></div>
         <section className="owner-brief"><div><span>今日重点</span><strong>{adFunds.lowBalance ? `Ad Balance ${formatRinggit(adFunds.balance)} · Top-up ${formatRinggit(adFunds.recommendedTopUp)}` : `${warningOrders.length} orders need attention`}</strong><small>{adFunds.syncStatus === "delayed" ? "Advertising data delayed" : (adFunds.lowBalance ? (adFunds.topUpOwner === "shopee_hub" ? "Managed by Shopee Hub" : "Action required") : "Ads healthy")}</small></div><button onClick={()=>setSection(adFunds.lowBalance?"advertising":"orders")}>View →</button></section>
@@ -346,7 +342,7 @@ export default function Home() {
       {section==="health" && noSample ? <div className="page"><div className="page-title"><div><p className="kicker">STORE HEALTH</p><h2>Reputation & compliance</h2></div></div><article className="card"><h3>暂无数据</h3><p>本次来源没有提供 Mizino Premium 的店铺健康指标。</p></article></div> : section==="health" && <div className="page"><div className="page-title"><div><p className="kicker">STORE HEALTH</p><h2>Reputation & compliance</h2></div><span className="health-status">Healthy</span></div><section className="metric-grid"><article className="metric"><span>Reviews</span><strong>4,286</strong><em>+182 this month</em></article><article className="metric danger"><span>Bad Reviews</span><strong>37</strong><em>0.86%</em></article><article className="metric"><span>Buyer Overall Rating</span><strong>4.92 / 5</strong></article><article className="metric"><span>Penalty Points</span><strong>0</strong><em>Normal</em></article></section><section className="health-grid"><article className="card reviews"><p className="kicker">RATING DISTRIBUTION</p>{[["5 stars",88],["4 stars",9],["1–3 stars",3]].map(r=><div key={r[0]}><span>{r[0]}</span><i><b style={{width:`${r[1]}%`}}/></i><strong>{r[1]}%</strong></div>)}</article><article className="card quality"><p className="kicker">SERVICE QUALITY</p>{[["Fast Handover Rate","96.8%"],["Chat Satisfaction","94.2%"],["Response Rate","98.1%"],["Late Shipment Rate","1.2%"]].map(r=><div key={r[0]}><span>{r[0]}</span><strong>{r[1]}</strong></div>)}</article><article className="card violations"><p className="kicker">LISTING VIOLATIONS</p><strong>0</strong><span>No active listing violations</span></article></section></div>}
 
       {section==="actions" && <div className="page"><div className="page-title"><div><p className="kicker">CLIENT ACTION CENTER</p><h2>What we need from the client</h2></div><span className="warning-pill">{visibleClientActions.length} open items</span></div>{adFunds.topUpOwner === "shopee_hub" && adFunds.lowBalance && <div className="managed-note">Top-up {formatRinggit(adFunds.recommendedTopUp)} · Managed by Shopee Hub</div>}{visibleClientActions.length ? <div className="action-list">{visibleClientActions.map((a:any)=><article className="card action" key={a.title}><div className={`type ${a.type.toLowerCase()}`}>{a.type.slice(0,1)}</div><div><span className="category">{a.type}</span><h3>{a.title}</h3><p>{a.client} · Due {a.due}</p>{a.message&&<p className="action-message">{a.message}</p>}</div>{a.href?<a className="action-link" href={a.href} target="_blank" rel="noopener noreferrer">{a.action}</a>:<button>{a.action}</button>}</article>)}</div> : <article className="card empty-actions"><h3>No client action needed</h3><p>当前没有需要客户处理的事项。</p></article>}</div>}
-      <footer>Shopee Hub · {data?.stores.length ?? 0} stores from Link Directory · Private command center</footer>
+      <footer>Shopee Hub · Private command center</footer>
     </section>
   </main>;
 }

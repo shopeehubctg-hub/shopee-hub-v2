@@ -321,6 +321,8 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /Listing Price/);
   assert.match(page, /sidebarCollapsed/);
   assert.match(page, /sidebar-toggle/);
+  assert.doesNotMatch(page, /Data snapshot/);
+  assert.doesNotMatch(page, /stores from Link Directory/);
   assert.doesNotMatch(calculator, /[\p{Script=Han}]/u);
   assert.doesNotMatch(packageControl, /[\p{Script=Han}]/u);
   assert.match(calculator, /onWheelCapture/);
