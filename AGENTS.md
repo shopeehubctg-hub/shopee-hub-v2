@@ -10,6 +10,6 @@
 ## Dashboard presentation
 
 - Keep visible vertical space between the global store header and each module heading, including on narrow screens.
-- Customer-facing pages must not name internal data sources, tables, import jobs, or sync mechanisms. Keep those details in admin diagnostics and developer documentation.
+- User-facing Dashboard pages must not name internal data sources, tables, import jobs, or sync mechanisms. Keep those details in dedicated admin diagnostics and developer documentation.
 - Show a verified `Last updated` date and time when available. If the update time is unknown, say so instead of inferring it from a reporting period.
 - Never display example metrics as current business data. Use a clear empty state when verified data is unavailable.
