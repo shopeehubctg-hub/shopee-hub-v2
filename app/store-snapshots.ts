@@ -11,11 +11,6 @@ export const storeSnapshots: Record<string, any> = {
       {id:"147386998",name:"MIZINO Premium Peptide Placenta Sensitive Itchy Red Skin Psoriasis Collagen Supplement",store:"Mizino Premium",type:"Manual Bidding",status:"Paused",budget:"No limit",spend:"RM 0.00",sales:"RM 0.00",roas:"0×",views:"0",clicks:"0",ctr:"0%",conversionRate:"0%",conversion:"0",sold:"0",cpc:"RM 0.00",acos:"0%"},
       {id:"147374958",name:"Mizino Premium Chocolate SlimPro",store:"Mizino Premium",type:"Manual Bidding",status:"Paused",budget:"No limit",spend:"RM 0.00",sales:"RM 0.00",roas:"0×",views:"0",clicks:"0",ctr:"0%",conversionRate:"0%",conversion:"0",sold:"0",cpc:"RM 0.00",acos:"0%"}
     ],
-    orderSummary: { today:5, expiringToday:5, expired:0 },
-    orders: [
-      { id:"260716TDX9B8CF", buyer:"ge***ow", product:"NMZN-PLPN002A · Buy 2 Free 1", time:"16 Jul 2026 21:38", value:"后台隐藏金额", expire:"17 Jul 2026 23:59", left:"今日到期", status:"Urgent" },
-      { id:"260716TJT344WG", buyer:"hm***dt9", product:"NMZN-PLPN004A · Buy 2 Free 2", time:"16 Jul 2026 23:06", value:"后台隐藏金额", expire:"17 Jul 2026 23:59", left:"今日到期", status:"Urgent" }
-    ],
     products: [
       {sku:"MZNS01JUN",sales:"RM 13,115.80",orders:70,qty:70},
       {sku:"MZNS02JUL",sales:"RM 7,973.89",orders:22,qty:22},
