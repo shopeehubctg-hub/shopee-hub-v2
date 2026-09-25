@@ -11,8 +11,8 @@ test("Store Health shows a source explanation without invented metrics", async (
   ]);
 
   assert.match(page, /section === "health" && <StoreHealth \/>/);
-  assert.match(health, /暂无店铺健康数据/);
-  assert.match(health, /未接入可核验的店铺健康数据源/);
+  assert.match(health, /No store health data yet/);
+  assert.match(health, /No verified source for store ratings, service quality, or violations is connected/);
   assert.doesNotMatch(page, /4,286|4\.92 \/ 5|96\.8%|94\.2%|98\.1%|1\.2%|No active listing violations/);
   assert.doesNotMatch(health, /Healthy|Penalty Points|Bad Reviews|No active listing violations/);
 });
