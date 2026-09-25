@@ -29,12 +29,6 @@ type OrderRow = { id:string; buyer:string; product:string; time:string; value:st
 
 const unavailableAdvertising = { balance:null, averageDailySpend30d:null, syncStatus:"delayed", spend:"—", sales:"—", roas:"—", views:"—", clicks:"—", conversion:"—", sold:"—", cpc:"—", costPerConversion:"—", acos:"—", ctr:"—", conversionRate:"—" };
 const emptyAdMetrics = { spend:"—", sales:"—", roas:"—", views:"—", clicks:"—", conversion:"—", sold:"—", cpc:"—", costPerConversion:"—", acos:"—", ctr:"—", conversionRate:"—" };
-const actionFallback = [
-  { title:"待提供配套图片", client:"J Packaging", due:"Today", type:"Content", action:"Upload" },
-  { title:"新配套价格更新 - Fulfilment Sheet", client:"J Packaging", due:"18 Jul", type:"Pricing", action:"Open Sheet", href:"https://docs.google.com/spreadsheets/d/1mpB7KVCGzP_9IXYVbhJZsLsndM4ladU3cJre5cfALAA/edit?usp=drive_link" },
-  { title:"Join CoFund", client:"J Packaging", due:"Today", type:"Campaign", action:"Review" },
-  { title:"待批准广告预算 RM 800", client:"J Packaging", due:"19 Jul", type:"Urgent", action:"Approve" },
-];
 function driveActionsForStore(store: Store | null | undefined): ClientAction[] {
   if (!store) return [];
   const folders = projectDriveFolders[store.name];
