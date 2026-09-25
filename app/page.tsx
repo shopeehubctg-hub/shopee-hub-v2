@@ -18,7 +18,6 @@ import { DashboardLoading } from "./dashboard-loading";
 import { projectDriveFolders } from "./project-drive-folders";
 import { getOrdersData } from "./orders-data.js";
 import { buildOverviewState } from "./overview-model.js";
->>>>>>> 04ae548 (Show sourced Overview data and honest empty states)
 
 type Store = { id: string; name: string; platform: string; contacts: { project: string; href: string }[]; driveLink?: string | null };
 type ManagementAction = { actionDate: string; category: string; title: string; detail: string };
@@ -30,7 +29,6 @@ type OrderRow = { id:string; buyer:string; product:string; time:string; value:st
 
 const unavailableAdvertising = { balance:null, averageDailySpend30d:null, syncStatus:"delayed", spend:"—", sales:"—", roas:"—", views:"—", clicks:"—", conversion:"—", sold:"—", cpc:"—", costPerConversion:"—", acos:"—", ctr:"—", conversionRate:"—" };
 const emptyAdMetrics = { spend:"—", sales:"—", roas:"—", views:"—", clicks:"—", conversion:"—", sold:"—", cpc:"—", costPerConversion:"—", acos:"—", ctr:"—", conversionRate:"—" };
->>>>>>> 04ae548 (Show sourced Overview data and honest empty states)
 const actionFallback = [
   { title:"待提供配套图片", client:"J Packaging", due:"Today", type:"Content", action:"Upload" },
   { title:"新配套价格更新 - Fulfilment Sheet", client:"J Packaging", due:"18 Jul", type:"Pricing", action:"Open Sheet", href:"https://docs.google.com/spreadsheets/d/1mpB7KVCGzP_9IXYVbhJZsLsndM4ladU3cJre5cfALAA/edit?usp=drive_link" },
@@ -162,7 +160,6 @@ export default function Home() {
   const overviewState = buildOverviewState(overviewSnapshot, overviewSource);
   const overviewLive = overviewState.payload ?? {};
   const adsBase = data?.adPerformance?.length ? { ...unavailableAdvertising, ...(live.advertising ?? {}) } : unavailableAdvertising;
->>>>>>> 04ae548 (Show sourced Overview data and honest empty states)
   const importedStoreAds = adsData.filter((ad:any) => allStoresSelected || ad.store === store?.name);
   const relevantDailyAds = data?.adPerformance ?? [];
   const availableAdDates = [...new Set(relevantDailyAds.map(row=>row.date))].sort((a,b)=>b.localeCompare(a));
@@ -213,7 +210,7 @@ export default function Home() {
   const generatedTopUpAction = buildTopUpAction(adFunds, store?.name ?? "Selected store", { projectGroupHref:store?.contacts[0]?.href });
   const visibleClientActionsBase = [...driveActions, ...clientActions];
   const visibleClientActions = generatedTopUpAction ? [generatedTopUpAction, ...visibleClientActionsBase.filter((action:ClientAction)=>action.type !== "Top-up" || !action.generated)] : visibleClientActionsBase;
-  const overviewOrders = orderData.hasData ? orders : null;
+  const overviewOrders: OrderRow[] | null = orderData.hasData ? orders as OrderRow[] : null;
   const warningOrders = overviewOrders?.filter((order:OrderRow) => order.status === "Expired" || order.status === "Urgent") ?? [];
   const overviewLowBalance = Boolean(!allStoresSelected && effectiveBalance && relevantDailyAds.length && adFunds.lowBalance);
   const importantWarningCount = overviewOrders || effectiveBalance ? warningOrders.length + (overviewLowBalance ? 1 : 0) : null;
@@ -221,7 +218,6 @@ export default function Home() {
   const losses = overviewLive.losses;
   const targetRate = typeof target?.rate === "number" && Number.isFinite(target.rate) ? target.rate : null;
   const orderSummary = orderData.summary;
->>>>>>> 04ae548 (Show sourced Overview data and honest empty states)
   const fakeSellerCases = Array.isArray(live.fakeSellerCases) ? live.fakeSellerCases as FakeSellerCase[] : undefined;
   const nav = useMemo(() => {
     const allowed = new Set(data?.access?.enabledModules ?? []);
@@ -266,7 +262,6 @@ export default function Home() {
           <article className="card losses"><p className="kicker">ORDER LOSSES</p><div><span>Cancelled orders<b>{losses?.cancelledOrders ?? "—"}</b><small>{losses?.cancelledAmount ?? "—"}</small></span><span>Refund orders<b>{losses?.refundOrders ?? "—"}</b><small>{losses?.refundAmount ?? "—"}</small></span></div></article>
           <article className="card alerts detailed-alerts"><div className="card-head"><div><p className="kicker">ORDER WARNINGS</p><h3>{overviewOrders ? "Orders flagged in snapshot" : "Order data unavailable"}</h3></div><b>{overviewOrders ? warningOrders.length : "—"}</b></div><div className="warning-metrics"><span><b>{overviewOrders ? overviewOrders.filter(o=>o.status==="Expired").length : "—"}</b> Expired orders</span><span><b>{overviewOrders ? overviewOrders.filter(o=>o.status==="Urgent").length : "—"}</b> Urgent orders</span></div><div className="warning-orders">{warningOrders.map(o=><div className="warning-order" key={o.id}><span className={`badge ${o.status.toLowerCase()}`}>{o.status}</span><div><b>{o.id}</b><small>{o.buyer} · {o.product}</small></div><div><b>{o.value}</b><small>Order {o.time}</small></div><div><b>{o.expire}</b><small>{o.status==="Expired"?"Expired":"Time left at snapshot: "+o.left}</small></div></div>)}</div></article>
           <article className="card action-summary"><div className="card-head"><div><p className="kicker">CLIENT ACTION CENTER</p><h3>Actions in snapshot</h3></div><b>{Array.isArray(overviewLive.clientActions) ? overviewLive.clientActions.length : "—"}</b></div><div className="chips"><span>{Array.isArray(overviewLive.clientActions) ? "Snapshot actions" : "Action data unavailable"}</span></div><button onClick={()=>setSection("actions")}>Open action center →</button></article>
->>>>>>> 04ae548 (Show sourced Overview data and honest empty states)
         </section>
       </div>}
 
