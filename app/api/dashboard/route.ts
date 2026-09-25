@@ -290,7 +290,8 @@ export async function GET(request: Request) {
         };
       }),
       selectedStoreId: allStoresRequested ? "all" : selectedStore?.id ?? null,
-      snapshot: snapshotPayload ? { payload: snapshotPayload, importedAt: snapshotPayload.sourceUpdated ?? new Date().toISOString() } : null,
+      snapshot: snapshotPayload ? { payload: snapshotPayload, importedAt: snapshotPayload.sourceUpdated ?? "" } : null,
+      snapshotSource: snapshotPayload ? "bundled" : null,
       adBalance: sheetBalance ? { ...sheetBalance, topUpOwner: selectedDirectory?.topUpOwner ?? topUpOwnerFallbacks[selectedStore?.name ?? ""] ?? null } : null,
       adPerformance,
       actions: [],
@@ -422,6 +423,7 @@ export async function GET(request: Request) {
     }),
     selectedStoreId: allStoresRequested ? "all" : (selectedStore?.id ?? null),
     snapshot: latest[0] ?? null,
+    snapshotSource: latest[0] ? "imported" : null,
     adBalance: sheetBalance ? { ...sheetBalance, topUpOwner } : (latestBalance[0] ? {
       balance: latestBalance[0].balanceCents / 100,
       balanceDate: latestBalance[0].balanceDate,

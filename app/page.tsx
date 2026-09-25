@@ -17,21 +17,20 @@ import { PermissionSettings } from "./permission-settings";
 import { DashboardLoading } from "./dashboard-loading";
 import { projectDriveFolders } from "./project-drive-folders";
 import { getOrdersData } from "./orders-data.js";
+import { buildOverviewState } from "./overview-model.js";
+>>>>>>> 04ae548 (Show sourced Overview data and honest empty states)
 
 type Store = { id: string; name: string; platform: string; contacts: { project: string; href: string }[]; driveLink?: string | null };
 type ManagementAction = { actionDate: string; category: string; title: string; detail: string };
 type CoFundVoucher = { id:number; campaignName:string; campaignDate:string|null; campaignStartAt:string|null; campaignEndAt:string|null; voucherName:string; discountAmount:number; currency:string; quantity:number };
-type DashboardResponse = { stores: Store[]; selectedStoreId: string | null; snapshot: { payload: any; importedAt: string } | null; adBalance: { balance:number; balanceDate:string; sourceUpdatedAt:string; syncStatus:string; topUpOwner?:string | null } | null; adPerformance?:DailyAd[]; actions?: ManagementAction[]; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; access?:{ role:string; enabledModules:PortalModuleId[]; clientEnabledModules:PortalModuleId[]; canManagePermissions:boolean } };
+type DashboardResponse = { stores: Store[]; selectedStoreId: string | null; snapshot: { payload: any; importedAt: string } | null; snapshotSource?: "bundled" | "imported" | null; adBalance: { balance:number; balanceDate:string; sourceUpdatedAt:string; syncStatus:string; topUpOwner?:string | null } | null; adPerformance?:DailyAd[]; actions?: ManagementAction[]; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; access?:{ role:string; enabledModules:PortalModuleId[]; clientEnabledModules:PortalModuleId[]; canManagePermissions:boolean } };
 type ClientAction = { title: string; client: string; due: string; type: string; action: string; href?: string; message?: string; generated?: boolean };
 type DailyAd = { date:string; store:string; storeIds?:string[]; spend:number; sales:number; roas:number; views:number; clicks:number; ctr:number; conversion:number; sold:number; acos:number };
 type OrderRow = { id:string; buyer:string; product:string; time:string; value:string; expire:string; left:string; status:string };
 
-const overviewFallback = [
-  ["Valid Order Sales", "—", ""], ["Valid Orders", "—", ""],
-  ["Customers", "527", "+14.2%"], ["Sales per Customer", "RM 35.51", "+6.3%"],
-];
 const unavailableAdvertising = { balance:null, averageDailySpend30d:null, syncStatus:"delayed", spend:"—", sales:"—", roas:"—", views:"—", clicks:"—", conversion:"—", sold:"—", cpc:"—", costPerConversion:"—", acos:"—", ctr:"—", conversionRate:"—" };
 const emptyAdMetrics = { spend:"—", sales:"—", roas:"—", views:"—", clicks:"—", conversion:"—", sold:"—", cpc:"—", costPerConversion:"—", acos:"—", ctr:"—", conversionRate:"—" };
+>>>>>>> 04ae548 (Show sourced Overview data and honest empty states)
 const actionFallback = [
   { title:"待提供配套图片", client:"J Packaging", due:"Today", type:"Content", action:"Upload" },
   { title:"新配套价格更新 - Fulfilment Sheet", client:"J Packaging", due:"18 Jul", type:"Pricing", action:"Open Sheet", href:"https://docs.google.com/spreadsheets/d/1mpB7KVCGzP_9IXYVbhJZsLsndM4ladU3cJre5cfALAA/edit?usp=drive_link" },
@@ -158,8 +157,12 @@ export default function Home() {
   const staticSnapshot = store ? storeSnapshots[store.name] : null;
   const live = data?.snapshot?.payload ?? staticSnapshot ?? {};
   const noSample = Boolean(live.noSample);
-  const overview = Array.isArray(live.overview) ? live.overview : overviewFallback;
+  const overviewSnapshot = data?.snapshot ?? (staticSnapshot ? { payload:staticSnapshot, importedAt:"" } : null);
+  const overviewSource = data?.snapshotSource ?? (data?.snapshot ? "imported" : staticSnapshot ? "bundled" : null);
+  const overviewState = buildOverviewState(overviewSnapshot, overviewSource);
+  const overviewLive = overviewState.payload ?? {};
   const adsBase = data?.adPerformance?.length ? { ...unavailableAdvertising, ...(live.advertising ?? {}) } : unavailableAdvertising;
+>>>>>>> 04ae548 (Show sourced Overview data and honest empty states)
   const importedStoreAds = adsData.filter((ad:any) => allStoresSelected || ad.store === store?.name);
   const relevantDailyAds = data?.adPerformance ?? [];
   const availableAdDates = [...new Set(relevantDailyAds.map(row=>row.date))].sort((a,b)=>b.localeCompare(a));
@@ -210,13 +213,15 @@ export default function Home() {
   const generatedTopUpAction = buildTopUpAction(adFunds, store?.name ?? "Selected store", { projectGroupHref:store?.contacts[0]?.href });
   const visibleClientActionsBase = [...driveActions, ...clientActions];
   const visibleClientActions = generatedTopUpAction ? [generatedTopUpAction, ...visibleClientActionsBase.filter((action:ClientAction)=>action.type !== "Top-up" || !action.generated)] : visibleClientActionsBase;
-  const warningOrders = orders.filter((order:any) => order.status === "Expired" || order.status === "Urgent");
-  const importantWarningCount = orderData.hasData || adFunds.lowBalance
-    ? warningOrders.length + (adFunds.lowBalance ? 1 : 0)
-    : "—";
-  const target = live.target;
-  const losses = live.losses;
+  const overviewOrders = orderData.hasData ? orders : null;
+  const warningOrders = overviewOrders?.filter((order:OrderRow) => order.status === "Expired" || order.status === "Urgent") ?? [];
+  const overviewLowBalance = Boolean(!allStoresSelected && effectiveBalance && relevantDailyAds.length && adFunds.lowBalance);
+  const importantWarningCount = overviewOrders || effectiveBalance ? warningOrders.length + (overviewLowBalance ? 1 : 0) : null;
+  const target = overviewLive.target;
+  const losses = overviewLive.losses;
+  const targetRate = typeof target?.rate === "number" && Number.isFinite(target.rate) ? target.rate : null;
   const orderSummary = orderData.summary;
+>>>>>>> 04ae548 (Show sourced Overview data and honest empty states)
   const fakeSellerCases = Array.isArray(live.fakeSellerCases) ? live.fakeSellerCases as FakeSellerCase[] : undefined;
   const nav = useMemo(() => {
     const allowed = new Set(data?.access?.enabledModules ?? []);
@@ -251,14 +256,17 @@ export default function Home() {
       </header>
 
       {section==="overview" && <div className="page">
-        <div className="page-title"><div><p className="kicker">OVERVIEW</p><h2>Business Pulse</h2></div><div className="warning-pill">{importantWarningCount} important warnings</div></div>
-        <section className="owner-brief"><div><span>今日重点</span><strong>{adFunds.lowBalance ? `Ad Balance ${formatRinggit(adFunds.balance)} · Top-up ${formatRinggit(adFunds.recommendedTopUp)}` : orderData.hasData ? `${warningOrders.length} orders need attention` : "Order data unavailable"}</strong><small>{adFunds.syncStatus === "delayed" ? "Advertising data delayed" : (adFunds.lowBalance ? (adFunds.topUpOwner === "shopee_hub" ? "Managed by Shopee Hub" : "Action required") : "Ads healthy")}</small></div><button onClick={()=>setSection(adFunds.lowBalance?"advertising":"orders")}>View →</button></section>
-        <section className="metric-grid">{overview.map((m:any)=><article className="metric" key={m[0]}><span>{m[0]}</span><strong>{m[1]}</strong><em>{m[2]}</em></article>)}</section>
+        <div className="page-title"><div><p className="kicker">OVERVIEW</p><h2>Business Pulse</h2></div><div className="warning-pill">{importantWarningCount == null ? "Warnings unavailable" : overviewOrders ? `${importantWarningCount} warnings in snapshot` : `${importantWarningCount} ad balance warnings`}</div></div>
+        <p className="overview-provenance">{overviewState.sourceLabel}{overviewState.period ? ` · Period ${overviewState.period}` : ""} · Data as of {overviewState.asOf ?? "unavailable"}</p>
+        {!overviewState.payload && <p className="overview-empty" role="status">No order performance snapshot is available for this selection. Sales, customers, targets, and losses will appear after an import.</p>}
+        <section className="owner-brief"><div><span>OVERVIEW ALERTS</span><strong>{overviewLowBalance ? `Ad Balance ${formatRinggit(adFunds.balance)} · Top-up ${formatRinggit(adFunds.recommendedTopUp)}` : warningOrders.length ? `${warningOrders.length} orders flagged in snapshot` : overviewOrders ? "No order warnings in snapshot" : "Order alerts unavailable"}</strong><small>{overviewState.sourceLabel}{overviewState.asOf ? ` · ${overviewState.asOf}` : ""}</small></div>{(overviewLowBalance || overviewOrders) && <button onClick={()=>setSection(overviewLowBalance?"advertising":"orders")}>View →</button>}</section>
+        <section className="metric-grid">{overviewState.metrics.map((m:string[])=><article className="metric" key={m[0]}><span>{m[0]}</span><strong>{m[1]}</strong>{m[2] && <em>{m[2]}</em>}</article>)}</section>
         <section className="overview-grid">
-          <article className="card target"><div className="card-head"><div><p className="kicker">MONTHLY TARGET</p><h3>{target?.goal ?? "RM 120,000"}</h3></div><strong>{target?.rate == null && noSample ? "暂无数据" : `${target?.rate ?? 68.4}%`}</strong></div><div className="progress"><i style={{width:`${target?.rate ?? (noSample ? 0 : 68.4)}%`}}/></div><div className="split"><span>Achieved <b>{target?.achieved ?? (noSample ? "暂无数据" : "RM 82,080")}</b></span><span>Projected month end <b>{target?.projected ?? (noSample ? "暂无数据" : "RM 126,430")}</b></span></div></article>
+          <article className="card target"><div className="card-head"><div><p className="kicker">MONTHLY TARGET</p><h3>{target?.goal ?? "—"}</h3></div><strong>{targetRate == null ? "—" : `${targetRate}%`}</strong></div><div className="progress"><i style={{width:`${Math.min(100,Math.max(0,targetRate ?? 0))}%`}}/></div><div className="split"><span>Achieved <b>{target?.achieved ?? "—"}</b></span><span>Projected month end <b>{target?.projected ?? "—"}</b></span></div></article>
           <article className="card losses"><p className="kicker">ORDER LOSSES</p><div><span>Cancelled orders<b>{losses?.cancelledOrders ?? "—"}</b><small>{losses?.cancelledAmount ?? "—"}</small></span><span>Refund orders<b>{losses?.refundOrders ?? "—"}</b><small>{losses?.refundAmount ?? "—"}</small></span></div></article>
-          <article className="card alerts detailed-alerts"><div className="card-head"><div><p className="kicker">IMPORTANT WARNINGS</p><h3>Requires immediate attention</h3></div><b>{orderData.hasData ? warningOrders.length : "—"}</b></div><div className="warning-metrics"><span><b>{orderData.hasData ? orders.filter((o:any)=>o.status==="Expired").length : "—"}</b> Expired orders</span><span><b>{orderData.hasData ? orders.filter((o:any)=>o.status==="Urgent").length : "—"}</b> Urgent orders</span><span><b>0</b> Penalty points</span></div><div className="warning-orders">{warningOrders.map((o:any)=><div className="warning-order" key={o.id}><span className={`badge ${o.status.toLowerCase()}`}>{o.status}</span><div><b>{o.id}</b><small>{o.buyer} · {o.product}</small></div><div><b>{o.value}</b><small>Order {o.time}</small></div><div><b>{o.expire}</b><small>{o.status==="Expired"?"Expired":"Time left: "+o.left}</small></div></div>)}</div></article>
-          <article className="card action-summary"><div className="card-head"><div><p className="kicker">CLIENT ACTION CENTER</p><h3>Waiting on client</h3></div><b>{visibleClientActions.length}</b></div><div className="chips"><span>{generatedTopUpAction ? `Top-up ${formatRinggit(adFunds.recommendedTopUp)}` : "Ads healthy"}</span><span>{adFunds.topUpOwner === "shopee_hub" ? "Managed by Shopee Hub" : "Client action"}</span></div><button onClick={()=>setSection("actions")}>Open action center →</button></article>
+          <article className="card alerts detailed-alerts"><div className="card-head"><div><p className="kicker">ORDER WARNINGS</p><h3>{overviewOrders ? "Orders flagged in snapshot" : "Order data unavailable"}</h3></div><b>{overviewOrders ? warningOrders.length : "—"}</b></div><div className="warning-metrics"><span><b>{overviewOrders ? overviewOrders.filter(o=>o.status==="Expired").length : "—"}</b> Expired orders</span><span><b>{overviewOrders ? overviewOrders.filter(o=>o.status==="Urgent").length : "—"}</b> Urgent orders</span></div><div className="warning-orders">{warningOrders.map(o=><div className="warning-order" key={o.id}><span className={`badge ${o.status.toLowerCase()}`}>{o.status}</span><div><b>{o.id}</b><small>{o.buyer} · {o.product}</small></div><div><b>{o.value}</b><small>Order {o.time}</small></div><div><b>{o.expire}</b><small>{o.status==="Expired"?"Expired":"Time left at snapshot: "+o.left}</small></div></div>)}</div></article>
+          <article className="card action-summary"><div className="card-head"><div><p className="kicker">CLIENT ACTION CENTER</p><h3>Actions in snapshot</h3></div><b>{Array.isArray(overviewLive.clientActions) ? overviewLive.clientActions.length : "—"}</b></div><div className="chips"><span>{Array.isArray(overviewLive.clientActions) ? "Snapshot actions" : "Action data unavailable"}</span></div><button onClick={()=>setSection("actions")}>Open action center →</button></article>
+>>>>>>> 04ae548 (Show sourced Overview data and honest empty states)
         </section>
       </div>}
 
