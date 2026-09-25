@@ -18,6 +18,9 @@
     "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
+    "qc:release:static": "npm run build && tsc --noEmit && node --test tests/login-proxy.test.mjs tests/dashboard-loading.test.mjs tests/ad-performance.test.mjs tests/advertising-model.test.mjs tests/rendered-html.test.mjs tests/release-qc-live.test.mjs",
+    "qc:release:live": "node scripts/release-qc-live.mjs",
+    "qc:release": "npm run qc:release:static && npm run qc:release:live",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },
