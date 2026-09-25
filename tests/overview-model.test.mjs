@@ -6,7 +6,6 @@ import { buildOverviewState } from "../app/overview-model.js";
 test("a store without an imported snapshot has no fabricated Overview values or timestamp", () => {
   const state = buildOverviewState(null, null);
   assert.equal(state.payload, null);
-  assert.equal(state.sourceLabel, "No dashboard snapshot available");
   assert.equal(state.asOf, null);
   assert.deepEqual(state.metrics.map(([, value, trend]) => [value, trend]), [
     ["—", ""], ["—", ""], ["—", ""], ["—", ""],
@@ -22,7 +21,7 @@ test("a historical bundled snapshot keeps its source and original data cutoff", 
     },
     importedAt: "",
   }, "bundled");
-  assert.equal(state.sourceLabel, "Historical bundled snapshot");
+  assert.equal("sourceLabel" in state, false);
   assert.equal(state.asOf, "17 Jul 2026, 3:55 am");
   assert.equal(state.period, "1–16 Jul 2026");
   assert.deepEqual(state.metrics.map(([, value, trend]) => [value, trend]), [
@@ -35,9 +34,14 @@ test("an imported snapshot shows zero values and uses its import time when sourc
     payload: { overview:[["Valid Orders", 0, "0%"]] },
     importedAt: "2026-09-24T09:00:00.000Z",
   }, "imported");
-  assert.equal(state.sourceLabel, "Imported dashboard snapshot");
+  assert.equal("sourceLabel" in state, false);
   assert.match(state.asOf, /24 Sept 2026.*5:00.*MYT/);
   assert.deepEqual(state.metrics[1], ["Valid Orders", "0", "0%"]);
+});
+
+test("an unparseable import timestamp is unavailable", () => {
+  const state = buildOverviewState({ payload:{ overview:[] }, importedAt:"not a timestamp" }, "imported");
+  assert.equal(state.asOf, null);
 });
 
 test("Overview renders the sourced model without legacy sample KPI fallbacks", async () => {
@@ -46,8 +50,9 @@ test("Overview renders the sourced model without legacy sample KPI fallbacks", a
     readFile(new URL("../app/api/dashboard/route.ts", import.meta.url), "utf8"),
   ]);
   assert.match(page, /buildOverviewState\(overviewSnapshot, overviewSource\)/);
-  assert.match(page, /overviewState\.sourceLabel/);
+  assert.match(page, /Last updated \{overviewState\.asOf \?\? "unavailable"\}/);
   assert.match(page, /overviewState\.asOf/);
+  assert.doesNotMatch(page, /sourceLabel|Historical bundled snapshot|Imported dashboard snapshot|Data as of/);
   assert.match(route, /snapshotSource: snapshotPayload \? "bundled" : null/);
   assert.match(route, /snapshotSource: latest\[0\] \? "imported" : null/);
   for (const sample of ["RM 18,711.82", "RM 120,000", "RM 1,486.20", "RM 422.60"]) {

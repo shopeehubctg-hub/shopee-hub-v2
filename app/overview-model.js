@@ -9,7 +9,7 @@ function dataCutoff(snapshot, payload) {
   if (!snapshot?.importedAt) return null;
   const importedAt = new Date(snapshot.importedAt);
   return Number.isNaN(importedAt.getTime())
-    ? snapshot.importedAt
+    ? null
     : `${new Intl.DateTimeFormat("en-MY", { dateStyle:"medium", timeStyle:"short", timeZone:"Asia/Kuala_Lumpur" }).format(importedAt)} MYT`;
 }
 
@@ -29,7 +29,6 @@ export function buildOverviewState(snapshot, source) {
       const trend = displayValue(row?.[2]);
       return [label, value, value === "—" || trend === "—" ? "" : trend];
     }),
-    sourceLabel: source === "bundled" ? "Historical bundled snapshot" : source === "imported" ? "Imported dashboard snapshot" : "No dashboard snapshot available",
     asOf: payload ? dataCutoff(snapshot, payload) : null,
     period: payload?.period || null,
   };
