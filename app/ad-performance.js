@@ -31,6 +31,20 @@ export function authorizedAdStoreIds(visibleStores, selectedStore, canViewAdvert
   return selectedStore ? [selectedStore.id] : visibleStores.map((store) => store.id);
 }
 
+export function latestAdSyncTime(rows) {
+  let latest = null;
+  let latestMs = -Infinity;
+  for (const row of rows) {
+    const time = row.synced_at;
+    const ms = Date.parse(time);
+    if (Number.isFinite(ms) && ms > latestMs) {
+      latest = time;
+      latestMs = ms;
+    }
+  }
+  return latest;
+}
+
 export function selectedAdDateFor(requestedDate, availableDates) {
   const latest = availableDates[0] ?? "";
   const earliest = availableDates[availableDates.length - 1] ?? "";
