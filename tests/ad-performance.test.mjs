@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { aggregateAdPerformanceByDate, aggregateSelectedAdRows, authorizedAdStoreIds, selectAdRows, selectedAdDateFor } from "../app/ad-performance.js";
+import { aggregateAdPerformanceByDate, aggregateSelectedAdRows, authorizedAdStoreIds, latestAdSyncTime, selectAdRows, selectedAdDateFor } from "../app/ad-performance.js";
 import { readFile } from "node:fs/promises";
 
 test("FullAd rows from visible stores combine by date with weighted rates", () => {
@@ -47,6 +47,15 @@ test("FullAd store scope includes only visible stores and requires Advertising a
   assert.deepEqual(authorizedAdStoreIds(visible,undefined,false),[]);
 });
 
+test("latest advertising sync time comes from the authorized rows", () => {
+  assert.equal(latestAdSyncTime([
+    {synced_at:"2026-09-25T09:00:00+00:00"},
+    {synced_at:"2026-09-25T13:11:17.544396+00:00"},
+    {synced_at:null},
+  ]),"2026-09-25T13:11:17.544396+00:00");
+  assert.equal(latestAdSyncTime([]),null);
+});
+
 test("selected-store membership with no assignments does not fall back to directory stores", async () => {
   const route=await readFile(new URL("../app/api/dashboard/route.ts",import.meta.url),"utf8");
   assert.match(route,/membership\.storeAccessMode === "selected" && membership\.role !== "superadmin" \? \[\] : directoryStores\.map/);
@@ -69,7 +78,13 @@ test("All Stores overview uses live FullAd coverage and excludes undated campaig
   assert.match(page,/useState<"mtd"\|"month"\|"date"\|"range">\("mtd"\)/);
   assert.match(page,/All Stores advertising overview/);
   assert.match(page,/coveredAdStores\} \/ \{data\.stores\.length/);
-  assert.match(page,/FullAd data through \{formatAdDate\(latestAdDate\)\}/);
+  assert.match(page,/stores with data in this period/);
+  assert.match(page,/Last updated \{formatAdSyncTime\(data\.adPerformanceUpdatedAt\)\}/);
+  assert.match(page,/timeZone:"Asia\/Kuala_Lumpur"/);
+  assert.doesNotMatch(page,/FullAd|Imported campaign export/);
+  const route=await readFile(new URL("../app/api/dashboard/route.ts",import.meta.url),"utf8");
+  assert.match(route,/conversions,sold,synced_at/);
+  assert.match(route,/adPerformanceUpdatedAt:adPerformance\.updatedAt/g);
   assert.match(page,/!allStoresSelected && adCampaigns\.length > 0 && <section className="campaign-section"/);
   assert.doesNotMatch(page,/allStoresAdvertising|Latest campaign snapshot|Data snapshot/);
 });
