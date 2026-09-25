@@ -9,7 +9,7 @@ export function StoreHealth() {
       </div>
       <article className="card" role="status">
         <h3>No store health data yet</h3>
-        <p>No verified source for store ratings, service quality, or violations is connected. These metrics will appear after the source is connected and synced.</p>
+        <p>Ratings, service quality, and violation details are unavailable until store health data is updated.</p>
       </article>
     </div>
   );
