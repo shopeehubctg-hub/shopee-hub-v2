@@ -240,7 +240,7 @@ async function readAdPerformance(storeIds:string[], tenantId:string, allStores:b
     }
     if (allStores) return aggregateAdPerformanceByDate(rows);
     return rows.map(row=>({
-      date:row.performance_date,store:storeIds[0],spend:Number(row.spend),sales:Number(row.sales),
+      date:row.performance_date,store:storeIds[0],storeIds:[row.store_id],spend:Number(row.spend),sales:Number(row.sales),
       roas:Number(row.spend)>0?Number(row.sales)/Number(row.spend):0,
       views:Number(row.views),clicks:Number(row.clicks),
       ctr:Number(row.views)>0?Number(row.clicks)/Number(row.views):0,
