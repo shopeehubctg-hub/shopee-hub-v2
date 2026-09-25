@@ -280,7 +280,7 @@ export default function Home() {
       {section==="orders" && <div className="page">
         <div className="page-title"><div><p className="kicker">ORDERS & INVENTORY</p><h2>Orders & deadlines</h2></div></div>
         {orderData.hasData ? <>
-          <p className="order-data-note">Source: Dashboard order snapshot{orderData.updatedAt ? ` · Snapshot updated ${orderData.updatedAt}` : " · Update time unavailable"}. These figures reflect that snapshot, not a live order feed. Inventory status is not connected.</p>
+          <p className="order-data-note">{orderData.dashboardUpdatedAt ? `Dashboard last updated: ${orderData.dashboardUpdatedAt}. ` : ""}Order figures may not be live. Inventory status is not connected.</p>
           <section className="metric-grid three">
             <article className="metric"><span>Today’s Orders</span><strong>{orderSummary?.today ?? "—"}</strong></article>
             <article className="metric warn"><span>Expiring Today</span><strong>{orderSummary?.expiringToday ?? "—"}</strong></article>
@@ -288,11 +288,11 @@ export default function Home() {
           </section>
           <div className="card table-card"><table><thead><tr><th>Order</th><th>Buyer</th><th>Product</th><th>Order Time</th><th>Order Value</th><th>Expire Time</th><th>Time Left</th><th>Status</th></tr></thead><tbody>
             {orders.map((o:OrderRow)=><tr key={o.id}><td><b>{o.id}</b></td><td>{o.buyer}</td><td>{o.product}</td><td>{o.time}</td><td>{o.value}</td><td>{o.expire}</td><td>{o.left}</td><td><span className={`badge ${o.status.toLowerCase()}`}>{o.status}</span></td></tr>)}
-            {!orders.length && <tr><td colSpan={8}>No order rows in this snapshot.</td></tr>}
+            {!orders.length && <tr><td colSpan={8}>No orders to display.</td></tr>}
           </tbody></table></div>
         </> : <article className="card order-empty" role="status">
           <h3>No order data available</h3>
-          <p>No order snapshot is available for this store or view. Order counts and deadlines will appear when data is imported. Inventory status is not connected.</p>
+          <p>No order data is available for this store or view. Order counts and deadlines will appear when data becomes available. Inventory status is not connected.</p>
         </article>}
       </div>}
 

@@ -12,6 +12,6 @@ export function getOrdersData(snapshot) {
     hasData,
     orders: hasOrders ? payload.orders : [],
     summary: hasSummary ? payload.orderSummary : null,
-    updatedAt: hasData ? (payload.sourceUpdated || snapshot.importedAt || null) : null,
+    dashboardUpdatedAt: hasData ? (payload.sourceUpdated || snapshot.importedAt || null) : null,
   };
 }
