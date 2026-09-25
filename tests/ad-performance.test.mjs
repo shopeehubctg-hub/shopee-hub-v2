@@ -56,6 +56,15 @@ test("latest advertising sync time comes from the authorized rows", () => {
   assert.equal(latestAdSyncTime([]),null);
 });
 
+test("balance update label never invents a time for date-only sheet rows", async () => {
+  const route=await readFile(new URL("../app/api/dashboard/route.ts",import.meta.url),"utf8");
+  const page=await readFile(new URL("../app/page.tsx",import.meta.url),"utf8");
+  assert.match(route,/sourceUpdatedAt: null,/);
+  assert.match(route,/sourceUpdatedAt: latestBalance\[0\]\.importedAt/);
+  assert.doesNotMatch(route,/9:00 am/);
+  assert.match(page,/`Updated on \$\{formatAdDate\(effectiveBalance\.balanceDate\)\}`/);
+});
+
 test("selected-store membership with no assignments does not fall back to directory stores", async () => {
   const route=await readFile(new URL("../app/api/dashboard/route.ts",import.meta.url),"utf8");
   assert.match(route,/membership\.storeAccessMode === "selected" && membership\.role !== "superadmin" \? \[\] : directoryStores\.map/);
