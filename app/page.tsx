@@ -9,7 +9,7 @@ import { FakeSellerReport, type FakeSellerCase } from "./fake-seller-report";
 import type { PackagePrefill } from "./calculator-types";
 import { storeSnapshots } from "./store-snapshots";
 import { buildAdvertisingFunds, buildTopUpAction, formatRinggit } from "./advertising-model.js";
-import { selectAdRows, selectedAdDateFor } from "./ad-performance.js";
+import { aggregateSelectedAdRows, selectAdRows, selectedAdDateFor } from "./ad-performance.js";
 import type { ProjectProductProfile } from "./product-catalog";
 import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
 import { PermissionSettings } from "./permission-settings";
@@ -21,30 +21,14 @@ type ManagementAction = { actionDate: string; category: string; title: string; d
 type CoFundVoucher = { id:number; campaignName:string; campaignDate:string|null; campaignStartAt:string|null; campaignEndAt:string|null; voucherName:string; discountAmount:number; currency:string; quantity:number };
 type DashboardResponse = { stores: Store[]; selectedStoreId: string | null; snapshot: { payload: any; importedAt: string } | null; adBalance: { balance:number; balanceDate:string; sourceUpdatedAt:string; syncStatus:string; topUpOwner?:string | null } | null; adPerformance?:DailyAd[]; actions?: ManagementAction[]; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; access?:{ role:string; enabledModules:PortalModuleId[]; clientEnabledModules:PortalModuleId[]; canManagePermissions:boolean } };
 type ClientAction = { title: string; client: string; due: string; type: string; action: string; href?: string; message?: string; generated?: boolean };
-type DailyAd = { date:string; store:string; spend:number; sales:number; roas:number; views:number; clicks:number; ctr:number; conversion:number; sold:number; acos:number };
+type DailyAd = { date:string; store:string; storeIds?:string[]; spend:number; sales:number; roas:number; views:number; clicks:number; ctr:number; conversion:number; sold:number; acos:number };
 
 const overviewFallback = [
   ["Valid Order Sales", "RM 18,711.82", "+21.4%"], ["Valid Orders", "654", "+20.7%"],
   ["Customers", "527", "+14.2%"], ["Sales per Customer", "RM 35.51", "+6.3%"],
 ];
-const adFallback = { balance:"—", averageDailySpend30d:null, syncStatus:"delayed", spend:"RM 2,480.30", sales:"RM 18,922.40", roas:"7.63×", views:"428,190", clicks:"12,846", conversion:"3.18%", sold:"1,106", cpc:"RM 2.24", acos:"13.11%", ctr:"3.00%", conversionRate:"3.18%" };
-const allStoresAdvertising = { balance:"By store", spend:"RM 19,465.75", sales:"RM 347,585.29", roas:"17.86×", views:"703,913", clicks:"19,287", conversion:"1,171", sold:"5,370", cpc:"RM 16.62", acos:"5.60%", ctr:"2.74%", conversionRate:"6.07%" };
-const unavailableAdvertising = { balance:null, averageDailySpend30d:null, syncStatus:"delayed", spend:"—", sales:"—", roas:"—", views:"—", clicks:"—", conversion:"—", sold:"—", cpc:"—", acos:"—", ctr:"—", conversionRate:"—" };
-const emptyAdMetrics = { spend:"—", sales:"—", roas:"—", views:"—", clicks:"—", conversion:"—", sold:"—", cpc:"—", acos:"—", ctr:"—", conversionRate:"—" };
-const adCampaignFallback = [
-  { name:"Pizza Box – Search", type:"Product Search", status:"Active", budget:"RM 80/day", spend:"RM 742.18", sales:"RM 6,820.40", roas:"9.19×", views:"126,420", clicks:"4,188", ctr:"3.31%", conversionRate:"3.58%", sold:"302", acos:"10.88%" },
-  { name:"Corrugated Tray – Discovery", type:"Discovery", status:"Active", budget:"RM 60/day", spend:"RM 614.92", sales:"RM 4,392.60", roas:"7.14×", views:"98,310", clicks:"2,744", ctr:"2.79%", conversionRate:"2.88%", sold:"216", acos:"14.00%" },
-  { name:"A4 Pizza Box – Search", type:"Product Search", status:"Paused", budget:"RM 45/day", spend:"RM 284.60", sales:"RM 1,108.20", roas:"3.89×", views:"55,840", clicks:"946", ctr:"1.69%", conversionRate:"1.48%", sold:"64", acos:"25.68%" },
-];
-const allStoresCampaigns = [
-  { name:"Sous Vide Chicken Breast – Value Pack", type:"Jeeroul by CTG4u · GMV Max", status:"Ongoing", budget:"RM 8/day", spend:"RM 55.74", sales:"RM 412.00", roas:"7.39×", views:"4,163", clicks:"98", ctr:"2.35%", conversionRate:"2.04%", sold:"2", acos:"13.53%" },
-  { name:"Golden Oat 2.0 Gastric Comfort", type:"True Golden Care by Naturelish · GMV Max", status:"Ongoing", budget:"RM 10/day", spend:"RM 70.00", sales:"RM 2,917.00", roas:"41.67×", views:"1,088", clicks:"43", ctr:"3.95%", conversionRate:"13.95%", sold:"6", acos:"2.40%" },
-  { name:"Probiotic Whitening Tooth Powder", type:"Dr Smile Whitening by CTG4u · GMV Max", status:"Ongoing", budget:"RM 50/day", spend:"RM 434.42", sales:"RM 5,431.62", roas:"12.50×", views:"7,665", clicks:"241", ctr:"3.14%", conversionRate:"10.79%", sold:"27", acos:"8.00%" },
-  { name:"Top & Bottom Packaging Box [2]", type:"J Packaging · GMV Max", status:"Ongoing", budget:"RM 10/day", spend:"RM 30.07", sales:"RM 153.36", roas:"5.10×", views:"6,739", clicks:"187", ctr:"2.77%", conversionRate:"6.42%", sold:"48", acos:"19.61%" },
-  { name:"Pizza Box A4 [3]", type:"J Packaging · GMV Max", status:"Ongoing", budget:"RM 10/day", spend:"RM 22.54", sales:"RM 88.41", roas:"3.92×", views:"2,486", clicks:"85", ctr:"3.42%", conversionRate:"10.59%", sold:"74", acos:"25.49%" },
-  { name:"10 in 1 Baby Comfort Cream [2]", type:"CTG4U Malaysia · GMV Max", status:"Paused", budget:"RM 8/day", spend:"RM 0", sales:"RM 0", roas:"0×", views:"0", clicks:"0", ctr:"0%", conversionRate:"0%", sold:"0", acos:"0%" },
-  { name:"iLady Scalp Essence Hair Growth [2]", type:"CTG4U Malaysia · GMV Max", status:"Paused", budget:"RM 8/day", spend:"RM 0", sales:"RM 0", roas:"0×", views:"0", clicks:"0", ctr:"0%", conversionRate:"0%", sold:"0", acos:"0%" },
-];
+const unavailableAdvertising = { balance:null, averageDailySpend30d:null, syncStatus:"delayed", spend:"—", sales:"—", roas:"—", views:"—", clicks:"—", conversion:"—", sold:"—", cpc:"—", costPerConversion:"—", acos:"—", ctr:"—", conversionRate:"—" };
+const emptyAdMetrics = { spend:"—", sales:"—", roas:"—", views:"—", clicks:"—", conversion:"—", sold:"—", cpc:"—", costPerConversion:"—", acos:"—", ctr:"—", conversionRate:"—" };
 const ordersFallback = [
   { id:"260717K3M8Q1", buyer:"mi***88", product:"Pizza Box 20 × 12 × 7cm", time:"09:18", value:"RM 86.40", expire:"16:30", left:"2h 14m", status:"Urgent" },
   { id:"260717F9A2J7", buyer:"jo***tan", product:"Corrugated Tray 60 × 35 × 10cm", time:"08:42", value:"RM 124.00", expire:"14:00", left:"Expired", status:"Expired" },
@@ -81,25 +65,12 @@ function driveActionsForStore(store: Store | null | undefined): ClientAction[] {
 }
 
 function money(value: string) { return value; }
-function parseCurrency(value: unknown) {
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  if (typeof value !== "string") return 0;
-  const parsed = Number(value.replace(/[^0-9.-]/g, ""));
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
 function formatMoney(value: number) {
   return `RM ${value.toLocaleString("en-MY", { minimumFractionDigits:2, maximumFractionDigits:2 })}`;
 }
 
-function aggregateDailyAds(rows: DailyAd[]) {
-  const spend = rows.reduce((sum, row) => sum + row.spend, 0);
-  const sales = rows.reduce((sum, row) => sum + row.sales, 0);
-  const views = rows.reduce((sum, row) => sum + row.views, 0);
-  const clicks = rows.reduce((sum, row) => sum + row.clicks, 0);
-  const conversion = rows.reduce((sum, row) => sum + row.conversion, 0);
-  const sold = rows.reduce((sum, row) => sum + row.sold, 0);
-  return { spend, sales, views, clicks, conversion, sold, roas:spend > 0 ? sales / spend : 0, ctr:views > 0 ? clicks / views : 0, acos:sales > 0 ? spend / sales : 0 };
+function formatAdDate(date:string) {
+  return date ? new Date(`${date}T00:00:00Z`).toLocaleDateString("en-MY",{day:"numeric",month:"short",year:"numeric",timeZone:"UTC"}) : "No data";
 }
 
 function managementActionToClientAction(action: ManagementAction, client: string): ClientAction {
@@ -128,7 +99,7 @@ export default function Home() {
   const [adStatusFilter, setAdStatusFilter] = useState("All");
   const [adSearch, setAdSearch] = useState("");
   const [adPage, setAdPage] = useState(1);
-  const [adPeriodMode, setAdPeriodMode] = useState<"month"|"date"|"range">("date");
+  const [adPeriodMode, setAdPeriodMode] = useState<"mtd"|"month"|"date"|"range">("mtd");
   const [adDate, setAdDate] = useState("");
   const [adMonth, setAdMonth] = useState("");
   const [adRangeStart, setAdRangeStart] = useState("");
@@ -190,25 +161,31 @@ export default function Home() {
   const live = data?.snapshot?.payload ?? staticSnapshot ?? {};
   const noSample = Boolean(live.noSample);
   const overview = Array.isArray(live.overview) ? live.overview : overviewFallback;
-  const adsBase = data?.adPerformance?.length ? (live.advertising ?? (allStoresSelected ? allStoresAdvertising : adFallback)) : unavailableAdvertising;
+  const adsBase = data?.adPerformance?.length ? { ...unavailableAdvertising, ...(live.advertising ?? {}) } : unavailableAdvertising;
   const importedStoreAds = adsData.filter((ad:any) => allStoresSelected || ad.store === store?.name);
   const relevantDailyAds = data?.adPerformance ?? [];
   const availableAdDates = [...new Set(relevantDailyAds.map(row=>row.date))].sort((a,b)=>b.localeCompare(a));
   const availableAdMonths = [...new Set(availableAdDates.map(date=>date.slice(0,7)))].sort((a,b)=>b.localeCompare(a));
+  const latestAdDate = availableAdDates[0] ?? "";
   const selectedAdDate = selectedAdDateFor(adDate,availableAdDates);
   const selectedAdMonth = adMonth && availableAdMonths.includes(adMonth) ? adMonth : (availableAdMonths[0] ?? "");
   const earliestAdDate = availableAdDates[availableAdDates.length-1] ?? "";
   const selectedRangeStart = adRangeStart || earliestAdDate;
   const selectedRangeEnd = adRangeEnd || (availableAdDates[0] ?? "");
-  const selectedDailyAds = selectAdRows(relevantDailyAds,adPeriodMode,{month:selectedAdMonth,date:selectedAdDate,rangeStart:selectedRangeStart,rangeEnd:selectedRangeEnd});
-  const dailyAd = selectedDailyAds.length ? aggregateDailyAds(selectedDailyAds) : null;
+  const selectedDailyAds = selectAdRows(relevantDailyAds,adPeriodMode,{month:selectedAdMonth,date:selectedAdDate,rangeStart:selectedRangeStart,rangeEnd:selectedRangeEnd,latestDate:latestAdDate});
+  const dailyAd = aggregateSelectedAdRows(selectedDailyAds);
+  const coveredAdStores = new Set(selectedDailyAds.flatMap((row:DailyAd)=>row.storeIds ?? [])).size;
+  const selectedPeriodLabel = adPeriodMode === "mtd" ? (latestAdDate ? `${formatAdDate(`${latestAdDate.slice(0,7)}-01`)} – ${formatAdDate(latestAdDate)}` : "No data")
+    : adPeriodMode === "month" ? selectedAdMonth || "No data"
+    : adPeriodMode === "range" ? `${formatAdDate(selectedRangeStart)} – ${formatAdDate(selectedRangeEnd)}`
+    : formatAdDate(selectedAdDate);
   const periodSpendLabel = adPeriodMode === "date" ? "Daily Spend" : "Ad Spend";
   const averageDailySpend = relevantDailyAds.length
     ? relevantDailyAds.reduce((total,row)=>total+row.spend,0) / Math.max(1, new Set(relevantDailyAds.map(row=>row.date)).size)
-    : importedStoreAds.reduce((total:number, ad:any) => total + parseCurrency(ad.spend), 0) / 30;
+    : null;
   const effectiveBalance = data?.adBalance;
   const balanceAds = effectiveBalance && !allStoresSelected
-    ? { ...adsBase, balance:effectiveBalance.balance, averageDailySpend30d:adsBase.averageDailySpend30d ?? averageDailySpend, sourceUpdatedAt:effectiveBalance.sourceUpdatedAt, syncStatus:effectiveBalance.syncStatus, topUpOwner:effectiveBalance.topUpOwner ?? adsBase.topUpOwner }
+    ? { ...adsBase, balance:effectiveBalance.balance, averageDailySpend30d:averageDailySpend, sourceUpdatedAt:effectiveBalance.sourceUpdatedAt, syncStatus:effectiveBalance.syncStatus, topUpOwner:effectiveBalance.topUpOwner ?? adsBase.topUpOwner }
     : adsBase;
   const ads = dailyAd ? {
     ...balanceAds,
@@ -217,10 +194,12 @@ export default function Home() {
     views:dailyAd.views.toLocaleString("en-MY"), clicks:dailyAd.clicks.toLocaleString("en-MY"),
     ctr:`${(dailyAd.ctr * 100).toFixed(2)}%`, conversion:String(dailyAd.conversion), sold:String(dailyAd.sold),
     acos:`${(dailyAd.acos * 100).toFixed(2)}%`,
-    cpc:dailyAd.conversion > 0 ? formatMoney(dailyAd.spend / dailyAd.conversion) : "—",
-    conversionRate:dailyAd.clicks > 0 ? `${(dailyAd.conversion / dailyAd.clicks * 100).toFixed(2)}%` : "0.00%",
+    cpc:dailyAd.cpc == null ? "—" : formatMoney(dailyAd.cpc),
+    costPerConversion:dailyAd.costPerConversion == null ? "—" : formatMoney(dailyAd.costPerConversion),
+    conversionRate:`${(dailyAd.conversionRate * 100).toFixed(2)}%`,
   } : { ...balanceAds, ...emptyAdMetrics };
-  const adCampaigns = Array.isArray(live.adCampaigns) ? live.adCampaigns : (noSample ? [] : (importedStoreAds.length ? importedStoreAds : adCampaignFallback));
+  const adTotalMetrics = [["Ad Spend",ads.spend],["Ad Sales",ads.sales],["ROAS",ads.roas],["ACOS",ads.acos],["Views",ads.views],["Clicks",ads.clicks],["CTR",ads.ctr],["Conversions",ads.conversion],["Sold",ads.sold],["CPC",ads.cpc],["Conversion Rate",ads.conversionRate],["Cost Per Conversion",ads.costPerConversion]];
+  const adCampaigns = Array.isArray(live.adCampaigns) ? live.adCampaigns : importedStoreAds;
   const filteredAdCampaigns = adCampaigns.filter((ad:any) => (adStatusFilter === "All" || ad.status === adStatusFilter) && `${ad.name} ${ad.store ?? ""}`.toLowerCase().includes(adSearch.toLowerCase()));
   const adPageCount = Math.max(1, Math.ceil(filteredAdCampaigns.length / 25));
   const visibleAdCampaigns = filteredAdCampaigns.slice((adPage - 1) * 25, adPage * 25);
@@ -288,11 +267,16 @@ export default function Home() {
       {section==="protection" && <div className="page"><FakeSellerReport storeName={store?.name ?? "Selected store"} allStores={allStoresSelected} cases={fakeSellerCases}/></div>}
       {section==="permissions" && data?.access?.canManagePermissions && <div className="page"><PermissionSettings initialEnabledModules={data.access.clientEnabledModules}/></div>}
 
-      {section==="advertising" && <div className="page"><div className="page-title ad-page-title"><div><p className="kicker">ADVERTISING</p><h2>Performance</h2></div><div className="ad-period-controls"><label><span>View by</span><select aria-label="Advertising period type" value={adPeriodMode} onChange={event=>setAdPeriodMode(event.target.value as "month"|"date"|"range")}><option value="month">Month</option><option value="date">Date</option><option value="range">Custom range</option></select></label>{adPeriodMode === "month" && <label><span>Month</span><input aria-label="Advertising month" type="month" value={selectedAdMonth} min={availableAdMonths[availableAdMonths.length-1]} max={availableAdMonths[0]} onChange={event=>setAdMonth(event.target.value)}/></label>}{adPeriodMode === "date" && <label><span>Date</span><input aria-label="Advertising date" type="date" value={selectedAdDate} min={earliestAdDate} max={availableAdDates[0]} onChange={event=>setAdDate(event.target.value)} disabled={!availableAdDates.length}/></label>}{adPeriodMode === "range" && <><label><span>From</span><input aria-label="Advertising range start" type="date" value={selectedRangeStart} min={earliestAdDate} max={selectedRangeEnd} onChange={event=>setAdRangeStart(event.target.value)}/></label><label><span>To</span><input aria-label="Advertising range end" type="date" value={selectedRangeEnd} min={selectedRangeStart} max={availableAdDates[0]} onChange={event=>setAdRangeEnd(event.target.value)}/></label></>}</div></div><div className="advertising-summary-stack">
+      {section==="advertising" && <div className="page"><div className="page-title ad-page-title"><div><p className="kicker">ADVERTISING</p><h2>Performance</h2></div><div className="ad-period-controls"><label><span>View by</span><select aria-label="Advertising period type" value={adPeriodMode} onChange={event=>setAdPeriodMode(event.target.value as "mtd"|"month"|"date"|"range")}><option value="mtd">Month to date</option><option value="month">Month</option><option value="date">Date</option><option value="range">Custom range</option></select></label>{adPeriodMode === "month" && <label><span>Month</span><input aria-label="Advertising month" type="month" value={selectedAdMonth} min={availableAdMonths[availableAdMonths.length-1]} max={availableAdMonths[0]} onChange={event=>setAdMonth(event.target.value)}/></label>}{adPeriodMode === "date" && <label><span>Date</span><input aria-label="Advertising date" type="date" value={selectedAdDate} min={earliestAdDate} max={availableAdDates[0]} onChange={event=>setAdDate(event.target.value)} disabled={!availableAdDates.length}/></label>}{adPeriodMode === "range" && <><label><span>From</span><input aria-label="Advertising range start" type="date" value={selectedRangeStart} min={earliestAdDate} max={selectedRangeEnd} onChange={event=>setAdRangeStart(event.target.value)}/></label><label><span>To</span><input aria-label="Advertising range end" type="date" value={selectedRangeEnd} min={selectedRangeStart} max={availableAdDates[0]} onChange={event=>setAdRangeEnd(event.target.value)}/></label></>}</div></div>
+        {allStoresSelected && <section className="ad-total-overview" aria-label="All Stores advertising overview">
+          <div className="ad-total-heading"><div><p className="kicker">ALL STORES TOTAL</p><h3>Advertising overview</h3><p>{selectedPeriodLabel}</p></div><div className="ad-total-coverage"><strong>{coveredAdStores} / {data.stores.length}</strong><span>accessible stores with FullAd records in this period</span><small>FullAd data through {formatAdDate(latestAdDate)}</small></div></div>
+          <div className="ad-total-grid">{adTotalMetrics.map(([label,value])=><article className="metric ad-total-metric" key={label}><span>{label}</span><strong>{value}</strong></article>)}</div>
+        </section>}
+        {!allStoresSelected && <div className="advertising-summary-stack">
         <section className={`ad-funds-card ${adFunds.balanceStatus}`}><div className="ad-funds-status"><div><span>{adFunds.syncStatus === "delayed" ? "Data delayed" : (adFunds.lowBalance ? `Top-up ${formatRinggit(adFunds.recommendedTopUp)} required` : "Ads healthy")}</span><small>{adFunds.topUpOwner === "shopee_hub" ? "Managed by Shopee Hub" : (adFunds.approvalRequired ? "Approval needed" : "Client action")}</small></div><time>{adFunds.sourceUpdatedAt ? `Last updated ${adFunds.sourceUpdatedAt}` : "Last update unavailable"}</time></div><div className="fund-metric"><span>Ad Balance</span><strong>{formatRinggit(adFunds.balance, 2)}</strong></div><div className="fund-metric"><span>{periodSpendLabel}</span><strong>{ads.spend ?? "—"}</strong></div><div className="fund-metric"><span>Runway</span><strong>{adFunds.runwayDays == null ? "—" : `${Math.floor(adFunds.runwayDays)} days`}</strong></div><div className="fund-metric topup"><span>Top-up</span><strong>{formatRinggit(adFunds.recommendedTopUp)}</strong></div></section>
-        <section className="metric-grid ads ad-primary-grid">{[["Ad Sales",ads.sales,"sales"],["ROAS",ads.roas,"roas"],["ACOS",ads.acos,"acos"],["Cost Per Conversion",ads.cpc,"cost"]].map(m=><article className={`metric ad-metric ${m[2]}`} key={m[0]}><span>{m[0]}</span><strong>{money(m[1])}</strong></article>)}</section>
-        <section className="metric-grid ads ad-secondary-grid">{[["Views",ads.views,"reach",null],["Clicks",ads.clicks,"reach",null],["CTR",ads.ctr,"rate",parseFloat(ads.ctr)<2],["Conversion Rate",ads.conversionRate,"rate",parseFloat(ads.conversionRate)<2]].map(m=><article className={`metric ad-metric ${m[2]} ${m[3]===true?"danger":""}`} key={m[0] as string}><span>{m[0]}</span><strong>{money(m[1] as string)}</strong>{m[3]!==null&&<em>{m[3]?"Warning":"Normal"}</em>}</article>)}</section></div>
-        <section className="campaign-section"><div className="campaign-heading"><div><p className="kicker">EVERY AD</p><h3>Individual advertisement data</h3><small>Latest campaign snapshot · date selector applies to summary metrics only · {adCampaigns.length} ads</small></div><div className="campaign-counts"><span>{adCampaigns.filter((a:any)=>a.status==="Active"||a.status==="Ongoing").length} Active</span><span className="paused-count">{adCampaigns.filter((a:any)=>a.status==="Paused").length} Paused</span></div></div><div className="ad-controls"><div>{["All","Ongoing","Paused","Ended"].map(status=><button key={status} className={adStatusFilter===status?"active":""} onClick={()=>{setAdStatusFilter(status);setAdPage(1)}}>{status}</button>)}</div><input value={adSearch} onChange={e=>{setAdSearch(e.target.value);setAdPage(1)}} placeholder="Search ad or store" aria-label="Search advertisements"/></div><div className="card table-card"><table className="campaign-table"><thead><tr><th>Advertisement</th><th>Status</th><th>Budget</th><th>Spend</th><th>Ad Sales</th><th>ROAS</th><th>Views</th><th>Clicks</th><th>CTR</th><th>Conversion</th><th>Sold</th><th>ACOS</th></tr></thead><tbody>{visibleAdCampaigns.map((a:any)=><tr key={a.id ?? a.name} className={a.status==="Paused"?"paused-row":""}><td><b>{a.name}</b><small>{a.store ? `${a.store} · ${a.type}` : a.type}</small></td><td><span className={`ad-status ${a.status.toLowerCase()}`}>{a.status}</span></td><td>{a.budget}</td><td>{a.spend}</td><td>{a.sales}</td><td><b>{a.roas}</b></td><td>{a.views}</td><td>{a.clicks}</td><td className={parseFloat(a.ctr)<2?"cell-warning":""}>{a.ctr}</td><td className={parseFloat(a.conversionRate)<2?"cell-warning":""}>{a.conversionRate}</td><td>{a.sold}</td><td>{a.acos}</td></tr>)}</tbody></table></div><div className="ad-pagination"><button disabled={adPage===1} onClick={()=>setAdPage(p=>Math.max(1,p-1))}>← Previous</button><span>Page {adPage} of {adPageCount} · {filteredAdCampaigns.length} ads</span><button disabled={adPage===adPageCount} onClick={()=>setAdPage(p=>Math.min(adPageCount,p+1))}>Next →</button></div></section>
+        <section className="metric-grid ads ad-primary-grid">{[["Ad Sales",ads.sales,"sales"],["ROAS",ads.roas,"roas"],["ACOS",ads.acos,"acos"],["Cost Per Conversion",ads.costPerConversion,"cost"]].map(m=><article className={`metric ad-metric ${m[2]}`} key={m[0]}><span>{m[0]}</span><strong>{money(m[1])}</strong></article>)}</section>
+        <section className="metric-grid ads ad-secondary-grid">{[["Views",ads.views,"reach",null],["Clicks",ads.clicks,"reach",null],["CTR",ads.ctr,"rate",parseFloat(ads.ctr)<2],["Conversion Rate",ads.conversionRate,"rate",parseFloat(ads.conversionRate)<2]].map(m=><article className={`metric ad-metric ${m[2]} ${m[3]===true?"danger":""}`} key={m[0] as string}><span>{m[0]}</span><strong>{money(m[1] as string)}</strong>{m[3]!==null&&<em>{m[3]?"Warning":"Normal"}</em>}</article>)}</section></div>}
+        {!allStoresSelected && adCampaigns.length > 0 && <section className="campaign-section"><div className="campaign-heading"><div><p className="kicker">EVERY AD</p><h3>Individual advertisement data</h3><small>Imported campaign export · Reporting date unavailable · period selector applies to FullAd totals only · {adCampaigns.length} ads</small></div><div className="campaign-counts"><span>{adCampaigns.filter((a:any)=>a.status==="Active"||a.status==="Ongoing").length} Active</span><span className="paused-count">{adCampaigns.filter((a:any)=>a.status==="Paused").length} Paused</span></div></div><div className="ad-controls"><div>{["All","Ongoing","Paused","Ended"].map(status=><button key={status} className={adStatusFilter===status?"active":""} onClick={()=>{setAdStatusFilter(status);setAdPage(1)}}>{status}</button>)}</div><input value={adSearch} onChange={e=>{setAdSearch(e.target.value);setAdPage(1)}} placeholder="Search ad or store" aria-label="Search advertisements"/></div><div className="card table-card"><table className="campaign-table"><thead><tr><th>Advertisement</th><th>Status</th><th>Budget</th><th>Spend</th><th>Ad Sales</th><th>ROAS</th><th>Views</th><th>Clicks</th><th>CTR</th><th>Conversion</th><th>Sold</th><th>ACOS</th></tr></thead><tbody>{visibleAdCampaigns.map((a:any)=><tr key={a.id ?? a.name} className={a.status==="Paused"?"paused-row":""}><td><b>{a.name}</b><small>{a.store ? `${a.store} · ${a.type}` : a.type}</small></td><td><span className={`ad-status ${a.status.toLowerCase()}`}>{a.status}</span></td><td>{a.budget}</td><td>{a.spend}</td><td>{a.sales}</td><td><b>{a.roas}</b></td><td>{a.views}</td><td>{a.clicks}</td><td className={parseFloat(a.ctr)<2?"cell-warning":""}>{a.ctr}</td><td className={parseFloat(a.conversionRate)<2?"cell-warning":""}>{a.conversionRate}</td><td>{a.sold}</td><td>{a.acos}</td></tr>)}</tbody></table></div><div className="ad-pagination"><button disabled={adPage===1} onClick={()=>setAdPage(p=>Math.max(1,p-1))}>← Previous</button><span>Page {adPage} of {adPageCount} · {filteredAdCampaigns.length} ads</span><button disabled={adPage===adPageCount} onClick={()=>setAdPage(p=>Math.min(adPageCount,p+1))}>Next →</button></div></section>}
       </div>}
 
       {section==="orders" && <div className="page"><div className="page-title"><div><p className="kicker">ORDERS & INVENTORY</p><h2>Today’s orders & deadlines</h2></div></div><section className="metric-grid three"><article className="metric"><span>Today’s Orders</span><strong>{orderSummary?.today ?? (noSample ? "暂无数据" : 98)}</strong></article><article className="metric warn"><span>Expiring Today</span><strong>{orderSummary?.expiringToday ?? (noSample ? "暂无数据" : 7)}</strong></article><article className="metric danger"><span>Expired</span><strong>{orderSummary?.expired ?? (noSample ? "暂无数据" : 2)}</strong></article></section><div className="card table-card"><table><thead><tr><th>Order</th><th>Buyer</th><th>Product</th><th>Order Time</th><th>Order Value</th><th>Expire Time</th><th>Time Left</th><th>Status</th></tr></thead><tbody>{orders.map((o:any)=><tr key={o.id}><td><b>{o.id}</b></td><td>{o.buyer}</td><td>{o.product}</td><td>{o.time}</td><td>{o.value}</td><td>{o.expire}</td><td>{o.left}</td><td><span className={`badge ${o.status.toLowerCase()}`}>{o.status}</span></td></tr>)}{noSample && !orders.length && <tr><td colSpan={8}>暂无数据</td></tr>}</tbody></table></div></div>}
