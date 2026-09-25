@@ -146,7 +146,7 @@ async function readSheetBalance(storeName: string, storedName = storeName) {
       balance,
       balanceDate: latest[0],
       sourceStoreName: latest[1],
-      sourceUpdatedAt: `${latest[0]} · 9:00 am`,
+      sourceUpdatedAt: null,
       syncStatus: "current",
     };
   } catch {
@@ -430,7 +430,7 @@ export async function GET(request: Request) {
       balance: latestBalance[0].balanceCents / 100,
       balanceDate: latestBalance[0].balanceDate,
       sourceStoreName: latestBalance[0].sourceStoreName,
-      sourceUpdatedAt: `${latestBalance[0].balanceDate} · 9:00 am`,
+      sourceUpdatedAt: latestBalance[0].importedAt,
       syncStatus: "current",
       topUpOwner,
     } : null),
