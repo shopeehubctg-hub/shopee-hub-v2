@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { aggregateAdPerformanceByDate, aggregateSelectedAdRows, authorizedAdStoreIds, latestAdSyncTime, selectAdRows, selectedAdDateFor } from "../app/ad-performance.js";
+import { withoutAdCampaigns } from "../app/dashboard-snapshot.js";
 import { readFile } from "node:fs/promises";
 
 test("FullAd rows from visible stores combine by date with weighted rates", () => {
@@ -65,6 +66,14 @@ test("balance update label never invents a time for date-only sheet rows", async
   assert.match(page,/`Updated on \$\{formatAdDate\(effectiveBalance\.balanceDate\)\}`/);
 });
 
+test("dashboard snapshots omit individual ads without changing stored data", () => {
+  const original={id:1,payload:{overview:[["Sales","RM 100"]],adCampaigns:[{id:"old-ad"}]}};
+  const visible=withoutAdCampaigns(original);
+  assert.deepEqual(visible,{id:1,payload:{overview:[["Sales","RM 100"]]}});
+  assert.deepEqual(original.payload.adCampaigns,[{id:"old-ad"}]);
+  assert.equal(withoutAdCampaigns(null),null);
+});
+
 test("selected-store membership with no assignments does not fall back to directory stores", async () => {
   const route=await readFile(new URL("../app/api/dashboard/route.ts",import.meta.url),"utf8");
   assert.match(route,/membership\.storeAccessMode === "selected" && membership\.role !== "superadmin" \? \[\] : directoryStores\.map/);
@@ -94,6 +103,12 @@ test("All Stores overview uses live FullAd coverage and excludes undated campaig
   const route=await readFile(new URL("../app/api/dashboard/route.ts",import.meta.url),"utf8");
   assert.match(route,/conversions,sold,synced_at/);
   assert.match(route,/adPerformanceUpdatedAt:adPerformance\.updatedAt/g);
-  assert.match(page,/!allStoresSelected && adCampaigns\.length > 0 && <section className="campaign-section"/);
+  assert.match(page,/!allStoresSelected && <section className="campaign-section" aria-label="Individual Ads"/);
+  assert.match(page,/Individual ad data is temporarily unavailable\./);
+  assert.doesNotMatch(page,/adsData|adCampaigns|campaign-counts|visibleAdCampaigns|adStatusFilter/);
+  const snapshots=await readFile(new URL("../app/store-snapshots.ts",import.meta.url),"utf8");
+  assert.doesNotMatch(snapshots,/adCampaigns/);
+  assert.match(route,/snapshot: withoutAdCampaigns\(latest\[0\] \?\? null\)/);
+  assert.match(route,/snapshot: snapshotPayload \? withoutAdCampaigns\(/);
   assert.doesNotMatch(page,/allStoresAdvertising|Latest campaign snapshot|Data snapshot/);
 });
