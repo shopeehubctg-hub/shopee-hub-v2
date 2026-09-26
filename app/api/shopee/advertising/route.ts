@@ -1,4 +1,6 @@
 import { getChatGPTUser } from "../../../chatgpt-auth";
+import { supabaseRest } from "../../../supabase-rest";
+import { canReadShopeeAds } from "../../../shopee-ads-access.js";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +25,7 @@ function readShopCredential(storeId: string): ShopCredential | null {
     }
   }
 
+  if (process.env.SHOPEE_SHOP_STORE_ID !== storeId) return null;
   const shopId = Number(process.env.SHOPEE_SHOP_ID);
   const accessToken = process.env.SHOPEE_ACCESS_TOKEN;
   return Number.isSafeInteger(shopId) && shopId > 0 && accessToken ? { shopId, accessToken } : null;
@@ -80,69 +83,37 @@ function numberValue(record: Record<string, unknown>, ...keys: string[]) {
   return 0;
 }
 
-function stringValue(record: Record<string, unknown>, ...keys: string[]) {
-  for (const key of keys) if (record[key] !== undefined && record[key] !== null) return String(record[key]);
-  return "";
-}
-
 function isoDate(value: unknown) {
   const text = String(value ?? "");
   const match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(text);
   return match ? `${match[3]}-${match[2]}-${match[1]}` : text.slice(0, 10);
 }
 
-function displayMoney(value: number) {
-  return `RM ${value.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function campaignIds(value: unknown) {
-  const rows = findArray(value, ["campaign_id_list", "campaign_list", "list"]);
-  return rows.map((row) => stringValue(row, "campaign_id", "id")).filter(Boolean);
-}
-
-function normalizeCampaigns(performance: unknown, settings: unknown) {
-  const settingRows = findArray(settings, ["campaign_list", "campaign_setting_list", "list"]);
-  const settingById = new Map(settingRows.map((row) => [stringValue(row, "campaign_id", "id"), row]));
-  const performanceRows = findArray(performance, ["performance_list", "campaign_performance_list", "report_list", "list"]);
-  return performanceRows.map((row) => {
-    const id = stringValue(row, "campaign_id", "id");
-    const setting = settingById.get(id) ?? {};
-    const commonInfo = (setting.common_info && typeof setting.common_info === "object" ? setting.common_info : setting) as Record<string, unknown>;
-    const metrics = findArray(row, ["metrics_list", "performance_list", "report_list"]);
-    const metricRows = metrics.length ? metrics : [row];
-    const report = metricRows.reduce<Record<string, number>>((totals, metric) => {
-      const values = (metric.report && typeof metric.report === "object" ? metric.report : metric) as Record<string, unknown>;
-      for (const key of ["expense","broad_gmv","direct_gmv","impression","clicks","broad_order","direct_order","broad_item_sold","direct_item_sold"]) {
-        totals[key] = (totals[key] ?? 0) + numberValue(values, key);
-      }
-      return totals;
-    }, {});
-    const spend = numberValue(report, "expense", "spend");
-    const sales = numberValue(report, "broad_gmv", "gmv", "sales", "direct_gmv");
-    const impressions = numberValue(report, "impression", "impressions");
-    const clicks = numberValue(report, "clicks", "click");
-    const orders = numberValue(report, "broad_order", "orders", "direct_order");
-    const sold = numberValue(report, "broad_item_sold", "item_sold", "direct_item_sold");
-    const status = stringValue(commonInfo, "status", "campaign_status") || "Unknown";
-    return {
-      id, name: stringValue(row, "ad_name", "campaign_name", "name") || stringValue(commonInfo, "ad_name", "campaign_name", "name") || `Campaign ${id}`,
-      type: stringValue(row, "campaign_placement", "campaign_type", "ad_type") || stringValue(commonInfo, "campaign_placement", "campaign_type", "ad_type") || "Shopee Ads",
-      status: /ongoing|active|running|1/i.test(status) ? "Ongoing" : /pause|2/i.test(status) ? "Paused" : /end|closed|3/i.test(status) ? "Ended" : status,
-      budget: displayMoney(numberValue(commonInfo, "daily_budget", "budget")), spend: displayMoney(spend), sales: displayMoney(sales),
-      roas: `${(numberValue(report, "broad_roas", "roas", "direct_roas") || (spend > 0 ? sales / spend : 0)).toFixed(2)}×`,
-      views: impressions.toLocaleString("en-MY"), clicks: clicks.toLocaleString("en-MY"),
-      ctr: `${((numberValue(report, "ctr") || (impressions > 0 ? clicks / impressions : 0)) * 100).toFixed(2)}%`,
-      conversionRate: `${((numberValue(report, "broad_conversions", "conversion_rate") || (clicks > 0 ? orders / clicks : 0)) * 100).toFixed(2)}%`,
-      sold: sold.toLocaleString("en-MY"), acos: `${(sales > 0 ? spend / sales * 100 : 0).toFixed(2)}%`,
-    };
-  });
-}
-
 export async function GET(request: Request) {
-  if (!(await getChatGPTUser())) return Response.json({ error: "Authentication required" }, { status: 401 });
+  const user = await getChatGPTUser();
+  if (!user) return Response.json({ error: "Authentication required" }, { status: 401 });
   const url = new URL(request.url);
   const storeId = url.searchParams.get("storeId")?.trim();
   if (!storeId || storeId === "all") return Response.json({ status: "unavailable", error: "Select one store to load Shopee Ads API data" }, { status: 400 });
+
+  try {
+    const members = await supabaseRest<Array<{id:number;tenant_id:string;role:string;active:boolean;module_access_mode:string;store_access_mode:string}>>(`customer_users?select=id,tenant_id,role,active,module_access_mode,store_access_mode&email=eq.${encodeURIComponent(user.email.toLowerCase())}&limit=1`);
+    const membership = members[0];
+    if (!membership?.active) return Response.json({ error: "Advertising access denied" }, { status: 403 });
+    const tenantId = encodeURIComponent(membership.tenant_id);
+    const [tenants,stores,tenantModules,userModules,assignedStores] = await Promise.all([
+      supabaseRest<Array<{active:boolean}>>(`tenants?select=active&id=eq.${tenantId}&limit=1`),
+      supabaseRest<Array<{id:string}>>(`stores?select=id&tenant_id=eq.${tenantId}&id=eq.${encodeURIComponent(storeId)}&limit=1`),
+      supabaseRest<Array<{enabled:boolean}>>(`tenant_module_permissions?select=enabled&tenant_id=eq.${tenantId}&module_id=eq.advertising&limit=1`),
+      membership.module_access_mode === "custom" ? supabaseRest<Array<{enabled:boolean}>>(`user_module_permissions?select=enabled&user_id=eq.${membership.id}&module_id=eq.advertising&limit=1`) : Promise.resolve([]),
+      membership.store_access_mode === "selected" ? supabaseRest<Array<{store_id:string}>>(`user_store_access?select=store_id&user_id=eq.${membership.id}&store_id=eq.${encodeURIComponent(storeId)}&limit=1`) : Promise.resolve([]),
+    ]);
+    if (!canReadShopeeAds({membership,tenantActive:tenants[0]?.active,storeExists:stores.length>0,tenantAdvertisingEnabled:tenantModules[0]?.enabled,userAdvertisingEnabled:userModules[0]?.enabled,assignedStore:assignedStores.length>0})) {
+      return Response.json({ error: "Advertising access denied" }, { status: 403 });
+    }
+  } catch {
+    return Response.json({ error: "Advertising access could not be verified" }, { status: 503 });
+  }
 
   let credential: ShopCredential | null;
   try { credential = readShopCredential(storeId); }
@@ -155,17 +126,10 @@ export async function GET(request: Request) {
   const toShopeeDate = (date: string) => date.split("-").reverse().join("-");
 
   try {
-    const [balancePayload, dailyPayload, idsPayload] = await Promise.all([
+    const [balancePayload, dailyPayload] = await Promise.all([
       shopeeGet("/api/v2/ads/get_total_balance", credential),
       shopeeGet("/api/v2/ads/get_all_cpc_ads_daily_performance", credential, { start_date: toShopeeDate(start), end_date: toShopeeDate(end) }),
-      shopeeGet("/api/v2/ads/get_product_level_campaign_id_list", credential),
     ]);
-    const ids = campaignIds(idsPayload).slice(0, 100);
-    const campaignQuery = ids.length ? { campaign_id_list: ids.join(","), start_date: toShopeeDate(start), end_date: toShopeeDate(end) } : null;
-    const [performance, settings] = campaignQuery ? await Promise.all([
-      shopeeGet("/api/v2/ads/get_product_campaign_daily_performance", credential, campaignQuery),
-      shopeeGet("/api/v2/ads/get_product_level_campaign_setting_info", credential, { campaign_id_list: ids.join(","), info_type_list:"1,2,3,4" }),
-    ]) : [null, null];
     const discoveredDailyRows = findArray(dailyPayload, ["performance_list", "daily_performance_list", "report_list", "list"]);
     const dailyRows = discoveredDailyRows.length ? discoveredDailyRows : dailyPayload && typeof dailyPayload === "object" && (dailyPayload as Record<string, unknown>).date ? [dailyPayload as Record<string, unknown>] : [];
     const daily = dailyRows.map((row) => ({
@@ -178,7 +142,7 @@ export async function GET(request: Request) {
     const balanceRecord = (balancePayload && typeof balancePayload === "object" ? balancePayload : {}) as Record<string, unknown>;
     return Response.json({
       status: "connected", storeId, shopId: credential.shopId, fetchedAt: new Date().toISOString(), range: { start, end },
-      balance: numberValue(balanceRecord, "total_balance", "balance"), daily, campaigns: normalizeCampaigns(performance, settings),
+      balance: numberValue(balanceRecord, "total_balance", "balance"), daily,
     }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     return Response.json({ status: "error", error: error instanceof Error ? error.message : "Shopee Ads request failed" }, { status: 502 });
