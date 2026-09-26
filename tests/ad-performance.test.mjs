@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { aggregateAdPerformanceByDate, authorizedAdStoreIds, selectAdRows, selectedAdDateFor } from "../app/ad-performance.js";
+import { aggregateAdPerformanceByDate, aggregateSelectedAdRows, authorizedAdStoreIds, latestAdSyncTime, selectAdRows, selectedAdDateFor } from "../app/ad-performance.js";
+import { withoutAdCampaigns } from "../app/dashboard-snapshot.js";
+import { canReadShopeeAds } from "../app/shopee-ads-access.js";
 import { readFile } from "node:fs/promises";
 
 test("FullAd rows from visible stores combine by date with weighted rates", () => {
@@ -16,12 +18,85 @@ test("FullAd rows from visible stores combine by date with weighted rates", () =
   assert.equal(daily[1].sold,9);
 });
 
+test("All Stores month to date totals use source numerators and denominators", () => {
+  const daily=aggregateAdPerformanceByDate([
+    { store_id:"a",performance_date:"2026-09-23",spend:10,sales:100,views:100,clicks:10,conversions:2,sold:3 },
+    { store_id:"b",performance_date:"2026-09-23",spend:30,sales:30,views:900,clicks:9,conversions:3,sold:4 },
+    { store_id:"a",performance_date:"2026-09-24",spend:20,sales:40,views:200,clicks:20,conversions:4,sold:5 },
+    { store_id:"b",performance_date:"2026-09-24",spend:0,sales:0,views:0,clicks:0,conversions:0,sold:0 },
+  ]);
+  const selected=selectAdRows(daily,"mtd",{latestDate:"2026-09-24"});
+  assert.equal(selected.length,2);
+  assert.deepEqual(new Set(selected.flatMap(row=>row.storeIds)),new Set(["a","b"]));
+  const total=aggregateSelectedAdRows(selected);
+  assert.equal(total.spend,60);
+  assert.equal(total.sales,170);
+  assert.equal(total.roas,170/60);
+  assert.equal(total.acos,60/170);
+  assert.equal(total.ctr,39/1200);
+  assert.equal(total.cpc,60/39);
+  assert.equal(total.conversionRate,9/39);
+  assert.equal(total.costPerConversion,60/9);
+  assert.equal(total.sold,12);
+  assert.equal(aggregateSelectedAdRows(selectAdRows(daily,"range",{rangeStart:"2026-09-25",rangeEnd:"2026-09-26"})),null);
+});
+
 test("FullAd store scope includes only visible stores and requires Advertising access", () => {
   const visible=[{id:"store-a"},{id:"store-b"}];
   assert.deepEqual(authorizedAdStoreIds([],undefined,true),[]);
   assert.deepEqual(authorizedAdStoreIds(visible,visible[1],true),["store-b"]);
   assert.deepEqual(authorizedAdStoreIds(visible,undefined,true),["store-a","store-b"]);
   assert.deepEqual(authorizedAdStoreIds(visible,undefined,false),[]);
+});
+
+test("latest advertising sync time comes from the authorized rows", () => {
+  assert.equal(latestAdSyncTime([
+    {synced_at:"2026-09-25T09:00:00+00:00"},
+    {synced_at:"2026-09-25T13:11:17.544396+00:00"},
+    {synced_at:null},
+  ]),"2026-09-25T13:11:17.544396+00:00");
+  assert.equal(latestAdSyncTime([]),null);
+});
+
+test("balance update label never invents a time for date-only sheet rows", async () => {
+  const route=await readFile(new URL("../app/api/dashboard/route.ts",import.meta.url),"utf8");
+  const page=await readFile(new URL("../app/page.tsx",import.meta.url),"utf8");
+  assert.match(route,/sourceUpdatedAt: null,/);
+  assert.match(route,/sourceUpdatedAt: latestBalance\[0\]\.importedAt/);
+  assert.doesNotMatch(route,/9:00 am/);
+  assert.match(page,/`Updated on \$\{formatAdDate\(effectiveBalance\.balanceDate\)\}`/);
+});
+
+test("dashboard snapshots omit individual ads without changing stored data", () => {
+  const original={id:1,payload:{overview:[["Sales","RM 100"]],adCampaigns:[{id:"old-ad"}]}};
+  const visible=withoutAdCampaigns(original);
+  assert.deepEqual(visible,{id:1,payload:{overview:[["Sales","RM 100"]]}});
+  assert.deepEqual(original.payload.adCampaigns,[{id:"old-ad"}]);
+  assert.equal(withoutAdCampaigns(null),null);
+});
+
+test("Shopee Ads API fetches only balance and daily totals while individual ads are paused", async () => {
+  const route=await readFile(new URL("../app/api/shopee/advertising/route.ts",import.meta.url),"utf8");
+  assert.match(route,/shopeeGet\("\/api\/v2\/ads\/get_total_balance", credential\)/);
+  assert.match(route,/shopeeGet\("\/api\/v2\/ads\/get_all_cpc_ads_daily_performance", credential/);
+  assert.doesNotMatch(route,/get_product_level_campaign_id_list|get_product_campaign_daily_performance|get_product_level_campaign_setting_info|normalizeCampaigns|campaigns:/);
+  assert.ok(route.indexOf("if (!canReadShopeeAds(") < route.indexOf("credential = readShopCredential(storeId)"));
+  assert.match(route,/SHOPEE_SHOP_STORE_ID !== storeId/);
+});
+
+test("Shopee Ads API denies stores and modules outside the user's scope", () => {
+  const membership={active:true,role:"customer",module_access_mode:"custom",store_access_mode:"selected"};
+  const allowed={membership,tenantActive:true,storeExists:true,tenantAdvertisingEnabled:true,userAdvertisingEnabled:true,assignedStore:true};
+  assert.equal(canReadShopeeAds(allowed),true);
+  assert.equal(canReadShopeeAds({...allowed,assignedStore:false}),false);
+  assert.equal(canReadShopeeAds({...allowed,userAdvertisingEnabled:false}),false);
+  assert.equal(canReadShopeeAds({...allowed,tenantAdvertisingEnabled:false}),false);
+  assert.equal(canReadShopeeAds({...allowed,storeExists:false}),false);
+  assert.equal(canReadShopeeAds({...allowed,tenantActive:false}),false);
+  assert.equal(canReadShopeeAds({...allowed,membership:{...membership,active:false}}),false);
+  assert.equal(canReadShopeeAds({...allowed,membership:{...membership,role:"unknown"}}),false);
+  assert.equal(canReadShopeeAds({...allowed,membership:{...membership,store_access_mode:"unknown"}}),false);
+  assert.equal(canReadShopeeAds({...allowed,membership:{...membership,role:"superadmin"},assignedStore:false,userAdvertisingEnabled:false}),true);
 });
 
 test("selected-store membership with no assignments does not fall back to directory stores", async () => {
@@ -39,4 +114,26 @@ test("empty FullAd date and custom range stay empty instead of selecting another
   assert.equal(selectedAdDateFor("2026-10-01",dates),"2026-09-24");
   const page=await readFile(new URL("../app/page.tsx",import.meta.url),"utf8");
   assert.match(page,/dailyAd \? \{[\s\S]*?\} : \{ \.\.\.balanceAds, \.\.\.emptyAdMetrics \}/);
+});
+
+test("All Stores overview uses live FullAd coverage and excludes undated campaign exports", async () => {
+  const page=await readFile(new URL("../app/page.tsx",import.meta.url),"utf8");
+  assert.match(page,/useState<"mtd"\|"month"\|"date"\|"range">\("mtd"\)/);
+  assert.match(page,/All Stores advertising overview/);
+  assert.match(page,/coveredAdStores\} \/ \{data\.stores\.length/);
+  assert.match(page,/stores with data in this period/);
+  assert.match(page,/Last updated \{formatAdSyncTime\(data\.adPerformanceUpdatedAt\)\}/);
+  assert.match(page,/timeZone:"Asia\/Kuala_Lumpur"/);
+  assert.doesNotMatch(page,/FullAd|Imported campaign export/);
+  const route=await readFile(new URL("../app/api/dashboard/route.ts",import.meta.url),"utf8");
+  assert.match(route,/conversions,sold,synced_at/);
+  assert.match(route,/adPerformanceUpdatedAt:adPerformance\.updatedAt/g);
+  assert.match(page,/!allStoresSelected && <section className="campaign-section" aria-label="Individual Ads"/);
+  assert.match(page,/Individual ad data is temporarily unavailable\./);
+  assert.doesNotMatch(page,/adsData|adCampaigns|campaign-counts|visibleAdCampaigns|adStatusFilter/);
+  const snapshots=await readFile(new URL("../app/store-snapshots.ts",import.meta.url),"utf8");
+  assert.doesNotMatch(snapshots,/adCampaigns/);
+  assert.match(route,/snapshot: withoutAdCampaigns\(latest\[0\] \?\? null\)/);
+  assert.match(route,/snapshot: snapshotPayload \? withoutAdCampaigns\(/);
+  assert.doesNotMatch(page,/allStoresAdvertising|Latest campaign snapshot|Data snapshot/);
 });

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { autoTopUpEligibleForStore, calculatePricePerUnit, calculateShopeePrice, calculateShopeePriceForCustomerTarget, categoryIndexForProduct, COMMISSION_CATEGORIES, commissionRateFor, maximumCoFundVoucher, resolvedCategoryForProduct, reviewPriceLadder, SERVICE_MODES } from "./price-calculator-model";
 import type { CalculatorSnapshot, PackagePrefill } from "./calculator-types";
 import type { ProjectProductProfile } from "./product-catalog";
-import { VOUCHER_PRESET_SOURCE, voucherPresetFor } from "./voucher-presets.js";
+import { voucherPresetFor } from "./voucher-presets.js";
 
 type ServiceMode = keyof typeof SERVICE_MODES;
 type NumberValue = number|"";
@@ -207,7 +207,7 @@ export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[
       <div className="calculator-hero-metrics">
         <div className="calculator-hero-result total-fee-result"><span>Total Shopee Charges %</span><strong>{pct(headlineRate)}</strong><small>Campaign Day · Service Fee capped at RM108</small></div>
         <div className={`calculator-hero-result voucher-hero-result${storeVoucherPreset.available?"":" unavailable"}`}>
-          <div className="voucher-hero-head"><span>Shopee Voucher %</span><small>{storeVoucherPreset.available?`${VOUCHER_PRESET_SOURCE.month} preset`:"No preset"}</small></div>
+          <div className="voucher-hero-head"><span>Shopee Voucher %</span><small>{storeVoucherPreset.available?"Suggested rates":"Enter rates"}</small></div>
           <div className="voucher-hero-inputs">
             <label><span>Non-Campaign Day</span><div><input aria-label="Non-Campaign Shopee Voucher percentage" type="number" min="0" max="100" step=".01" value={voucherRates.nonCampaign} onChange={event=>updateVoucher("nonCampaign",event.target.value)}/><b>%</b></div></label>
             <label><span>Campaign Day</span><div><input aria-label="Campaign Shopee Voucher percentage" type="number" min="0" max="100" step=".01" value={voucherRates.campaign} onChange={event=>updateVoucher("campaign",event.target.value)}/><b>%</b></div></label>
@@ -252,7 +252,7 @@ export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[
           <label>Meta Shipping Fee (RM)<input type="number" min="0" step=".01" value={fees.facebookShipping} onChange={event=>updateFee("facebookShipping",event.target.value)}/></label>
           <label>CoFund Voucher (RM)<div className="auto-profile-value">{cofundVoucher.toFixed(2)}</div></label>
         </div>
-        <p className="formula-note">Voucher guide: {storeVoucherPreset.available?`${storeVoucherPreset.store} · Normal ${pct(positive(voucherRates.nonCampaign))} / Campaign ${pct(positive(voucherRates.campaign))}`:"No voucher preset · Both start at 0%"}. Source: {VOUCHER_PRESET_SOURCE.month} · {VOUCHER_PRESET_SOURCE.metric}.</p>
+        <p className="formula-note">{storeVoucherPreset.available?"Adjust the voucher rates above to match the current promotion.":"No voucher rates are set for this store. Enter the current promotion rates above."}</p>
       </div>
     </section>
 

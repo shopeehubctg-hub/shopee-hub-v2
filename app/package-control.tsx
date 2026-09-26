@@ -24,7 +24,7 @@ type HistoryLine = {
   calculatorSettings?:CalculatorHistorySettings|null;
 };
 type PackageItem = {
-  id:string; storeId:string; storeName?:string; packageSku:string; name:string; market:string; status:string; version:number;
+  id:string; storeId:string; storeName?:string; packageSku:string; name:string; market:string; status:string; version:number; updatedAt?:string|null;
   promotionType:"monthly"|"custom"; originalPrice:number; sellingPrice:number; effectiveFrom:string; effectiveTo?:string|null;
   components:ComponentLine[]; platforms:PlatformLine[]; sheetSyncStatus?:"pending"|"synced"|"failed"; history?:HistoryLine[];
   priceSchedules?:PriceSchedule[];
@@ -48,6 +48,12 @@ const blankForm = () => ({
 const money = (value:number, market:string, stored=false) => `${market === "SG" ? "S$" : "RM"} ${(stored ? value / 100 : value).toFixed(2)}`;
 const lineText = (line:ComponentLine) => `${line.inventorySku} ×${line.quantity}`;
 const calculatorSnapshots = (settings:CalculatorHistorySettings) => "scenarios" in settings ? settings.scenarios : [settings];
+const updatedLabel = (value?:string|null) => {
+  const date=value?new Date(value):null;
+  return date&&Number.isFinite(date.getTime())
+    ? `Last updated ${date.toLocaleString("en-MY",{dateStyle:"medium",timeStyle:"short",timeZone:"Asia/Kuala_Lumpur"})}`
+    : null;
+};
 
 function monthDates(month:string) {
   if (!/^\d{4}-\d{2}$/.test(month)) return { from:"", to:"" };
@@ -151,6 +157,10 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   const active = items.filter(item=>item.status==="active").length;
   const scheduled = items.filter(item=>item.status==="scheduled").length;
   const drafts = items.filter(item=>item.status==="draft"||item.status==="review").length;
+  const latestUpdate=items.reduce<string|null>((latest,item)=>{
+    if (!item.updatedAt || !Number.isFinite(new Date(item.updatedAt).getTime())) return latest;
+    return !latest || new Date(item.updatedAt).getTime()>new Date(latest).getTime()?item.updatedAt:latest;
+  },null);
 
   function resetForm() {
     setEditingPackageId(null);
@@ -309,7 +319,8 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         return;
       }
       setMessageType(data.sheetSyncStatus==="synced"?"success":"warning");
-      setMessage(`Version ${data.version} saved · ${data.added.length} added / ${data.removed.length} removed · Google Sheet ${data.sheetSyncStatus}`);
+      const historyMessage=data.sheetSyncStatus==="failed"?" · Update history is temporarily unavailable.":data.sheetSyncStatus==="pending"?" · Update history is pending.":"";
+      setMessage(`Version ${data.version} saved · ${data.added.length} added / ${data.removed.length} removed${historyMessage}`);
       await load();
       const next = prefillQueue[0];
       if (next) {
@@ -362,7 +373,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       nonCampaign:{promotionType:nc.promotionType,promotionMonth:nc.promotionType==="monthly"?nc.effectiveFrom.slice(0,7):"",effectiveFrom:nc.effectiveFrom,effectiveTo:nc.effectiveTo},
       campaign:{promotionType:"custom",promotionMonth:campaign.effectiveFrom.slice(0,7),campaignEvents:[...new Set(schedules.filter(line=>line.priceType==="campaign").map(line=>campaignEventForDates(line.effectiveFrom,line.effectiveTo)))],effectiveFrom:campaign.effectiveFrom,effectiveTo:campaign.effectiveTo},
       prices:{MY:{nonCampaignOriginal:String(priceFor("MY","non_campaign")?.originalPrice??""),nonCampaignSelling:String(priceFor("MY","non_campaign")?.sellingPrice??""),campaignOriginal:String(priceFor("MY","campaign")?.originalPrice??""),campaignSelling:String(priceFor("MY","campaign")?.sellingPrice??"")},SG:{nonCampaignOriginal:String(priceFor("SG","non_campaign")?.originalPrice??""),nonCampaignSelling:String(priceFor("SG","non_campaign")?.sellingPrice??""),campaignOriginal:String(priceFor("SG","campaign")?.originalPrice??""),campaignSelling:String(priceFor("SG","campaign")?.sellingPrice??"")}},
-      changeNote:stored ? `Changes from Version ${item.version}` : "Migrated from Fulfillment Sheet",
+      changeNote:stored ? `Changes from Version ${item.version}` : "Created from an existing package",
     });
     setComponents(item.components.map(line=>({...line})));
     setPlatforms((item.platforms?.length ? item.platforms : [{platform:"Shopee" as const,packageSku:item.packageSku}]).map(line=>({...line})));
@@ -375,8 +386,8 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     <div className="package-hero">
       <div><p className="kicker">OXM PACKAGE CONTROL</p><h2>Packages & Pricing</h2><p>Create packages, choose platforms and set promotion dates. Every change is saved in history.</p></div>
       <div className="package-hero-actions">
-        <a href={HISTORY_SHEET_URL} target="_blank" rel="noopener noreferrer">Google Sheet History</a>
-        <span>{!hasPackageScope?"Select a Store":allStoresSelected?"Accessible Stores":source==="sheet-migration-preview"?"Sheet Migration Preview":"Live Database"}</span>
+        <a href={HISTORY_SHEET_URL} target="_blank" rel="noopener noreferrer">View Package History</a>
+        {!hasPackageScope?<span>Select a Store</span>:latestUpdate?<span>{updatedLabel(latestUpdate)}</span>:null}
         {canCreate&&hasSelectedStore&&<button onClick={openNew}>+ New Package</button>}
       </div>
     </div>
@@ -392,11 +403,11 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       <div>{["All","Active","Scheduled","Draft","Review","Expired"].map(label=>{const value=label.toLowerCase();return <button key={value} className={filter===value?"active":""} onClick={()=>setFilter(value)}>{label}</button>})}</div>
       <input value={search} onChange={event=>setSearch(event.target.value)} placeholder="Search package or platform SKU" />
     </div>
-    {message&&<div className={`package-message ${messageType}`}>{message}{messageType==="warning"&&<a href={HISTORY_SHEET_URL} target="_blank" rel="noopener noreferrer">Open History Sheet</a>}</div>}
+    {message&&<div className={`package-message ${messageType}`}>{message}{messageType==="warning"&&<a href={HISTORY_SHEET_URL} target="_blank" rel="noopener noreferrer">View Package History</a>}</div>}
 
     <div className="package-list">{visible.map(item=><article className="package-card" key={item.id}>
       <div className="package-card-head">
-        <div><span className={`package-status ${item.status}`}>{item.status}</span><span className={`sync-status ${item.sheetSyncStatus ?? "pending"}`}>Sheet {item.sheetSyncStatus ?? "preview"}</span><h3>{item.name}</h3></div>
+        <div><span className={`package-status ${item.status}`}>{item.status}</span><h3>{item.name}</h3></div>
         <div className="package-price"><small>{item.market}</small><del>{money(item.originalPrice,item.market,source==="database")}</del><strong>{money(item.sellingPrice,item.market,source==="database")}</strong></div>
       </div>
       {item.priceSchedules?.length?<div className="package-schedule-summary">{item.priceSchedules.map(line=><div key={`${line.market}-${line.priceType}`}><span>{line.market} · {line.priceType==="campaign"?"Campaign":"Non-Campaign"}</span><b>{money(line.sellingPrice,line.market)}</b><small>{line.effectiveFrom} → {line.effectiveTo}</small></div>)}</div>:null}
@@ -404,13 +415,13 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       <div className="package-meta">{allStoresSelected&&<span>Store <b>{item.storeName??item.storeId}</b></span>}<span>Version <b>v{item.version}</b></span><span>Promotion <b>{item.promotionType==="monthly"?"Full Month":"Custom Dates"}</b></span><span>Effective <b>{item.effectiveFrom} → {item.effectiveTo || "Open Ended"}</b></span><span>Discount <b>{item.originalPrice?Math.round((1-item.sellingPrice/item.originalPrice)*100):0}%</b></span></div>
       <div className="component-list">{item.components.map((line,index)=><div key={`${line.inventorySku}-${index}`}><span className={`component-kind ${line.kind}`}>{line.kind}</span><b>{line.inventorySku}</b><span>{line.name}</span><strong>× {line.quantity}</strong></div>)}</div>
       {openHistory===item.id&&<div className="version-history">{(item.history?.length?item.history:[{
-        version:item.version,changeNote:"Imported from Fulfillment Sheet",promotionType:item.promotionType,effectiveFrom:item.effectiveFrom,effectiveTo:item.effectiveTo,createdAt:"",createdBy:"",addedComponents:item.components,removedComponents:[],
+        version:item.version,changeNote:"Initial version",promotionType:item.promotionType,effectiveFrom:item.effectiveFrom,effectiveTo:item.effectiveTo,createdAt:"",createdBy:"",addedComponents:item.components,removedComponents:[],
       }]).map(line=><div className="history-entry" key={line.version}>
-        <div><b>v{line.version}</b><span>{line.changeNote}</span><small>{line.effectiveFrom} → {line.effectiveTo || "Open Ended"} · Sheet {line.sheetSyncStatus ?? "preview"}</small></div>
+        <div><b>v{line.version}</b><span>{line.changeNote==="Migrated from Fulfillment Sheet"?"Created from an existing package":line.changeNote}</span><small>{line.effectiveFrom} → {line.effectiveTo || "Open Ended"}</small></div>
         <div className="history-diff"><span className="added">+ {(line.addedComponents ?? []).map(lineText).join(", ") || "No Additions"}</span><span className="removed">− {(line.removedComponents ?? []).map(lineText).join(", ") || "No Removals"}</span></div>
         {line.calculatorSettings&&<div className="calculator-history"><b>Calculator Snapshot</b>{calculatorSnapshots(line.calculatorSettings).map(snapshot=><div key={snapshot.serviceScenario}><strong>{snapshot.serviceScenario}</strong><span>{snapshot.category}</span>{snapshot.pricingGoal?<span>Goal · {snapshot.pricingGoal==="facebookPayout"?"Match Meta Order Income":snapshot.pricingGoal==="sameCustomerPrice"?"Match Meta Buyer Payment":`Lower Than Meta by ${snapshot.discountUnit==="rm"?money(snapshot.discountValue??0,"MY"):`${(snapshot.discountValue??0).toFixed(2)}%`}`}</span>:null}<span>Meta {money(snapshot.facebookPrice,"MY")} → Shopee {money(snapshot.suggestedShopeePrice,"MY")}</span>{snapshot.mainProductQuantity?<span>Main Product Qty {snapshot.mainProductQuantity} · Meta Price Per Unit {snapshot.facebookPricePerUnit==null?"—":money(snapshot.facebookPricePerUnit,"MY")} · Buyer Price Per Unit {snapshot.customerPricePerUnit==null?"—":money(snapshot.customerPricePerUnit,"MY")}</span>:null}<span>Commission {snapshot.commissionRate.toFixed(2)}% · Service {snapshot.serviceRate.toFixed(2)}% · Payout {money(snapshot.actualPayout,"MY")}</span></div>)}</div>}
       </div>)}</div>}
-      <div className="package-card-foot"><span>{item.components.length} Inventory SKU Lines</span><button onClick={()=>setOpenHistory(openHistory===item.id?null:item.id)}>{openHistory===item.id?"Hide History":"View History"}</button><button onClick={()=>startVersion(item)}>{source==="database"?"New Version":"Migrate & Edit"}</button></div>
+      <div className="package-card-foot"><span>{item.components.length} Inventory SKU Lines</span><button onClick={()=>setOpenHistory(openHistory===item.id?null:item.id)}>{openHistory===item.id?"Hide History":"View History"}</button><button onClick={()=>startVersion(item)}>{source==="database"?"New Version":"Use as New Package"}</button></div>
     </article>)}</div>
     {!visible.length&&<div className="package-empty"><strong>{!hasPackageScope?"Select a Store":allStoresSelected?"No Packages In Accessible Stores":"No Packages In This View"}</strong><span>{!hasPackageScope?"Package information will appear after you choose a store.":allStoresSelected?"Only packages from stores you have permission to access appear here.":"Choose another filter or create the first package."}</span></div>}
 
