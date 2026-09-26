@@ -8,6 +8,7 @@ import { storeSnapshots } from "../../store-snapshots";
 import { readProductCatalogSheet, sourceShopNameFor } from "../../product-catalog";
 import { supabaseRest } from "../../supabase-rest";
 import { aggregateAdPerformanceByDate, authorizedAdStoreIds, latestAdSyncTime } from "../../ad-performance.js";
+import { withoutAdCampaigns } from "../../dashboard-snapshot.js";
 
 export const dynamic = "force-dynamic";
 
@@ -291,7 +292,7 @@ export async function GET(request: Request) {
         };
       }),
       selectedStoreId: allStoresRequested ? "all" : selectedStore?.id ?? null,
-      snapshot: snapshotPayload ? { payload: snapshotPayload, importedAt: snapshotPayload.sourceUpdated ?? "" } : null,
+      snapshot: snapshotPayload ? withoutAdCampaigns({ payload: snapshotPayload, importedAt: snapshotPayload.sourceUpdated ?? "" }) : null,
       snapshotSource: snapshotPayload ? "bundled" : null,
       adBalance: sheetBalance ? { ...sheetBalance, topUpOwner: selectedDirectory?.topUpOwner ?? topUpOwnerFallbacks[selectedStore?.name ?? ""] ?? null } : null,
       adPerformance:adPerformance.daily,
@@ -424,7 +425,7 @@ export async function GET(request: Request) {
       };
     }),
     selectedStoreId: allStoresRequested ? "all" : (selectedStore?.id ?? null),
-    snapshot: latest[0] ?? null,
+    snapshot: withoutAdCampaigns(latest[0] ?? null),
     snapshotSource: latest[0] ? "imported" : null,
     adBalance: sheetBalance ? { ...sheetBalance, topUpOwner } : (latestBalance[0] ? {
       balance: latestBalance[0].balanceCents / 100,

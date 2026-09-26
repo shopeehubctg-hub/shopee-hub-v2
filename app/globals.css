@@ -271,3 +271,6 @@ body{background:var(--paper);color:var(--ink)}
 /* Consistent separation between the store selector and each module heading. */
 .workspace > .header{margin-bottom:30px}
 @media(max-width:680px){.workspace > .header{margin-bottom:24px}}
+
+.individual-ads-empty{padding:28px;text-align:center;border-style:dashed}
+.individual-ads-empty p{margin:0;color:var(--muted);font-size:13px}

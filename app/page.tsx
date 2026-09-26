@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import adsData from "./ads-data.json";
 import { PackageControl } from "./package-control";
 import { PriceCalculator } from "./price-calculator";
 import { DesignChecker } from "./design-checker";
@@ -90,9 +89,6 @@ export default function Home() {
   const [storeId, setStoreId] = useState("");
   const [storeSelectionMade,setStoreSelectionMade] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [adStatusFilter, setAdStatusFilter] = useState("All");
-  const [adSearch, setAdSearch] = useState("");
-  const [adPage, setAdPage] = useState(1);
   const [adPeriodMode, setAdPeriodMode] = useState<"mtd"|"month"|"date"|"range">("mtd");
   const [adDate, setAdDate] = useState("");
   const [adMonth, setAdMonth] = useState("");
@@ -159,7 +155,6 @@ export default function Home() {
   const overviewState = buildOverviewState(overviewSnapshot, overviewSource);
   const overviewLive = overviewState.payload ?? {};
   const adsBase = data?.adPerformance?.length ? { ...unavailableAdvertising, ...(live.advertising ?? {}) } : unavailableAdvertising;
-  const importedStoreAds = adsData.filter((ad:any) => allStoresSelected || ad.store === store?.name);
   const relevantDailyAds = data?.adPerformance ?? [];
   const availableAdDates = [...new Set(relevantDailyAds.map(row=>row.date))].sort((a,b)=>b.localeCompare(a));
   const availableAdMonths = [...new Set(availableAdDates.map(date=>date.slice(0,7)))].sort((a,b)=>b.localeCompare(a));
@@ -196,10 +191,6 @@ export default function Home() {
     conversionRate:`${(dailyAd.conversionRate * 100).toFixed(2)}%`,
   } : { ...balanceAds, ...emptyAdMetrics };
   const adTotalMetrics = [["Ad Spend",ads.spend],["Ad Sales",ads.sales],["ROAS",ads.roas],["ACOS",ads.acos],["Views",ads.views],["Clicks",ads.clicks],["CTR",ads.ctr],["Conversions",ads.conversion],["Sold",ads.sold],["CPC",ads.cpc],["Conversion Rate",ads.conversionRate],["Cost Per Conversion",ads.costPerConversion]];
-  const adCampaigns = Array.isArray(live.adCampaigns) ? live.adCampaigns : importedStoreAds;
-  const filteredAdCampaigns = adCampaigns.filter((ad:any) => (adStatusFilter === "All" || ad.status === adStatusFilter) && `${ad.name} ${ad.store ?? ""}`.toLowerCase().includes(adSearch.toLowerCase()));
-  const adPageCount = Math.max(1, Math.ceil(filteredAdCampaigns.length / 25));
-  const visibleAdCampaigns = filteredAdCampaigns.slice((adPage - 1) * 25, adPage * 25);
   const orderData = getOrdersData(data?.snapshot);
   const orders = orderData.orders;
   const driveActions = driveActionsForStore(store);
@@ -246,7 +237,7 @@ export default function Home() {
       <header className="header">
         <div><p className="kicker">SHOPEE HUB PERFORMANCE</p><h1>{section==="packages"&&!storeSelectionMade?"No Store Selected":allStoresSelected ? "All Stores" : (store?.name ?? "J Packaging")}</h1></div>
         <div className="toolbar">
-          <label>Store<select value={section==="packages"&&!storeSelectionMade?"":storeId} onChange={e=>{setStoreSelectionMade(true);setStoreId(e.target.value);setAdPage(1);load(e.target.value)}}><option value="" disabled>Select a Store</option><option value="all">All Stores</option>{data?.stores.map(s=><option key={s.id} value={s.id}>{s.name} · {s.platform.replace("Shopee ", "")}</option>) ?? <option value="j-packaging-shopee">J Packaging · MY</option>}</select></label>
+          <label>Store<select value={section==="packages"&&!storeSelectionMade?"":storeId} onChange={e=>{setStoreSelectionMade(true);setStoreId(e.target.value);load(e.target.value)}}><option value="" disabled>Select a Store</option><option value="all">All Stores</option>{data?.stores.map(s=><option key={s.id} value={s.id}>{s.name} · {s.platform.replace("Shopee ", "")}</option>) ?? <option value="j-packaging-shopee">J Packaging · MY</option>}</select></label>
           <button onClick={()=>load(storeId)} disabled={loading}>{loading?"Updating…":"Update data"}</button>
         </div>
       </header>
@@ -280,7 +271,7 @@ export default function Home() {
         <section className={`ad-funds-card ${adFunds.balanceStatus}`}><div className="ad-funds-status"><div><span>{adFunds.syncStatus === "delayed" ? "Data delayed" : (adFunds.lowBalance ? `Top-up ${formatRinggit(adFunds.recommendedTopUp)} required` : "Ads healthy")}</span><small>{adFunds.topUpOwner === "shopee_hub" ? "Managed by Shopee Hub" : (adFunds.approvalRequired ? "Approval needed" : "Client action")}</small></div><time>{effectiveBalance?.sourceUpdatedAt ? `Last updated ${formatAdSyncTime(effectiveBalance.sourceUpdatedAt)}` : effectiveBalance?.balanceDate ? `Updated on ${formatAdDate(effectiveBalance.balanceDate)}` : "Last update unavailable"}</time></div><div className="fund-metric"><span>Ad Balance</span><strong>{formatRinggit(adFunds.balance, 2)}</strong></div><div className="fund-metric"><span>{periodSpendLabel}</span><strong>{ads.spend ?? "—"}</strong></div><div className="fund-metric"><span>Runway</span><strong>{adFunds.runwayDays == null ? "—" : `${Math.floor(adFunds.runwayDays)} days`}</strong></div><div className="fund-metric topup"><span>Top-up</span><strong>{formatRinggit(adFunds.recommendedTopUp)}</strong></div></section>
         <section className="metric-grid ads ad-primary-grid">{[["Ad Sales",ads.sales,"sales"],["ROAS",ads.roas,"roas"],["ACOS",ads.acos,"acos"],["Cost Per Conversion",ads.costPerConversion,"cost"]].map(m=><article className={`metric ad-metric ${m[2]}`} key={m[0]}><span>{m[0]}</span><strong>{money(m[1])}</strong></article>)}</section>
         <section className="metric-grid ads ad-secondary-grid">{[["Views",ads.views,"reach",null],["Clicks",ads.clicks,"reach",null],["CTR",ads.ctr,"rate",parseFloat(ads.ctr)<2],["Conversion Rate",ads.conversionRate,"rate",parseFloat(ads.conversionRate)<2]].map(m=><article className={`metric ad-metric ${m[2]} ${m[3]===true?"danger":""}`} key={m[0] as string}><span>{m[0]}</span><strong>{money(m[1] as string)}</strong>{m[3]!==null&&<em>{m[3]?"Warning":"Normal"}</em>}</article>)}</section></div>}
-        {!allStoresSelected && adCampaigns.length > 0 && <section className="campaign-section"><div className="campaign-heading"><div><p className="kicker">EVERY AD</p><h3>Individual advertisement data</h3><small>Reporting date unavailable · period selector applies to summary metrics only · {adCampaigns.length} ads</small></div><div className="campaign-counts"><span>{adCampaigns.filter((a:any)=>a.status==="Active"||a.status==="Ongoing").length} Active</span><span className="paused-count">{adCampaigns.filter((a:any)=>a.status==="Paused").length} Paused</span></div></div><div className="ad-controls"><div>{["All","Ongoing","Paused","Ended"].map(status=><button key={status} className={adStatusFilter===status?"active":""} onClick={()=>{setAdStatusFilter(status);setAdPage(1)}}>{status}</button>)}</div><input value={adSearch} onChange={e=>{setAdSearch(e.target.value);setAdPage(1)}} placeholder="Search ad or store" aria-label="Search advertisements"/></div><div className="card table-card"><table className="campaign-table"><thead><tr><th>Advertisement</th><th>Status</th><th>Budget</th><th>Spend</th><th>Ad Sales</th><th>ROAS</th><th>Views</th><th>Clicks</th><th>CTR</th><th>Conversion</th><th>Sold</th><th>ACOS</th></tr></thead><tbody>{visibleAdCampaigns.map((a:any)=><tr key={a.id ?? a.name} className={a.status==="Paused"?"paused-row":""}><td><b>{a.name}</b><small>{a.store ? `${a.store} · ${a.type}` : a.type}</small></td><td><span className={`ad-status ${a.status.toLowerCase()}`}>{a.status}</span></td><td>{a.budget}</td><td>{a.spend}</td><td>{a.sales}</td><td><b>{a.roas}</b></td><td>{a.views}</td><td>{a.clicks}</td><td className={parseFloat(a.ctr)<2?"cell-warning":""}>{a.ctr}</td><td className={parseFloat(a.conversionRate)<2?"cell-warning":""}>{a.conversionRate}</td><td>{a.sold}</td><td>{a.acos}</td></tr>)}</tbody></table></div><div className="ad-pagination"><button disabled={adPage===1} onClick={()=>setAdPage(p=>Math.max(1,p-1))}>← Previous</button><span>Page {adPage} of {adPageCount} · {filteredAdCampaigns.length} ads</span><button disabled={adPage===adPageCount} onClick={()=>setAdPage(p=>Math.min(adPageCount,p+1))}>Next →</button></div></section>}
+        {!allStoresSelected && <section className="campaign-section" aria-label="Individual Ads"><div className="campaign-heading"><div><p className="kicker">INDIVIDUAL ADS</p><h3>Individual Ads</h3></div></div><div className="card individual-ads-empty" role="status"><p>Individual ad data is temporarily unavailable.</p></div></section>}
       </div>}
 
       {section==="orders" && <div className="page">
