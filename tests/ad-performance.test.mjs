@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { aggregateAdPerformanceByDate, aggregateSelectedAdRows, authorizedAdStoreIds, latestAdSyncTime, selectAdRows, selectedAdDateFor } from "../app/ad-performance.js";
 import { withoutAdCampaigns } from "../app/dashboard-snapshot.js";
+import { balanceCsvColumns, isCurrentBalanceDate, parseAdBalance } from "../app/ad-balance-validation.js";
+import { shouldShowAllStoresTopUps, summarizeAllStoresTopUps } from "../app/ad-topup-overview.js";
 import { readFile } from "node:fs/promises";
+import { runInNewContext } from "node:vm";
 
 test("FullAd rows from visible stores combine by date with weighted rates", () => {
   const daily = aggregateAdPerformanceByDate([
@@ -60,10 +63,11 @@ test("latest advertising sync time comes from the authorized rows", () => {
 test("balance update label never invents a time for date-only sheet rows", async () => {
   const route=await readFile(new URL("../app/api/dashboard/route.ts",import.meta.url),"utf8");
   const page=await readFile(new URL("../app/page.tsx",import.meta.url),"utf8");
-  assert.match(route,/sourceUpdatedAt: null,/);
-  assert.match(route,/sourceUpdatedAt: latestBalance\[0\]\.importedAt/);
+  assert.match(route,/sourceUpdatedAt:null/);
+  assert.doesNotMatch(route,/latestBalance/);
   assert.doesNotMatch(route,/9:00 am/);
-  assert.match(page,/`Updated on \$\{formatAdDate\(effectiveBalance\.balanceDate\)\}`/);
+  assert.match(page,/`Balance as of \$\{formatAdDate\(effectiveBalance\.balanceDate\)\}`/);
+  assert.match(page,/\{ \.\.\.adsBase, balance:null, sourceUpdatedAt:null, syncStatus:"delayed" \}/);
 });
 
 test("dashboard snapshots omit individual ads without changing stored data", () => {
@@ -81,10 +85,73 @@ test("Shopee Open Platform stays outside the active dashboard path", async () =>
   assert.doesNotMatch(page,/\/api\/shopee\/advertising/);
   assert.doesNotMatch(dashboard,/partner\.shopeemobile|get_product_level_campaign/);
   await assert.rejects(readFile(new URL("../app/api/shopee/advertising/route.ts",import.meta.url),"utf8"),{code:"ENOENT"});
-  assert.match(dashboard,/const \[sheetBalance,productProfile,selectedCoFundVouchers,(?:voucherPreset,)?adPerformance\] = await Promise\.all\(\[/);
-  assert.match(dashboard,/readSheetBalance\(selectedStore\.name\)/);
+  assert.match(dashboard,/const \[sheetBalances,productProfile,selectedCoFundVouchers,adPerformance\] = await Promise\.all\(\[/);
+  assert.match(dashboard,/readSheetBalances\(\)/);
   assert.match(dashboard,/readProductCatalogSheet\(selectedStore\.name\)/);
   assert.match(dashboard,/readAdPerformance\(authorizedAdStoreIds/);
+});
+
+test("balance CSV requires the named Ad Balance column and recent dates", async () => {
+  const header=["Date","Store Name","Spend","Sales","ROAS","Views","Clicks","CTR","Conversion","Sold","ACOS","Ad Balance (RM)"];
+  assert.deepEqual(balanceCsvColumns(header),{dateIndex:0,storeIndex:1,balanceIndex:11});
+  assert.equal(balanceCsvColumns(["","Store Name","Spend",...Array(9).fill("")]),null);
+  assert.equal(isCurrentBalanceDate("2026-09-25","2026-09-27"),true);
+  assert.equal(isCurrentBalanceDate("2026-09-24","2026-09-27"),true);
+  assert.equal(isCurrentBalanceDate("2026-09-23","2026-09-27"),false);
+  assert.equal(isCurrentBalanceDate("2026-08-05","2026-09-27"),false);
+  assert.equal(isCurrentBalanceDate("2026-09-32","2026-09-27"),false);
+  assert.equal(parseAdBalance("RM 1,234.50"),1234.5);
+  assert.equal(parseAdBalance("0"),0);
+  assert.equal(parseAdBalance("1,23"),null);
+  assert.equal(parseAdBalance(""),null);
+  assert.equal(parseAdBalance("Spend: 55"),null);
+  const route=await readFile(new URL("../app/api/dashboard/route.ts",import.meta.url),"utf8");
+  assert.match(route,/export\?format=csv&gid=421872532/);
+  assert.doesNotMatch(route,/export\?format=csv&gid=896889002/);
+  assert.doesNotMatch(route,/sheet=Sheet1/);
+});
+
+test("Apps Script skips an empty AdBalance tab without writing balances", async () => {
+  const source=await readFile(new URL("../google-apps-script/Code.gs",import.meta.url),"utf8");
+  assert.match(source,/balanceSheet: 'AdBalance'/);
+  const context={
+    SpreadsheetApp:{getActive:()=>({getSheetByName:()=>({getDataRange:()=>({getValues:()=>[[""]]})})})},
+    console:{log:()=>{}},
+    PropertiesService:{getScriptProperties:()=>{throw new Error("Empty balances must not write to Supabase");}},
+  };
+  assert.deepEqual(JSON.parse(JSON.stringify(runInNewContext(`${source}\nsyncBalances_({})`,context))),{count:0,unmatched:[]});
+});
+
+test("All Stores top-ups use single-store rules and respect access and ownership", () => {
+  assert.equal(shouldShowAllStoresTopUps(true,"superadmin",1,true),true);
+  assert.equal(shouldShowAllStoresTopUps(true,"customer",2,true),true);
+  assert.equal(shouldShowAllStoresTopUps(true,"customer",1,true),false);
+  assert.equal(shouldShowAllStoresTopUps(true,"customer",2,false),false);
+  const stores=[
+    {id:"client",name:"Client store",topUpOwner:"client"},
+    {id:"hub",name:"Hub store",topUpOwner:"shopee_hub"},
+    {id:"approval",name:"Approval store",topUpOwner:"client_approval"},
+    {id:"zero",name:"Zero spend",topUpOwner:"client"},
+    {id:"missing",name:"Missing balance",topUpOwner:"client"},
+  ];
+  const rows=[...stores.map(store=>({store_id:store.id,performance_date:"2026-09-25",spend:store.id==="client"||store.id==="zero"?0:5})),
+    {store_id:"forbidden",performance_date:"2026-09-25",spend:50},
+    {store_id:"client",performance_date:"2026-09-24",spend:10}];
+  const balances=new Map([
+    ["client",{balance:20,balanceDate:"2026-09-25"}],
+    ["hub",{balance:10,balanceDate:"2026-09-25"}],
+    ["approval",{balance:0,balanceDate:"2026-09-25"}],
+    ["zero",{balance:0,balanceDate:"2026-09-25"}],
+  ]);
+  const result=summarizeAllStoresTopUps(stores,rows,balances);
+  assert.equal(result.totalStoreCount,5);
+  assert.equal(result.assessedStoreCount,4);
+  assert.ok(result.needsTopUp.every(row=>row.storeId!=="forbidden"));
+  assert.deepEqual(result.needsTopUp.map(row=>[row.storeId,row.recommendedTopUp,row.actionLabel]),[
+    ["approval",200,"Approve"],["client",150,"Top Up"],["hub",200,"Managed by Shopee Hub"],
+  ].sort((a,b)=>b[1]-a[1]||String(a[0]).localeCompare(String(b[0]))));
+  assert.equal(summarizeAllStoresTopUps(stores,rows,new Map()).assessedStoreCount,0);
+  assert.equal(summarizeAllStoresTopUps(stores,rows,new Map([["client",{balance:20,balanceDate:"2026-09-24"}]])).assessedStoreCount,0);
 });
 
 test("selected-store membership with no assignments does not fall back to directory stores", async () => {

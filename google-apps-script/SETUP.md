@@ -1,10 +1,10 @@
 # Google Sheet → Supabase sync
 
-Target spreadsheet: `Shopee Ads Report` (`Sheet1` and `FullAd`).
+Target spreadsheet: `Shopee Ads Report` (`AdBalance` and `FullAd`).
 
-`Sheet1` is optional. If it is absent, the script skips Ad Balance and still syncs `FullAd` performance data.
+`AdBalance` holds ad balances with the headers `Date`, `Store Name`, and `Ad Balance (RM)`. It may be empty while balances are being prepared; the script skips the balance sync safely and still syncs `FullAd` performance data. `FullAd` supplies performance only. The dashboard reads balances directly from `AdBalance`, and unavailable or outdated balances appear as pending.
 
-1. Apply `supabase/migrations/20260921090000_google_sheet_ads_sync.sql` to Supabase.
+1. Confirm Supabase has the `ad_balances` and `ad_performance_daily` tables; apply `supabase/migrations/20260921090000_google_sheet_ads_sync.sql` if needed.
 2. In the spreadsheet, open **Extensions → Apps Script**.
 3. Replace `Code.gs` and `appsscript.json` with the files in this directory.
 4. In **Project Settings → Script Properties**, add:
@@ -17,6 +17,6 @@ Target spreadsheet: `Shopee Ads Report` (`Sheet1` and `FullAd`).
 
 Every `full` log entry includes `sourceLatestDate`, the newest business date seen in `FullAd`, as well as the number of matched rows and unmatched store names. A `failed` entry records a caught sync error. A `warning` entry can also mean unmatched stores; inspect its detail before treating it as a failed run.
 
-The late run catches `FullAd` rows added after the morning run. Repeating the sync is safe for existing rows: the script upserts on `store_id,performance_date` and refreshes their metrics and `synced_at`. Both runs currently read the whole `FullAd` sheet, so monitor Apps Script execution time as the history grows. Changing this repository copy does not update the bound Apps Script project; paste the revised files and run `installDailyTrigger` there to activate the second trigger.
+The late run catches `FullAd` rows added after the morning run. Repeating the sync is safe for existing rows: the script upserts on `store_id,performance_date` and refreshes their metrics and `synced_at`. Both runs currently read the whole `FullAd` sheet, so monitor Apps Script execution time as the history grows. Changing this repository copy does not update the bound Apps Script project; paste the revised files and run `installDailyTrigger` there to activate the second trigger and the `AdBalance` balance sync.
 
 The secret key is intentionally stored only in Script Properties. Never place it in a Sheet cell or commit it to source control.

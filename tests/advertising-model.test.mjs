@@ -7,6 +7,13 @@ test("RM49.99 triggers the low balance rule while RM50 does not", () => {
   assert.equal(buildAdvertisingFunds({ balance:50, averageDailySpend30d:10 }).lowBalance, false);
 });
 
+test("zero spend does not create a zero-value top-up alert", () => {
+  const funds=buildAdvertisingFunds({balance:0,averageDailySpend30d:0,topUpOwner:"client"});
+  assert.equal(funds.recommendedTopUp,0);
+  assert.equal(funds.lowBalance,false);
+  assert.equal(buildTopUpAction(funds,"Store"),null);
+});
+
 test("top-up covers 30 days, adds 10% and rounds to RM50", () => {
   const funds = buildAdvertisingFunds({ balance:35.95, averageDailySpend30d:3.06 });
   assert.equal(funds.recommendedTopUp, 100);

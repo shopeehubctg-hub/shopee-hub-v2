@@ -1,6 +1,6 @@
 const CONFIG = Object.freeze({
   tenantId: 'j-packaging',
-  balanceSheet: 'Sheet1',
+  balanceSheet: 'AdBalance',
   performanceSheet: 'FullAd',
   logSheet: '_SyncLog',
   batchSize: 200,
@@ -82,6 +82,10 @@ function syncBalances_(storeIndex) {
     return { count: 0, unmatched: [] };
   }
   const rows = sheetRows_(CONFIG.balanceSheet, ['Date', 'Store Name', 'Ad Balance (RM)']);
+  if (!rows.length) {
+    console.log('Skipping Ad Balance: AdBalance has no data rows');
+    return { count: 0, unmatched: [] };
+  }
   const latestDate = rows.reduce((latest, row) => Math.max(latest, dateValue_(row.Date).getTime()), 0);
   const unmatched = [];
   const payload = rows.filter(row => dateValue_(row.Date).getTime() === latestDate).flatMap(row => {
