@@ -212,6 +212,18 @@ test("All Stores top-ups use single-store rules and respect access and ownership
   assert.equal(summarizeAllStoresTopUps(stores,staleRows,new Map(),"2026-09-27").needsAttention.length,0);
 });
 
+test("All Stores top-up average excludes ad spend older than 30 days", () => {
+  const stores=[{id:"client",name:"Client store",topUpOwner:"client"}];
+  const rows=[
+    {store_id:"client",performance_date:"2026-08-28",spend:1000},
+    {store_id:"client",performance_date:"2026-08-29",spend:10},
+    {store_id:"client",performance_date:"2026-09-25",spend:10},
+  ];
+  const balances=new Map([["client",{balance:0,balanceDate:"2026-09-27"}]]);
+  const result=summarizeAllStoresTopUps(stores,rows,balances,"2026-09-27");
+  assert.equal(result.needsTopUp[0].recommendedTopUp,350);
+});
+
 test("selected-store membership with no assignments does not fall back to directory stores", async () => {
   const route=await readFile(new URL("../app/api/dashboard/route.ts",import.meta.url),"utf8");
   assert.match(route,/membership\.storeAccessMode === "selected" && membership\.role !== "superadmin" \? \[\] : directoryStores\.map/);
