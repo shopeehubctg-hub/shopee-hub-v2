@@ -7,7 +7,11 @@ export function shouldShowAllStoresTopUps(allStores, role, accessibleStoreCount,
 
 export function summarizeAllStoresTopUps(stores, performanceRows, balancesByStoreId, today = malaysiaDate()) {
   const spendingByStore = new Map();
+  const startDate = new Date(`${today}T00:00:00Z`);
+  startDate.setUTCDate(startDate.getUTCDate() - 29);
+  const firstDay = startDate.toISOString().slice(0, 10);
   for (const row of performanceRows) {
+    if (row.performance_date < firstDay || row.performance_date > today) continue;
     const current = spendingByStore.get(row.store_id) ?? { spend: 0, dates: new Set(), latestDate: "" };
     current.spend += Number(row.spend) || 0;
     current.dates.add(row.performance_date);
