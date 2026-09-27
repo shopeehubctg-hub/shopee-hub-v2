@@ -206,8 +206,9 @@ test("All Stores top-ups use single-store rules and respect access and ownership
   assert.equal(watch.assessedStoreCount,0);
   assert.deepEqual(watch.needsTopUp,[]);
   assert.deepEqual(watch.needsAttention.map(row=>[row.storeId,row.balance,row.performanceDate]),[
-    ["approval",0,"2026-09-24"],["zero",0,"2026-09-24"],["hub",10,"2026-09-24"],["client",20,"2026-09-24"],
+    ["approval",0,"2026-09-24"],["hub",10,"2026-09-24"],["client",20,"2026-09-24"],
   ]);
+  assert.ok(!watch.needsAttention.some(row=>row.storeId==="zero"));
   assert.equal(summarizeAllStoresTopUps(stores,staleRows,new Map(),"2026-09-27").needsAttention.length,0);
 });
 
