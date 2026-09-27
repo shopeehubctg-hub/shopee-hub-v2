@@ -1,5 +1,5 @@
 import { buildAdvertisingFunds, buildTopUpAction } from "./advertising-model.js";
-import { isCurrentPerformanceDate, malaysiaDate } from "./ad-balance-validation.js";
+import { hasCurrentTopUpInputs, malaysiaDate } from "./ad-balance-validation.js";
 
 export function shouldShowAllStoresTopUps(allStores, role, accessibleStoreCount, canViewAdvertising) {
   return Boolean(allStores && canViewAdvertising && (role === "superadmin" || accessibleStoreCount > 1));
@@ -20,7 +20,7 @@ export function summarizeAllStoresTopUps(stores, performanceRows, balancesByStor
   for (const store of stores) {
     const candidateBalance = balancesByStoreId.get(store.id);
     const spending = spendingByStore.get(store.id);
-    const balance = isCurrentPerformanceDate(spending?.latestDate, today) && candidateBalance?.balanceDate >= spending.latestDate ? candidateBalance : null;
+    const balance = hasCurrentTopUpInputs(candidateBalance?.balanceDate, spending?.latestDate, today) ? candidateBalance : null;
     const averageDailySpend30d = spending?.dates.size ? spending.spend / spending.dates.size : null;
     const funds = buildAdvertisingFunds({
       balance: balance?.balance ?? null,
