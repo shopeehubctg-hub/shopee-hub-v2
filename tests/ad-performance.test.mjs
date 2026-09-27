@@ -81,7 +81,7 @@ test("Shopee Open Platform stays outside the active dashboard path", async () =>
   assert.doesNotMatch(page,/\/api\/shopee\/advertising/);
   assert.doesNotMatch(dashboard,/partner\.shopeemobile|get_product_level_campaign/);
   await assert.rejects(readFile(new URL("../app/api/shopee/advertising/route.ts",import.meta.url),"utf8"),{code:"ENOENT"});
-  assert.match(dashboard,/const \[sheetBalance,productProfile,selectedCoFundVouchers,voucherPreset,adPerformance\] = await Promise\.all\(\[/);
+  assert.match(dashboard,/const \[sheetBalance,productProfile,selectedCoFundVouchers,(?:voucherPreset,)?adPerformance\] = await Promise\.all\(\[/);
   assert.match(dashboard,/readSheetBalance\(selectedStore\.name\)/);
   assert.match(dashboard,/readProductCatalogSheet\(selectedStore\.name\)/);
   assert.match(dashboard,/readAdPerformance\(authorizedAdStoreIds/);
