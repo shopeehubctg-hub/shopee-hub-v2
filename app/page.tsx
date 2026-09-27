@@ -75,6 +75,13 @@ function formatAdDate(date:string) {
   return date ? new Date(`${date}T00:00:00Z`).toLocaleDateString("en-MY",{day:"numeric",month:"short",year:"numeric",timeZone:"UTC"}) : "No data";
 }
 
+function formatAdDateSpan(dates:(string|null)[]) {
+  const sorted=[...new Set(dates.filter((date):date is string=>Boolean(date)))].sort();
+  if (!sorted.length) return "Unavailable";
+  if (sorted.length===1) return formatAdDate(sorted[0]);
+  return `${formatAdDate(sorted[0])} – ${formatAdDate(sorted[sorted.length-1])}`;
+}
+
 function formatAdSyncTime(value:string|null|undefined) {
   if (!value || !Number.isFinite(Date.parse(value))) return "unavailable";
   return `${new Date(value).toLocaleString("en-MY",{day:"numeric",month:"short",year:"numeric",hour:"numeric",minute:"2-digit",hour12:true,timeZone:"Asia/Kuala_Lumpur"})} MYT`;
@@ -207,6 +214,9 @@ export default function Home() {
     conversionRate:`${(dailyAd.conversionRate * 100).toFixed(2)}%`,
   } : { ...balanceAds, ...emptyAdMetrics };
   const adTotalMetrics = [["Ad Spend",ads.spend],["Ad Sales",ads.sales],["ROAS",ads.roas],["ACOS",ads.acos],["Views",ads.views],["Clicks",ads.clicks],["CTR",ads.ctr],["Conversions",ads.conversion],["Sold",ads.sold],["CPC",ads.cpc],["Conversion Rate",ads.conversionRate],["Cost Per Conversion",ads.costPerConversion]];
+  const topUpRows = [...(data?.adTopUpOverview?.needsTopUp ?? []),...(data?.adTopUpOverview?.needsAttention ?? [])];
+  const topUpBalanceDates = formatAdDateSpan(topUpRows.map(item=>item.balanceDate));
+  const topUpPerformanceDates = formatAdDateSpan(topUpRows.map(item=>item.performanceDate));
   const orders = Array.isArray(live.orders) ? live.orders : (noSample ? [] : ordersFallback);
   const driveActions = driveActionsForStore(store);
   const importedClientActions = data?.actions?.map(action=>managementActionToClientAction(action, store?.name ?? "Selected store")) ?? [];
@@ -235,7 +245,7 @@ export default function Home() {
     {loadError && <button onClick={()=>load()} disabled={loading}>Try again</button>}
     {(loadError || data) && <a href="/login">Back to sign in</a>}
   </section></main>;
-  return <main className={`app-shell${sidebarCollapsed?" sidebar-collapsed":""}`}>
+  return <main className={`app-shell${sidebarCollapsed?" sidebar-collapsed":""}${section==="advertising"&&allStoresSelected?" advertising-all-shell":""}`}>
     <aside className="side">
       <div className="logo"><img src="/shopee-hub-logo-transparent.png" alt="ShopeeHub"/><small>STORE COMMAND CENTER</small></div>
       <button className="sidebar-toggle" onClick={()=>setSidebarCollapsed(current=>!current)} aria-label={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"} title={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"}>{sidebarCollapsed?"›":"‹"}</button>
@@ -270,24 +280,55 @@ export default function Home() {
       {section==="protection" && <div className="page"><FakeSellerReport storeName={store?.name ?? "Selected store"} allStores={allStoresSelected} cases={fakeSellerCases}/></div>}
       {section==="permissions" && data?.access?.canManagePermissions && <div className="page"><PermissionSettings initialEnabledModules={data.access.clientEnabledModules}/></div>}
 
-      {section==="advertising" && <div className="page"><div className="page-title ad-page-title"><div><p className="kicker">ADVERTISING</p><h2>Performance</h2></div><div className="ad-period-controls"><label><span>View by</span><select aria-label="Advertising period type" value={adPeriodMode} onChange={event=>setAdPeriodMode(event.target.value as "mtd"|"month"|"date"|"range")}><option value="mtd">Month to date</option><option value="month">Month</option><option value="date">Date</option><option value="range">Custom range</option></select></label>{adPeriodMode === "month" && <label><span>Month</span><input aria-label="Advertising month" type="month" value={selectedAdMonth} min={availableAdMonths[availableAdMonths.length-1]} max={availableAdMonths[0]} onChange={event=>setAdMonth(event.target.value)}/></label>}{adPeriodMode === "date" && <label><span>Date</span><input aria-label="Advertising date" type="date" value={selectedAdDate} min={earliestAdDate} max={availableAdDates[0]} onChange={event=>setAdDate(event.target.value)} disabled={!availableAdDates.length}/></label>}{adPeriodMode === "range" && <><label><span>From</span><input aria-label="Advertising range start" type="date" value={selectedRangeStart} min={earliestAdDate} max={selectedRangeEnd} onChange={event=>setAdRangeStart(event.target.value)}/></label><label><span>To</span><input aria-label="Advertising range end" type="date" value={selectedRangeEnd} min={selectedRangeStart} max={availableAdDates[0]} onChange={event=>setAdRangeEnd(event.target.value)}/></label></>}</div></div>
+      {section==="advertising" && <div className="page"><div className="page-title ad-page-title"><div><p className="kicker">ADVERTISING</p><h2>{allStoresSelected?"Advertising":"Performance"}</h2></div><div className="ad-period-controls"><label><span>View by</span><select aria-label="Advertising period type" value={adPeriodMode} onChange={event=>setAdPeriodMode(event.target.value as "mtd"|"month"|"date"|"range")}><option value="mtd">Month to date</option><option value="month">Month</option><option value="date">Date</option><option value="range">Custom range</option></select></label>{adPeriodMode === "month" && <label><span>Month</span><input aria-label="Advertising month" type="month" value={selectedAdMonth} min={availableAdMonths[availableAdMonths.length-1]} max={availableAdMonths[0]} onChange={event=>setAdMonth(event.target.value)}/></label>}{adPeriodMode === "date" && <label><span>Date</span><input aria-label="Advertising date" type="date" value={selectedAdDate} min={earliestAdDate} max={availableAdDates[0]} onChange={event=>setAdDate(event.target.value)} disabled={!availableAdDates.length}/></label>}{adPeriodMode === "range" && <><label><span>From</span><input aria-label="Advertising range start" type="date" value={selectedRangeStart} min={earliestAdDate} max={selectedRangeEnd} onChange={event=>setAdRangeStart(event.target.value)}/></label><label><span>To</span><input aria-label="Advertising range end" type="date" value={selectedRangeEnd} min={selectedRangeStart} max={availableAdDates[0]} onChange={event=>setAdRangeEnd(event.target.value)}/></label></>}</div></div>
         {allStoresSelected && <section className="ad-total-overview" aria-label="All Stores advertising overview">
-          <div className="ad-total-heading"><div><p className="kicker">ALL STORES TOTAL</p><h3>Advertising overview</h3><p>{selectedPeriodLabel}</p></div><div className="ad-total-coverage"><strong>{coveredAdStores} / {data.stores.length}</strong><span>stores with data in this period</span><small>Last updated {formatAdSyncTime(data.adPerformanceUpdatedAt)}</small></div></div>
-          <div className="ad-total-grid">{adTotalMetrics.map(([label,value])=><article className="metric ad-total-metric" key={label}><span>{label}</span><strong>{value}</strong></article>)}</div>
+          <div className="ad-total-heading">
+            <div>
+              <h3>Performance</h3>
+              <p className="ad-total-period">{selectedPeriodLabel}</p>
+            </div>
+            <div className="ad-total-context">
+              <span className="ad-coverage"><strong>{coveredAdStores}/{data.stores.length}</strong> stores reporting</span>
+              <time>Updated {formatAdSyncTime(data.adPerformanceUpdatedAt)}</time>
+            </div>
+          </div>
+          <div className="ad-total-key-grid">{adTotalMetrics.slice(0,4).map(([label,value])=><article className="ad-key-metric" key={label}><span>{label}</span><strong>{value}</strong></article>)}</div>
+          <details className="ad-more-metrics">
+            <summary>More performance metrics <span>8 metrics</span></summary>
+            <div className="ad-total-extra-grid">{adTotalMetrics.slice(4).map(([label,value])=><div className="ad-extra-metric" key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
+          </details>
         </section>}
         {allStoresSelected && (data.access?.role==="superadmin" || data.stores.length>1) && data.adTopUpOverview && <section className="ad-topup-overview" aria-label="All Stores advertising top-ups">
-          <div className="ad-topup-heading"><div><p className="kicker">AD BALANCE</p><h3>Stores needing ad top-up</h3></div><span>{data.adTopUpOverview.assessedStoreCount} of {data.adTopUpOverview.totalStoreCount} accessible stores assessed</span></div>
-          {data.adTopUpOverview.assessedStoreCount < data.adTopUpOverview.totalStoreCount && <p className="ad-topup-note">Suggested amounts require a recent balance and daily ad data. Pending amounts are shown under the responsible team.</p>}
-          <p className="ad-topup-note">Suggested amount covers 30 days of recent spend, includes a 10% buffer, and rounds up to RM50. Active stores below RM50 balance have a minimum RM50 suggestion.</p>
+          <div className="ad-topup-heading">
+            <div><p className="kicker">AD BALANCE</p><h3>Stores needing top-up</h3></div>
+            <span>{data.adTopUpOverview.assessedStoreCount}/{data.adTopUpOverview.totalStoreCount} stores assessed</span>
+          </div>
+          <div className="ad-topup-meta">
+            <span>Balance: {topUpBalanceDates}</span>
+            <span>Ad performance: {topUpPerformanceDates}</span>
+            <details><summary>How suggestions work</summary><p>30 days of recent spend, a 10% buffer, rounded up to RM50. Active stores below RM50 balance have a minimum RM50 suggestion.</p></details>
+          </div>
+          {data.adTopUpOverview.assessedStoreCount < data.adTopUpOverview.totalStoreCount && <p className="ad-topup-note" role="status">Some stores cannot be assessed yet; pending amounts are listed with their owners.</p>}
           {(["shopee_hub","client"] as const).map(ownerGroup=>{
             const topUps=data.adTopUpOverview!.needsTopUp.filter(item=>item.ownerGroup===ownerGroup);
             const pending=data.adTopUpOverview!.needsAttention.filter(item=>item.ownerGroup===ownerGroup);
             if (!topUps.length && !pending.length) return null;
             return <div className="ad-topup-owner-group" key={ownerGroup}>
-              <h4>{ownerGroup==="shopee_hub"?"Managed by Shopee Hub":"Managed by Client"} <span>{topUps.length+pending.length}</span></h4>
-              <div className="ad-topup-list">
-                {topUps.map(item=><article className="card ad-topup-item" key={item.storeId}><div><strong>{item.storeName}</strong><small>{item.reasons.join(" · ")} · Balance {formatRinggit(item.balance,2)}{item.runwayDays!==null?` · Runway ${item.runwayDays.toFixed(1)} days`:""}</small><small>Balance as of {formatAdDate(item.balanceDate)} · Ad data through {formatAdDate(item.performanceDate)} · {item.actionLabel}</small></div><div><span>Suggested top-up</span><strong>{formatRinggit(item.recommendedTopUp)}</strong>{item.recommendedTopUp===null&&<small>No recent spend to estimate amount</small>}</div></article>)}
-                {pending.map(item=><article className="card ad-topup-item" key={item.storeId}><div><strong>{item.storeName}</strong><small>Balance below RM50 · Balance as of {formatAdDate(item.balanceDate)}{item.performanceDate?` · Ad data through ${formatAdDate(item.performanceDate)}`:" · Daily ad data unavailable"}</small></div><div><span>Current balance</span><strong>{formatRinggit(item.balance,2)}</strong><small>Suggested top-up pending current spend data</small></div></article>)}
+              <h4>{ownerGroup==="shopee_hub"?"Shopee Hub":"Client"} <span>{topUps.length+pending.length}</span></h4>
+              <div className="ad-topup-table" role="table" aria-label={`${ownerGroup==="shopee_hub"?"Shopee Hub":"Client"} top-ups`}>
+                <div className="ad-topup-table-head" role="row"><span role="columnheader">Store</span><span role="columnheader">Current balance</span><span role="columnheader">Runway</span><span role="columnheader">Suggested top-up</span></div>
+                {topUps.map(item=><div className="ad-topup-row" role="row" key={item.storeId}>
+                  <div className="ad-topup-store" role="cell"><strong>{item.storeName}</strong><div className="ad-topup-tags">{item.reasons.map(reason=><span key={reason}>{reason==="Balance below RM50"?"Low balance":reason==="Runway under 3 days"?"Short runway":reason}</span>)}</div></div>
+                  <span role="cell" data-label="Balance">{formatRinggit(item.balance,2)}</span>
+                  <span role="cell" data-label="Runway">{item.runwayDays===null?"—":`${item.runwayDays.toFixed(1)} days`}</span>
+                  <strong className="ad-topup-amount" role="cell" data-label="Top-up">{formatRinggit(item.recommendedTopUp)}</strong>
+                </div>)}
+                {pending.map(item=><div className="ad-topup-row pending" role="row" key={item.storeId}>
+                  <div className="ad-topup-store" role="cell"><strong>{item.storeName}</strong><div className="ad-topup-tags"><span>Low balance</span><span>Estimate pending</span></div></div>
+                  <span role="cell" data-label="Balance">{formatRinggit(item.balance,2)}</span>
+                  <span role="cell" data-label="Runway">—</span>
+                  <strong className="ad-topup-pending" role="cell" data-label="Top-up">Pending</strong>
+                </div>)}
               </div>
             </div>;
           })}
