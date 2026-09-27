@@ -13,3 +13,9 @@
 - User-facing Dashboard pages must not name internal data sources, tables, import jobs, or sync mechanisms. Keep those details in dedicated admin diagnostics and developer documentation.
 - Show a verified `Last updated` date and time when available. If the update time is unknown, say so instead of inferring it from a reporting period.
 - Never display example metrics as current business data. Use a clear empty state when verified data is unavailable.
+
+## Advertising data
+
+- Use the FullAd daily records in Supabase for advertising performance and the Ad Balance Sheet for balances.
+- Keep Shopee Open Platform API integration paused. Do not add Shopee API requests or restore the `/api/shopee/advertising` route until the user explicitly asks to resume that integration.
+- Do not show internal source names such as FullAd or API details in the customer Dashboard.
