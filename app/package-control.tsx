@@ -368,7 +368,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
 
   return <div className={`package-control${standaloneCreate?" standalone-create":""}`}>
     <div className="package-hero">
-      <div><p className="kicker">OXM PACKAGE CONTROL</p><h2>Packages & Pricing</h2><p>Create packages, choose platforms and set promotion dates. Every change is saved in history.</p></div>
+      <div><h2>Packages &amp; pricing</h2><p>Set up packages, prices and promotion dates.</p></div>
       <div className="package-hero-actions">
         <a href={HISTORY_SHEET_URL} target="_blank" rel="noopener noreferrer">Google Sheet History</a>
         <span>{!hasPackageScope?"Select a Store":allStoresSelected?"Accessible Stores":source==="sheet-migration-preview"?"Sheet Migration Preview":"Live Database"}</span>
@@ -410,13 +410,13 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     {!visible.length&&<div className="package-empty"><strong>{!hasPackageScope?"Select a Store":allStoresSelected?"No Packages In Accessible Stores":"No Packages In This View"}</strong><span>{!hasPackageScope?"Package information will appear after you choose a store.":allStoresSelected?"Only packages from stores you have permission to access appear here.":"Choose another filter or create the first package."}</span></div>}
 
     {showCreate&&<div className={`package-modal${standaloneCreate?" standalone":""}`} role={standaloneCreate?undefined:"dialog"} aria-modal={standaloneCreate?undefined:"true"}><div className="package-form">
-      <div className="package-form-head"><div><p className="kicker">{editingPackageId?"NEW VERSION":"NEW PACKAGE"}</p><h3>{editingPackageId?"Create Next Version":"Create A Package"}</h3><span>{editingStore?.name??storeName}{prefillQueue.length?` · ${prefillQueue.length} Ready Package${prefillQueue.length===1?"":"s"} Remaining`:""}</span></div><button onClick={closeCreate} aria-label="Close">×</button></div>
+      <div className="package-form-head"><div><h3>{editingPackageId?"New version":"New package"}</h3><span>{editingStore?.name??storeName}{prefillQueue.length?` · ${prefillQueue.length} Ready Package${prefillQueue.length===1?"":"s"} Remaining`:""}</span></div><button onClick={closeCreate} aria-label="Close">×</button></div>
 
       {formErrors.length>0&&<div className="package-error-popout" role="alert" aria-live="assertive"><div><b>Please fix the following before saving:</b><button type="button" onClick={()=>setFormErrors([])} aria-label="Dismiss errors">×</button></div><ul>{formErrors.map(error=><li key={error}>{error}</li>)}</ul></div>}
 
       {prefillBatch.length>0&&<section className="calculator-batch-transfer"><div><b>✓ {groupPrefills(prefillBatch).length} Calculator Package{groupPrefills(prefillBatch).length===1?"":"s"} Brought Over</b><span>Non-Campaign and Campaign prices are grouped by package. The next package opens after you save this one.</span></div><div className="calculator-batch-list">{groupPrefills(prefillBatch).map((group,index)=>{const nonCampaign=group.find(item=>item.calculatorSettings.serviceScenario==="Non-Campaign Day")??group[0];const campaign=group.find(item=>item.calculatorSettings.serviceScenario==="Campaign Day")??group[0];return <div className={index===0?"current":""} key={group[0].name}><span>{index===0?"Current":"Queued"}</span><b>{group[0].name}</b><strong><small>Non-Campaign</small>{money(nonCampaign.sellingPrice,"MY")}</strong><strong><small>Campaign</small>{money(campaign.sellingPrice,"MY")}</strong></div>})}</div></section>}
 
-      <section className="form-section"><div className="form-section-title"><span>1</span><div><h4>Package Details</h4><p>Name, markets and shared promotion dates</p></div></div>
+      <section className="form-section"><div className="form-section-title"><span>1</span><div><h4>Package details</h4><p>Name, markets and shared promotion dates</p></div></div>
         <div className="form-grid package-detail-grid">
           <label>Package Name<input value={form.name} onChange={event=>setForm({...form,name:event.target.value})} placeholder="Customer-Facing Package Name"/></label>
           <fieldset className="market-selector"><legend>Selling Markets</legend>{(["MY","SG"] as MarketName[]).map(market=><label key={market}><input type="checkbox" checked={form.markets.includes(market)} onChange={()=>toggleMarket(market)}/><b>{market}</b><small>{market==="MY"?"RM":"S$"}</small></label>)}</fieldset>
@@ -437,7 +437,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         </div>}
       </section>
 
-      <section className="form-section pricing-section"><div className="form-section-title"><span>2</span><div><h4>Pricing & Promotion Periods</h4><p>Set Non-Campaign and Campaign prices for each market</p></div></div>
+      <section className="form-section pricing-section"><div className="form-section-title"><span>2</span><div><h4>Prices &amp; promotion dates</h4><p>Set Non-Campaign and Campaign prices for each market</p></div></div>
         <label className={`same-pricing-toggle${form.samePricing?" selected":""}`}><input type="checkbox" checked={form.samePricing} onChange={event=>setForm({...form,samePricing:event.target.checked})}/><span><b>Same for Both Non-Campaign &amp; Campaign Day Pricing</b><small>Use the Non-Campaign prices and promotion dates for Campaign Day too.</small></span></label>
         {form.samePricing&&<div className="same-pricing-note">Campaign Day pricing is hidden because it will be copied automatically from Non-Campaign when you save.</div>}
         {([['nonCampaign','Non-Campaign'],...(!form.samePricing?([['campaign','Campaign']] as const):[])] as const).map(([periodKey,title])=>{
@@ -457,7 +457,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         })}
       </section>
 
-      <section className="form-section"><div className="form-section-title"><span>3</span><div><h4>OXM Inventory SKU Items</h4><p>Added, removed and updated items are saved in History</p></div><button className="add-item-button" onClick={()=>setComponents([...components,blankLine()])}>+ Add Item</button></div>
+      <section className="form-section"><div className="form-section-title"><span>3</span><div><h4>Inventory items</h4><p>Added, removed and updated items are saved in History</p></div><button className="add-item-button" onClick={()=>setComponents([...components,blankLine()])}>+ Add Item</button></div>
         <div className="component-editor">{components.map((line,index)=><div className="component-row" key={index}>
           <input value={line.inventorySku} onChange={event=>setComponents(components.map((item,itemIndex)=>itemIndex===index?{...item,inventorySku:event.target.value}:item))} placeholder="OXM Inventory SKU"/>
           <input value={line.name} onChange={event=>setComponents(components.map((item,itemIndex)=>itemIndex===index?{...item,name:event.target.value}:item))} placeholder="Item Name"/>

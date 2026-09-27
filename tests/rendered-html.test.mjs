@@ -9,11 +9,11 @@ test("package control is wired into the command center", async () => {
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("app/package-control.tsx", root), "utf8"),
   ]);
-  assert.match(page, /Packages & Pricing/);
+  assert.match(page, /PORTAL_MODULES\.filter/);
   assert.match(page, /<PackageControl/);
-  assert.match(component, /OXM PACKAGE CONTROL/);
+  assert.match(component, /<h2>Packages &amp; pricing<\/h2>/);
   assert.match(component, /Migrate & Edit/);
-  assert.match(component, /Create Next Version/);
+  assert.match(component, /New version/);
   assert.match(component, /Add Listing/);
   assert.match(component, /Multi-Select/);
   assert.match(component, /type="checkbox" checked=\{form\.campaign\.campaignEvents\.includes/);
@@ -253,7 +253,7 @@ test("price calculator is available in navigation with all required outputs", as
   assert.doesNotMatch(calculator, /checked=\{onCashback\}/);
   assert.doesNotMatch(calculator, /Service Fee Scenario/);
   assert.match(calculator, /Commission Fee Rate/);
-  assert.match(calculator, /PRODUCT &amp; COMMISSION PROFILE/);
+  assert.match(calculator, /Products &amp; commission/);
   assert.match(calculator, /calculator-product-profile/);
   assert.doesNotMatch(calculator, /<details className="calculator-product-profile card" open>/);
   assert.doesNotMatch(calculator, /No campaign service fee/);
@@ -282,7 +282,7 @@ test("price calculator is available in navigation with all required outputs", as
   assert.doesNotMatch(calculator, /其他计算设定/);
   assert.doesNotMatch(calculator, /Voucher preset 根据/);
   assert.match(voucherPresets, /Latest Avg\./);
-  assert.match(calculator, /<h2>Markup Calculator<\/h2>/);
+  assert.match(calculator, /<h2>Price calculator<\/h2>/);
   assert.doesNotMatch(calculator, /scenario-voucher/);
   assert.doesNotMatch(calculator, /Campaign Day 最高百分比收费/);
   assert.match(page, /storeName=\{allStoresSelected/);
@@ -300,12 +300,12 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /Main Product Qty/);
   assert.match(calculator, /Meta Price Per Unit/);
   assert.match(calculator, /Buyer Payment ÷ Qty/);
-  assert.match(calculator, /STEP 3 · PACKAGE PPU COMPARISON/);
-  assert.match(calculator, /Package Price Per Unit \(PPU\) Review/);
+  assert.match(calculator, /Step 3/);
+  assert.match(calculator, /Compare unit prices/);
   assert.match(calculator, /Non-Campaign Level/);
   assert.match(calculator, /Campaign Level/);
   assert.match(calculator, /ladderReviews\.length>0/);
-  assert.match(calculator, /Check Final Packages & Prices/);
+  assert.match(calculator, /Check packages and prices/);
   assert.match(calculator, /Confirm & Continue/);
   assert.match(calculator, /setPendingConfirmation/);
   assert.match(packageControl, /Buyer Price Per Unit/);
@@ -388,7 +388,7 @@ test("advertising supports date, month and custom range aggregation", async () =
     readFile(new URL("app/globals.css", root), "utf8"),
     readFile(new URL("app/ad-performance.js", root), "utf8"),
   ]);
-  assert.match(page, /<h2>\{allStoresSelected\?"Advertising":"Performance"\}<\/h2>/);
+  assert.match(page, /<h2>Advertising<\/h2>/);
   assert.match(page, /<option value="month">Month<\/option>/);
   assert.match(page, /<option value="date">Date<\/option>/);
   assert.match(page, /<option value="range">Custom range<\/option>/);

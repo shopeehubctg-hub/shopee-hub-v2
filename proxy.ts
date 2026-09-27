@@ -15,6 +15,7 @@ const PUBLIC_AUTH_APIS = new Set([
   "/api/auth/password",
   "/api/auth/session",
 ]);
+const PUBLIC_ASSETS = new Set(["/shopee-hub-logo-transparent.png"]);
 
 function decodeBase64Url(value: string) {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
@@ -75,7 +76,7 @@ export async function proxy(request: NextRequest) {
       request: { headers: requestHeaders },
     });
   }
-  if (PUBLIC_PAGES.has(pathname) || PUBLIC_AUTH_APIS.has(pathname)) {
+  if (PUBLIC_PAGES.has(pathname) || PUBLIC_AUTH_APIS.has(pathname) || PUBLIC_ASSETS.has(pathname)) {
     return NextResponse.next();
   }
   if (await hasValidSession(request)) return NextResponse.next();

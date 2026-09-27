@@ -128,11 +128,9 @@ export function PermissionSettings({ initialEnabledModules }: Props) {
     <div className="permission-page">
       <section className="permission-hero">
         <div>
-          <p className="kicker">SUPER ADMIN</p>
-          <h2>User Access Management</h2>
+          <h2>Permission settings</h2>
           <p>
-            Manage portal users, roles, account status, store access and
-            individual module permissions from one place.
+            Manage users, stores and module access.
           </p>
         </div>
         <span className="superadmin-badge">Super Admin</span>
