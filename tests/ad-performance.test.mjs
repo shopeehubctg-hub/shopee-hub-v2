@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { aggregateAdPerformanceByDate, aggregateSelectedAdRows, authorizedAdStoreIds, latestAdSyncTime, selectAdRows, selectedAdDateFor } from "../app/ad-performance.js";
 import { withoutAdCampaigns } from "../app/dashboard-snapshot.js";
-import { canReadShopeeAds } from "../app/shopee-ads-access.js";
 import { readFile } from "node:fs/promises";
 
 test("FullAd rows from visible stores combine by date with weighted rates", () => {
@@ -75,28 +74,17 @@ test("dashboard snapshots omit individual ads without changing stored data", () 
   assert.equal(withoutAdCampaigns(null),null);
 });
 
-test("Shopee Ads API fetches only balance and daily totals while individual ads are paused", async () => {
-  const route=await readFile(new URL("../app/api/shopee/advertising/route.ts",import.meta.url),"utf8");
-  assert.match(route,/shopeeGet\("\/api\/v2\/ads\/get_total_balance", credential\)/);
-  assert.match(route,/shopeeGet\("\/api\/v2\/ads\/get_all_cpc_ads_daily_performance", credential/);
-  assert.doesNotMatch(route,/get_product_level_campaign_id_list|get_product_campaign_daily_performance|get_product_level_campaign_setting_info|normalizeCampaigns|campaigns:/);
-  assert.ok(route.indexOf("if (!canReadShopeeAds(") < route.indexOf("credential = readShopCredential(storeId)"));
-  assert.match(route,/SHOPEE_SHOP_STORE_ID !== storeId/);
-});
-
-test("Shopee Ads API denies stores and modules outside the user's scope", () => {
-  const membership={active:true,role:"customer",module_access_mode:"custom",store_access_mode:"selected"};
-  const allowed={membership,tenantActive:true,storeExists:true,tenantAdvertisingEnabled:true,userAdvertisingEnabled:true,assignedStore:true};
-  assert.equal(canReadShopeeAds(allowed),true);
-  assert.equal(canReadShopeeAds({...allowed,assignedStore:false}),false);
-  assert.equal(canReadShopeeAds({...allowed,userAdvertisingEnabled:false}),false);
-  assert.equal(canReadShopeeAds({...allowed,tenantAdvertisingEnabled:false}),false);
-  assert.equal(canReadShopeeAds({...allowed,storeExists:false}),false);
-  assert.equal(canReadShopeeAds({...allowed,tenantActive:false}),false);
-  assert.equal(canReadShopeeAds({...allowed,membership:{...membership,active:false}}),false);
-  assert.equal(canReadShopeeAds({...allowed,membership:{...membership,role:"unknown"}}),false);
-  assert.equal(canReadShopeeAds({...allowed,membership:{...membership,store_access_mode:"unknown"}}),false);
-  assert.equal(canReadShopeeAds({...allowed,membership:{...membership,role:"superadmin"},assignedStore:false,userAdvertisingEnabled:false}),true);
+test("Shopee Open Platform stays outside the active dashboard path", async () => {
+  const page=await readFile(new URL("../app/page.tsx",import.meta.url),"utf8");
+  const dashboard=await readFile(new URL("../app/api/dashboard/route.ts",import.meta.url),"utf8");
+  assert.match(page,/fetch\(`\/api\/dashboard/);
+  assert.doesNotMatch(page,/\/api\/shopee\/advertising/);
+  assert.doesNotMatch(dashboard,/partner\.shopeemobile|get_product_level_campaign/);
+  await assert.rejects(readFile(new URL("../app/api/shopee/advertising/route.ts",import.meta.url),"utf8"),{code:"ENOENT"});
+  assert.match(dashboard,/const \[sheetBalance,productProfile,selectedCoFundVouchers,voucherPreset,adPerformance\] = await Promise\.all\(\[/);
+  assert.match(dashboard,/readSheetBalance\(selectedStore\.name\)/);
+  assert.match(dashboard,/readProductCatalogSheet\(selectedStore\.name\)/);
+  assert.match(dashboard,/readAdPerformance\(authorizedAdStoreIds/);
 });
 
 test("selected-store membership with no assignments does not fall back to directory stores", async () => {
