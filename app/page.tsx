@@ -278,7 +278,7 @@ export default function Home() {
         {allStoresSelected && (data.access?.role==="superadmin" || data.stores.length>1) && data.adTopUpOverview && <section className="ad-topup-overview" aria-label="All Stores advertising top-ups">
           <div className="ad-topup-heading"><div><p className="kicker">AD BALANCE</p><h3>Stores needing ad top-up</h3></div><span>{data.adTopUpOverview.assessedStoreCount} of {data.adTopUpOverview.totalStoreCount} accessible stores assessed</span></div>
           {data.adTopUpOverview.assessedStoreCount < data.adTopUpOverview.totalStoreCount && <p className="ad-topup-note">Suggested amounts require a recent balance and daily ad data. Pending amounts are shown under the responsible team.</p>}
-          <p className="ad-topup-note">Suggested amount covers 30 days of recent spend, includes a 10% buffer, and rounds up to RM50.</p>
+          <p className="ad-topup-note">Suggested amount covers 30 days of recent spend, includes a 10% buffer, and rounds up to RM50. Active stores below RM50 balance have a minimum RM50 suggestion.</p>
           {(["shopee_hub","client"] as const).map(ownerGroup=>{
             const topUps=data.adTopUpOverview!.needsTopUp.filter(item=>item.ownerGroup===ownerGroup);
             const pending=data.adTopUpOverview!.needsAttention.filter(item=>item.ownerGroup===ownerGroup);
