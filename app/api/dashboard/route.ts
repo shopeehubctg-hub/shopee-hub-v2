@@ -274,9 +274,9 @@ export async function GET(request: Request) {
     }
     const selectedDirectory = selectedStore ? directoryStores.find((store) => store.name === selectedStore.name) : undefined;
     const snapshotPayload = selectedStore ? storeSnapshots[selectedStore.name] ?? null : null;
-    const sheetBalance = selectedStore ? await readSheetBalance(selectedStore.name) : null;
-    const productProfile = selectedStore ? await readProductCatalogSheet(selectedStore.name) : null;
-    const [selectedCoFundVouchers,adPerformance] = await Promise.all([
+    const [sheetBalance,productProfile,selectedCoFundVouchers,adPerformance] = await Promise.all([
+      selectedStore?readSheetBalance(selectedStore.name):Promise.resolve(null),
+      selectedStore?readProductCatalogSheet(selectedStore.name):Promise.resolve(null),
       selectedStore?readCoFundVouchers(selectedStore.id):Promise.resolve([]),
       readAdPerformance(authorizedAdStoreIds(visibleStores,selectedStore,enabledModules.includes("advertising")),membership.tenant_id,allStoresRequested),
     ]);

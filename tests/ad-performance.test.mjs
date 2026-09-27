@@ -74,6 +74,19 @@ test("dashboard snapshots omit individual ads without changing stored data", () 
   assert.equal(withoutAdCampaigns(null),null);
 });
 
+test("Shopee Open Platform stays outside the active dashboard path", async () => {
+  const page=await readFile(new URL("../app/page.tsx",import.meta.url),"utf8");
+  const dashboard=await readFile(new URL("../app/api/dashboard/route.ts",import.meta.url),"utf8");
+  assert.match(page,/fetch\(`\/api\/dashboard/);
+  assert.doesNotMatch(page,/\/api\/shopee\/advertising/);
+  assert.doesNotMatch(dashboard,/partner\.shopeemobile|get_product_level_campaign/);
+  await assert.rejects(readFile(new URL("../app/api/shopee/advertising/route.ts",import.meta.url),"utf8"),{code:"ENOENT"});
+  assert.match(dashboard,/const \[sheetBalance,productProfile,selectedCoFundVouchers,voucherPreset,adPerformance\] = await Promise\.all\(\[/);
+  assert.match(dashboard,/readSheetBalance\(selectedStore\.name\)/);
+  assert.match(dashboard,/readProductCatalogSheet\(selectedStore\.name\)/);
+  assert.match(dashboard,/readAdPerformance\(authorizedAdStoreIds/);
+});
+
 test("selected-store membership with no assignments does not fall back to directory stores", async () => {
   const route=await readFile(new URL("../app/api/dashboard/route.ts",import.meta.url),"utf8");
   assert.match(route,/membership\.storeAccessMode === "selected" && membership\.role !== "superadmin" \? \[\] : directoryStores\.map/);
