@@ -2,12 +2,20 @@ export function malaysiaDate(now = new Date()) {
   return new Date(now.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-export function isCurrentBalanceDate(value, today = malaysiaDate()) {
+function isRecentDate(value, today, maximumAgeDays) {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00Z`);
   if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) return false;
   const age = Date.parse(`${today}T00:00:00Z`) - date.getTime();
-  return age >= 0 && age <= 3 * 24 * 60 * 60 * 1000;
+  return age >= 0 && age <= maximumAgeDays * 24 * 60 * 60 * 1000;
+}
+
+export function isCurrentBalanceDate(value, today = malaysiaDate()) {
+  return isRecentDate(value, today, 3);
+}
+
+export function isCurrentPerformanceDate(value, today = malaysiaDate()) {
+  return isRecentDate(value, today, 2);
 }
 
 export function balanceCsvColumns(cells) {

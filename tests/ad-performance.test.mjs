@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { aggregateAdPerformanceByDate, aggregateSelectedAdRows, authorizedAdStoreIds, latestAdSyncTime, selectAdRows, selectedAdDateFor } from "../app/ad-performance.js";
 import { withoutAdCampaigns } from "../app/dashboard-snapshot.js";
-import { balanceCsvColumns, isCurrentBalanceDate, parseAdBalance } from "../app/ad-balance-validation.js";
+import { balanceCsvColumns, isCurrentBalanceDate, isCurrentPerformanceDate, parseAdBalance } from "../app/ad-balance-validation.js";
 import { shouldShowAllStoresTopUps, summarizeAllStoresTopUps } from "../app/ad-topup-overview.js";
 import { readFile } from "node:fs/promises";
 import { runInNewContext } from "node:vm";
@@ -98,6 +98,8 @@ test("balance CSV requires the named Ad Balance column and recent dates", async 
   assert.equal(isCurrentBalanceDate("2026-09-25","2026-09-27"),true);
   assert.equal(isCurrentBalanceDate("2026-09-24","2026-09-27"),true);
   assert.equal(isCurrentBalanceDate("2026-09-23","2026-09-27"),false);
+  assert.equal(isCurrentPerformanceDate("2026-09-25","2026-09-27"),true);
+  assert.equal(isCurrentPerformanceDate("2026-09-24","2026-09-27"),false);
   assert.equal(isCurrentBalanceDate("2026-08-05","2026-09-27"),false);
   assert.equal(isCurrentBalanceDate("2026-09-32","2026-09-27"),false);
   assert.equal(parseAdBalance("RM 1,234.50"),1234.5);
@@ -143,15 +145,17 @@ test("All Stores top-ups use single-store rules and respect access and ownership
     ["approval",{balance:0,balanceDate:"2026-09-25"}],
     ["zero",{balance:0,balanceDate:"2026-09-25"}],
   ]);
-  const result=summarizeAllStoresTopUps(stores,rows,balances);
+  const result=summarizeAllStoresTopUps(stores,rows,balances,"2026-09-27");
   assert.equal(result.totalStoreCount,5);
   assert.equal(result.assessedStoreCount,4);
   assert.ok(result.needsTopUp.every(row=>row.storeId!=="forbidden"));
   assert.deepEqual(result.needsTopUp.map(row=>[row.storeId,row.recommendedTopUp,row.actionLabel]),[
     ["approval",200,"Approve"],["client",150,"Top Up"],["hub",200,"Managed by Shopee Hub"],
   ].sort((a,b)=>b[1]-a[1]||String(a[0]).localeCompare(String(b[0]))));
-  assert.equal(summarizeAllStoresTopUps(stores,rows,new Map()).assessedStoreCount,0);
-  assert.equal(summarizeAllStoresTopUps(stores,rows,new Map([["client",{balance:20,balanceDate:"2026-09-24"}]])).assessedStoreCount,0);
+  assert.ok(result.needsTopUp.every(row=>row.performanceDate==="2026-09-25"));
+  assert.equal(summarizeAllStoresTopUps(stores,rows,new Map(),"2026-09-27").assessedStoreCount,0);
+  assert.equal(summarizeAllStoresTopUps(stores,rows,new Map([["client",{balance:20,balanceDate:"2026-09-24"}]]),"2026-09-27").assessedStoreCount,0);
+  assert.equal(summarizeAllStoresTopUps(stores,rows,balances,"2026-09-28").assessedStoreCount,0);
 });
 
 test("selected-store membership with no assignments does not fall back to directory stores", async () => {
