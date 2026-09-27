@@ -383,7 +383,7 @@ test("advertising supports date, month and custom range aggregation", async () =
     readFile(new URL("app/globals.css", root), "utf8"),
     readFile(new URL("app/ad-performance.js", root), "utf8"),
   ]);
-  assert.match(page, /<h2>Performance<\/h2>/);
+  assert.match(page, /<h2>\{allStoresSelected\?"Advertising":"Performance"\}<\/h2>/);
   assert.match(page, /<option value="month">Month<\/option>/);
   assert.match(page, /<option value="date">Date<\/option>/);
   assert.match(page, /<option value="range">Custom range<\/option>/);

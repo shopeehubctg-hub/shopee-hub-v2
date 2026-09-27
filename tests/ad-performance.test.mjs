@@ -271,9 +271,9 @@ test("All Stores overview uses live FullAd coverage and excludes undated campaig
   const page=await readFile(new URL("../app/page.tsx",import.meta.url),"utf8");
   assert.match(page,/useState<"mtd"\|"month"\|"date"\|"range">\("mtd"\)/);
   assert.match(page,/All Stores advertising overview/);
-  assert.match(page,/coveredAdStores\} \/ \{data\.stores\.length/);
-  assert.match(page,/stores with data in this period/);
-  assert.match(page,/Last updated \{formatAdSyncTime\(data\.adPerformanceUpdatedAt\)\}/);
+  assert.match(page,/coveredAdStores\}\/\{data\.stores\.length/);
+  assert.match(page,/stores reporting/);
+  assert.match(page,/Updated \{formatAdSyncTime\(data\.adPerformanceUpdatedAt\)\}/);
   assert.match(page,/timeZone:"Asia\/Kuala_Lumpur"/);
   assert.doesNotMatch(page,/FullAd|Imported campaign export/);
   const route=await readFile(new URL("../app/api/dashboard/route.ts",import.meta.url),"utf8");
