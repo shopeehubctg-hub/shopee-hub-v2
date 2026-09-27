@@ -9,7 +9,7 @@ import type { PackagePrefill } from "./calculator-types";
 import { storeSnapshots } from "./store-snapshots";
 import { buildAdvertisingFunds, buildTopUpAction, formatRinggit } from "./advertising-model.js";
 import { aggregateSelectedAdRows, selectAdRows, selectedAdDateFor } from "./ad-performance.js";
-import { isCurrentPerformanceDate } from "./ad-balance-validation.js";
+import { hasCurrentTopUpInputs } from "./ad-balance-validation.js";
 import type { ProjectProductProfile } from "./product-catalog";
 import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
 import { PermissionSettings } from "./permission-settings";
@@ -187,7 +187,7 @@ export default function Home() {
     ? relevantDailyAds.reduce((total,row)=>total+row.spend,0) / Math.max(1, new Set(relevantDailyAds.map(row=>row.date)).size)
     : null;
   const effectiveBalance = data?.adBalance;
-  const freshSpendForTopUp = isCurrentPerformanceDate(latestAdDate) && Boolean(effectiveBalance?.balanceDate && effectiveBalance.balanceDate >= latestAdDate);
+  const freshSpendForTopUp = hasCurrentTopUpInputs(effectiveBalance?.balanceDate, latestAdDate);
   const balanceAds = effectiveBalance && !allStoresSelected
     ? { ...adsBase, balance:effectiveBalance.balance, averageDailySpend30d:averageDailySpend, sourceUpdatedAt:effectiveBalance.sourceUpdatedAt, syncStatus:freshSpendForTopUp ? effectiveBalance.syncStatus : "delayed", topUpOwner:effectiveBalance.topUpOwner ?? adsBase.topUpOwner }
     : { ...adsBase, balance:null, sourceUpdatedAt:null, syncStatus:"delayed" };
