@@ -1,10 +1,11 @@
 import { buildAdvertisingFunds, buildTopUpAction } from "./advertising-model.js";
+import { isCurrentPerformanceDate, malaysiaDate } from "./ad-balance-validation.js";
 
 export function shouldShowAllStoresTopUps(allStores, role, accessibleStoreCount, canViewAdvertising) {
   return Boolean(allStores && canViewAdvertising && (role === "superadmin" || accessibleStoreCount > 1));
 }
 
-export function summarizeAllStoresTopUps(stores, performanceRows, balancesByStoreId) {
+export function summarizeAllStoresTopUps(stores, performanceRows, balancesByStoreId, today = malaysiaDate()) {
   const spendingByStore = new Map();
   for (const row of performanceRows) {
     const current = spendingByStore.get(row.store_id) ?? { spend: 0, dates: new Set(), latestDate: "" };
@@ -19,7 +20,7 @@ export function summarizeAllStoresTopUps(stores, performanceRows, balancesByStor
   for (const store of stores) {
     const candidateBalance = balancesByStoreId.get(store.id);
     const spending = spendingByStore.get(store.id);
-    const balance = spending?.latestDate && candidateBalance?.balanceDate >= spending.latestDate ? candidateBalance : null;
+    const balance = isCurrentPerformanceDate(spending?.latestDate, today) && candidateBalance?.balanceDate >= spending.latestDate ? candidateBalance : null;
     const averageDailySpend30d = spending?.dates.size ? spending.spend / spending.dates.size : null;
     const funds = buildAdvertisingFunds({
       balance: balance?.balance ?? null,
@@ -37,6 +38,7 @@ export function summarizeAllStoresTopUps(stores, performanceRows, balancesByStor
       recommendedTopUp: funds.recommendedTopUp,
       actionLabel: action?.action ?? "Managed by Shopee Hub",
       balanceDate: balance.balanceDate,
+      performanceDate: spending.latestDate,
     });
   }
   needsTopUp.sort((a, b) => b.recommendedTopUp - a.recommendedTopUp || a.storeName.localeCompare(b.storeName));
