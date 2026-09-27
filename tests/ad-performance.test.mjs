@@ -199,6 +199,16 @@ test("All Stores top-ups use single-store rules and respect access and ownership
   assert.equal(summarizeAllStoresTopUps(stores,rows,new Map([["client",{balance:20,balanceDate:"2026-09-24"}]]),"2026-09-27").assessedStoreCount,0);
   assert.equal(summarizeAllStoresTopUps(stores,rows,balances,"2026-09-28").assessedStoreCount,0);
   assert.equal(summarizeAllStoresTopUps(stores,rows,new Map([["client",{balance:20,balanceDate:"2026-09-27"}]]),"2026-09-27").assessedStoreCount,1);
+  const staleRows=rows.map(row=>({...row,performance_date:"2026-09-24"}));
+  const currentBalances=new Map([...balances].map(([id,balance])=>[id,{...balance,balanceDate:"2026-09-27"}]));
+  currentBalances.set("missing",{balance:75,balanceDate:"2026-09-27"});
+  const watch=summarizeAllStoresTopUps(stores,staleRows,currentBalances,"2026-09-27");
+  assert.equal(watch.assessedStoreCount,0);
+  assert.deepEqual(watch.needsTopUp,[]);
+  assert.deepEqual(watch.needsAttention.map(row=>[row.storeId,row.balance,row.performanceDate]),[
+    ["approval",0,"2026-09-24"],["zero",0,"2026-09-24"],["hub",10,"2026-09-24"],["client",20,"2026-09-24"],
+  ]);
+  assert.equal(summarizeAllStoresTopUps(stores,staleRows,new Map(),"2026-09-27").needsAttention.length,0);
 });
 
 test("selected-store membership with no assignments does not fall back to directory stores", async () => {
