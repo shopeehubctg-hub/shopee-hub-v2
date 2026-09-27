@@ -275,4 +275,5 @@ body{background:var(--paper);color:var(--ink)}
 .individual-ads-empty p{margin:0;color:var(--muted);font-size:13px}
 
 .ad-topup-overview{margin-top:18px}.ad-topup-heading{display:flex;align-items:end;justify-content:space-between;gap:16px}.ad-topup-heading h3{margin:0;font-size:19px}.ad-topup-heading>span,.ad-topup-note{color:var(--muted);font-size:11px}.ad-topup-note{margin:10px 0}.ad-topup-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}.ad-topup-item{display:flex;align-items:center;justify-content:space-between;gap:15px}.ad-topup-item>div{display:grid;gap:5px}.ad-topup-item>div:last-child{text-align:right;flex-shrink:0}.ad-topup-item strong{font-size:14px}.ad-topup-item>div:last-child strong{color:var(--orange);font-size:18px}.ad-topup-item small,.ad-topup-item span{color:var(--muted);font-size:10px}.ad-topup-empty{margin-top:12px;color:var(--muted);font-size:12px}
+.ad-topup-watch-title{margin:18px 0 0;font-size:14px}
 @media(max-width:680px){.ad-topup-heading{align-items:start;flex-direction:column}.ad-topup-list{grid-template-columns:1fr}.ad-topup-item{padding:15px}}

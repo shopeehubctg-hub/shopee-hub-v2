@@ -1,5 +1,5 @@
-import { buildAdvertisingFunds, buildTopUpAction } from "./advertising-model.js";
-import { hasCurrentTopUpInputs, malaysiaDate } from "./ad-balance-validation.js";
+import { buildAdvertisingFunds, buildTopUpAction, LOW_BALANCE_THRESHOLD } from "./advertising-model.js";
+import { hasCurrentTopUpInputs, isCurrentBalanceDate, malaysiaDate } from "./ad-balance-validation.js";
 
 export function shouldShowAllStoresTopUps(allStores, role, accessibleStoreCount, canViewAdvertising) {
   return Boolean(allStores && canViewAdvertising && (role === "superadmin" || accessibleStoreCount > 1));
@@ -17,6 +17,7 @@ export function summarizeAllStoresTopUps(stores, performanceRows, balancesByStor
 
   let assessedStoreCount = 0;
   const needsTopUp = [];
+  const needsAttention = [];
   for (const store of stores) {
     const candidateBalance = balancesByStoreId.get(store.id);
     const spending = spendingByStore.get(store.id);
@@ -28,7 +29,22 @@ export function summarizeAllStoresTopUps(stores, performanceRows, balancesByStor
       topUpOwner: store.topUpOwner,
       approvalRequired: store.approvalRequired,
     });
-    if (funds.syncStatus !== "current") continue;
+    if (funds.syncStatus !== "current") {
+      if (isCurrentBalanceDate(candidateBalance?.balanceDate, today)
+        && typeof candidateBalance.balance === "number"
+        && Number.isFinite(candidateBalance.balance)
+        && candidateBalance.balance >= 0
+        && candidateBalance.balance < LOW_BALANCE_THRESHOLD) {
+        needsAttention.push({
+          storeId: store.id,
+          storeName: store.name,
+          balance: candidateBalance.balance,
+          balanceDate: candidateBalance.balanceDate,
+          performanceDate: spending?.latestDate ?? null,
+        });
+      }
+      continue;
+    }
     assessedStoreCount += 1;
     if (!funds.lowBalance) continue;
     const action = buildTopUpAction(funds, store.name);
@@ -42,5 +58,6 @@ export function summarizeAllStoresTopUps(stores, performanceRows, balancesByStor
     });
   }
   needsTopUp.sort((a, b) => b.recommendedTopUp - a.recommendedTopUp || a.storeName.localeCompare(b.storeName));
-  return { totalStoreCount: stores.length, assessedStoreCount, needsTopUp };
+  needsAttention.sort((a, b) => a.balance - b.balance || a.storeName.localeCompare(b.storeName));
+  return { totalStoreCount: stores.length, assessedStoreCount, needsTopUp, needsAttention };
 }
