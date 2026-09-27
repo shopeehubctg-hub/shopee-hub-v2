@@ -23,6 +23,7 @@ export function summarizeAllStoresTopUps(stores, performanceRows, balancesByStor
   const needsTopUp = [];
   const needsAttention = [];
   for (const store of stores) {
+    const ownerGroup = store.topUpOwner === "shopee_hub" ? "shopee_hub" : "client";
     const candidateBalance = balancesByStoreId.get(store.id);
     const spending = spendingByStore.get(store.id);
     const balance = hasCurrentTopUpInputs(candidateBalance?.balanceDate, spending?.latestDate, today) ? candidateBalance : null;
@@ -34,8 +35,7 @@ export function summarizeAllStoresTopUps(stores, performanceRows, balancesByStor
       approvalRequired: store.approvalRequired,
     });
     if (funds.syncStatus !== "current") {
-      if (spending?.spend > 0
-        && isCurrentBalanceDate(candidateBalance?.balanceDate, today)
+      if (isCurrentBalanceDate(candidateBalance?.balanceDate, today)
         && typeof candidateBalance.balance === "number"
         && Number.isFinite(candidateBalance.balance)
         && candidateBalance.balance >= 0
@@ -46,23 +46,30 @@ export function summarizeAllStoresTopUps(stores, performanceRows, balancesByStor
           balance: candidateBalance.balance,
           balanceDate: candidateBalance.balanceDate,
           performanceDate: spending?.latestDate ?? null,
+          ownerGroup,
         });
       }
       continue;
     }
     assessedStoreCount += 1;
-    if (!funds.lowBalance) continue;
+    const lowBalance = funds.balance < LOW_BALANCE_THRESHOLD;
+    const shortRunway = funds.runwayDays !== null && funds.runwayDays < 3;
+    if (!lowBalance && !shortRunway) continue;
     const action = buildTopUpAction(funds, store.name);
     needsTopUp.push({
       storeId: store.id,
       storeName: store.name,
-      recommendedTopUp: funds.recommendedTopUp,
-      actionLabel: action?.action ?? "Managed by Shopee Hub",
+      recommendedTopUp: averageDailySpend30d > 0 ? funds.recommendedTopUp : null,
+      actionLabel: action?.action ?? (ownerGroup === "shopee_hub" ? "Managed by Shopee Hub" : "Managed by Client"),
+      ownerGroup,
+      balance: funds.balance,
+      runwayDays: funds.runwayDays,
+      reasons: [lowBalance ? "Balance below RM50" : null, shortRunway ? "Runway under 3 days" : null].filter(Boolean),
       balanceDate: balance.balanceDate,
       performanceDate: spending.latestDate,
     });
   }
-  needsTopUp.sort((a, b) => b.recommendedTopUp - a.recommendedTopUp || a.storeName.localeCompare(b.storeName));
+  needsTopUp.sort((a, b) => (b.recommendedTopUp ?? -1) - (a.recommendedTopUp ?? -1) || a.storeName.localeCompare(b.storeName));
   needsAttention.sort((a, b) => a.balance - b.balance || a.storeName.localeCompare(b.storeName));
   return { totalStoreCount: stores.length, assessedStoreCount, needsTopUp, needsAttention };
 }
