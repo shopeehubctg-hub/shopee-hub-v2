@@ -30,7 +30,8 @@ export function summarizeAllStoresTopUps(stores, performanceRows, balancesByStor
       approvalRequired: store.approvalRequired,
     });
     if (funds.syncStatus !== "current") {
-      if (isCurrentBalanceDate(candidateBalance?.balanceDate, today)
+      if (spending?.spend > 0
+        && isCurrentBalanceDate(candidateBalance?.balanceDate, today)
         && typeof candidateBalance.balance === "number"
         && Number.isFinite(candidateBalance.balance)
         && candidateBalance.balance >= 0
