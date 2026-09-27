@@ -8,6 +8,7 @@ const CONFIG = Object.freeze({
 });
 
 const STORE_ALIASES = Object.freeze({
+  'SUPU • 食补': 'Supu',
   'Scale Story SG by CTG4u': 'Scale Story SG',
   'Zeero Skincare SG by CTG4u': 'Zeero Skincare SG',
   'LivAct Singapore': 'livact.os.sg',
