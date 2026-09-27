@@ -10,7 +10,7 @@ import { storeSnapshots } from "./store-snapshots";
 import { StoreHealth } from "./store-health";
 import { buildAdvertisingFunds, buildTopUpAction, formatRinggit } from "./advertising-model.js";
 import { aggregateSelectedAdRows, selectAdRows, selectedAdDateFor } from "./ad-performance.js";
-import { hasCurrentTopUpInputs } from "./ad-balance-validation.js";
+import { hasCurrentTopUpInputs, malaysiaDate } from "./ad-balance-validation.js";
 import type { ProjectProductProfile } from "./product-catalog";
 import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
 import { PermissionSettings } from "./permission-settings";
@@ -25,7 +25,7 @@ type CoFundVoucher = { id:number; campaignName:string; campaignDate:string|null;
 type DashboardResponse = { stores: Store[]; selectedStoreId: string | null; snapshot: { payload: any; importedAt: string } | null; snapshotSource?: "bundled" | "imported" | null; adBalance: { balance:number; balanceDate:string; sourceUpdatedAt:string|null; syncStatus:string; topUpOwner?:string | null } | null; adPerformance?:DailyAd[]; adPerformanceUpdatedAt?:string|null; adTopUpOverview?:AdTopUpOverview|null; actions?: ManagementAction[]; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; access?:{ role:string; enabledModules:PortalModuleId[]; clientEnabledModules:PortalModuleId[]; canManagePermissions:boolean } };
 type ClientAction = { title: string; client: string; due: string; type: string; action: string; href?: string; message?: string; generated?: boolean };
 type DailyAd = { date:string; store:string; storeIds?:string[]; spend:number; sales:number; roas:number; views:number; clicks:number; ctr:number; conversion:number; sold:number; acos:number };
-type AdTopUpOverview = { totalStoreCount:number; assessedStoreCount:number; needsTopUp:{storeId:string;storeName:string;recommendedTopUp:number;actionLabel:string;balanceDate:string;performanceDate:string}[]; needsAttention:{storeId:string;storeName:string;balance:number;balanceDate:string;performanceDate:string|null}[] };
+type AdTopUpOverview = { totalStoreCount:number; assessedStoreCount:number; needsTopUp:{storeId:string;storeName:string;recommendedTopUp:number|null;actionLabel:string;ownerGroup:"shopee_hub"|"client";balance:number;runwayDays:number|null;reasons:string[];balanceDate:string;performanceDate:string}[]; needsAttention:{storeId:string;storeName:string;balance:number;balanceDate:string;performanceDate:string|null;ownerGroup:"shopee_hub"|"client"}[] };
 type OrderRow = { id:string; buyer:string; product:string; time:string; value:string; expire:string; left:string; status:string };
 
 const unavailableAdvertising = { balance:null, averageDailySpend30d:null, syncStatus:"delayed", spend:"—", sales:"—", roas:"—", views:"—", clicks:"—", conversion:"—", sold:"—", cpc:"—", costPerConversion:"—", acos:"—", ctr:"—", conversionRate:"—" };
@@ -174,8 +174,12 @@ export default function Home() {
     : adPeriodMode === "range" ? `${formatAdDate(selectedRangeStart)} – ${formatAdDate(selectedRangeEnd)}`
     : formatAdDate(selectedAdDate);
   const periodSpendLabel = adPeriodMode === "date" ? "Daily Spend" : "Ad Spend";
-  const averageDailySpend = relevantDailyAds.length
-    ? relevantDailyAds.reduce((total,row)=>total+row.spend,0) / Math.max(1, new Set(relevantDailyAds.map(row=>row.date)).size)
+  const topUpToday = malaysiaDate();
+  const topUpWindowStart = new Date(`${topUpToday}T00:00:00Z`);
+  topUpWindowStart.setUTCDate(topUpWindowStart.getUTCDate()-29);
+  const recentDailyAds = relevantDailyAds.filter(row=>row.date>=topUpWindowStart.toISOString().slice(0,10) && row.date<=topUpToday);
+  const averageDailySpend = recentDailyAds.length
+    ? recentDailyAds.reduce((total,row)=>total+row.spend,0) / Math.max(1, new Set(recentDailyAds.map(row=>row.date)).size)
     : null;
   const effectiveBalance = data?.adBalance;
   const freshSpendForTopUp = hasCurrentTopUpInputs(effectiveBalance?.balanceDate, latestAdDate);
@@ -205,7 +209,7 @@ export default function Home() {
   const visibleClientActions = generatedTopUpAction ? [generatedTopUpAction, ...visibleClientActionsBase.filter((action:ClientAction)=>action.type !== "Top-up" || !action.generated)] : visibleClientActionsBase;
   const overviewOrders: OrderRow[] | null = orderData.hasData ? orders as OrderRow[] : null;
   const warningOrders = overviewOrders?.filter((order:OrderRow) => order.status === "Expired" || order.status === "Urgent") ?? [];
-  const overviewLowBalance = Boolean(!allStoresSelected && effectiveBalance && relevantDailyAds.length && adFunds.lowBalance);
+  const overviewLowBalance = Boolean(!allStoresSelected && effectiveBalance && relevantDailyAds.length && adFunds.needsTopUp);
   const overviewAlertUpdatedAt = overviewLowBalance ? effectiveBalance?.sourceUpdatedAt : overviewState.asOf;
   const importantWarningCount = overviewOrders || effectiveBalance ? warningOrders.length + (overviewLowBalance ? 1 : 0) : null;
   const target = overviewLive.target;
@@ -272,12 +276,24 @@ export default function Home() {
         </section>}
         {allStoresSelected && (data.access?.role==="superadmin" || data.stores.length>1) && data.adTopUpOverview && <section className="ad-topup-overview" aria-label="All Stores advertising top-ups">
           <div className="ad-topup-heading"><div><p className="kicker">AD BALANCE</p><h3>Stores needing ad top-up</h3></div><span>{data.adTopUpOverview.assessedStoreCount} of {data.adTopUpOverview.totalStoreCount} accessible stores assessed</span></div>
-          {data.adTopUpOverview.assessedStoreCount < data.adTopUpOverview.totalStoreCount && <p className="ad-topup-note">Suggested amounts require a recent balance and daily ad data. Low balances awaiting current spend data appear separately below.</p>}
-          {data.adTopUpOverview.needsTopUp.length ? <div className="ad-topup-list">{data.adTopUpOverview.needsTopUp.map(item=><article className="card ad-topup-item" key={item.storeId}><div><strong>{item.storeName}</strong><small>Balance as of {formatAdDate(item.balanceDate)} · Ad data through {formatAdDate(item.performanceDate)} · {item.actionLabel}</small></div><div><span>Suggested top-up</span><strong>{formatRinggit(item.recommendedTopUp)}</strong></div></article>)}</div> : <div className="card ad-topup-empty" role="status">{data.adTopUpOverview.assessedStoreCount ? "No top-ups identified among assessed stores." : "Top-up needs cannot be calculated until recent balances and daily ad data are available."}</div>}
-          {data.adTopUpOverview.needsAttention.length > 0 && <><h4 className="ad-topup-watch-title">Low balances · suggested amount pending</h4><div className="ad-topup-list">{data.adTopUpOverview.needsAttention.map(item=><article className="card ad-topup-item" key={item.storeId}><div><strong>{item.storeName}</strong><small>Balance as of {formatAdDate(item.balanceDate)}{item.performanceDate ? ` · Ad data through ${formatAdDate(item.performanceDate)}` : " · Daily ad data unavailable"}</small></div><div><span>Current balance</span><strong>{formatRinggit(item.balance,2)}</strong><small>Suggested top-up pending</small></div></article>)}</div></>}
+          {data.adTopUpOverview.assessedStoreCount < data.adTopUpOverview.totalStoreCount && <p className="ad-topup-note">Suggested amounts require a recent balance and daily ad data. Pending amounts are shown under the responsible team.</p>}
+          <p className="ad-topup-note">Suggested amount covers 30 days of recent spend, includes a 10% buffer, and rounds up to RM50.</p>
+          {(["shopee_hub","client"] as const).map(ownerGroup=>{
+            const topUps=data.adTopUpOverview!.needsTopUp.filter(item=>item.ownerGroup===ownerGroup);
+            const pending=data.adTopUpOverview!.needsAttention.filter(item=>item.ownerGroup===ownerGroup);
+            if (!topUps.length && !pending.length) return null;
+            return <div className="ad-topup-owner-group" key={ownerGroup}>
+              <h4>{ownerGroup==="shopee_hub"?"Managed by Shopee Hub":"Managed by Client"} <span>{topUps.length+pending.length}</span></h4>
+              <div className="ad-topup-list">
+                {topUps.map(item=><article className="card ad-topup-item" key={item.storeId}><div><strong>{item.storeName}</strong><small>{item.reasons.join(" · ")} · Balance {formatRinggit(item.balance,2)}{item.runwayDays!==null?` · Runway ${item.runwayDays.toFixed(1)} days`:""}</small><small>Balance as of {formatAdDate(item.balanceDate)} · Ad data through {formatAdDate(item.performanceDate)} · {item.actionLabel}</small></div><div><span>Suggested top-up</span><strong>{formatRinggit(item.recommendedTopUp)}</strong>{item.recommendedTopUp===null&&<small>No recent spend to estimate amount</small>}</div></article>)}
+                {pending.map(item=><article className="card ad-topup-item" key={item.storeId}><div><strong>{item.storeName}</strong><small>Balance below RM50 · Balance as of {formatAdDate(item.balanceDate)}{item.performanceDate?` · Ad data through ${formatAdDate(item.performanceDate)}`:" · Daily ad data unavailable"}</small></div><div><span>Current balance</span><strong>{formatRinggit(item.balance,2)}</strong><small>Suggested top-up pending current spend data</small></div></article>)}
+              </div>
+            </div>;
+          })}
+          {!data.adTopUpOverview.needsTopUp.length && !data.adTopUpOverview.needsAttention.length && <div className="card ad-topup-empty" role="status">{data.adTopUpOverview.assessedStoreCount ? "No top-ups identified among assessed stores." : "Top-up needs cannot be calculated until recent balances and daily ad data are available."}</div>}
         </section>}
         {!allStoresSelected && <div className="advertising-summary-stack">
-        <section className={`ad-funds-card ${adFunds.balanceStatus}`}><div className="ad-funds-status"><div><span>{adFunds.syncStatus === "delayed" ? "Data delayed" : (adFunds.lowBalance ? `Top-up ${formatRinggit(adFunds.recommendedTopUp)} required` : "Ads healthy")}</span><small>{adFunds.topUpOwner === "shopee_hub" ? "Managed by Shopee Hub" : (adFunds.approvalRequired ? "Approval needed" : "Client action")}</small></div><time>{effectiveBalance?.balanceDate ? `Balance as of ${formatAdDate(effectiveBalance.balanceDate)}` : "Balance update unavailable"}{latestAdDate ? ` · Ad data through ${formatAdDate(latestAdDate)}` : ""}</time></div><div className="fund-metric"><span>Ad Balance</span><strong>{formatRinggit(adFunds.balance, 2)}</strong></div><div className="fund-metric"><span>{periodSpendLabel}</span><strong>{ads.spend ?? "—"}</strong></div><div className="fund-metric"><span>Runway</span><strong>{adFunds.runwayDays == null ? "—" : `${Math.floor(adFunds.runwayDays)} days`}</strong></div><div className="fund-metric topup"><span>Top-up</span><strong>{formatRinggit(adFunds.recommendedTopUp)}</strong></div></section>
+        <section className={`ad-funds-card ${adFunds.balanceStatus}`}><div className="ad-funds-status"><div><span>{adFunds.syncStatus === "delayed" ? "Data delayed" : (adFunds.needsTopUp ? `Top-up ${formatRinggit(adFunds.recommendedTopUp)} required` : "Ads healthy")}</span><small>{adFunds.topUpOwner === "shopee_hub" ? "Managed by Shopee Hub" : (adFunds.approvalRequired ? "Approval needed" : "Client action")}</small></div><time>{effectiveBalance?.balanceDate ? `Balance as of ${formatAdDate(effectiveBalance.balanceDate)}` : "Balance update unavailable"}{latestAdDate ? ` · Ad data through ${formatAdDate(latestAdDate)}` : ""}</time></div><div className="fund-metric"><span>Ad Balance</span><strong>{formatRinggit(adFunds.balance, 2)}</strong></div><div className="fund-metric"><span>{periodSpendLabel}</span><strong>{ads.spend ?? "—"}</strong></div><div className="fund-metric"><span>Runway</span><strong>{adFunds.runwayDays == null ? "—" : `${Math.floor(adFunds.runwayDays)} days`}</strong></div><div className="fund-metric topup"><span>Top-up</span><strong>{formatRinggit(adFunds.recommendedTopUp)}</strong></div></section>
         <section className="metric-grid ads ad-primary-grid">{[["Ad Sales",ads.sales,"sales"],["ROAS",ads.roas,"roas"],["ACOS",ads.acos,"acos"],["Cost Per Conversion",ads.costPerConversion,"cost"]].map(m=><article className={`metric ad-metric ${m[2]}`} key={m[0]}><span>{m[0]}</span><strong>{money(m[1])}</strong></article>)}</section>
         <section className="metric-grid ads ad-secondary-grid">{[["Views",ads.views,"reach",null],["Clicks",ads.clicks,"reach",null],["CTR",ads.ctr,"rate",parseFloat(ads.ctr)<2],["Conversion Rate",ads.conversionRate,"rate",parseFloat(ads.conversionRate)<2]].map(m=><article className={`metric ad-metric ${m[2]} ${m[3]===true?"danger":""}`} key={m[0] as string}><span>{m[0]}</span><strong>{money(m[1] as string)}</strong>{m[3]!==null&&<em>{m[3]?"Warning":"Normal"}</em>}</article>)}</section></div>}
         {!allStoresSelected && <section className="campaign-section" aria-label="Individual Ads"><div className="campaign-heading"><div><p className="kicker">INDIVIDUAL ADS</p><h3>Individual Ads</h3></div></div><div className="card individual-ads-empty" role="status"><p>Individual ad data is temporarily unavailable.</p></div></section>}
@@ -304,7 +320,7 @@ export default function Home() {
 
       {section === "health" && <StoreHealth />}
 
-      {section==="actions" && <div className="page"><div className="page-title"><div><p className="kicker">CLIENT ACTION CENTER</p><h2>What we need from the client</h2></div><span className="warning-pill">{visibleClientActions.length} open items</span></div>{adFunds.topUpOwner === "shopee_hub" && adFunds.lowBalance && <div className="managed-note">Top-up {formatRinggit(adFunds.recommendedTopUp)} · Managed by Shopee Hub</div>}{visibleClientActions.length ? <div className="action-list">{visibleClientActions.map((a:any)=><article className="card action" key={a.title}><div className={`type ${a.type.toLowerCase()}`}>{a.type.slice(0,1)}</div><div><span className="category">{a.type}</span><h3>{a.title}</h3><p>{a.client} · Due {a.due}</p>{a.message&&<p className="action-message">{a.message}</p>}</div>{a.href?<a className="action-link" href={a.href} target="_blank" rel="noopener noreferrer">{a.action}</a>:<button>{a.action}</button>}</article>)}</div> : <article className="card empty-actions"><h3>No client action needed</h3><p>当前没有需要客户处理的事项。</p></article>}</div>}
+      {section==="actions" && <div className="page"><div className="page-title"><div><p className="kicker">CLIENT ACTION CENTER</p><h2>What we need from the client</h2></div><span className="warning-pill">{visibleClientActions.length} open items</span></div>{adFunds.topUpOwner === "shopee_hub" && adFunds.needsTopUp && <div className="managed-note">Top-up {formatRinggit(adFunds.recommendedTopUp)} · Managed by Shopee Hub</div>}{visibleClientActions.length ? <div className="action-list">{visibleClientActions.map((a:any)=><article className="card action" key={a.title}><div className={`type ${a.type.toLowerCase()}`}>{a.type.slice(0,1)}</div><div><span className="category">{a.type}</span><h3>{a.title}</h3><p>{a.client} · Due {a.due}</p>{a.message&&<p className="action-message">{a.message}</p>}</div>{a.href?<a className="action-link" href={a.href} target="_blank" rel="noopener noreferrer">{a.action}</a>:<button>{a.action}</button>}</article>)}</div> : <article className="card empty-actions"><h3>No client action needed</h3><p>当前没有需要客户处理的事项。</p></article>}</div>}
       <footer>Shopee Hub · Private command center</footer>
     </section>
   </main>;

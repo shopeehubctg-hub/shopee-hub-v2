@@ -1,4 +1,5 @@
 const LOW_BALANCE_THRESHOLD = 50;
+const LOW_RUNWAY_DAYS = 3;
 const TOP_UP_ROUNDING = 50;
 const SAFETY_BUFFER = 1.1;
 
@@ -24,18 +25,21 @@ export function buildAdvertisingFunds(advertising = {}) {
     : null;
   const recommendedTopUp = rawTopUp == null ? null : Math.ceil(rawTopUp / TOP_UP_ROUNDING) * TOP_UP_ROUNDING;
   const lowBalance = syncStatus === "current" && alertEnabled && balance < LOW_BALANCE_THRESHOLD && recommendedTopUp > 0;
+  const needsTopUp = syncStatus === "current" && alertEnabled && recommendedTopUp > 0
+    && (balance < LOW_BALANCE_THRESHOLD || (runwayDays !== null && runwayDays < LOW_RUNWAY_DAYS));
 
   return {
     balance,
     averageDailySpend30d,
     runwayDays,
     recommendedTopUp,
-    balanceStatus: syncStatus === "delayed" ? "delayed" : (lowBalance ? "low" : "healthy"),
+    balanceStatus: syncStatus === "delayed" ? "delayed" : (needsTopUp ? "low" : "healthy"),
     topUpOwner: ["shopee_hub", "client_approval", "client"].includes(advertising.topUpOwner) ? advertising.topUpOwner : "client",
     approvalRequired: advertising.topUpOwner === "client_approval" || Boolean(advertising.approvalRequired),
     sourceUpdatedAt: advertising.sourceUpdatedAt ?? null,
     syncStatus,
     lowBalance,
+    needsTopUp,
   };
 }
 
@@ -45,7 +49,7 @@ export function formatRinggit(value, digits = 0) {
 }
 
 export function buildTopUpAction(funds, storeName, options = {}) {
-  if (!funds.lowBalance || funds.topUpOwner === "shopee_hub" || funds.recommendedTopUp == null) return null;
+  if (!funds.needsTopUp || funds.topUpOwner === "shopee_hub" || funds.recommendedTopUp == null) return null;
   const amount = formatRinggit(funds.recommendedTopUp);
   const isApproval = funds.topUpOwner === "client_approval" || funds.approvalRequired;
   return {

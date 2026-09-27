@@ -192,8 +192,11 @@ test("All Stores top-ups use single-store rules and respect access and ownership
   assert.equal(result.assessedStoreCount,4);
   assert.ok(result.needsTopUp.every(row=>row.storeId!=="forbidden"));
   assert.deepEqual(result.needsTopUp.map(row=>[row.storeId,row.recommendedTopUp,row.actionLabel]),[
-    ["approval",200,"Approve"],["client",150,"Top Up"],["hub",200,"Managed by Shopee Hub"],
+    ["approval",200,"Approve"],["client",150,"Top Up"],["hub",200,"Managed by Shopee Hub"],["zero",null,"Managed by Client"],
   ].sort((a,b)=>b[1]-a[1]||String(a[0]).localeCompare(String(b[0]))));
+  assert.deepEqual(result.needsTopUp.map(row=>[row.storeId,row.ownerGroup]),[
+    ["approval","client"],["hub","shopee_hub"],["client","client"],["zero","client"],
+  ]);
   assert.ok(result.needsTopUp.every(row=>row.performanceDate==="2026-09-25"));
   assert.equal(summarizeAllStoresTopUps(stores,rows,new Map(),"2026-09-27").assessedStoreCount,0);
   assert.equal(summarizeAllStoresTopUps(stores,rows,new Map([["client",{balance:20,balanceDate:"2026-09-24"}]]),"2026-09-27").assessedStoreCount,0);
@@ -206,10 +209,30 @@ test("All Stores top-ups use single-store rules and respect access and ownership
   assert.equal(watch.assessedStoreCount,0);
   assert.deepEqual(watch.needsTopUp,[]);
   assert.deepEqual(watch.needsAttention.map(row=>[row.storeId,row.balance,row.performanceDate]),[
-    ["approval",0,"2026-09-24"],["hub",10,"2026-09-24"],["client",20,"2026-09-24"],
+    ["approval",0,"2026-09-24"],["zero",0,"2026-09-24"],["hub",10,"2026-09-24"],["client",20,"2026-09-24"],
   ]);
-  assert.ok(!watch.needsAttention.some(row=>row.storeId==="zero"));
   assert.equal(summarizeAllStoresTopUps(stores,staleRows,new Map(),"2026-09-27").needsAttention.length,0);
+});
+
+test("All Stores includes short runway above RM50 and low balance with no spend", () => {
+  const stores=[
+    {id:"runway",name:"Runway store",topUpOwner:"shopee_hub"},
+    {id:"idle",name:"Idle store",topUpOwner:"client"},
+  ];
+  const rows=[
+    {store_id:"runway",performance_date:"2026-09-25",spend:30},
+    {store_id:"idle",performance_date:"2026-09-25",spend:0},
+  ];
+  const balances=new Map([
+    ["runway",{balance:60,balanceDate:"2026-09-27"}],
+    ["idle",{balance:0,balanceDate:"2026-09-27"}],
+  ]);
+  const result=summarizeAllStoresTopUps(stores,rows,balances,"2026-09-27");
+  assert.equal(result.needsTopUp.length,2);
+  assert.deepEqual(result.needsTopUp.map(item=>[item.storeId,item.ownerGroup,item.recommendedTopUp]),[
+    ["runway","shopee_hub",950],["idle","client",null],
+  ]);
+  assert.deepEqual(result.needsTopUp[0].reasons,["Runway under 3 days"]);
 });
 
 test("All Stores top-up average excludes ad spend older than 30 days", () => {
