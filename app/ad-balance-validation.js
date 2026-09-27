@@ -26,6 +26,9 @@ export function hasCurrentTopUpInputs(balanceDate, performanceDate, today = mala
 
 export function balanceCsvColumns(cells) {
   if (!Array.isArray(cells)) return null;
+  if (cells[0] === "Date\tStore Name\tAd Balance (RM)" && cells.slice(1).every(cell => String(cell ?? "").trim() === "")) {
+    return { dateIndex: 0, storeIndex: 1, balanceIndex: 2 };
+  }
   const normalized = cells.map(cell => String(cell).trim().toLowerCase());
   const dateIndex = normalized.indexOf("date");
   const storeIndex = normalized.indexOf("store name");

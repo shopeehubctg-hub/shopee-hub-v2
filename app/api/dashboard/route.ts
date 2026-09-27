@@ -290,12 +290,13 @@ export async function GET(request: Request) {
     }
     const selectedDirectory = selectedStore ? directoryStores.find((store) => store.name === selectedStore.name) : undefined;
     const snapshotPayload = selectedStore ? storeSnapshots[selectedStore.name] ?? null : null;
-    const showTopUps=shouldShowAllStoresTopUps(allStoresRequested,membership.role,visibleStores.length,enabledModules.includes("advertising"));
+    const canViewAdvertising=enabledModules.includes("advertising");
+    const showTopUps=shouldShowAllStoresTopUps(allStoresRequested,membership.role,visibleStores.length,canViewAdvertising);
     const [sheetBalances,productProfile,selectedCoFundVouchers,adPerformance] = await Promise.all([
-      selectedStore||showTopUps?readSheetBalances():Promise.resolve(new Map<string,SheetBalance>()),
+      canViewAdvertising&&(selectedStore||showTopUps)?readSheetBalances():Promise.resolve(new Map<string,SheetBalance>()),
       selectedStore?readProductCatalogSheet(selectedStore.name):Promise.resolve(null),
       selectedStore?readCoFundVouchers(selectedStore.id):Promise.resolve([]),
-      readAdPerformance(authorizedAdStoreIds(visibleStores,selectedStore,enabledModules.includes("advertising")),membership.tenant_id,allStoresRequested),
+      readAdPerformance(authorizedAdStoreIds(visibleStores,selectedStore,canViewAdvertising),membership.tenant_id,allStoresRequested),
     ]);
     const sheetBalance=selectedStore?balanceForStore(sheetBalances,selectedStore.name):null;
     const adTopUpOverview=showTopUps?summarizeAllStoresTopUps(
@@ -315,9 +316,9 @@ export async function GET(request: Request) {
         };
       }),
       selectedStoreId: allStoresRequested ? "all" : selectedStore?.id ?? null,
-      snapshot: snapshotPayload ? withoutAdCampaigns({ payload: snapshotPayload, importedAt: snapshotPayload.sourceUpdated ?? "" }) : null,
+      snapshot: snapshotPayload ? withoutAdCampaigns({ payload: snapshotPayload, importedAt: snapshotPayload.sourceUpdated ?? "" }, canViewAdvertising) : null,
       snapshotSource: snapshotPayload ? "bundled" : null,
-      adBalance: sheetBalance ? { ...sheetBalance, topUpOwner: selectedDirectory?.topUpOwner ?? topUpOwnerFallbacks[selectedStore?.name ?? ""] ?? null } : null,
+      adBalance: canViewAdvertising && sheetBalance ? { ...sheetBalance, topUpOwner: selectedDirectory?.topUpOwner ?? topUpOwnerFallbacks[selectedStore?.name ?? ""] ?? null } : null,
       adPerformance:adPerformance.daily,
       adPerformanceUpdatedAt:adPerformance.updatedAt,
       adTopUpOverview,
@@ -389,8 +390,9 @@ export async function GET(request: Request) {
     ? visibleStores.find((store) => store.id === requestedStoreId)
     : (allStoresRequested ? undefined : visibleStores[0]);
   if (requestedStoreId && !allStoresRequested && !selectedStore) return Response.json({ error: "Store access denied" }, { status: 403 });
-  const showTopUps=shouldShowAllStoresTopUps(allStoresRequested,membership.role,visibleStores.length,enabledModules.includes("advertising"));
-  const sheetBalancesPromise=selectedStore||showTopUps?readSheetBalances():Promise.resolve(new Map<string,SheetBalance>());
+  const canViewAdvertising=enabledModules.includes("advertising");
+  const showTopUps=shouldShowAllStoresTopUps(allStoresRequested,membership.role,visibleStores.length,canViewAdvertising);
+  const sheetBalancesPromise=canViewAdvertising&&(selectedStore||showTopUps)?readSheetBalances():Promise.resolve(new Map<string,SheetBalance>());
   const latest = allStoresRequested ? [] : await db.select().from(dashboardSnapshots)
     .where(selectedStore
       ? and(eq(dashboardSnapshots.tenantId, tenant.id), eq(dashboardSnapshots.storeId, selectedStore.id))
@@ -433,7 +435,7 @@ export async function GET(request: Request) {
     syncedAt:storedProducts[0].syncedAt,
   }:sheetProductProfile;
 
-  const adPerformance=await readAdPerformance(authorizedAdStoreIds(visibleStores,selectedStore,enabledModules.includes("advertising")),tenant.id,allStoresRequested);
+  const adPerformance=await readAdPerformance(authorizedAdStoreIds(visibleStores,selectedStore,canViewAdvertising),tenant.id,allStoresRequested);
   const adTopUpOverview=showTopUps?summarizeAllStoresTopUps(
     visibleStores.map(store=>({...store,topUpOwner:directoryByName.get(store.directoryName)?.topUpOwner??topUpOwnerFallbacks[store.directoryName]??null})),
     adPerformance.rows,
@@ -453,9 +455,9 @@ export async function GET(request: Request) {
       };
     }),
     selectedStoreId: allStoresRequested ? "all" : (selectedStore?.id ?? null),
-    snapshot: withoutAdCampaigns(latest[0] ?? null),
+    snapshot: withoutAdCampaigns(latest[0] ?? null, canViewAdvertising),
     snapshotSource: latest[0] ? "imported" : null,
-    adBalance: sheetBalance ? { ...sheetBalance, topUpOwner } : null,
+    adBalance: canViewAdvertising && sheetBalance ? { ...sheetBalance, topUpOwner } : null,
     adPerformance:adPerformance.daily,
     adPerformanceUpdatedAt:adPerformance.updatedAt,
     adTopUpOverview,

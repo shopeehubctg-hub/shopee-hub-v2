@@ -71,9 +71,10 @@ test("balance update label never invents a time for date-only sheet rows", async
 });
 
 test("dashboard snapshots omit individual ads without changing stored data", () => {
-  const original={id:1,payload:{overview:[["Sales","RM 100"]],adCampaigns:[{id:"old-ad"}]}};
+  const original={id:1,payload:{overview:[["Sales","RM 100"]],advertising:{balance:25},adCampaigns:[{id:"old-ad"}]}};
   const visible=withoutAdCampaigns(original);
-  assert.deepEqual(visible,{id:1,payload:{overview:[["Sales","RM 100"]]}});
+  assert.deepEqual(visible,{id:1,payload:{overview:[["Sales","RM 100"]],advertising:{balance:25}}});
+  assert.deepEqual(withoutAdCampaigns(original,false),{id:1,payload:{overview:[["Sales","RM 100"]]}});
   assert.deepEqual(original.payload.adCampaigns,[{id:"old-ad"}]);
   assert.equal(withoutAdCampaigns(null),null);
 });
@@ -94,6 +95,9 @@ test("Shopee Open Platform stays outside the active dashboard path", async () =>
 test("balance CSV requires the named Ad Balance column and recent dates", async () => {
   const header=["Date","Store Name","Spend","Sales","ROAS","Views","Clicks","CTR","Conversion","Sold","ACOS","Ad Balance (RM)"];
   assert.deepEqual(balanceCsvColumns(header),{dateIndex:0,storeIndex:1,balanceIndex:11});
+  assert.deepEqual(balanceCsvColumns(["Date\tStore Name\tAd Balance (RM)","",""]),{dateIndex:0,storeIndex:1,balanceIndex:2});
+  assert.equal(balanceCsvColumns(["Date\tStore Name\tAd Balance (RM)","Unexpected"]),null);
+  assert.equal(balanceCsvColumns(["Date Store Name Ad Balance (RM)"]),null);
   assert.equal(balanceCsvColumns(["","Store Name","Spend",...Array(9).fill("")]),null);
   assert.equal(isCurrentBalanceDate("2026-09-25","2026-09-27"),true);
   assert.equal(isCurrentBalanceDate("2026-09-24","2026-09-27"),true);
@@ -124,6 +128,41 @@ test("Apps Script skips an empty AdBalance tab without writing balances", async 
     PropertiesService:{getScriptProperties:()=>{throw new Error("Empty balances must not write to Supabase");}},
   };
   assert.deepEqual(JSON.parse(JSON.stringify(runInNewContext(`${source}\nsyncBalances_({})`,context))),{count:0,unmatched:[]});
+});
+
+test("Apps Script accepts both balance headers, skips blanks, and parses zero and thousands", async () => {
+  const source=await readFile(new URL("../google-apps-script/Code.gs",import.meta.url),"utf8");
+  for (const header of [["Date\tStore Name\tAd Balance (RM)","",""],["Date","Store Name","Ad Balance (RM)"]]) {
+    const sent=[];
+    const context={
+      SpreadsheetApp:{getActive:()=>({getSheetByName:()=>({getDataRange:()=>({getValues:()=>[
+        header,
+        ["2026-09-27","Blank store","  "],
+        ["2026-09-27","Zero store",0],
+        ["2026-09-27","Thousand store","2,522.36"],
+        ["2026-09-27","Bad store","2,52.36"],
+      ]})})})},
+      Utilities:{formatDate:()=>"2026-09-27"},
+      PropertiesService:{getScriptProperties:()=>({getProperty:key=>key==="SUPABASE_URL"?"https://example.test":"sb_secret_test"})},
+      UrlFetchApp:{fetch:(_url,options)=>{sent.push(JSON.parse(options.payload));return {getResponseCode:()=>201,getContentText:()=>""};}},
+      console:{log:()=>{}},
+    };
+    const result=runInNewContext(`${source}\nsyncBalances_({"blank store":{id:"blank"},"zero store":{id:"zero"},"thousand store":{id:"thousand"},"bad store":{id:"bad"}})`,context);
+    assert.equal(result.count,2);
+    assert.equal(sent.length,1);
+    assert.deepEqual(sent[0].map(row=>[row.store_id,row.balance_cents]),[["zero",0],["thousand",252236]]);
+  }
+});
+
+test("Apps Script rejects an unknown balance header", async () => {
+  const source=await readFile(new URL("../google-apps-script/Code.gs",import.meta.url),"utf8");
+  const context={
+    SpreadsheetApp:{getActive:()=>({getSheetByName:()=>({getDataRange:()=>({getValues:()=>[
+      ["Date Store Name Ad Balance (RM)","",""],
+      ["2026-09-27","Store",10],
+    ]})})})},
+  };
+  assert.throws(()=>runInNewContext(`${source}\nsyncBalances_({})`,context),/missing header: Date/);
 });
 
 test("All Stores top-ups use single-store rules and respect access and ownership", () => {
@@ -164,7 +203,10 @@ test("All Stores top-ups use single-store rules and respect access and ownership
 test("selected-store membership with no assignments does not fall back to directory stores", async () => {
   const route=await readFile(new URL("../app/api/dashboard/route.ts",import.meta.url),"utf8");
   assert.match(route,/membership\.storeAccessMode === "selected" && membership\.role !== "superadmin" \? \[\] : directoryStores\.map/);
-  assert.match(route,/authorizedAdStoreIds\(visibleStores,selectedStore,enabledModules\.includes\("advertising"\)\)/);
+  assert.match(route,/authorizedAdStoreIds\(visibleStores,selectedStore,canViewAdvertising\)/);
+  assert.equal([...route.matchAll(/canViewAdvertising&&\(selectedStore\|\|showTopUps\)\?readSheetBalances\(\)/g)].length,2);
+  assert.equal([...route.matchAll(/adBalance: canViewAdvertising && sheetBalance \? \{ \.\.\.sheetBalance/g)].length,2);
+  assert.match(route,/withoutAdCampaigns\(latest\[0\] \?\? null, canViewAdvertising\)/);
 });
 
 test("empty FullAd date and custom range stay empty instead of selecting another day", async () => {
@@ -195,7 +237,7 @@ test("All Stores overview uses live FullAd coverage and excludes undated campaig
   assert.doesNotMatch(page,/adsData|adCampaigns|campaign-counts|visibleAdCampaigns|adStatusFilter/);
   const snapshots=await readFile(new URL("../app/store-snapshots.ts",import.meta.url),"utf8");
   assert.doesNotMatch(snapshots,/adCampaigns/);
-  assert.match(route,/snapshot: withoutAdCampaigns\(latest\[0\] \?\? null\)/);
+  assert.match(route,/snapshot: withoutAdCampaigns\(latest\[0\] \?\? null, canViewAdvertising\)/);
   assert.match(route,/snapshot: snapshotPayload \? withoutAdCampaigns\(/);
   assert.doesNotMatch(page,/allStoresAdvertising|Latest campaign snapshot|Data snapshot/);
 });

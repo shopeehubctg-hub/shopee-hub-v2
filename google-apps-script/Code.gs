@@ -91,8 +91,10 @@ function syncBalances_(storeIndex) {
   const payload = rows.filter(row => dateValue_(row.Date).getTime() === latestDate).flatMap(row => {
     const sourceName = clean_(row['Store Name']);
     const store = resolveStore_(sourceName, storeIndex);
-    const balance = Number(row['Ad Balance (RM)']);
-    if (!store || !Number.isFinite(balance) || balance < 0) { unmatched.push(sourceName); return []; }
+    const balanceValue = row['Ad Balance (RM)'];
+    if (clean_(balanceValue) === '') return [];
+    const balance = parseBalance_(balanceValue);
+    if (!store || balance === null || balance < 0) { unmatched.push(sourceName); return []; }
     return [{ tenant_id: CONFIG.tenantId, store_id: store.id, source_store_name: sourceName,
       balance_cents: Math.round(balance * 100), balance_date: isoDate_(dateValue_(row.Date)), imported_at: new Date().toISOString() }];
   });
@@ -127,7 +129,10 @@ function sheetRows_(sheetName, requiredHeaders) {
   if (!sheet) throw new Error(`Missing sheet: ${sheetName}`);
   const values = sheet.getDataRange().getValues();
   if (values.length < 2) return [];
-  const headers = values[0].map(clean_);
+  const balanceHeadersInA1 = sheetName === CONFIG.balanceSheet
+    && values[0][0] === 'Date\tStore Name\tAd Balance (RM)'
+    && values[0].slice(1).every(value => clean_(value) === '');
+  const headers = balanceHeadersInA1 ? ['Date', 'Store Name', 'Ad Balance (RM)'] : values[0].map(clean_);
   requiredHeaders.forEach(header => { if (!headers.includes(header)) throw new Error(`${sheetName} missing header: ${header}`); });
   return values.slice(1).filter(row => row.some(value => value !== '')).map(row => Object.fromEntries(headers.map((header, index) => [header, row[index]])));
 }
@@ -183,6 +188,12 @@ function writeLog_(scope, status, rows, detail, started) {
 }
 
 function clean_(value) { return String(value == null ? '' : value).replace(/\s+/g, ' ').trim(); }
+function parseBalance_(value) {
+  const text = clean_(value).replace(/^RM\s*/i, '');
+  if (!/^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?$/.test(text)) return null;
+  const amount = Number(text.replace(/,/g, ''));
+  return Number.isFinite(amount) ? amount : null;
+}
 function storeKey_(value) {
   return clean_(value)
     .normalize('NFKC')

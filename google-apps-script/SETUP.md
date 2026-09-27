@@ -2,7 +2,7 @@
 
 Target spreadsheet: `Shopee Ads Report` (`AdBalance` and `FullAd`).
 
-`AdBalance` holds ad balances with the headers `Date`, `Store Name`, and `Ad Balance (RM)`. It may be empty while balances are being prepared; the script skips the balance sync safely and still syncs `FullAd` performance data. `FullAd` supplies performance only. The dashboard reads balances directly from `AdBalance`, and unavailable or outdated balances appear as pending.
+`AdBalance` holds ad balances with the headers `Date`, `Store Name`, and `Ad Balance (RM)`. The current sheet has these three header names separated by tabs in A1, while data occupies columns A–C; the script and dashboard accept this exact layout and a normal three-cell header. Balance cells may contain valid thousands separators. Empty balances are skipped, while an explicit numeric zero is retained. An empty tab safely skips balance sync and still syncs `FullAd` performance data. `FullAd` supplies performance only. The dashboard reads balances directly from `AdBalance`, and unavailable or outdated balances appear as pending.
 
 1. Confirm Supabase has the `ad_balances` and `ad_performance_daily` tables; apply `supabase/migrations/20260921090000_google_sheet_ads_sync.sql` if needed.
 2. In the spreadsheet, open **Extensions → Apps Script**.
