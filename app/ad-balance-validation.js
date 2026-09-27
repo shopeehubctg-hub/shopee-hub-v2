@@ -21,7 +21,7 @@ export function isCurrentPerformanceDate(value, today = malaysiaDate()) {
 export function hasCurrentTopUpInputs(balanceDate, performanceDate, today = malaysiaDate()) {
   if (!isCurrentBalanceDate(balanceDate, today) || !isCurrentPerformanceDate(performanceDate, today)) return false;
   const gap = Date.parse(`${balanceDate}T00:00:00Z`) - Date.parse(`${performanceDate}T00:00:00Z`);
-  return gap >= 0 && gap <= 24 * 60 * 60 * 1000;
+  return gap >= 0 && gap <= 2 * 24 * 60 * 60 * 1000;
 }
 
 export function balanceCsvColumns(cells) {

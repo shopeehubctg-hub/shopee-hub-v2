@@ -105,7 +105,8 @@ test("balance CSV requires the named Ad Balance column and recent dates", async 
   assert.equal(isCurrentPerformanceDate("2026-09-25","2026-09-27"),true);
   assert.equal(isCurrentPerformanceDate("2026-09-24","2026-09-27"),false);
   assert.equal(hasCurrentTopUpInputs("2026-09-26","2026-09-25","2026-09-27"),true);
-  assert.equal(hasCurrentTopUpInputs("2026-09-27","2026-09-25","2026-09-27"),false);
+  assert.equal(hasCurrentTopUpInputs("2026-09-27","2026-09-25","2026-09-27"),true);
+  assert.equal(hasCurrentTopUpInputs("2026-09-27","2026-09-24","2026-09-27"),false);
   assert.equal(isCurrentBalanceDate("2026-08-05","2026-09-27"),false);
   assert.equal(isCurrentBalanceDate("2026-09-32","2026-09-27"),false);
   assert.equal(parseAdBalance("RM 1,234.50"),1234.5);
@@ -197,7 +198,7 @@ test("All Stores top-ups use single-store rules and respect access and ownership
   assert.equal(summarizeAllStoresTopUps(stores,rows,new Map(),"2026-09-27").assessedStoreCount,0);
   assert.equal(summarizeAllStoresTopUps(stores,rows,new Map([["client",{balance:20,balanceDate:"2026-09-24"}]]),"2026-09-27").assessedStoreCount,0);
   assert.equal(summarizeAllStoresTopUps(stores,rows,balances,"2026-09-28").assessedStoreCount,0);
-  assert.equal(summarizeAllStoresTopUps(stores,rows,new Map([["client",{balance:20,balanceDate:"2026-09-27"}]]),"2026-09-27").assessedStoreCount,0);
+  assert.equal(summarizeAllStoresTopUps(stores,rows,new Map([["client",{balance:20,balanceDate:"2026-09-27"}]]),"2026-09-27").assessedStoreCount,1);
 });
 
 test("selected-store membership with no assignments does not fall back to directory stores", async () => {
