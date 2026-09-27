@@ -12,7 +12,7 @@ test("package control is wired into the command center", async () => {
   assert.match(page, /Packages & Pricing/);
   assert.match(page, /<PackageControl/);
   assert.match(component, /OXM PACKAGE CONTROL/);
-  assert.match(component, /Migrate & Edit/);
+  assert.match(component, /Use as New Package/);
   assert.match(component, /Create Next Version/);
   assert.match(component, /Add Listing/);
   assert.match(component, /Multi-Select/);
@@ -44,7 +44,9 @@ test("package control is wired into the command center", async () => {
   assert.match(component, /Check your internet connection and try again/);
   assert.match(component, /Add Item/);
   assert.doesNotMatch(component, /<option value="gift">Gift<\/option>/);
-  assert.match(component, /Google Sheet History/);
+  assert.match(component, /View Package History/);
+  assert.match(component, /Last updated/);
+  assert.match(component, /Update history is temporarily unavailable/);
 });
 
 test("sidebar contacts the selected project's Shopee Hub specialist", async () => {

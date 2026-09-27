@@ -1,17 +1,20 @@
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { adBalances, coFundVouchers, customerUsers, dashboardSnapshots, managementActions, projectProductCatalog, stores, tenantModulePermissions, tenants, userModulePermissions, userStoreAccess } from "../../../db/schema";
+import { coFundVouchers, customerUsers, dashboardSnapshots, managementActions, projectProductCatalog, stores, tenantModulePermissions, tenants, userModulePermissions, userStoreAccess } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { ALL_PORTAL_MODULE_IDS } from "../../module-permissions";
 import { contactsForStore, directoryStoreNameFor } from "../../project-group-links";
 import { storeSnapshots } from "../../store-snapshots";
 import { readProductCatalogSheet, sourceShopNameFor } from "../../product-catalog";
 import { supabaseRest } from "../../supabase-rest";
-import { aggregateAdPerformanceByDate, authorizedAdStoreIds } from "../../ad-performance.js";
+import { aggregateAdPerformanceByDate, authorizedAdStoreIds, latestAdSyncTime } from "../../ad-performance.js";
+import { withoutAdCampaigns } from "../../dashboard-snapshot.js";
+import { shouldShowAllStoresTopUps, summarizeAllStoresTopUps } from "../../ad-topup-overview.js";
+import { balanceCsvColumns, isCurrentBalanceDate, parseAdBalance } from "../../ad-balance-validation.js";
 
 export const dynamic = "force-dynamic";
 
-const AD_BALANCE_SHEET_CSV = "https://docs.google.com/spreadsheets/d/13NOwTGkbDjW8y869CvS6lr6H8I7XRn3I0urt_-rqkgs/gviz/tq?tqx=out:csv&sheet=Sheet1";
+const AD_BALANCE_SHEET_CSV = "https://docs.google.com/spreadsheets/d/13NOwTGkbDjW8y869CvS6lr6H8I7XRn3I0urt_-rqkgs/export?format=csv&gid=421872532";
 const LINK_DIRECTORY_CSV = "https://docs.google.com/spreadsheets/d/1iMNKdNs5tqgXgWUQhtg-UhWcb0mP3SlGYbTOyx4avkc/gviz/tq?tqx=out:csv&sheet=WhatsApp%20Group";
 const GOOGLE_SHEET_TIMEOUT_MS = 5_000;
 const adBalanceAliases: Record<string, string> = {
@@ -130,28 +133,42 @@ async function readLinkDirectory(): Promise<LinkDirectoryStore[]> {
   }
 }
 
-async function readSheetBalance(storeName: string, storedName = storeName) {
+type SheetBalance = {balance:number;balanceDate:string;sourceStoreName:string;sourceUpdatedAt:null;syncStatus:"current"};
+
+async function readSheetBalances() {
+  const balances = new Map<string,SheetBalance>();
   try {
     const response = await fetch(AD_BALANCE_SHEET_CSV, {
       cache: "no-store",
       signal: AbortSignal.timeout(GOOGLE_SHEET_TIMEOUT_MS),
     });
-    if (!response.ok) return null;
-    const lines = (await response.text()).trim().split(/\r?\n/).slice(1);
-    const matches = lines.map(parseCsvLine).filter((row) => row[1] === storeName || (adBalanceAliases[row[1]] ?? row[1]) === storedName);
-    const latest = matches.sort((a, b) => b[0].localeCompare(a[0]))[0];
-    const balance = Number(latest?.[2]);
-    if (!latest || !Number.isFinite(balance) || balance < 0) return null;
-    return {
-      balance,
-      balanceDate: latest[0],
-      sourceStoreName: latest[1],
-      sourceUpdatedAt: `${latest[0]} · 9:00 am`,
-      syncStatus: "current",
-    };
+    if (!response.ok) return balances;
+    const [header,...lines] = (await response.text()).trim().split(/\r?\n/);
+    const columns=balanceCsvColumns(parseCsvLine(header));
+    if (!columns) return balances;
+    for (const line of lines) {
+      const row = parseCsvLine(line);
+      const balance=parseAdBalance(row[columns.balanceIndex]);
+      const balanceDate=row[columns.dateIndex]?.trim();
+      const sourceStoreName=row[columns.storeIndex]?.trim();
+      if (!isCurrentBalanceDate(balanceDate) || !sourceStoreName || balance === null) continue;
+      const record:SheetBalance = {balance,balanceDate,sourceStoreName,sourceUpdatedAt:null,syncStatus:"current"};
+      for (const name of new Set([sourceStoreName,adBalanceAliases[sourceStoreName] ?? sourceStoreName])) {
+        if (!balances.has(name) || balanceDate > balances.get(name)!.balanceDate) balances.set(name,record);
+      }
+    }
+    return balances;
   } catch {
-    return null;
+    return balances;
   }
+}
+
+function balanceForStore(balances:Map<string,SheetBalance>, storeName:string, storedName=storeName) {
+  const direct=balances.get(storeName);
+  const stored=balances.get(storedName);
+  if (!direct) return stored ?? null;
+  if (!stored) return direct;
+  return direct.balanceDate >= stored.balanceDate ? direct : stored;
 }
 
 function normalizeTopUpOwner(value?: string | null) {
@@ -204,17 +221,17 @@ async function readCoFundVouchers(storeId:string, tenantId?:string) {
 
 type AdPerformanceRow = {
   store_id:string; performance_date:string; spend:string|number; sales:string|number;
-  views:string|number; clicks:string|number; conversions:string|number; sold:string|number;
+  views:string|number; clicks:string|number; conversions:string|number; sold:string|number; synced_at:string|null;
 };
 
 async function readAdPerformance(storeIds:string[], tenantId:string, allStores:boolean) {
-  if (!storeIds.length) return [];
+  if (!storeIds.length) return {daily:[],updatedAt:null,rows:[] as AdPerformanceRow[]};
   try {
     const rows:AdPerformanceRow[]=[];
     const pageSize=1000;
     for (let offset=0; ; offset+=pageSize) {
       const query=new URLSearchParams({
-        select:"store_id,performance_date,spend,sales,views,clicks,conversions,sold",
+        select:"store_id,performance_date,spend,sales,views,clicks,conversions,sold,synced_at",
         tenant_id:`eq.${tenantId}`,
         store_id:`in.(${storeIds.join(",")})`,
         order:"performance_date.asc,store_id.asc",
@@ -225,18 +242,19 @@ async function readAdPerformance(storeIds:string[], tenantId:string, allStores:b
       rows.push(...page);
       if (page.length<pageSize) break;
     }
-    if (allStores) return aggregateAdPerformanceByDate(rows);
-    return rows.map(row=>({
-      date:row.performance_date,store:storeIds[0],spend:Number(row.spend),sales:Number(row.sales),
+    const updatedAt=latestAdSyncTime(rows);
+    if (allStores) return {daily:aggregateAdPerformanceByDate(rows),updatedAt,rows};
+    return {daily:rows.map(row=>({
+      date:row.performance_date,store:storeIds[0],storeIds:[row.store_id],spend:Number(row.spend),sales:Number(row.sales),
       roas:Number(row.spend)>0?Number(row.sales)/Number(row.spend):0,
       views:Number(row.views),clicks:Number(row.clicks),
       ctr:Number(row.views)>0?Number(row.clicks)/Number(row.views):0,
       conversion:Number(row.conversions),sold:Number(row.sold),
       acos:Number(row.sales)>0?Number(row.spend)/Number(row.sales):0,
-    }));
+    })),updatedAt,rows};
   } catch (error) {
     console.error("[advertising] FullAd read failed",error);
-    return [];
+    return {daily:[],updatedAt:null,rows:[] as AdPerformanceRow[]};
   }
 }
 
@@ -272,12 +290,20 @@ export async function GET(request: Request) {
     }
     const selectedDirectory = selectedStore ? directoryStores.find((store) => store.name === selectedStore.name) : undefined;
     const snapshotPayload = selectedStore ? storeSnapshots[selectedStore.name] ?? null : null;
-    const sheetBalance = selectedStore ? await readSheetBalance(selectedStore.name) : null;
-    const productProfile = selectedStore ? await readProductCatalogSheet(selectedStore.name) : null;
-    const [selectedCoFundVouchers,adPerformance] = await Promise.all([
+    const canViewAdvertising=enabledModules.includes("advertising");
+    const showTopUps=shouldShowAllStoresTopUps(allStoresRequested,membership.role,visibleStores.length,canViewAdvertising);
+    const [sheetBalances,productProfile,selectedCoFundVouchers,adPerformance] = await Promise.all([
+      canViewAdvertising&&(selectedStore||showTopUps)?readSheetBalances():Promise.resolve(new Map<string,SheetBalance>()),
+      selectedStore?readProductCatalogSheet(selectedStore.name):Promise.resolve(null),
       selectedStore?readCoFundVouchers(selectedStore.id):Promise.resolve([]),
-      readAdPerformance(authorizedAdStoreIds(visibleStores,selectedStore,enabledModules.includes("advertising")),membership.tenant_id,allStoresRequested),
+      readAdPerformance(authorizedAdStoreIds(visibleStores,selectedStore,canViewAdvertising),membership.tenant_id,allStoresRequested),
     ]);
+    const sheetBalance=selectedStore?balanceForStore(sheetBalances,selectedStore.name):null;
+    const adTopUpOverview=showTopUps?summarizeAllStoresTopUps(
+      visibleStores.map(store=>({...store,topUpOwner:directoryStores.find(item=>item.name===store.name)?.topUpOwner??topUpOwnerFallbacks[store.name]??null})),
+      adPerformance.rows,
+      new Map(visibleStores.map(store=>[store.id,balanceForStore(sheetBalances,store.name)])),
+    ):null;
     return Response.json({
       customer: { id: "shopee-hub", name: "Shopee Hub" },
       stores: visibleStores.map((store) => {
@@ -290,9 +316,12 @@ export async function GET(request: Request) {
         };
       }),
       selectedStoreId: allStoresRequested ? "all" : selectedStore?.id ?? null,
-      snapshot: snapshotPayload ? { payload: snapshotPayload, importedAt: snapshotPayload.sourceUpdated ?? new Date().toISOString() } : null,
-      adBalance: sheetBalance ? { ...sheetBalance, topUpOwner: selectedDirectory?.topUpOwner ?? topUpOwnerFallbacks[selectedStore?.name ?? ""] ?? null } : null,
-      adPerformance,
+      snapshot: snapshotPayload ? withoutAdCampaigns({ payload: snapshotPayload, importedAt: snapshotPayload.sourceUpdated ?? "" }, canViewAdvertising) : null,
+      snapshotSource: snapshotPayload ? "bundled" : null,
+      adBalance: canViewAdvertising && sheetBalance ? { ...sheetBalance, topUpOwner: selectedDirectory?.topUpOwner ?? topUpOwnerFallbacks[selectedStore?.name ?? ""] ?? null } : null,
+      adPerformance:adPerformance.daily,
+      adPerformanceUpdatedAt:adPerformance.updatedAt,
+      adTopUpOverview,
       actions: [],
       productProfile,
       coFundVouchers:selectedCoFundVouchers,
@@ -300,7 +329,7 @@ export async function GET(request: Request) {
       access: { role:membership.role, enabledModules, clientEnabledModules:enabledModules, canManagePermissions:membership.role==="superadmin" },
       dataSources: {
         directory: "Google Sheets · WhatsApp Group / Link Directory",
-        advertisingBalance: "Google Sheets · Ad Balance Sheet1",
+        advertisingBalance: "Daily advertising balance",
         performance: snapshotPayload ? "Portable snapshot exported from the ChatGPT Sites dashboard" : "Advertising exports and bundled dashboard data",
       },
     }, { headers: { "Cache-Control":"private, no-store" } });
@@ -361,17 +390,17 @@ export async function GET(request: Request) {
     ? visibleStores.find((store) => store.id === requestedStoreId)
     : (allStoresRequested ? undefined : visibleStores[0]);
   if (requestedStoreId && !allStoresRequested && !selectedStore) return Response.json({ error: "Store access denied" }, { status: 403 });
+  const canViewAdvertising=enabledModules.includes("advertising");
+  const showTopUps=shouldShowAllStoresTopUps(allStoresRequested,membership.role,visibleStores.length,canViewAdvertising);
+  const sheetBalancesPromise=canViewAdvertising&&(selectedStore||showTopUps)?readSheetBalances():Promise.resolve(new Map<string,SheetBalance>());
   const latest = allStoresRequested ? [] : await db.select().from(dashboardSnapshots)
     .where(selectedStore
       ? and(eq(dashboardSnapshots.tenantId, tenant.id), eq(dashboardSnapshots.storeId, selectedStore.id))
       : eq(dashboardSnapshots.tenantId, tenant.id))
     .orderBy(desc(dashboardSnapshots.importedAt), desc(dashboardSnapshots.id))
     .limit(1);
-  const latestBalance = allStoresRequested || !selectedStore ? [] : await db.select().from(adBalances)
-    .where(and(eq(adBalances.tenantId, tenant.id), eq(adBalances.storeId, selectedStore.id)))
-    .orderBy(desc(adBalances.balanceDate), desc(adBalances.importedAt), desc(adBalances.id))
-    .limit(1);
-  const sheetBalance = selectedStore ? await readSheetBalance(selectedStore.name, selectedStore.storedName) : null;
+  const sheetBalances=await sheetBalancesPromise;
+  const sheetBalance = selectedStore ? balanceForStore(sheetBalances,selectedStore.name,selectedStore.storedName) : null;
   const topUpOwner = selectedStore
     ? directoryByName.get(selectedStore.directoryName)?.topUpOwner ?? topUpOwnerFallbacks[selectedStore.directoryName] ?? null
     : null;
@@ -406,7 +435,12 @@ export async function GET(request: Request) {
     syncedAt:storedProducts[0].syncedAt,
   }:sheetProductProfile;
 
-  const adPerformance=await readAdPerformance(authorizedAdStoreIds(visibleStores,selectedStore,enabledModules.includes("advertising")),tenant.id,allStoresRequested);
+  const adPerformance=await readAdPerformance(authorizedAdStoreIds(visibleStores,selectedStore,canViewAdvertising),tenant.id,allStoresRequested);
+  const adTopUpOverview=showTopUps?summarizeAllStoresTopUps(
+    visibleStores.map(store=>({...store,topUpOwner:directoryByName.get(store.directoryName)?.topUpOwner??topUpOwnerFallbacks[store.directoryName]??null})),
+    adPerformance.rows,
+    new Map(visibleStores.map(store=>[store.id,balanceForStore(sheetBalances,store.name,store.storedName)])),
+  ):null;
   return Response.json({
     customer: { id: tenant.id, name: tenant.name },
     stores: visibleStores.map(({ id, name, platform, directoryName }) => {
@@ -421,16 +455,12 @@ export async function GET(request: Request) {
       };
     }),
     selectedStoreId: allStoresRequested ? "all" : (selectedStore?.id ?? null),
-    snapshot: latest[0] ?? null,
-    adBalance: sheetBalance ? { ...sheetBalance, topUpOwner } : (latestBalance[0] ? {
-      balance: latestBalance[0].balanceCents / 100,
-      balanceDate: latestBalance[0].balanceDate,
-      sourceStoreName: latestBalance[0].sourceStoreName,
-      sourceUpdatedAt: `${latestBalance[0].balanceDate} · 9:00 am`,
-      syncStatus: "current",
-      topUpOwner,
-    } : null),
-    adPerformance,
+    snapshot: withoutAdCampaigns(latest[0] ?? null, canViewAdvertising),
+    snapshotSource: latest[0] ? "imported" : null,
+    adBalance: canViewAdvertising && sheetBalance ? { ...sheetBalance, topUpOwner } : null,
+    adPerformance:adPerformance.daily,
+    adPerformanceUpdatedAt:adPerformance.updatedAt,
+    adTopUpOverview,
     actions,
     productProfile,
     coFundVouchers:selectedCoFundVouchers,
