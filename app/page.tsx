@@ -284,7 +284,7 @@ export default function Home() {
         {allStoresSelected && <section className="ad-total-overview" aria-label="All Stores advertising overview">
           <div className="ad-total-heading">
             <div>
-              <h3>Performance</h3>
+              <h3 className="sr-only">Performance</h3>
               <p className="ad-total-period">{selectedPeriodLabel}</p>
             </div>
             <div className="ad-total-context">
@@ -294,13 +294,13 @@ export default function Home() {
           </div>
           <div className="ad-total-key-grid">{adTotalMetrics.slice(0,4).map(([label,value])=><article className="ad-key-metric" key={label}><span>{label}</span><strong>{value}</strong></article>)}</div>
           <details className="ad-more-metrics">
-            <summary>More performance metrics <span>8 metrics</span></summary>
+            <summary>More metrics</summary>
             <div className="ad-total-extra-grid">{adTotalMetrics.slice(4).map(([label,value])=><div className="ad-extra-metric" key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
           </details>
         </section>}
         {allStoresSelected && (data.access?.role==="superadmin" || data.stores.length>1) && data.adTopUpOverview && <section className="ad-topup-overview" aria-label="All Stores advertising top-ups">
           <div className="ad-topup-heading">
-            <div><p className="kicker">AD BALANCE</p><h3>Stores needing top-up</h3></div>
+            <div><h3>Stores needing top-up</h3></div>
             <span>{data.adTopUpOverview.assessedStoreCount}/{data.adTopUpOverview.totalStoreCount} stores assessed</span>
           </div>
           <div className="ad-topup-meta">
