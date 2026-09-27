@@ -16,7 +16,6 @@ export function buildAdvertisingFunds(advertising = {}) {
     ? "delayed"
     : "current";
   const alertEnabled = advertising.alertEnabled !== false;
-  const lowBalance = syncStatus === "current" && alertEnabled && balance < LOW_BALANCE_THRESHOLD;
   const runwayDays = syncStatus === "current" && averageDailySpend30d > 0
     ? balance / averageDailySpend30d
     : null;
@@ -24,6 +23,7 @@ export function buildAdvertisingFunds(advertising = {}) {
     ? Math.max(0, averageDailySpend30d * 30 * SAFETY_BUFFER - balance)
     : null;
   const recommendedTopUp = rawTopUp == null ? null : Math.ceil(rawTopUp / TOP_UP_ROUNDING) * TOP_UP_ROUNDING;
+  const lowBalance = syncStatus === "current" && alertEnabled && balance < LOW_BALANCE_THRESHOLD && recommendedTopUp > 0;
 
   return {
     balance,
