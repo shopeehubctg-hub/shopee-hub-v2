@@ -308,7 +308,6 @@ export default function Home() {
             <span>Ad performance: {topUpPerformanceDates}</span>
             <details><summary>How suggestions work</summary><p>30 days of recent spend, a 10% buffer, rounded up to RM50. Active stores below RM50 balance have a minimum RM50 suggestion.</p></details>
           </div>
-          {data.adTopUpOverview.assessedStoreCount < data.adTopUpOverview.totalStoreCount && <p className="ad-topup-note" role="status">Some stores cannot be assessed yet; pending amounts are listed with their owners.</p>}
           {(["shopee_hub","client"] as const).map(ownerGroup=>{
             const topUps=data.adTopUpOverview!.needsTopUp.filter(item=>item.ownerGroup===ownerGroup);
             const pending=data.adTopUpOverview!.needsAttention.filter(item=>item.ownerGroup===ownerGroup);
