@@ -317,7 +317,7 @@ body{background:var(--paper);color:var(--ink)}
 .ad-topup-row>span:not(:first-child),.ad-topup-row>.ad-topup-amount,.ad-topup-row>.ad-topup-pending{font-variant-numeric:tabular-nums}
 .ad-topup-store{display:grid;gap:5px;min-width:0}.ad-topup-store>strong{font-size:13px;line-height:1.35}.ad-topup-tags{display:flex;flex-wrap:wrap;gap:5px}.ad-topup-tags span{padding:2px 7px;border-radius:999px;background:#fff2e3;color:#926213;font-size:10px;font-weight:700}.ad-topup-row.pending .ad-topup-tags span:last-child{background:#eef3f5;color:#5d7380}
 .ad-topup-amount,.ad-topup-pending{font-size:15px;text-align:right}.ad-topup-amount{color:var(--red)}.ad-topup-pending{color:#667985}
-.ad-topup-table-head span:last-child,.ad-topup-row>span:nth-child(2),.ad-topup-row>span:nth-child(3){text-align:right}
+.ad-topup-table-head span:last-child{text-align:right}
 .advertising-all-shell .ad-topup-note{margin-top:12px;font-size:12px}
 @media(max-width:1000px){.ad-total-key-grid,.ad-total-extra-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:680px){
@@ -330,7 +330,7 @@ body{background:var(--paper);color:var(--ink)}
   .ad-total-extra-grid{gap:0 14px}.ad-extra-metric strong{font-size:15px}
   .ad-topup-meta{display:grid;gap:6px}.ad-topup-meta>span{border:0;padding:0}.ad-topup-meta details{margin:2px 0 0}
   .ad-topup-meta details p{left:0;right:auto}
-  .ad-topup-table-head{display:none}.ad-topup-row{grid-template-columns:minmax(0,1fr) minmax(0,.8fr) minmax(0,1fr);gap:9px 8px;padding:13px 14px}.ad-topup-store{grid-column:1/-1}.ad-topup-store>strong{font-size:14px}
+  .ad-topup-table-head{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}.ad-topup-row{grid-template-columns:minmax(0,1fr) minmax(0,.8fr) minmax(0,1fr);gap:9px 8px;padding:13px 14px}.ad-topup-store{grid-column:1/-1}.ad-topup-store>strong{font-size:14px}
   .ad-topup-row>span:nth-child(2),.ad-topup-row>span:nth-child(3){text-align:left}.ad-topup-row>span[data-label]::before,.ad-topup-row>strong[data-label]::before{content:attr(data-label);display:block;margin-bottom:3px;color:#71838c;font-size:10px;font-weight:700}
   .ad-topup-row>.ad-topup-amount,.ad-topup-row>.ad-topup-pending{grid-column:auto;padding-top:0;border-top:0;text-align:left;font-size:14px}
 }
