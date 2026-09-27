@@ -23,7 +23,10 @@ export function buildAdvertisingFunds(advertising = {}) {
   const rawTopUp = syncStatus === "current"
     ? Math.max(0, averageDailySpend30d * 30 * SAFETY_BUFFER - balance)
     : null;
-  const recommendedTopUp = rawTopUp == null ? null : Math.ceil(rawTopUp / TOP_UP_ROUNDING) * TOP_UP_ROUNDING;
+  const roundedTopUp = rawTopUp == null ? null : Math.ceil(rawTopUp / TOP_UP_ROUNDING) * TOP_UP_ROUNDING;
+  const recommendedTopUp = roundedTopUp !== null && averageDailySpend30d > 0 && balance < LOW_BALANCE_THRESHOLD
+    ? Math.max(TOP_UP_ROUNDING, roundedTopUp)
+    : roundedTopUp;
   const lowBalance = syncStatus === "current" && alertEnabled && balance < LOW_BALANCE_THRESHOLD && recommendedTopUp > 0;
   const needsTopUp = syncStatus === "current" && alertEnabled && recommendedTopUp > 0
     && (balance < LOW_BALANCE_THRESHOLD || (runwayDays !== null && runwayDays < LOW_RUNWAY_DAYS));

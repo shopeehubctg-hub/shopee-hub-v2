@@ -24,6 +24,13 @@ test("runway below three days triggers top-up even when balance exceeds RM50", (
   assert.equal(boundary.needsTopUp,false);
 });
 
+test("low balance with positive spend suggests at least RM50", () => {
+  const funds=buildAdvertisingFunds({balance:49,averageDailySpend30d:1,topUpOwner:"client"});
+  assert.equal(funds.recommendedTopUp,50);
+  assert.equal(funds.needsTopUp,true);
+  assert.equal(buildTopUpAction(funds,"Store")?.action,"Top Up");
+});
+
 test("top-up covers 30 days, adds 10% and rounds to RM50", () => {
   const funds = buildAdvertisingFunds({ balance:35.95, averageDailySpend30d:3.06 });
   assert.equal(funds.recommendedTopUp, 100);
