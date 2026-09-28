@@ -12,9 +12,9 @@
 
 - Live Calendar navigation and module settings; tenant defaults and absent configuration keep client access off.
 - Super Admin: Month, Week, List; canonical store picker; create, edit, reschedule and cancel a one-off session; optional title and internal note.
-- Same-store overlaps return HTTP 409 until the admin explicitly confirms. Adjacent end/start times are allowed.
+- Same-store overlaps return HTTP 409 until the admin explicitly confirms. The confirmation lists each conflicting title, store and local start/end time. Adjacent end/start times are allowed.
 - Customer: read-only upcoming List by default, optional Month/Week and an All Stores filter for multiple assigned stores. A one-store account has no redundant store picker. Cancelled sessions and internal notes are omitted from customer responses.
-- MY and SG use explicit `Asia/Kuala_Lumpur` / `Asia/Singapore` store zones. Local input converts to UTC; grid queries use local midnight boundaries, independent of the browser time zone. Cross-midnight cards include the ending date.
+- MY and SG use explicit `Asia/Kuala_Lumpur` / `Asia/Singapore` store zones. Local input converts to UTC; grid queries use local midnight boundaries, independent of the browser time zone. Cross-midnight cards include the ending date. Month/Week cells render an event on every intersecting store-local day, including when it starts before a visible week or month; continuation is labelled. List shows the exact inclusive 120-day date range while navigating.
 - Loading hides old event cards and disables Add/Edit. Dialog keyboard handling supports Escape, focus trapping and return to the trigger.
 - All matching event pages are read in batches of 500 with `(start_at, id)` ordering. There is no silent 500-event cutoff. A request range is limited to 370 days.
 
@@ -57,14 +57,14 @@ Read-only connector evidence: the only visible Supabase project is Shopee Hub (`
 
 | Check | Result and scope |
 | --- | --- |
-| `node --test tests/live-calendar.test.mjs` | **14 PASS**. Actual API handlers with mocked identity/REST adapters: inactive/disabled/cross-tenant denial, customer read-only and notes exclusion, one/multi-store grants, legacy customer all isolation, admin registration, SG conversion/invalid dates, create/edit/reschedule/cancel, explicit overlap confirmation, 1001-event paging, permission settings and local grid day bounds in UTC/MY/Los Angeles/Auckland |
+| `node --test tests/live-calendar.test.mjs` | **15 PASS**. Actual API handlers with mocked identity/REST adapters: inactive/disabled/cross-tenant denial, customer read-only and notes exclusion, one/multi-store grants, legacy customer all isolation, admin registration, SG conversion/invalid dates, create/edit/reschedule/cancel, explicit overlap confirmation, 1001-event paging, permission settings, local grid day bounds in UTC/MY/Los Angeles/Auckland, and cross-week/month continuation without a midnight end-day ghost |
 | `tsc --noEmit` | PASS |
 | ESLint | New Calendar API/UI/model/registry, tests, preview builder and `db/schema.ts` PASS. Existing `page.tsx` / `permission-settings.tsx` contain pre-existing lint errors; full-repo lint is not claimed |
 | `git diff --check` | PASS |
 | Next build | Webpack build PASS using the existing cached Noto Sans woff2 through Next's test-only font response hook. Root `next/font` configuration is unchanged. Normal build is blocked by DNS access to `fonts.googleapis.com`; Turbopack also rejects the shared dependency symlink in this independent checkout |
-| Browser mock | 1440px desktop / 390px mobile render; no browser errors observed. Single-store customer has no MY event, admin action, note or store picker; no horizontal overflow. Shift+Tab cycles from first field to Schedule, Escape closes and returns focus to Add live |
+| Browser mock | Full Dashboard shell at 1440px desktop / 390px mobile, using shared navigation, context header, Noto Sans, final color tokens and title scale; no browser errors observed. Single-store customer has no MY event, admin action, note or store picker; no horizontal overflow. Shift+Tab cycles from first field to Schedule, Escape closes and returns focus to Add live |
 
-Mocked API tests do not verify real Supabase REST grants, authentication-provider behavior, RLS or audit execution. The preview uses only synthetic in-memory data and has no database writes. Formal UI/UX approval and same-commit QC remain pending.
+Mocked API tests do not verify real Supabase REST grants, authentication-provider behavior, RLS or audit execution. The preview uses only synthetic in-memory data and has no database writes. Browser inspection confirmed no horizontal overflow at 390px, List range text and `aria-pressed` state; no browser errors. Formal UI/UX approval and same-commit QC remain pending.
 
 ## Design artifacts
 
@@ -72,7 +72,8 @@ Interactive mock: `/Users/jolinyong/Documents/BD Dashboard/outputs/live-calendar
 
 Screenshots in the same directory:
 
-- `admin-desktop.png`, `admin-form.png`
+- `dashboard-desktop.png`, `dashboard-mobile.png`, `dashboard-list-mobile.png` (current full-shell design)
+- `admin-desktop.png`, `admin-form.png` (earlier component-only design)
 - `admin-mobile.png`, `admin-form-mobile.png`
 - `customer-single-mobile.png`, `customer-multi-mobile.png`
 - `module-disabled-mobile.png`
@@ -81,4 +82,4 @@ The HTML links switch Super Admin, one-store customer, multi-store customer and 
 
 ## Next gate
 
-Head/UI reviewer can review the design and this exact commit now. Real isolated Staging DB/application validation is pending. After it is available, deploy the reviewed code to Staging, obtain UI/UX approval and then run QC on the same commit. No Production rollout is authorized by this handoff.
+The reviewer requested cross-week continuation, a List range, overlap details, accessibility states and integration with the Dashboard shell; these code changes are ready for renewed design review. The user authorized Staging once the design is ready. Deployment still needs a confirmed isolated Staging database and migration/application validation there; the only visible Supabase project is currently the main Shopee Hub project. Do not silently point this code or its migration at that database. No Production rollout is authorized by this handoff.

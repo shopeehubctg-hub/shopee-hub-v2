@@ -74,3 +74,9 @@ export async function readAllCalendarPages<T>(readPage:(offset:number,limit:numb
     if(page.length<pageSize)return rows;
   }
 }
+
+/** Half-open local-day intersection; an event ending at midnight stays on the prior day. */
+export function sessionOccursOnDay(session:{start_at:string;end_at:string},day:Date) {
+  const start=day.getTime()-8*60*60*1000;
+  return Date.parse(session.start_at)<start+86400000&&Date.parse(session.end_at)>start;
+}

@@ -198,3 +198,12 @@ test("calendar local day bounds include grid-first-day 00:30 in every browser ti
     }
   } finally {if(previous===undefined)delete process.env.TZ;else process.env.TZ=previous;}
 });
+
+test("sessions continue across week/month boundaries without adding a midnight end day",()=>{
+ const row={start_at:"2026-10-04T15:30:00Z",end_at:"2026-10-04T16:30:00Z"};
+ assert.equal(api.sessionOccursOnDay(row,new Date("2026-10-04T00:00:00Z")),true);
+ assert.equal(api.sessionOccursOnDay(row,new Date("2026-10-05T00:00:00Z")),true);
+ assert.equal(api.sessionOccursOnDay(row,new Date("2026-10-06T00:00:00Z")),false);
+ assert.equal(api.sessionOccursOnDay({...row,end_at:"2026-10-04T16:00:00Z"},new Date("2026-10-05T00:00:00Z")),false);
+ assert.equal(api.sessionOccursOnDay({start_at:"2026-09-30T15:30:00Z",end_at:"2026-09-30T16:30:00Z"},new Date("2026-10-01T00:00:00Z")),true);
+});
