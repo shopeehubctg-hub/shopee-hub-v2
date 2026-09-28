@@ -218,10 +218,14 @@ export async function GET(request: Request) {
   const prices = await db.select().from(packagePrices).where(inArray(packagePrices.packageId, ids)).orderBy(desc(packagePrices.createdAt));
   const platformRows = await db.select().from(packagePlatformSkus).where(inArray(packagePlatformSkus.packageId, ids));
   const latestVersion = new Map<string, typeof versions[number]>();
+  const latestPublishedVersion = new Map<string, typeof versions[number]>();
   versions.forEach(version => { if (!latestVersion.has(version.packageId)) latestVersion.set(version.packageId, version); });
+  versions.forEach(version => { if (version.sheetSyncStatus === "synced" && !latestPublishedVersion.has(version.packageId)) latestPublishedVersion.set(version.packageId, version); });
   return Response.json({
     packages:rows.map(row => {
-      const version = latestVersion.get(row.id);
+      const version = ["active","scheduled","expired"].includes(row.status)
+        ? latestPublishedVersion.get(row.id) ?? latestVersion.get(row.id)
+        : latestVersion.get(row.id);
       const versionPrices = version ? prices.filter(item => item.versionId === version.id) : [];
       const price = versionPrices.find(item => item.priceType === "campaign" && (item.currency === "SGD" ? "SG" : item.market) === "MY") ?? versionPrices[0];
       const currentPlatforms = version ? platformRows.filter(item => item.versionId === version.id).map(({ platform, packageSku }) => ({ platform, packageSku })) : [];
@@ -389,14 +393,7 @@ async function savePackage(request: Request) {
 
   const diff = componentDiff(previousComponents, components);
   await db.transaction(async tx => {
-    if (requestedPackageId) {
-      await tx.update(packages).set({
-        name:body.name!.trim(),
-        market:markets.join(","),
-        status:"draft",
-        updatedAt:now,
-      }).where(eq(packages.id, requestedPackageId));
-    } else {
+    if (!requestedPackageId) {
       await tx.insert(packages).values({
         id:packageId,
         tenantId:membership.tenantId,
@@ -466,9 +463,11 @@ async function savePackage(request: Request) {
     syncStatus:"Synced",
   });
   await db.update(packageVersions).set({ sheetSyncStatus:sync.status }).where(eq(packageVersions.id, versionId));
-  if (sync.status!=="synced") return Response.json({ok:false,savedAsDraft:true,packageId,version:nextVersion,error:`Package saved as a draft because Google Sheet sync failed: ${sync.reason}. Retry Create from the draft card.`},{status:503});
+  if (sync.status!=="synced") return Response.json({ok:false,savedAsDraft:!requestedPackageId,packageId,version:nextVersion,error:requestedPackageId
+    ? `Google Sheet sync failed: ${sync.reason}. The previous published version remains visible. Retry after the Sheet connection is restored.`
+    : `Package saved as a draft because Google Sheet sync failed: ${sync.reason}. Retry Create from the draft card.`},{status:503});
   const status=publishedStatus(schedules,marketToday());
-  await db.update(packages).set({status,updatedAt:new Date().toISOString()}).where(eq(packages.id,packageId));
+  await db.update(packages).set({name:body.name!.trim(),market:markets.join(","),status,updatedAt:new Date().toISOString()}).where(eq(packages.id,packageId));
 
   return Response.json({
     ok:true,

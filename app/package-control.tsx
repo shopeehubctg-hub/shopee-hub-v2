@@ -433,7 +433,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
 
     <div className="package-list">{visible.map(item=><article className="package-card" key={item.id}>
       <div className="package-card-head">
-        <div><span className={`package-status ${item.status}`}>{item.status}</span><span className={`sync-status ${item.status==="draft"?"not_sent":item.sheetSyncStatus ?? "pending"}`}>Sheet {item.status==="draft"?"not sent":item.sheetSyncStatus ?? "preview"}</span><h3>{item.name}</h3></div>
+        <div><span className={`package-status ${item.status}`}>{item.status}</span><span className={`sync-status ${item.status==="draft"&&item.sheetSyncStatus!=="failed"?"not_sent":item.sheetSyncStatus ?? "pending"}`}>Sheet {item.status==="draft"&&item.sheetSyncStatus!=="failed"?"not sent":item.sheetSyncStatus ?? "preview"}</span><h3>{item.name}</h3></div>
         <div className="package-price"><small>{item.market}</small><del>{money(item.originalPrice,item.market,source==="database")}</del><strong>{money(item.sellingPrice,item.market,source==="database")}</strong></div>
       </div>
       {item.priceSchedules?.length?<div className="package-schedule-summary">{item.priceSchedules.map(line=><div key={`${line.market}-${line.priceType}`}><span>{line.market} · {line.priceType==="campaign"?"Campaign":"Non-Campaign"}</span><b>{money(line.sellingPrice,line.market)}</b><small>{line.effectiveFrom} → {line.effectiveTo}</small></div>)}</div>:null}
