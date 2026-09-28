@@ -8,37 +8,46 @@ function doPost(e) {
     if (!expectedSecret || payload.secret !== expectedSecret) {
       return jsonResponse({ ok: false, error: "Unauthorized" });
     }
-
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(HISTORY_SHEET);
-    if (!sheet) return jsonResponse({ ok: false, error: "Package History sheet not found" });
-
-    const existing = sheet.getRange(1, 2, Math.max(sheet.getLastRow(), 1), 1)
-      .getDisplayValues().flat();
-    if (existing.includes(String(payload.changeId))) {
-      return jsonResponse({ ok: true, duplicate: true });
+    if (!payload.changeId || !payload.packageName || !payload.store) {
+      return jsonResponse({ ok: false, error: "Incomplete package history entry" });
     }
 
-    sheet.appendRow([
-      payload.timestamp,
-      payload.changeId,
-      payload.projectOwner,
-      payload.store,
-      payload.packageName,
-      payload.version,
-      payload.action,
-      payload.promotionType,
-      payload.startDate,
-      payload.endDate,
-      payload.shopeeSku,
-      payload.lazadaSku,
-      payload.tiktokSku,
-      payload.addedComponents,
-      payload.removedComponents,
-      payload.currentComponents,
-      payload.changedBy,
-      "Synced",
-    ]);
-    return jsonResponse({ ok: true });
+    const lock = LockService.getScriptLock();
+    lock.waitLock(30000);
+    try {
+      const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(HISTORY_SHEET);
+      if (!sheet) return jsonResponse({ ok: false, error: "Package History sheet not found" });
+
+      const existing = sheet.getRange(1, 2, Math.max(sheet.getLastRow(), 1), 1)
+        .getDisplayValues().flat();
+      if (existing.includes(String(payload.changeId))) {
+        return jsonResponse({ ok: true, duplicate: true });
+      }
+
+      sheet.appendRow([
+        payload.timestamp,
+        payload.changeId,
+        payload.projectOwner,
+        payload.store,
+        payload.packageName,
+        payload.version,
+        payload.action,
+        payload.promotionType,
+        payload.startDate,
+        payload.endDate,
+        payload.shopeeSku,
+        payload.lazadaSku,
+        payload.tiktokSku,
+        payload.addedComponents,
+        payload.removedComponents,
+        payload.currentComponents,
+        payload.changedBy,
+        "Synced",
+      ]);
+      return jsonResponse({ ok: true });
+    } finally {
+      lock.releaseLock();
+    }
   } catch (error) {
     return jsonResponse({ ok: false, error: String(error) });
   }
