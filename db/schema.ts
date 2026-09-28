@@ -121,14 +121,15 @@ export const packages = pgTable("packages", {
   packageSku:text("package_sku").notNull(), name:text("name").notNull(), channel:text("channel").notNull().default("Shopee"),
   market:text("market").notNull().default("MY"), status:text("status", { enum:["draft","review","approved","scheduled","active","expired"] }).notNull().default("draft"),
   createdBy:text("created_by").notNull(), createdAt:createdAt(), updatedAt:timestamp("updated_at", { withTimezone:true, mode:"string" }).notNull().defaultNow(),
-}, table=>[uniqueIndex("package_sku_store_idx").on(table.storeId,table.packageSku),index("packages_tenant_id_idx").on(table.tenantId)]);
+  deletedAt:timestamp("deleted_at", { withTimezone:true, mode:"string" }), deletedBy:text("deleted_by"),
+}, table=>[uniqueIndex("package_sku_store_idx").on(table.storeId,table.packageSku).where(sql`${table.deletedAt} is null`),index("packages_tenant_id_idx").on(table.tenantId)]);
 
 type Component={inventorySku:string;name:string;quantity:number;kind:"product"|"gift"};
 export const packageVersions = pgTable("package_versions", {
   id:text("id").primaryKey(), packageId:text("package_id").notNull().references(()=>packages.id), version:integer("version").notNull(),
   components:jsonb("components").$type<Component[]>().notNull(), promotionType:text("promotion_type", { enum:["monthly","custom"] }).notNull().default("monthly"),
   addedComponents:jsonb("added_components").$type<Component[]>().notNull().default([]), removedComponents:jsonb("removed_components").$type<Component[]>().notNull().default([]),
-  sheetSyncStatus:text("sheet_sync_status", { enum:["pending","synced","failed"] }).notNull().default("pending"), calculatorSettings:jsonb("calculator_settings").$type<Record<string,unknown>|null>(),
+  sheetSyncStatus:text("sheet_sync_status", { enum:["not_sent","pending","synced","failed"] }).notNull().default("not_sent"), calculatorSettings:jsonb("calculator_settings").$type<Record<string,unknown>|null>(),
   changeNote:text("change_note").notNull().default("Initial version"), effectiveFrom:date("effective_from", { mode:"string" }).notNull(), effectiveTo:date("effective_to", { mode:"string" }),
   createdBy:text("created_by").notNull(), createdAt:createdAt(),
 }, table=>[uniqueIndex("package_version_idx").on(table.packageId,table.version)]);

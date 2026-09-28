@@ -20,13 +20,13 @@ type CalculatorHistorySettings = CalculatorSnapshot | { scenarios:CalculatorSnap
 type HistoryLine = {
   version:number; changeNote:string; promotionType:"monthly"|"custom"; effectiveFrom:string; effectiveTo?:string|null;
   addedComponents?:ComponentLine[]; removedComponents?:ComponentLine[]; platforms?:PlatformLine[];
-  sheetSyncStatus?:"pending"|"synced"|"failed"; createdAt:string; createdBy:string;
+  sheetSyncStatus?:"not_sent"|"pending"|"synced"|"failed"; createdAt:string; createdBy:string;
   calculatorSettings?:CalculatorHistorySettings|null;
 };
 type PackageItem = {
   id:string; storeId:string; storeName?:string; packageSku:string; name:string; market:string; status:string; version:number;
   promotionType:"monthly"|"custom"; originalPrice:number; sellingPrice:number; effectiveFrom:string; effectiveTo?:string|null;
-  components:ComponentLine[]; platforms:PlatformLine[]; sheetSyncStatus?:"pending"|"synced"|"failed"; history?:HistoryLine[];
+  components:ComponentLine[]; platforms:PlatformLine[]; sheetSyncStatus?:"not_sent"|"pending"|"synced"|"failed"; history?:HistoryLine[];
   priceSchedules?:PriceSchedule[];
 };
 type Props = { storeId:string; storeName:string; canCreate?:boolean; prefills?:PackagePrefill[]; standaloneCreate?:boolean; onPrefillsAccepted?:()=>void };
@@ -36,7 +36,7 @@ const HISTORY_SHEET_URL = "https://docs.google.com/spreadsheets/d/1mpB7KVCGzP_9I
 const blankLine = ():ComponentLine => ({ inventorySku:"", name:"", quantity:1, kind:"product" });
 const blankPeriod = () => ({ promotionType:"monthly" as "monthly"|"custom", promotionMonth:"", effectiveFrom:"", effectiveTo:"" });
 const blankForm = () => ({
-  name:"", status:"draft", markets:["MY"] as MarketName[],
+  name:"", markets:["MY"] as MarketName[],
   samePricing:false,
   nonCampaign:blankPeriod(), campaign:{...blankPeriod(),promotionType:"custom" as const,campaignEvents:["dday"] as CampaignEvent[]},
   prices:{
@@ -73,6 +73,7 @@ function campaignEventForDates(from:string,to:string):CampaignEvent {
 export function PackageControl({ storeId, storeName, canCreate=true, prefills=[], standaloneCreate=false, onPrefillsAccepted }:Props) {
   const [items,setItems] = useState<PackageItem[]>([]);
   const [source,setSource] = useState("");
+  const [canDelete,setCanDelete] = useState(false);
   const [filter,setFilter] = useState("all");
   const [search,setSearch] = useState("");
   const [showCreate,setShowCreate] = useState(false);
@@ -99,16 +100,19 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     if (!hasPackageScope) {
       setItems([]);
       setSource("store-selection-required");
+      setCanDelete(false);
       return;
     }
     setItems([]);
     setSource("");
+    setCanDelete(false);
     const response = await fetch(`/api/packages?storeId=${encodeURIComponent(storeId)}`,{cache:"no-store"});
     if (sequence!==loadSequence.current) return;
     if (response.ok) {
       const data=await response.json();
       setItems(data.packages ?? []);
       setSource(data.source ?? "");
+      setCanDelete(data.canDelete === true);
     }
   }
   useEffect(()=>{ load(); },[storeId]);
@@ -288,7 +292,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     return errors.length===0;
   }
 
-  async function save() {
+  async function save(mode:"draft"|"publish") {
     if (!validateForm()) return;
     setSaving(true);
     setMessage("");
@@ -297,19 +301,27 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       const response = await fetch("/api/packages",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({name:form.name,status:form.status,markets:form.markets,changeNote:form.changeNote,
+        body:JSON.stringify({name:form.name,mode,markets:form.markets,changeNote:form.changeNote,
           priceSchedules:priceSchedules(),storeId:editingStore?.id??storeId,storeName:editingStore?.name??storeName,components,platforms,packageId:editingPackageId,
           calculatorSettings:calculatorSettings?{scenarios:prefillBatch.filter(item=>item.name===form.name).map(item=>item.calculatorSettings)}:null}),
       });
       const data = await response.json().catch(()=>null);
       if (!response.ok) {
+        if(data?.savedAsDraft){
+          setMessageType("warning");
+          setMessage(data.error);
+          await load();
+          setShowCreate(false);
+          resetForm();
+          return;
+        }
         const apiErrors=Array.isArray(data?.errors)?data.errors.filter((error:unknown):error is FormError=>Boolean(error&&typeof error==="object"&&"section" in error&&"message" in error)):
           [{section:(data?.section??"Saving") as FormSection,message:data?.error??`We could not save the package (error ${response.status}). Please try again.`}];
         setFormErrors(apiErrors.length?apiErrors:[{section:"Saving",message:"We could not save the package. Please try again."}]);
         return;
       }
-      setMessageType(data.sheetSyncStatus==="synced"?"success":"warning");
-      setMessage(`Version ${data.version} saved · ${data.added.length} added / ${data.removed.length} removed · Google Sheet ${data.sheetSyncStatus}`);
+      setMessageType("success");
+      setMessage(mode==="draft"?`Draft saved · Version ${data.version} · not sent to Google Sheet`:`Package created · Version ${data.version} · Google Sheet synced`);
       await load();
       const next = prefillQueue[0];
       if (next) {
@@ -330,6 +342,31 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     } finally {
       setSaving(false);
     }
+  }
+
+  async function publishDraft(item:PackageItem) {
+    setSaving(true);setMessage("");
+    try {
+      const response=await fetch("/api/packages",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publish",packageId:item.id})});
+      const data=await response.json();
+      setMessageType(response.ok?"success":"error");
+      setMessage(response.ok?`${item.name} created · Google Sheet synced`:data.error??"Could not create the package.");
+      await load();
+    }catch{setMessageType("error");setMessage("Could not reach the server. Try again.");}
+    finally{setSaving(false);}
+  }
+
+  async function deletePackage(item:PackageItem) {
+    if(!window.confirm(`Remove ${item.name} from Packages & Pricing? Its versions and audit history will be retained.`))return;
+    setSaving(true);setMessage("");
+    try {
+      const response=await fetch("/api/packages",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({packageId:item.id})});
+      const data=await response.json();
+      setMessageType(response.ok?"success":"error");
+      setMessage(response.ok?`${item.name} removed. Its history is retained.`:data.error??"Could not remove the package.");
+      if(response.ok)await load();
+    }catch{setMessageType("error");setMessage("Could not reach the server. Try again.");}
+    finally{setSaving(false);}
   }
 
   function startVersion(item:PackageItem) {
@@ -358,7 +395,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     setEditingPackageId(stored ? item.id : null);
     setEditingStore({id:item.storeId,name:item.storeName??storeName});
     setForm({
-      name:item.name,status:"draft",markets,samePricing,
+      name:item.name,markets,samePricing,
       nonCampaign:{promotionType:nc.promotionType,promotionMonth:nc.promotionType==="monthly"?nc.effectiveFrom.slice(0,7):"",effectiveFrom:nc.effectiveFrom,effectiveTo:nc.effectiveTo},
       campaign:{promotionType:"custom",promotionMonth:campaign.effectiveFrom.slice(0,7),campaignEvents:[...new Set(schedules.filter(line=>line.priceType==="campaign").map(line=>campaignEventForDates(line.effectiveFrom,line.effectiveTo)))],effectiveFrom:campaign.effectiveFrom,effectiveTo:campaign.effectiveTo},
       prices:{MY:{nonCampaignOriginal:String(priceFor("MY","non_campaign")?.originalPrice??""),nonCampaignSelling:String(priceFor("MY","non_campaign")?.sellingPrice??""),campaignOriginal:String(priceFor("MY","campaign")?.originalPrice??""),campaignSelling:String(priceFor("MY","campaign")?.sellingPrice??"")},SG:{nonCampaignOriginal:String(priceFor("SG","non_campaign")?.originalPrice??""),nonCampaignSelling:String(priceFor("SG","non_campaign")?.sellingPrice??""),campaignOriginal:String(priceFor("SG","campaign")?.originalPrice??""),campaignSelling:String(priceFor("SG","campaign")?.sellingPrice??"")}},
@@ -396,7 +433,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
 
     <div className="package-list">{visible.map(item=><article className="package-card" key={item.id}>
       <div className="package-card-head">
-        <div><span className={`package-status ${item.status}`}>{item.status}</span><span className={`sync-status ${item.sheetSyncStatus ?? "pending"}`}>Sheet {item.sheetSyncStatus ?? "preview"}</span><h3>{item.name}</h3></div>
+        <div><span className={`package-status ${item.status}`}>{item.status}</span><span className={`sync-status ${item.status==="draft"?"not_sent":item.sheetSyncStatus ?? "pending"}`}>Sheet {item.status==="draft"?"not sent":item.sheetSyncStatus ?? "preview"}</span><h3>{item.name}</h3></div>
         <div className="package-price"><small>{item.market}</small><del>{money(item.originalPrice,item.market,source==="database")}</del><strong>{money(item.sellingPrice,item.market,source==="database")}</strong></div>
       </div>
       {item.priceSchedules?.length?<div className="package-schedule-summary">{item.priceSchedules.map(line=><div key={`${line.market}-${line.priceType}`}><span>{line.market} · {line.priceType==="campaign"?"Campaign":"Non-Campaign"}</span><b>{money(line.sellingPrice,line.market)}</b><small>{line.effectiveFrom} → {line.effectiveTo}</small></div>)}</div>:null}
@@ -410,7 +447,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         <div className="history-diff"><span className="added">+ {(line.addedComponents ?? []).map(lineText).join(", ") || "No Additions"}</span><span className="removed">− {(line.removedComponents ?? []).map(lineText).join(", ") || "No Removals"}</span></div>
         {line.calculatorSettings&&<div className="calculator-history"><b>Calculator Snapshot</b>{calculatorSnapshots(line.calculatorSettings).map(snapshot=><div key={snapshot.serviceScenario}><strong>{snapshot.serviceScenario}</strong><span>{snapshot.category}</span>{snapshot.pricingGoal?<span>Goal · {snapshot.pricingGoal==="facebookPayout"?"Match Meta Order Income":snapshot.pricingGoal==="sameCustomerPrice"?"Match Meta Buyer Payment":`Lower Than Meta by ${snapshot.discountUnit==="rm"?money(snapshot.discountValue??0,"MY"):`${(snapshot.discountValue??0).toFixed(2)}%`}`}</span>:null}<span>Meta {money(snapshot.facebookPrice,"MY")} → Shopee {money(snapshot.suggestedShopeePrice,"MY")}</span>{snapshot.mainProductQuantity?<span>Main Product Qty {snapshot.mainProductQuantity} · Meta Price Per Unit {snapshot.facebookPricePerUnit==null?"—":money(snapshot.facebookPricePerUnit,"MY")} · Buyer Price Per Unit {snapshot.customerPricePerUnit==null?"—":money(snapshot.customerPricePerUnit,"MY")}</span>:null}<span>Commission {snapshot.commissionRate.toFixed(2)}% · Service {snapshot.serviceRate.toFixed(2)}% · Payout {money(snapshot.actualPayout,"MY")}</span></div>)}</div>}
       </div>)}</div>}
-      <div className="package-card-foot"><span>{item.components.length} Inventory SKU Lines</span><button onClick={()=>setOpenHistory(openHistory===item.id?null:item.id)}>{openHistory===item.id?"Hide History":"View History"}</button><button onClick={()=>startVersion(item)}>{source==="database"?"New Version":"Migrate & Edit"}</button></div>
+      <div className="package-card-foot"><span>{item.components.length} Inventory SKU Lines</span><button onClick={()=>setOpenHistory(openHistory===item.id?null:item.id)}>{openHistory===item.id?"Hide History":"View History"}</button>{item.status==="draft"&&source==="database"&&<button onClick={()=>publishDraft(item)} disabled={saving}>Create Package</button>}<button onClick={()=>startVersion(item)}>{source==="database"?"New Version":"Migrate & Edit"}</button>{canDelete&&source==="database"&&<button onClick={()=>deletePackage(item)} disabled={saving} className="package-delete">Delete Package</button>}</div>
     </article>)}</div>
     {!visible.length&&<div className="package-empty"><strong>{!hasPackageScope?"Select a Store":allStoresSelected?"No Packages In Accessible Stores":"No Packages In This View"}</strong><span>{!hasPackageScope?"Package information will appear after you choose a store.":allStoresSelected?"Only packages from stores you have permission to access appear here.":"Choose another filter or create the first package."}</span></div>}
 
@@ -472,7 +509,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       </section>
 
       <label className="change-note">Change Note<input value={form.changeNote} onChange={event=>setForm({...form,changeNote:event.target.value})} placeholder="What changed and why?"/></label>
-      <div className="form-actions"><button className="secondary" onClick={closeCreate}>Cancel</button><button onClick={save} disabled={saving}>{saving?"Saving…":prefillQueue.length?`Create & Continue (${prefillQueue.length} More)`:editingPackageId?"Save New Version":"Create Package"}</button></div>
+      <div className="form-actions"><button className="secondary" onClick={closeCreate}>Cancel</button>{!editingPackageId&&<button className="secondary" onClick={()=>save("draft")} disabled={saving}>Save Draft</button>}<button onClick={()=>save("publish")} disabled={saving}>{saving?"Saving…":prefillQueue.length?`Create & Continue (${prefillQueue.length} More)`:editingPackageId?"Create New Version":"Create Package"}</button></div>
     </div></div>}
   </div>;
 }

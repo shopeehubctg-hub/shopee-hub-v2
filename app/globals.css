@@ -359,3 +359,6 @@ body{background:var(--paper);color:var(--ink)}
 .live-overlap p{margin:6px 0}.live-overlap ul{padding-left:18px;margin:10px 0 0;display:grid;gap:10px}.live-overlap li span{display:block;font-size:12px;line-height:1.5}.live-overlap li b{font-size:13px}
 .live-calendar button:focus-visible,.live-calendar input:focus-visible,.live-calendar select:focus-visible,.live-calendar textarea:focus-visible{outline:2px solid var(--navy);outline-offset:3px}
 .live-period{flex-wrap:wrap}.live-period strong{font-size:13px}.live-modal h3{font-size:22px;font-weight:750}.live-header{flex-wrap:wrap}.live-primary{font-size:13px}
+.sync-status.not_sent{background:#edf0f3;color:#68747e}
+.package-card-foot .package-delete{color:#a12a2e}
+.package-card-foot button:disabled{opacity:.55;cursor:not-allowed}

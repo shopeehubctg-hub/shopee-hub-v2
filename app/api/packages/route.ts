@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { getDb } from "../../../db";
 import {
   customerUsers,
@@ -156,6 +156,22 @@ async function syncHistoryToGoogleSheet(payload: Record<string, unknown>) {
   }
 }
 
+function historyWebhookConfigured() {
+  return Boolean(process.env.GOOGLE_SHEETS_HISTORY_WEBHOOK_URL && process.env.GOOGLE_SHEETS_HISTORY_SECRET);
+}
+
+function publishedStatus(periods:Array<{effectiveFrom:string;effectiveTo:string}>,today:string) {
+  if (periods.some(period=>period.effectiveFrom<=today&&period.effectiveTo>=today)) return "active" as const;
+  if (periods.some(period=>period.effectiveFrom>today)) return "scheduled" as const;
+  return "expired" as const;
+}
+
+function marketToday() {
+  const parts=new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Kuala_Lumpur",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
+  const value=(type:string)=>parts.find(part=>part.type===type)?.value??"";
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
+
 export async function GET(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error:"Authentication required" }, { status:401 });
@@ -165,7 +181,7 @@ export async function GET(request: Request) {
   const db = await getDb();
   if (!await canAccessModule(db, membership, "packages")) return Response.json({ error:"Packages & Pricing is not enabled for this account" }, { status:403 });
   if (!storeId) {
-    return Response.json({ packages:[], source:"store-selection-required", canCreate:false }, { headers:{ "Cache-Control":"private, no-store" } });
+    return Response.json({ packages:[], source:"store-selection-required", canCreate:false, canDelete:false }, { headers:{ "Cache-Control":"private, no-store" } });
   }
   const tenantStores = await db.select({ id:stores.id, name:stores.name }).from(stores)
     .where(eq(stores.tenantId, membership.tenantId));
@@ -182,18 +198,20 @@ export async function GET(request: Request) {
     : accessibleStores.filter(store => store.id === storeId);
   if (storeId !== "all" && !scopedStores.length) return Response.json({ error:"Store access denied" }, { status:403 });
   if (!scopedStores.length) {
-    return Response.json({ packages:[], source:"database", canCreate:false }, { headers:{ "Cache-Control":"private, no-store" } });
+    return Response.json({ packages:[], source:"database", canCreate:false, canDelete:false }, { headers:{ "Cache-Control":"private, no-store" } });
   }
   const scopedStoreIds = scopedStores.map(store => store.id);
   const storeNames = new Map(scopedStores.map(store => [store.id, store.name]));
-  const rows = await db.select().from(packages)
+  const allRows = await db.select().from(packages)
     .where(and(eq(packages.tenantId, membership.tenantId), inArray(packages.storeId, scopedStoreIds)))
     .orderBy(desc(packages.updatedAt));
+  const rows=allRows.filter(row=>row.deletedAt===null);
   if (!rows.length) {
+    if(allRows.length)return Response.json({packages:[],source:"database",canCreate:storeId!=="all",canDelete:membership.role==="superadmin"},{headers:{"Cache-Control":"private, no-store"}});
     const sample = seedPackages
       .filter(item => scopedStoreIds.includes(item.storeId))
       .map(item => ({ ...item, storeName:storeNames.get(item.storeId) ?? "Accessible Store" }));
-    return Response.json({ packages:sample, source:"sheet-migration-preview", canCreate:storeId !== "all" }, { headers:{ "Cache-Control":"private, no-store" } });
+    return Response.json({ packages:sample, source:"sheet-migration-preview", canCreate:storeId !== "all", canDelete:false }, { headers:{ "Cache-Control":"private, no-store" } });
   }
   const ids = rows.map(row => row.id);
   const versions = await db.select().from(packageVersions).where(inArray(packageVersions.packageId, ids)).orderBy(desc(packageVersions.version));
@@ -209,6 +227,9 @@ export async function GET(request: Request) {
       const currentPlatforms = version ? platformRows.filter(item => item.versionId === version.id).map(({ platform, packageSku }) => ({ platform, packageSku })) : [];
       return {
         ...row,
+        status:["active","scheduled","expired"].includes(row.status)
+          ? publishedStatus(versionPrices.map(item=>({effectiveFrom:item.effectiveFrom,effectiveTo:item.effectiveTo??item.effectiveFrom})),marketToday())
+          : row.status,
         storeName:storeNames.get(row.storeId) ?? "Accessible Store",
         packageSku:currentPlatforms[0]?.packageSku ?? row.packageSku,
         platforms:currentPlatforms,
@@ -257,6 +278,7 @@ export async function GET(request: Request) {
     }),
     source:"database",
     canCreate:storeId !== "all",
+    canDelete:membership.role === "superadmin",
   });
 }
 
@@ -268,6 +290,7 @@ async function savePackage(request: Request) {
   const accessDb = await getDb();
   if (!await canAccessModule(accessDb, membership, "packages")) return packageError("Saving","Packages & Pricing is not enabled for your account. Contact an administrator.",403);
   const body = await request.json() as {
+    mode?: "draft" | "publish";
     packageId?: string;
     storeId?: string;
     storeName?: string;
@@ -285,6 +308,9 @@ async function savePackage(request: Request) {
     calculatorSettings?: Record<string, unknown> | null;
     priceSchedules?: PriceScheduleInput[];
   };
+  const mode = body.mode ?? "draft";
+  if (mode!=="draft"&&mode!=="publish") return packageError("Saving","Choose Create Package or Save Draft.");
+  if (mode==="publish"&&!historyWebhookConfigured()) return packageError("Saving","Package History Google Sheet is not connected. Save a draft or ask the administrator to connect the Sheet before creating the package.",503);
   const platforms = (body.platforms ?? []).map(item => ({ platform:item.platform, packageSku:String(item.packageSku ?? "").trim() }));
   if (!body.storeId || !body.name?.trim() || !Array.isArray(body.components) || !body.components.length || !platforms.length) {
     return packageError("Package Details","Complete the store, package name and at least one sales platform before saving.");
@@ -327,14 +353,16 @@ async function savePackage(request: Request) {
 
   const db = await getDb();
   const requestedPackageId = body.packageId ? String(body.packageId) : null;
+  if(requestedPackageId&&mode==="draft")return packageError("Saving","Save Draft is available when creating a new package. Publish an existing package version instead.");
   const [packageSkuConflict] = await db.select({ id:packages.id }).from(packages)
-    .where(and(eq(packages.storeId,body.storeId),eq(packages.packageSku,platforms[0].packageSku))).limit(1);
+    .where(and(eq(packages.storeId,body.storeId),eq(packages.packageSku,platforms[0].packageSku),isNull(packages.deletedAt))).limit(1);
   if (packageSkuConflict && (!requestedPackageId || packageSkuConflict.id!==requestedPackageId)) {
     return packageError("Package Details",`Listing SKU ${platforms[0].packageSku} is already used by another package in this store. Enter a different SKU.`,409);
   }
   for (const line of platforms) {
     const conflict = await db.select({ packageId:packagePlatformSkus.packageId }).from(packagePlatformSkus)
-      .where(and(eq(packagePlatformSkus.storeId, body.storeId), eq(packagePlatformSkus.platform, line.platform), eq(packagePlatformSkus.packageSku, line.packageSku)))
+      .innerJoin(packages, eq(packages.id,packagePlatformSkus.packageId))
+      .where(and(eq(packagePlatformSkus.storeId, body.storeId), eq(packagePlatformSkus.platform, line.platform), eq(packagePlatformSkus.packageSku, line.packageSku),isNull(packages.deletedAt)))
       .limit(1);
     if (conflict[0] && (!requestedPackageId || conflict[0].packageId !== requestedPackageId)) {
       return packageError("Package Details",`${line.platform} listing SKU ${line.packageSku} is already used by another package in this store. Enter a different SKU.`,409);
@@ -348,7 +376,7 @@ async function savePackage(request: Request) {
   let previousComponents: ComponentLine[] = [];
   if (requestedPackageId) {
     const [existing] = await db.select().from(packages)
-      .where(and(eq(packages.id, requestedPackageId), eq(packages.tenantId, membership.tenantId))).limit(1);
+      .where(and(eq(packages.id, requestedPackageId), eq(packages.tenantId, membership.tenantId),isNull(packages.deletedAt))).limit(1);
     if (!existing) return packageError("Saving","This package no longer exists. Refresh the page and try again.",404);
     if (existing.storeId !== body.storeId || !await canAccessStore(db,membership,existing.storeId)) {
       return packageError("Package Details","You no longer have permission to edit packages for this store.",403);
@@ -365,7 +393,7 @@ async function savePackage(request: Request) {
       await tx.update(packages).set({
         name:body.name!.trim(),
         market:markets.join(","),
-        status:body.status ?? "draft",
+        status:"draft",
         updatedAt:now,
       }).where(eq(packages.id, requestedPackageId));
     } else {
@@ -377,7 +405,7 @@ async function savePackage(request: Request) {
         name:body.name!.trim(),
         channel:platforms.map(item => item.platform).join(", "),
         market:markets.join(","),
-        status:body.status ?? "draft",
+        status:"draft",
         createdBy:user.email,
         updatedAt:now,
       });
@@ -390,7 +418,7 @@ async function savePackage(request: Request) {
       promotionType:schedules.find(item=>item.priceType==="campaign")?.promotionType ?? "monthly",
       addedComponents:diff.added,
       removedComponents:diff.removed,
-      sheetSyncStatus:"pending",
+      sheetSyncStatus:mode==="draft"?"not_sent":"pending",
       calculatorSettings:body.calculatorSettings ?? null,
       changeNote:body.changeNote?.trim() || (nextVersion === 1 ? "Initial version" : `Version ${nextVersion}`),
       effectiveFrom:schedules.find(item=>item.priceType==="campaign")!.effectiveFrom,
@@ -412,6 +440,8 @@ async function savePackage(request: Request) {
       actor:user.email,
     });
   });
+
+  if (mode==="draft") return Response.json({ok:true,packageId,version:nextVersion,status:"draft",sheetSyncStatus:"not_sent",added:diff.added,removed:diff.removed},{status:201});
 
   const platformMap = Object.fromEntries(["Shopee","Lazada","TikTok Shop"].map(platform=>[platform,platforms.filter(item=>item.platform===platform).map(item=>item.packageSku).join(" | ")]));
   const changeId = `${packageId}-v${nextVersion}`;
@@ -436,6 +466,9 @@ async function savePackage(request: Request) {
     syncStatus:"Synced",
   });
   await db.update(packageVersions).set({ sheetSyncStatus:sync.status }).where(eq(packageVersions.id, versionId));
+  if (sync.status!=="synced") return Response.json({ok:false,savedAsDraft:true,packageId,version:nextVersion,error:`Package saved as a draft because Google Sheet sync failed: ${sync.reason}. Retry Create from the draft card.`},{status:503});
+  const status=publishedStatus(schedules,marketToday());
+  await db.update(packages).set({status,updatedAt:new Date().toISOString()}).where(eq(packages.id,packageId));
 
   return Response.json({
     ok:true,
@@ -444,6 +477,7 @@ async function savePackage(request: Request) {
     added:diff.added,
     removed:diff.removed,
     sheetSyncStatus:sync.status,
+    status,
     sheetSyncReason:"reason" in sync ? sync.reason : null,
     historySheetUrl:"https://docs.google.com/spreadsheets/d/1mpB7KVCGzP_9IXYVbhJZsLsndM4ladU3cJre5cfALAA/edit#gid=2129880014",
   }, { status:201 });
@@ -455,4 +489,73 @@ export async function POST(request:Request) {
   } catch (error) {
     return saveFailure(error);
   }
+}
+
+export async function PATCH(request:Request) {
+  try {
+    const user=await getChatGPTUser();
+    if(!user)return packageError("Saving","Sign in again to publish this package.",401);
+    const membership=await membershipFor(user.email);
+    if(!membership?.active)return packageError("Saving","Your account cannot publish packages.",403);
+    const db=await getDb();
+    if(!await canAccessModule(db,membership,"packages"))return packageError("Saving","Packages & Pricing is not enabled for this account.",403);
+    const body=await request.json().catch(()=>null) as {packageId?:unknown;action?:unknown}|null;
+    if(body?.action!=="publish"||typeof body.packageId!=="string")return packageError("Saving","Choose a draft package to publish.");
+    if(!historyWebhookConfigured())return packageError("Saving","Package History Google Sheet is not connected. The draft was not published.",503);
+    const [item]=await db.select().from(packages).where(and(eq(packages.id,body.packageId),eq(packages.tenantId,membership.tenantId),isNull(packages.deletedAt))).limit(1);
+    if(!item||!await canAccessStore(db,membership,item.storeId))return packageError("Saving","Package not found or store access denied.",404);
+    if(item.status!=="draft"&&item.status!=="review")return packageError("Saving","Only a draft package can be published.",409);
+    const [version]=await db.select().from(packageVersions).where(eq(packageVersions.packageId,item.id)).orderBy(desc(packageVersions.version)).limit(1);
+    if(!version)return packageError("Saving","This package has no saved version.",409);
+    const [priceRows,skuRows,storeRows]=await Promise.all([
+      db.select().from(packagePrices).where(eq(packagePrices.versionId,version.id)),
+      db.select().from(packagePlatformSkus).where(eq(packagePlatformSkus.versionId,version.id)),
+      db.select({name:stores.name}).from(stores).where(eq(stores.id,item.storeId)).limit(1),
+    ]);
+    const platformMap=Object.fromEntries(["Shopee","Lazada","TikTok Shop"].map(platform=>[platform,skuRows.filter(row=>row.platform===platform).map(row=>row.packageSku).join(" | ")]));
+    const priceType=(value:string)=>value==="campaign"?"Campaign":"Non-Campaign";
+    const sync=await syncHistoryToGoogleSheet({
+      timestamp:new Date().toISOString(),changeId:`${item.id}-v${version.version}`,
+      projectOwner:user.fullName??user.email,store:storeRows[0]?.name??item.storeId,packageName:item.name,version:version.version,
+      action:version.version===1?"Created":"Version Updated",
+      promotionType:priceRows.map(row=>`${row.market} ${priceType(row.priceType)}: ${row.promotionType==="custom"?"Custom":"Monthly"}`).join(" | "),
+      startDate:priceRows.filter(row=>row.market===item.market.split(",")[0]).map(row=>`${priceType(row.priceType)} ${row.effectiveFrom}`).join(" | "),
+      endDate:priceRows.filter(row=>row.market===item.market.split(",")[0]).map(row=>`${priceType(row.priceType)} ${row.effectiveTo}`).join(" | "),
+      shopeeSku:platformMap.Shopee??"",lazadaSku:platformMap.Lazada??"",tiktokSku:platformMap["TikTok Shop"]??"",
+      addedComponents:formatComponents(version.addedComponents),removedComponents:formatComponents(version.removedComponents),
+      currentComponents:formatComponents(version.components),changedBy:user.email,syncStatus:"Synced",
+    });
+    if(sync.status!=="synced"){
+      await db.update(packageVersions).set({sheetSyncStatus:sync.status}).where(eq(packageVersions.id,version.id));
+      return packageError("Saving",`Google Sheet sync failed: ${sync.reason}. The package remains a draft.`,503);
+    }
+    const status=publishedStatus(priceRows.map(row=>({effectiveFrom:row.effectiveFrom,effectiveTo:row.effectiveTo??row.effectiveFrom})),marketToday());
+    await db.transaction(async tx=>{
+      await tx.update(packageVersions).set({sheetSyncStatus:"synced"}).where(eq(packageVersions.id,version.id));
+      await tx.update(packages).set({status,updatedAt:new Date().toISOString()}).where(and(eq(packages.id,item.id),isNull(packages.deletedAt)));
+      await tx.insert(packageAuditLog).values({packageId:item.id,action:"published",detail:`Version ${version.version} published to Package History`,actor:user.email});
+    });
+    return Response.json({ok:true,packageId:item.id,status,sheetSyncStatus:"synced"});
+  }catch(error){return saveFailure(error);}
+}
+
+export async function DELETE(request:Request) {
+  try {
+    const user=await getChatGPTUser();
+    if(!user)return Response.json({error:"Authentication required"},{status:401});
+    const membership=await membershipFor(user.email);
+    if(!membership?.active||membership.role!=="superadmin")return Response.json({error:"Super Admin access required"},{status:403});
+    const db=await getDb();
+    if(!await canAccessModule(db,membership,"packages"))return Response.json({error:"Packages & Pricing is not enabled"},{status:403});
+    const body=await request.json().catch(()=>null) as {packageId?:unknown}|null;
+    if(typeof body?.packageId!=="string")return Response.json({error:"Package ID required"},{status:400});
+    const [item]=await db.select().from(packages).where(and(eq(packages.id,body.packageId),eq(packages.tenantId,membership.tenantId),isNull(packages.deletedAt))).limit(1);
+    if(!item||!await canAccessStore(db,membership,item.storeId))return Response.json({error:"Package not found"},{status:404});
+    const now=new Date().toISOString();
+    await db.transaction(async tx=>{
+      await tx.update(packages).set({deletedAt:now,deletedBy:user.email,updatedAt:now}).where(and(eq(packages.id,item.id),isNull(packages.deletedAt)));
+      await tx.insert(packageAuditLog).values({packageId:item.id,action:"deleted",detail:`Package ${item.name} removed from active listings; versions retained`,actor:user.email});
+    });
+    return Response.json({ok:true,packageId:item.id});
+  }catch(error){return saveFailure(error);}
 }
