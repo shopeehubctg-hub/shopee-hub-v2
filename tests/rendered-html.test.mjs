@@ -345,7 +345,7 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(packageControl, /standaloneCreate/);
   assert.match(packageControl, /Calculator Settings Attached/);
   assert.match(packageControl, /Calculator Snapshot/);
-  assert.match(packageRoute, /calculatorSettings:body\.calculatorSettings/);
+  assert.match(packageRoute, /calculatorSettings:\{\.\.\.\(body\.calculatorSettings \?\? \{\}\),_packageMetadata:metadata\}/);
   assert.match(schema, /calculatorSettings/);
   assert.match(migration, /calculator_settings/);
 });
