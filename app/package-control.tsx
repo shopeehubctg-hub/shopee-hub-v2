@@ -92,6 +92,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   const [calculatorSettings,setCalculatorSettings] = useState<CalculatorSnapshot|null>(null);
   const [prefillQueue,setPrefillQueue] = useState<PackagePrefill[][]>([]);
   const [prefillBatch,setPrefillBatch] = useState<PackagePrefill[]>([]);
+  const createRequestId=useRef<string>("");
   const loadSequence=useRef(0);
   const hasPackageScope=Boolean(storeId);
   const hasSelectedStore=Boolean(storeId&&storeId!=="all");
@@ -159,6 +160,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   const drafts = items.filter(item=>item.status==="draft"||item.status==="review").length;
 
   function resetForm() {
+    createRequestId.current=crypto.randomUUID();
     setEditingPackageId(null);
     setEditingDraft(false);
     setEditingStore(null);
@@ -304,7 +306,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       const response = await fetch("/api/packages",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({name:form.name,mode,markets:form.markets,changeNote:form.changeNote,
+        body:JSON.stringify({name:form.name,mode,clientRequestId:editingPackageId?undefined:(createRequestId.current ||= crypto.randomUUID()),markets:form.markets,changeNote:form.changeNote,
           priceSchedules:priceSchedules(),storeId:editingStore?.id??storeId,storeName:editingStore?.name??storeName,components,platforms,packageId:editingPackageId,
           calculatorSettings:calculatorSettings?{scenarios:prefillBatch.filter(item=>item.name===form.name).map(item=>item.calculatorSettings)}:null}),
       });

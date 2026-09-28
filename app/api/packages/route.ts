@@ -312,6 +312,7 @@ async function savePackage(request: Request) {
   if (!await canAccessModule(accessDb, membership, "packages")) return packageError("Saving","Packages & Pricing is not enabled for your account. Contact an administrator.",403);
   const body = await request.json() as {
     mode?: "draft" | "publish";
+    clientRequestId?: string;
     packageId?: string;
     storeId?: string;
     storeName?: string;
@@ -374,6 +375,22 @@ async function savePackage(request: Request) {
 
   const db = await getDb();
   const requestedPackageId = body.packageId ? String(body.packageId) : null;
+  const clientRequestId=!requestedPackageId ? body.clientRequestId : undefined;
+  if(clientRequestId!==undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clientRequestId))
+    return packageError("Saving","Invalid package request. Refresh the form and try again.");
+  if(clientRequestId){
+    const [prior]=await db.select().from(packages).where(eq(packages.id,clientRequestId)).limit(1);
+    if(prior){
+      if(prior.deletedAt || prior.tenantId!==membership.tenantId || prior.storeId!==body.storeId || prior.createdBy.toLowerCase()!==user.email.toLowerCase())
+        return packageError("Saving","This package request is already in use. Refresh the form and try again.",409);
+      const [priorVersion]=await db.select().from(packageVersions).where(eq(packageVersions.packageId,prior.id)).orderBy(desc(packageVersions.version)).limit(1);
+      if(!priorVersion)return packageError("Saving","This package is still being saved. Refresh the page and try again.",503);
+      if(mode==="draft" || priorVersion.sheetSyncStatus==="synced")
+        return Response.json({ok:true,packageId:prior.id,version:priorVersion.version,status:prior.status,sheetSyncStatus:priorVersion.sheetSyncStatus});
+      return Response.json({ok:false,savedAsDraft:true,packageId:prior.id,version:priorVersion.version,
+        error:"The package was saved as a draft. Refresh the list and use Create Package on its card to retry Google Sheet sync."},{status:503});
+    }
+  }
   const [packageSkuConflict] = await db.select({ id:packages.id }).from(packages)
     .where(and(eq(packages.storeId,body.storeId),eq(packages.packageSku,platforms[0].packageSku),isNull(packages.deletedAt))).limit(1);
   if (packageSkuConflict && (!requestedPackageId || packageSkuConflict.id!==requestedPackageId)) {
@@ -390,7 +407,7 @@ async function savePackage(request: Request) {
   }
 
   const now = new Date().toISOString();
-  const packageId = requestedPackageId ?? crypto.randomUUID();
+  const packageId = requestedPackageId ?? clientRequestId ?? crypto.randomUUID();
   const versionId = crypto.randomUUID();
   let nextVersion = 1;
   let previousComponents: ComponentLine[] = [];
