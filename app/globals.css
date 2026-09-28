@@ -362,3 +362,5 @@ body{background:var(--paper);color:var(--ink)}
 .sync-status.not_sent{background:#edf0f3;color:#68747e}
 .package-card-foot .package-delete{color:#a12a2e}
 .package-card-foot button:disabled{opacity:.55;cursor:not-allowed}
+.package-card-foot{flex-wrap:wrap;row-gap:9px}.package-card-foot>span{flex:1 0 100%;margin-right:0}.package-card-foot button{min-height:32px;padding:5px 7px;white-space:nowrap}
+@media(max-width:680px){.package-card-foot{justify-content:flex-start}.package-card-foot button{font-size:11px}.form-actions{flex-wrap:wrap}.form-actions button{min-height:36px}}
