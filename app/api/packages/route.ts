@@ -137,6 +137,21 @@ function formatComponents(lines: ComponentLine[]) {
   return lines.map(item => `${item.inventorySku} ${item.name} ×${item.quantity} (${item.kind})`).join(" | ");
 }
 
+type PackageMetadata = { name:string; market:string; channel:string; packageSku:string };
+function versionMetadata(settings:Record<string,unknown>|null):PackageMetadata|null {
+  const value=settings?._packageMetadata;
+  if (!value || typeof value!=="object") return null;
+  const record=value as Record<string,unknown>;
+  return typeof record.name==="string" && typeof record.market==="string" && typeof record.channel==="string" && typeof record.packageSku==="string"
+    ? record as PackageMetadata : null;
+}
+function publicCalculatorSettings(settings:Record<string,unknown>|null) {
+  if (!settings) return null;
+  const { _packageMetadata, ...visible }=settings;
+  void _packageMetadata;
+  return Object.keys(visible).length ? visible : null;
+}
+
 async function syncHistoryToGoogleSheet(payload: Record<string, unknown>) {
   const webhookUrl = process.env.GOOGLE_SHEETS_HISTORY_WEBHOOK_URL;
   const secret = process.env.GOOGLE_SHEETS_HISTORY_SECRET;
@@ -244,7 +259,9 @@ export async function GET(request: Request) {
         addedComponents:version?.addedComponents ?? [],
         removedComponents:version?.removedComponents ?? [],
         sheetSyncStatus:version?.sheetSyncStatus ?? "pending",
-        calculatorSettings:version?.calculatorSettings ?? null,
+        pendingVersion:["active","scheduled","expired"].includes(row.status) && latestVersion.get(row.id)?.version !== version?.version &&
+          ["pending","failed"].includes(latestVersion.get(row.id)?.sheetSyncStatus ?? "") ? latestVersion.get(row.id)?.version : null,
+        calculatorSettings:publicCalculatorSettings(version?.calculatorSettings ?? null),
         effectiveFrom:version?.effectiveFrom ?? price?.effectiveFrom ?? "",
         effectiveTo:version?.effectiveTo ?? price?.effectiveTo ?? null,
         originalPrice:price?.originalPrice ?? 0,
@@ -273,7 +290,7 @@ export async function GET(request: Request) {
             removedComponents:item.removedComponents,
             platforms:platformRows.filter(platformItem => platformItem.versionId === item.id).map(({ platform, packageSku }) => ({ platform, packageSku })),
             sheetSyncStatus:item.sheetSyncStatus,
-            calculatorSettings:item.calculatorSettings ?? null,
+            calculatorSettings:publicCalculatorSettings(item.calculatorSettings ?? null),
             createdAt:item.createdAt,
             createdBy:item.createdBy,
           };
@@ -357,7 +374,6 @@ async function savePackage(request: Request) {
 
   const db = await getDb();
   const requestedPackageId = body.packageId ? String(body.packageId) : null;
-  if(requestedPackageId&&mode==="draft")return packageError("Saving","Save Draft is available when creating a new package. Publish an existing package version instead.");
   const [packageSkuConflict] = await db.select({ id:packages.id }).from(packages)
     .where(and(eq(packages.storeId,body.storeId),eq(packages.packageSku,platforms[0].packageSku),isNull(packages.deletedAt))).limit(1);
   if (packageSkuConflict && (!requestedPackageId || packageSkuConflict.id!==requestedPackageId)) {
@@ -378,6 +394,7 @@ async function savePackage(request: Request) {
   const versionId = crypto.randomUUID();
   let nextVersion = 1;
   let previousComponents: ComponentLine[] = [];
+  let existingPackage:typeof packages.$inferSelect|null=null;
   if (requestedPackageId) {
     const [existing] = await db.select().from(packages)
       .where(and(eq(packages.id, requestedPackageId), eq(packages.tenantId, membership.tenantId),isNull(packages.deletedAt))).limit(1);
@@ -385,13 +402,18 @@ async function savePackage(request: Request) {
     if (existing.storeId !== body.storeId || !await canAccessStore(db,membership,existing.storeId)) {
       return packageError("Package Details","You no longer have permission to edit packages for this store.",403);
     }
+    if(mode==="draft"&&!(["draft","review"].includes(existing.status)))return packageError("Saving","Only an unpublished package can be saved as a draft.",409);
     const [latest] = await db.select().from(packageVersions)
       .where(eq(packageVersions.packageId, requestedPackageId)).orderBy(desc(packageVersions.version)).limit(1);
+    if(mode==="publish"&&latest&&["pending","failed"].includes(latest.sheetSyncStatus))
+      return packageError("Saving","Retry the unsynced version before creating another version.",409);
+    existingPackage=existing;
     nextVersion = Number(latest?.version ?? 0) + 1;
     previousComponents = latest?.components ?? [];
   }
 
   const diff = componentDiff(previousComponents, components);
+  const metadata:PackageMetadata={name:body.name.trim(),market:markets.join(","),channel:platforms.map(item=>item.platform).join(", "),packageSku:platforms[0].packageSku};
   await db.transaction(async tx => {
     if (!requestedPackageId) {
       await tx.insert(packages).values({
@@ -406,6 +428,8 @@ async function savePackage(request: Request) {
         createdBy:user.email,
         updatedAt:now,
       });
+    } else if(mode==="draft"&&existingPackage) {
+      await tx.update(packages).set({...metadata,updatedAt:now}).where(and(eq(packages.id,packageId),isNull(packages.deletedAt)));
     }
     await tx.insert(packageVersions).values({
       id:versionId,
@@ -416,7 +440,7 @@ async function savePackage(request: Request) {
       addedComponents:diff.added,
       removedComponents:diff.removed,
       sheetSyncStatus:mode==="draft"?"not_sent":"pending",
-      calculatorSettings:body.calculatorSettings ?? null,
+      calculatorSettings:{...(body.calculatorSettings ?? {}),_packageMetadata:metadata},
       changeNote:body.changeNote?.trim() || (nextVersion === 1 ? "Initial version" : `Version ${nextVersion}`),
       effectiveFrom:schedules.find(item=>item.priceType==="campaign")!.effectiveFrom,
       effectiveTo:schedules.find(item=>item.priceType==="campaign")!.effectiveTo,
@@ -462,12 +486,17 @@ async function savePackage(request: Request) {
     changedBy:user.email,
     syncStatus:"Synced",
   });
-  await db.update(packageVersions).set({ sheetSyncStatus:sync.status }).where(eq(packageVersions.id, versionId));
-  if (sync.status!=="synced") return Response.json({ok:false,savedAsDraft:!requestedPackageId,packageId,version:nextVersion,error:requestedPackageId
+  if (sync.status!=="synced") {
+    await db.update(packageVersions).set({ sheetSyncStatus:sync.status }).where(eq(packageVersions.id, versionId));
+    return Response.json({ok:false,savedAsDraft:!requestedPackageId,packageId,version:nextVersion,error:requestedPackageId
     ? `Google Sheet sync failed: ${sync.reason}. The previous published version remains visible. Retry after the Sheet connection is restored.`
     : `Package saved as a draft because Google Sheet sync failed: ${sync.reason}. Retry Create from the draft card.`},{status:503});
+  }
   const status=publishedStatus(schedules,marketToday());
-  await db.update(packages).set({name:body.name!.trim(),market:markets.join(","),status,updatedAt:new Date().toISOString()}).where(eq(packages.id,packageId));
+  await db.transaction(async tx=>{
+    await tx.update(packageVersions).set({sheetSyncStatus:"synced"}).where(eq(packageVersions.id,versionId));
+    await tx.update(packages).set({...metadata,status,updatedAt:new Date().toISOString()}).where(and(eq(packages.id,packageId),isNull(packages.deletedAt)));
+  });
 
   return Response.json({
     ok:true,
@@ -499,13 +528,16 @@ export async function PATCH(request:Request) {
     const db=await getDb();
     if(!await canAccessModule(db,membership,"packages"))return packageError("Saving","Packages & Pricing is not enabled for this account.",403);
     const body=await request.json().catch(()=>null) as {packageId?:unknown;action?:unknown}|null;
-    if(body?.action!=="publish"||typeof body.packageId!=="string")return packageError("Saving","Choose a draft package to publish.");
+    if(!["publish","retry"].includes(String(body?.action))||typeof body?.packageId!=="string")return packageError("Saving","Choose a package version to publish.");
     if(!historyWebhookConfigured())return packageError("Saving","Package History Google Sheet is not connected. The draft was not published.",503);
     const [item]=await db.select().from(packages).where(and(eq(packages.id,body.packageId),eq(packages.tenantId,membership.tenantId),isNull(packages.deletedAt))).limit(1);
     if(!item||!await canAccessStore(db,membership,item.storeId))return packageError("Saving","Package not found or store access denied.",404);
-    if(item.status!=="draft"&&item.status!=="review")return packageError("Saving","Only a draft package can be published.",409);
     const [version]=await db.select().from(packageVersions).where(eq(packageVersions.packageId,item.id)).orderBy(desc(packageVersions.version)).limit(1);
     if(!version)return packageError("Saving","This package has no saved version.",409);
+    const unpublished=["draft","review"].includes(item.status);
+    if(body.action==="publish"&&!unpublished)return packageError("Saving","Only a draft package can be published.",409);
+    if(body.action==="retry"&&(unpublished||!["pending","failed"].includes(version.sheetSyncStatus)))
+      return packageError("Saving","There is no failed package version to retry.",409);
     const [priceRows,skuRows,storeRows]=await Promise.all([
       db.select().from(packagePrices).where(eq(packagePrices.versionId,version.id)),
       db.select().from(packagePlatformSkus).where(eq(packagePlatformSkus.versionId,version.id)),
@@ -513,13 +545,14 @@ export async function PATCH(request:Request) {
     ]);
     const platformMap=Object.fromEntries(["Shopee","Lazada","TikTok Shop"].map(platform=>[platform,skuRows.filter(row=>row.platform===platform).map(row=>row.packageSku).join(" | ")]));
     const priceType=(value:string)=>value==="campaign"?"Campaign":"Non-Campaign";
-    const sync=await syncHistoryToGoogleSheet({
+    const metadata=versionMetadata(version.calculatorSettings);
+    const sync=version.sheetSyncStatus==="synced" ? {status:"synced" as const} : await syncHistoryToGoogleSheet({
       timestamp:new Date().toISOString(),changeId:`${item.id}-v${version.version}`,
-      projectOwner:user.fullName??user.email,store:storeRows[0]?.name??item.storeId,packageName:item.name,version:version.version,
+      projectOwner:user.fullName??user.email,store:storeRows[0]?.name??item.storeId,packageName:metadata?.name??item.name,version:version.version,
       action:version.version===1?"Created":"Version Updated",
       promotionType:priceRows.map(row=>`${row.market} ${priceType(row.priceType)}: ${row.promotionType==="custom"?"Custom":"Monthly"}`).join(" | "),
-      startDate:priceRows.filter(row=>row.market===item.market.split(",")[0]).map(row=>`${priceType(row.priceType)} ${row.effectiveFrom}`).join(" | "),
-      endDate:priceRows.filter(row=>row.market===item.market.split(",")[0]).map(row=>`${priceType(row.priceType)} ${row.effectiveTo}`).join(" | "),
+      startDate:priceRows.filter(row=>row.market===(metadata?.market??item.market).split(",")[0]).map(row=>`${priceType(row.priceType)} ${row.effectiveFrom}`).join(" | "),
+      endDate:priceRows.filter(row=>row.market===(metadata?.market??item.market).split(",")[0]).map(row=>`${priceType(row.priceType)} ${row.effectiveTo}`).join(" | "),
       shopeeSku:platformMap.Shopee??"",lazadaSku:platformMap.Lazada??"",tiktokSku:platformMap["TikTok Shop"]??"",
       addedComponents:formatComponents(version.addedComponents),removedComponents:formatComponents(version.removedComponents),
       currentComponents:formatComponents(version.components),changedBy:user.email,syncStatus:"Synced",
@@ -531,7 +564,7 @@ export async function PATCH(request:Request) {
     const status=publishedStatus(priceRows.map(row=>({effectiveFrom:row.effectiveFrom,effectiveTo:row.effectiveTo??row.effectiveFrom})),marketToday());
     await db.transaction(async tx=>{
       await tx.update(packageVersions).set({sheetSyncStatus:"synced"}).where(eq(packageVersions.id,version.id));
-      await tx.update(packages).set({status,updatedAt:new Date().toISOString()}).where(and(eq(packages.id,item.id),isNull(packages.deletedAt)));
+      await tx.update(packages).set({...metadata,status,updatedAt:new Date().toISOString()}).where(and(eq(packages.id,item.id),isNull(packages.deletedAt)));
       await tx.insert(packageAuditLog).values({packageId:item.id,action:"published",detail:`Version ${version.version} published to Package History`,actor:user.email});
     });
     return Response.json({ok:true,packageId:item.id,status,sheetSyncStatus:"synced"});
