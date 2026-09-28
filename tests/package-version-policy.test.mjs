@@ -11,11 +11,14 @@ const blocksNewVersionForUnsyncedSheet = new Function(`${compiled}; return block
 const now = Date.parse("2026-09-29T10:00:00Z");
 const recent = "2026-09-29T09:59:00Z";
 const stale = "2026-09-28T03:46:49Z";
+const withinMaxDuration = "2026-09-29T09:30:00Z";
+const sheetMayStillFinish = "2026-09-29T09:20:00Z";
 
 test("edited drafts can publish after a failed or stale Sheet sync", () => {
   for (const status of ["draft", "review"]) {
     assert.equal(blocksNewVersionForUnsyncedSheet(status, "failed", recent, "publish", now), false);
     assert.equal(blocksNewVersionForUnsyncedSheet(status, "pending", stale, "publish", now), false);
+    assert.equal(blocksNewVersionForUnsyncedSheet(status, "pending", stale, "draft", now), false);
     assert.equal(blocksNewVersionForUnsyncedSheet(status, "not_sent", recent, "publish", now), false);
   }
 });
@@ -23,6 +26,9 @@ test("edited drafts can publish after a failed or stale Sheet sync", () => {
 test("an in-flight draft sync remains protected from a concurrent new version", () => {
   for (const status of ["draft", "review"]) {
     assert.equal(blocksNewVersionForUnsyncedSheet(status, "pending", recent, "publish", now), true);
+    assert.equal(blocksNewVersionForUnsyncedSheet(status, "pending", recent, "draft", now), true);
+    assert.equal(blocksNewVersionForUnsyncedSheet(status, "pending", withinMaxDuration, "draft", now), true);
+    assert.equal(blocksNewVersionForUnsyncedSheet(status, "pending", sheetMayStillFinish, "publish", now), true);
     assert.equal(blocksNewVersionForUnsyncedSheet(status, "pending", undefined, "publish", now), true);
   }
 });

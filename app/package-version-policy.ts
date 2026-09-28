@@ -1,4 +1,5 @@
-const PENDING_SYNC_GRACE_MS = 15 * 60 * 1000;
+// Outlast an in-flight Vercel Function before superseding its pending Sheet write.
+const PENDING_SYNC_GRACE_MS = 45 * 60 * 1000;
 
 export function blocksNewVersionForUnsyncedSheet(
   packageStatus: string,
@@ -7,8 +8,8 @@ export function blocksNewVersionForUnsyncedSheet(
   mode: "draft" | "publish",
   now = Date.now(),
 ) {
-  if (mode !== "publish") return false;
   if (!["draft", "review"].includes(packageStatus)) {
+    if (mode !== "publish") return false;
     return latestSyncStatus === "pending" || latestSyncStatus === "failed";
   }
   if (latestSyncStatus !== "pending") return false;

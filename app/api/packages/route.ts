@@ -431,7 +431,7 @@ async function savePackage(request: Request) {
       return packageError("Saving","This package was changed after you opened it. Close the editor, refresh the list and review the latest version before saving.",409);
     if(blocksNewVersionForUnsyncedSheet(existing.status,latest?.sheetSyncStatus,latest?.createdAt,mode))
       return packageError("Saving",["draft","review"].includes(existing.status)
-        ? "This draft is still syncing to Google Sheet. Wait a moment, refresh the list, then try again."
+        ? "This draft is still syncing to Google Sheet. Wait for the current save to finish, then refresh the list and try again."
         : "Retry the unsynced version before creating another version.",409);
     existingPackage=existing;
     nextVersion = Number(latest?.version ?? 0) + 1;
