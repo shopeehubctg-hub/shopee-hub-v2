@@ -12,6 +12,7 @@ import {
 } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { canAccessModule, canAccessStore } from "../../module-access";
+import { blocksNewVersionForUnsyncedSheet } from "../../package-version-policy";
 
 export const dynamic = "force-dynamic";
 
@@ -428,8 +429,10 @@ async function savePackage(request: Request) {
       .where(eq(packageVersions.packageId, requestedPackageId)).orderBy(desc(packageVersions.version)).limit(1);
     if (body.expectedVersion !== undefined && body.expectedVersion !== Number(latest?.version ?? 0))
       return packageError("Saving","This package was changed after you opened it. Close the editor, refresh the list and review the latest version before saving.",409);
-    if(mode==="publish"&&latest&&["pending","failed"].includes(latest.sheetSyncStatus))
-      return packageError("Saving","Retry the unsynced version before creating another version.",409);
+    if(blocksNewVersionForUnsyncedSheet(existing.status,latest?.sheetSyncStatus,latest?.createdAt,mode))
+      return packageError("Saving",["draft","review"].includes(existing.status)
+        ? "This draft is still syncing to Google Sheet. Wait a moment, refresh the list, then try again."
+        : "Retry the unsynced version before creating another version.",409);
     existingPackage=existing;
     nextVersion = Number(latest?.version ?? 0) + 1;
     previousComponents = latest?.components ?? [];
@@ -511,9 +514,10 @@ async function savePackage(request: Request) {
   });
   if (sync.status!=="synced") {
     await db.update(packageVersions).set({ sheetSyncStatus:sync.status }).where(eq(packageVersions.id, versionId));
-    return Response.json({ok:false,savedAsDraft:!requestedPackageId,packageId,version:nextVersion,error:requestedPackageId
-    ? `Google Sheet sync failed: ${sync.reason}. The previous published version remains visible. Retry after the Sheet connection is restored.`
-    : `Package saved as a draft because Google Sheet sync failed: ${sync.reason}. Retry Create from the draft card.`},{status:503});
+    const unpublished=!requestedPackageId||["draft","review"].includes(existingPackage?.status??"");
+    return Response.json({ok:false,savedAsDraft:unpublished,packageId,version:nextVersion,error:unpublished
+      ? `Package saved as a draft because Google Sheet sync failed: ${sync.reason}. Retry Create from the draft card.`
+      : `Google Sheet sync failed: ${sync.reason}. The previous published version remains visible. Retry after the Sheet connection is restored.`},{status:503});
   }
   const status=publishedStatus(schedules,marketToday());
   await db.transaction(async tx=>{
