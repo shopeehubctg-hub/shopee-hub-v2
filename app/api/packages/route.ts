@@ -12,6 +12,7 @@ import {
 } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { canAccessModule, canAccessStore } from "../../module-access";
+import { blocksNewVersionForUnsyncedSheet } from "../../package-version-policy";
 
 export const dynamic = "force-dynamic";
 
@@ -422,7 +423,7 @@ async function savePackage(request: Request) {
     if(mode==="draft"&&!(["draft","review"].includes(existing.status)))return packageError("Saving","Only an unpublished package can be saved as a draft.",409);
     const [latest] = await db.select().from(packageVersions)
       .where(eq(packageVersions.packageId, requestedPackageId)).orderBy(desc(packageVersions.version)).limit(1);
-    if(mode==="publish"&&latest&&["pending","failed"].includes(latest.sheetSyncStatus))
+    if(blocksNewVersionForUnsyncedSheet(existing.status,latest?.sheetSyncStatus,mode))
       return packageError("Saving","Retry the unsynced version before creating another version.",409);
     existingPackage=existing;
     nextVersion = Number(latest?.version ?? 0) + 1;
