@@ -1,4 +1,4 @@
--- Apply to the isolated staging database before deploying the calendar code.
+-- Apply before deploying Calendar code. Review the target database and take a backup first.
 do $$
 begin
   if exists (
@@ -16,8 +16,8 @@ select 'shopee-skindae-sg', id, 'SkinDae SG', 'Shopee SG', 'SkinDae SG by CTG4u'
 from public.tenants where id = 'j-packaging'
 on conflict (id) do nothing;
 
--- Preserve selected-store grants from the Orders/Directory slug alias.
--- Legacy store rows remain for old module references; new pickers use the canonical ID.
+-- Add canonical selected-store grants from the Orders/Directory slug alias.
+-- Preserve legacy grants and store rows for older module references.
 insert into public.user_store_access (user_id, store_id)
 select usa.user_id, 'shopee-skindae-sg'
 from public.user_store_access usa
@@ -25,9 +25,6 @@ join public.customer_users cu on cu.id = usa.user_id
 join public.stores canonical on canonical.id = 'shopee-skindae-sg' and canonical.tenant_id = cu.tenant_id
 where usa.store_id = 'shopee-skindae-sg-by-ctg4u' and cu.tenant_id = 'j-packaging'
 on conflict (user_id, store_id) do nothing;
-delete from public.user_store_access usa using public.customer_users cu
-where cu.id = usa.user_id and cu.tenant_id = 'j-packaging'
-  and usa.store_id = 'shopee-skindae-sg-by-ctg4u';
 
 do $$
 begin

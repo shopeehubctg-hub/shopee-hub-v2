@@ -2,11 +2,11 @@
 
 ## Delivery boundary
 
-- Branch: `codex/live-calendar-staging`.
+- Branch: `codex/live-calendar-production` (rebased by cherry-pick onto latest `origin/main` `acd7526`).
 - Independent checkout: `/Users/jolinyong/Documents/BD Dashboard/live-calendar-worktree`.
-- Base: `origin/staging` at `4e02843ef19fe0fbb1be1db0438f7d127fe131aa`.
+- Base: `origin/main` at `acd75269f269cafae63c3fe89e272d8be02e8960`.
 - This is reviewable code and a synthetic UI preview. No real Staging deployment or database migration has been performed. No Production writes or release have been performed.
-- Head reports Production main now at `acd7526`, including Advertising and store-switch synchronization fixes. Integrate the Calendar diff onto that newer main with a reviewed cherry-pick/rebase; never replace main with this older staging branch. Shared integration files are `app/page.tsx`, `app/api/dashboard/route.ts`, module permissions and user permission settings.
+- Calendar changes were cherry-picked onto that newer Production main, preserving Advertising and store-switch synchronization fixes. Shared integration files include `app/page.tsx`, `app/api/dashboard/route.ts`, module permissions and user permission settings.
 
 ## Implemented experience
 
@@ -37,7 +37,7 @@
 | `shopee-skindae-sg-by-ctg4u` | Orders/Directory slug alias, mapped to canonical for selected-store grants |
 | `shopee-skindae-my-by-ctg4u` | Separate MY store; never used as SG fallback |
 
-The migration inserts the SG canonical row only when absent, stops on a conflicting tenant/market, copies and deduplicates alias store grants into the canonical row, and removes the old alias grants. Legacy alias store rows remain for older module references. The Dashboard Vercel picker now resolves Directory names through the canonical registry. Future Orders integration must use the same canonical mapping; any Orders/Advertising records still stored under the slug alias need a separate reviewed data reconciliation rather than an unverified bulk rewrite here.
+The migration inserts the SG canonical row only when absent, stops on a conflicting tenant/market, copies and deduplicates alias store grants into the canonical row, while preserving old alias grants and store rows for older module references. The Dashboard Vercel picker now resolves Directory names through the canonical registry. Future Orders integration must use the same canonical mapping; any Orders/Advertising records still stored under the slug alias need a separate reviewed data reconciliation rather than an unverified bulk rewrite here.
 
 ## Migration and real database boundary
 
@@ -82,4 +82,4 @@ The HTML links switch Super Admin, one-store customer, multi-store customer and 
 
 ## Next gate
 
-The reviewer requested cross-week continuation, a List range, overlap details, accessibility states and integration with the Dashboard shell; these code changes are ready for renewed design review. The user authorized Staging once the design is ready. Deployment still needs a confirmed isolated Staging database and migration/application validation there; the only visible Supabase project is currently the main Shopee Hub project. Do not silently point this code or its migration at that database. No Production rollout is authorized by this handoff.
+The reviewer requested cross-week continuation, a List range, overlap details, accessibility states and integration with the Dashboard shell; these code changes are ready for renewed design review. The user later authorized a direct Production release without a paid Staging branch. Production preflight and deployment status are recorded separately; this design report is not a release verification record.
