@@ -13,7 +13,7 @@ test("package control is wired into the command center", async () => {
   assert.match(page, /<PackageControl/);
   assert.match(component, /OXM PACKAGE CONTROL/);
   assert.match(component, /Migrate & Edit/);
-  assert.match(component, /Create Next Version/);
+  assert.match(component, /Edit \/ Modify Package/);
   assert.match(component, /Add Listing/);
   assert.match(component, /Multi-Select/);
   assert.match(component, /type="checkbox" checked=\{form\.campaign\.campaignEvents\.includes/);

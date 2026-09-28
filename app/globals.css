@@ -364,3 +364,5 @@ body{background:var(--paper);color:var(--ink)}
 .package-card-foot button:disabled{opacity:.55;cursor:not-allowed}
 .package-card-foot{flex-wrap:wrap;row-gap:9px}.package-card-foot>span{flex:1 0 100%;margin-right:0}.package-card-foot button{min-height:32px;padding:5px 7px;white-space:nowrap}
 @media(max-width:680px){.package-card-foot{justify-content:flex-start}.package-card-foot button{font-size:11px}.form-actions{flex-wrap:wrap}.form-actions button{min-height:36px}}
+
+.package-edit-note{padding:12px 14px;border-radius:10px;background:#edf7fa;color:#215b70;font-size:12px;line-height:1.6}.history-author{margin:0;color:#53636e;font-size:11px;overflow-wrap:anywhere}.history-author strong{color:#203e4d}.history-changes{overflow-x:auto}.history-changes table{width:100%;border-collapse:collapse;text-align:left;font-size:11px}.history-changes caption{text-align:left;font-weight:700;padding:6px 0;color:#203e4d}.history-changes th,.history-changes td{padding:8px;border:1px solid #e0e5e8;vertical-align:top;white-space:pre-line;overflow-wrap:anywhere}.history-changes thead{background:#eaf0f3}.history-changes th[scope=row]{width:20%}.history-changes td{width:40%}

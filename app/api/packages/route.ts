@@ -279,6 +279,9 @@ export async function GET(request: Request) {
           const historyPrice = prices.find(priceItem => priceItem.versionId === item.id);
           return {
             version:item.version,
+            name:versionMetadata(item.calculatorSettings)?.name ?? null,
+            market:versionMetadata(item.calculatorSettings)?.market ?? null,
+            components:item.components,
             changeNote:item.changeNote,
             promotionType:item.promotionType,
             effectiveFrom:item.effectiveFrom,
@@ -314,6 +317,7 @@ async function savePackage(request: Request) {
     mode?: "draft" | "publish";
     clientRequestId?: string;
     packageId?: string;
+    expectedVersion?: number;
     storeId?: string;
     storeName?: string;
     name?: string;
@@ -422,6 +426,8 @@ async function savePackage(request: Request) {
     if(mode==="draft"&&!(["draft","review"].includes(existing.status)))return packageError("Saving","Only an unpublished package can be saved as a draft.",409);
     const [latest] = await db.select().from(packageVersions)
       .where(eq(packageVersions.packageId, requestedPackageId)).orderBy(desc(packageVersions.version)).limit(1);
+    if (body.expectedVersion !== undefined && body.expectedVersion !== Number(latest?.version ?? 0))
+      return packageError("Saving","This package was changed after you opened it. Close the editor, refresh the list and review the latest version before saving.",409);
     if(mode==="publish"&&latest&&["pending","failed"].includes(latest.sheetSyncStatus))
       return packageError("Saving","Retry the unsynced version before creating another version.",409);
     existingPackage=existing;
