@@ -122,7 +122,13 @@ export function PermissionSettings({ initialEnabledModules }: Props) {
         .includes(search.toLowerCase()),
     ) ?? [];
   function updateEditing(patch: Partial<PortalUser>) {
-    setEditing((current) => (current ? { ...current, ...patch } : current));
+    setEditing((current) => {
+      if (!current) return current;
+      const next={...current,...patch};
+      if(next.role==="customer"&&patch.enabledModules?.includes("live_calendar")&&next.storeAccessMode==="all")
+        return {...next,storeAccessMode:"selected",storeIds:[]};
+      return next;
+    });
   }
   return (
     <div className="permission-page">
@@ -399,6 +405,7 @@ export function PermissionSettings({ initialEnabledModules }: Props) {
                   </label>
                   <fieldset>
                     <legend>Store access</legend>
+                    {editing.role==="customer"&&<p>Live Calendar requires explicitly selected stores for this customer. All stores does not grant calendar access.</p>}
                     <div className="access-choice">
                       <button
                         className={

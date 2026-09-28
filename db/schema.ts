@@ -5,6 +5,7 @@ import {
   boolean,
   check,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -12,7 +13,9 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
   uniqueIndex,
+  uuid,
 } from "drizzle-orm/pg-core";
 
 const createdAt = () => timestamp("created_at", { withTimezone:true, mode:"string" }).notNull().defaultNow();
@@ -53,7 +56,32 @@ export const userModulePermissions = pgTable("user_module_permissions", {
 export const stores = pgTable("stores", {
   id:text("id").primaryKey(), tenantId:text("tenant_id").notNull().references(()=>tenants.id), name:text("name").notNull(),
   platform:text("platform").notNull().default("Shopee"), bigSellerName:text("bigseller_name").notNull(), createdAt:createdAt(),
-}, table=>[index("stores_tenant_id_idx").on(table.tenantId)]);
+}, table=>[index("stores_tenant_id_idx").on(table.tenantId),unique("stores_tenant_id_id_key").on(table.tenantId,table.id)]);
+
+export const liveSessions = pgTable("live_sessions", {
+  id:uuid("id").primaryKey().defaultRandom(),
+  tenantId:text("tenant_id").notNull().references(()=>tenants.id),
+  storeId:text("store_id").notNull(), title:text("title").notNull().default("Live session"),
+  startAt:timestamp("start_at",{withTimezone:true,mode:"string"}).notNull(),
+  endAt:timestamp("end_at",{withTimezone:true,mode:"string"}).notNull(),
+  timeZone:text("time_zone",{enum:["Asia/Kuala_Lumpur","Asia/Singapore"]}).notNull(),
+  status:text("status",{enum:["scheduled","cancelled"]}).notNull().default("scheduled"),
+  internalNote:text("internal_note"), createdBy:text("created_by").notNull(), updatedBy:text("updated_by").notNull(),
+  createdAt:createdAt(), updatedAt:timestamp("updated_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),
+},table=>[
+  foreignKey({name:"live_sessions_store_fk",columns:[table.tenantId,table.storeId],foreignColumns:[stores.tenantId,stores.id]}),
+  check("live_sessions_time_check",sql`${table.endAt} > ${table.startAt}`),
+  index("live_sessions_tenant_store_start_idx").on(table.tenantId,table.storeId,table.startAt),
+  index("live_sessions_tenant_time_idx").on(table.tenantId,table.startAt),
+]);
+
+export const liveSessionAudit = pgTable("live_session_audit", {
+  id:bigint("id",{mode:"number"}).primaryKey().generatedAlwaysAsIdentity(),
+  sessionId:uuid("session_id").notNull().references(()=>liveSessions.id), tenantId:text("tenant_id").notNull(),
+  action:text("action",{enum:["created","updated","cancelled"]}).notNull(), actorEmail:text("actor_email").notNull(),
+  previousValue:jsonb("previous_value"), currentValue:jsonb("current_value").notNull(),
+  changedAt:timestamp("changed_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),
+});
 
 export const userStoreAccess = pgTable("user_store_access", {
   id:bigserial("id", { mode:"number" }).primaryKey(),

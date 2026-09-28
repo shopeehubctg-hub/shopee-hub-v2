@@ -8,6 +8,7 @@ export const PORTAL_MODULES = [
   { id: "health", label: "Store Health", description: "Ratings, service quality and violations" },
   { id: "protection", label: "Fake Seller Reports", description: "Brand protection cases and outcomes" },
   { id: "actions", label: "Client Action Center", description: "Items that require client attention" },
+  { id: "live_calendar", label: "Live Calendar", description: "Upcoming livestream sessions for assigned stores" },
 ] as const;
 
 export type PortalModuleId = (typeof PORTAL_MODULES)[number]["id"];

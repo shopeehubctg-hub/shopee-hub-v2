@@ -11,6 +11,7 @@ import { aggregateAdPerformanceByDate, authorizedAdStoreIds, latestAdSyncTime } 
 import { withoutAdCampaigns } from "../../dashboard-snapshot.js";
 import { shouldShowAllStoresTopUps, summarizeAllStoresTopUps } from "../../ad-topup-overview.js";
 import { balanceCsvColumns, isCurrentBalanceDate, parseAdBalance } from "../../ad-balance-validation.js";
+import { DIRECTORY_TENANT_ID, canonicalStoreId, canonicalIdForDirectoryName, matchingStore, type RegistryStore } from "../../live-calendar-model";
 
 export const dynamic = "force-dynamic";
 
@@ -274,14 +275,19 @@ export async function GET(request: Request) {
     ]);
     const tenantEnabled=new Map(tenantModules.map(row=>[row.module_id,row.enabled]));
     const customEnabled=new Set(userModules.filter(row=>row.enabled).map(row=>row.module_id));
-    const enabledModules=membership.role==="superadmin"?ALL_PORTAL_MODULE_IDS:membership.module_access_mode==="custom"?ALL_PORTAL_MODULE_IDS.filter(id=>customEnabled.has(id)&&tenantEnabled.get(id)!==false):ALL_PORTAL_MODULE_IDS.filter(id=>tenantEnabled.get(id)!==false);
-    const assignedStoreIds=new Set(userStores.map(row=>row.store_id));
-    const directoryStores = await readLinkDirectory();
-    const visibleStores = directoryStores.map(({ name }) => ({
-      id: storeIdFor(name),
+    const clientEnabledModules=ALL_PORTAL_MODULE_IDS.filter(id=>id==="live_calendar"?tenantEnabled.get(id)===true:tenantEnabled.get(id)!==false);
+    const enabledModules=membership.role==="superadmin"?ALL_PORTAL_MODULE_IDS:membership.module_access_mode==="custom"?ALL_PORTAL_MODULE_IDS.filter(id=>customEnabled.has(id)&&(id==="live_calendar"?tenantEnabled.get(id)===true:tenantEnabled.get(id)!==false)):ALL_PORTAL_MODULE_IDS.filter(id=>id==="live_calendar"?tenantEnabled.get(id)===true:tenantEnabled.get(id)!==false);
+    const assignedStoreIds=new Set(userStores.map(row=>canonicalStoreId(row.store_id)));
+    const registry=await supabaseRest<RegistryStore[]>(`stores?select=id,name,platform,bigseller_name&tenant_id=eq.${encodeURIComponent(membership.tenant_id)}&order=name.asc`);
+    const directoryStores = membership.tenant_id===DIRECTORY_TENANT_ID?await readLinkDirectory():[];
+    const directoryVisible=directoryStores.map(({ name }) => ({
+      id: matchingStore(name,registry)?.id??canonicalIdForDirectoryName(name),
       name,
       platform: isSingaporeStore(name) ? "Shopee SG" : "Shopee MY",
-    })).filter(store=>membership.role==="superadmin"||membership.store_access_mode==="all"||assignedStoreIds.has(store.id));
+    }));
+    const representedIds=new Set(directoryVisible.map(store=>store.id));
+    const visibleStores = [...directoryVisible,...registry.filter(store=>canonicalStoreId(store.id)===store.id&&!representedIds.has(store.id)).map(store=>({id:store.id,name:store.name,platform:store.platform}))]
+      .filter(store=>membership.role==="superadmin"||membership.store_access_mode==="all"||assignedStoreIds.has(store.id));
     const requestedStoreId = new URL(request.url).searchParams.get("storeId");
     const allStoresRequested = !requestedStoreId || requestedStoreId === "all";
     const selectedStore = allStoresRequested ? undefined : visibleStores.find((store) => store.id === requestedStoreId);
@@ -325,7 +331,7 @@ export async function GET(request: Request) {
       productProfile,
       coFundVouchers:selectedCoFundVouchers,
       user: { email: user.email },
-      access: { role:membership.role, enabledModules, clientEnabledModules:enabledModules, canManagePermissions:membership.role==="superadmin" },
+      access: { role:membership.role, enabledModules, clientEnabledModules, canManagePermissions:membership.role==="superadmin" },
       dataSources: {
         directory: "Google Sheets · WhatsApp Group / Link Directory",
         advertisingBalance: "Daily advertising balance",
@@ -349,16 +355,17 @@ export async function GET(request: Request) {
 
   const allTenantStores = await db.select().from(stores).where(eq(stores.tenantId, tenant.id));
   const assignedStoreRows = membership.storeAccessMode === "selected" ? await db.select({ storeId:userStoreAccess.storeId }).from(userStoreAccess).where(eq(userStoreAccess.userId,membership.id)) : [];
-  const assignedStoreIds = new Set(assignedStoreRows.map(row=>row.storeId));
-  const tenantStores = membership.role === "superadmin" || membership.storeAccessMode === "all" ? allTenantStores : allTenantStores.filter(store=>assignedStoreIds.has(store.id));
+  const assignedStoreIds = new Set(assignedStoreRows.map(row=>canonicalStoreId(row.storeId)));
+  const canonicalTenantStores=allTenantStores.filter(store=>canonicalStoreId(store.id)===store.id);
+  const tenantStores = membership.role === "superadmin" || membership.storeAccessMode === "all" ? canonicalTenantStores : canonicalTenantStores.filter(store=>assignedStoreIds.has(store.id));
   const modulePermissionRows = await db.select().from(tenantModulePermissions).where(eq(tenantModulePermissions.tenantId, tenant.id));
   const configuredModules = new Map(modulePermissionRows.map((row) => [row.moduleId, row.enabled]));
-  const clientEnabledModules = ALL_PORTAL_MODULE_IDS.filter((moduleId) => configuredModules.get(moduleId) !== false);
+  const clientEnabledModules = ALL_PORTAL_MODULE_IDS.filter((moduleId) => moduleId === "live_calendar" ? configuredModules.get(moduleId) === true : configuredModules.get(moduleId) !== false);
   const userModuleRows = membership.moduleAccessMode === "custom" ? await db.select().from(userModulePermissions).where(eq(userModulePermissions.userId,membership.id)) : [];
   const enabledModules = membership.role === "superadmin" ? ALL_PORTAL_MODULE_IDS : membership.moduleAccessMode === "custom"
-    ? ALL_PORTAL_MODULE_IDS.filter(moduleId=>userModuleRows.find(row=>row.moduleId===moduleId)?.enabled===true)
-    : membership.role === "customer" ? clientEnabledModules : ALL_PORTAL_MODULE_IDS;
-  const directoryStores = await readLinkDirectory();
+    ? ALL_PORTAL_MODULE_IDS.filter(moduleId=>userModuleRows.find(row=>row.moduleId===moduleId)?.enabled===true && (moduleId!=="live_calendar" || configuredModules.get(moduleId)===true))
+    : membership.role === "customer" ? clientEnabledModules : ALL_PORTAL_MODULE_IDS.filter(moduleId=>moduleId!=="live_calendar" || configuredModules.get(moduleId)===true);
+  const directoryStores = tenant.id===DIRECTORY_TENANT_ID?await readLinkDirectory():[];
   const directoryByName = new Map(directoryStores.map((store) => [store.name, store]));
   const directoryOrder = new Map(directoryStores.map((store, index) => [store.name, index]));
   const kataDisplayNames: Record<string, string> = {
@@ -368,8 +375,8 @@ export async function GET(request: Request) {
   const visibleStores = (tenantStores.length ? tenantStores
     .filter((stored) => stored.id !== "shopee-kata-care-malaysia")
     .map((stored) => {
-    const candidates = [stored.bigSellerName, stored.name, directoryStoreNameFor(stored.bigSellerName ?? ""), directoryStoreNameFor(stored.name)];
-    const directoryName = candidates.find((name) => name && directoryByName.has(name)) ?? directoryStoreNameFor(stored.name);
+    const candidates = isSingaporeStore(stored.platform) ? [stored.bigSellerName, stored.name] : [stored.bigSellerName, stored.name, directoryStoreNameFor(stored.bigSellerName ?? ""), directoryStoreNameFor(stored.name)];
+    const directoryName = candidates.find((name) => name && directoryByName.has(name)) ?? stored.name;
     return {
       ...stored,
       storedName: stored.name,
