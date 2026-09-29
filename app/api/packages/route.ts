@@ -13,8 +13,10 @@ import {
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { canAccessModule, canAccessStore } from "../../module-access";
 import { blocksNewVersionForUnsyncedSheet } from "../../package-version-policy";
+import { syncHistoryToGoogleSheet } from "./history-sync";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 type ComponentLine = {
   inventorySku: string;
@@ -151,25 +153,6 @@ function publicCalculatorSettings(settings:Record<string,unknown>|null) {
   const { _packageMetadata, ...visible }=settings;
   void _packageMetadata;
   return Object.keys(visible).length ? visible : null;
-}
-
-async function syncHistoryToGoogleSheet(payload: Record<string, unknown>) {
-  const webhookUrl = process.env.GOOGLE_SHEETS_HISTORY_WEBHOOK_URL;
-  const secret = process.env.GOOGLE_SHEETS_HISTORY_SECRET;
-  if (!webhookUrl || !secret) return { status:"pending" as const, reason:"Google Sheets webhook is not configured" };
-  try {
-    const response = await fetch(webhookUrl, {
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
-      body:JSON.stringify({ ...payload, secret }),
-    });
-    if (!response.ok) return { status:"failed" as const, reason:`Webhook returned ${response.status}` };
-    const result = await response.json().catch(() => null) as { ok?: boolean; error?: string } | null;
-    if (!result?.ok) return { status:"failed" as const, reason:result?.error ?? "Webhook did not confirm the write" };
-    return { status:"synced" as const };
-  } catch (error) {
-    return { status:"failed" as const, reason:error instanceof Error ? error.message : "Google Sheets webhook failed" };
-  }
 }
 
 function historyWebhookConfigured() {
