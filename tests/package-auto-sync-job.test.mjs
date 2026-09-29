@@ -19,11 +19,14 @@ test('job authentication rejects altered bodies, old requests, missing keys and 
 const source = readFileSync(new URL('../integrations/PackageSheetAutoSync.gs',import.meta.url),'utf8');
 function scriptFixture(rows = [['Timestamp','Change ID','Owner','Store','Package','Version']]) {
   const properties = new Map([['HISTORY_SECRET','test-key'],['PACKAGE_SYNC_ENABLED','true']]);
-  const payload = {changeId:'example-package-v2',store:'Example Store',packageName:'Example Package',version:2,timestamp:'2026-09-29T08:00:00Z'};
+  const payload = {changeId:'example-package-v2',store:'Example Store',packageName:'Example Package',version:2,changeSummary:'OXM Inventory SKU 修改',timestamp:'2026-09-29T08:00:00Z'};
   let pending = true;
   let loseConfirmation = true;
   const alerts=[];
-  const sheet={getLastRow:()=>rows.length,getRange:(_row,start,_count,width)=>({getDisplayValues:()=>rows.map(row=>row.slice(start-1,start-1+width).map(v=>String(v ?? '')))}),appendRow:row=>rows.push(row)};
+  const sheet={getLastRow:()=>rows.length,getMaxColumns:()=>26,getRange:(first,start,count=1,width=1)=>{
+    const range={getDisplayValues:()=>rows.slice(first-1,first-1+count).map(row=>Array.from({length:width},(_,i)=>String(row[start-1+i]??''))),
+      getDisplayValue:()=>String(rows[first-1]?.[start-1]??''),setValue:value=>{rows[first-1]??=[];rows[first-1][start-1]=value;return range;},setNumberFormat:()=>range};return range;
+  },appendRow:row=>rows.push(row)};
   const props={getProperty:key=>properties.get(key)??null,setProperty:(key,value)=>properties.set(key,value),setProperties:values=>Object.entries(values).forEach(([k,v])=>properties.set(k,v)),deleteProperty:key=>properties.delete(key)};
   const lock=()=>({tryLock:()=>true,waitLock:()=>{},releaseLock:()=>{}});
   const context=vm.createContext({SPREADSHEET_ID:'example-sheet',HISTORY_SHEET:'Package History',console:{log:()=>{}},
@@ -41,7 +44,7 @@ function scriptFixture(rows = [['Timestamp','Change ID','Owner','Store','Package
     }},
   });
   vm.runInContext(source,context);
-  return {context,rows,properties,alerts};
+  return {context,rows,properties,alerts,sheet};
 }
 
 test('a lost acknowledgement retries the same Change ID without another Sheet row', () => {
@@ -64,4 +67,16 @@ test('duplicate or inconsistent history records are not acknowledged or overwrit
   const mismatched=scriptFixture([['date','example-package-v2','owner','Other Store','Example Package','2']]);
   assert.throws(()=>mismatched.context.checkPackageSheetAutoSync(),/differs from/);
   assert.equal(mismatched.rows.length,1);
+});
+
+test('retry enriches the existing row once and refuses to replace a saved summary',()=>{
+  const f=scriptFixture([['Timestamp','Change ID','Owner','Store','Package','Version'],['date','example-package-v2','owner','Example Store','Example Package','2']]);
+  const payload={changeId:'example-package-v2',store:'Example Store',packageName:'Example Package',version:2,changeSummary:'OXM Inventory SKU 修改'};
+  assert.equal(f.context.packageSyncWrite_(payload),false);
+  assert.equal(f.rows.length,2);
+  assert.equal(f.rows[0][18],'修改内容');
+  assert.equal(f.rows[1][18],payload.changeSummary);
+  assert.equal(f.context.packageSyncWrite_(payload),false);
+  assert.throws(()=>f.context.packageSyncWrite_({...payload,changeSummary:'Disc Price 修改'}),/summary differs/);
+  assert.equal(f.rows[1][18],payload.changeSummary);
 });

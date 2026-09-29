@@ -2,7 +2,8 @@ import { and, asc, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { packageAuditLog, packagePlatformSkus, packagePrices, packages, packageVersions, stores } from "../../../../db/schema";
 import { validSyncJobSignature } from "../sync-job-auth";
-import { emailChangeSummary } from "../email-change-summary";
+import { versionChangeSummary } from "../version-change-summary";
+import { storedChangeSummary } from "../email-change-summary";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -44,16 +45,9 @@ export async function POST(request: Request) {
       if (!match || !Number.isSafeInteger(Number(match[2]))) return Response.json({ok:false,error:"Invalid Change ID"},{status:400});
       const [current] = await db.select().from(packageVersions).where(and(eq(packageVersions.packageId,match[1]),eq(packageVersions.version,Number(match[2])))).limit(1);
       if (!current) return Response.json({ok:false,error:"Package version not found"},{status:404});
-      if (current.version === 1) return Response.json({ok:true,summary:"新开配套"});
-      const [previous] = await db.select().from(packageVersions).where(and(eq(packageVersions.packageId,current.packageId),lt(packageVersions.version,current.version))).orderBy(desc(packageVersions.version)).limit(1);
-      if (!previous) return Response.json({ok:true,summary:"配套资料修改（历史比较资料不足）"});
-      const [prices,oldPrices,skus,oldSkus] = await Promise.all([
-        db.select().from(packagePrices).where(eq(packagePrices.versionId,current.id)),
-        db.select().from(packagePrices).where(eq(packagePrices.versionId,previous.id)),
-        db.select().from(packagePlatformSkus).where(eq(packagePlatformSkus.versionId,current.id)),
-        db.select().from(packagePlatformSkus).where(eq(packagePlatformSkus.versionId,previous.id)),
-      ]);
-      return Response.json({ok:true,summary:emailChangeSummary(current,previous,prices,oldPrices,skus,oldSkus)},{headers:{"Cache-Control":"no-store"}});
+      const wasStored = Boolean(storedChangeSummary(current.calculatorSettings));
+      const summary = await versionChangeSummary(db,current);
+      return Response.json({ok:true,summary,version:current.version,source:wasStored ? "saved" : "backfilled"},{headers:{"Cache-Control":"no-store"}});
     }
     if (body.action === "pull") {
       const rows = await db.select({item:packages,version:packageVersions,storeName:stores.name})
@@ -79,6 +73,7 @@ export async function POST(request: Request) {
           shopeeSku:sku("Shopee"),lazadaSku:sku("Lazada"),tiktokSku:sku("TikTok Shop"),
           addedComponents:formatComponents(version.addedComponents),removedComponents:formatComponents(version.removedComponents),
           currentComponents:formatComponents(version.components),changedBy:version.createdBy,syncStatus:"Synced",
+          changeSummary:await versionChangeSummary(db,version),
         }};
       }));
       return Response.json({ok:true,entries},{headers:{"Cache-Control":"no-store"}});
