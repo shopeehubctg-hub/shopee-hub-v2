@@ -118,8 +118,10 @@ function packageHistorySummaryColumn_(sheet) {
   if (sheet.getMaxColumns() < 19) sheet.insertColumnsAfter(sheet.getMaxColumns(), 19 - sheet.getMaxColumns());
   const header = sheet.getRange(1, 19);
   const value = header.getDisplayValue();
-  if (value && value !== '修改内容') throw new Error('Package History column S is already in use.');
-  if (!value) header.setValue('修改内容');
+  const emptyPlaceholder = value === 'Column 19' && (sheet.getLastRow() <= 1 ||
+    sheet.getRange(2, 19, sheet.getLastRow() - 1, 1).getDisplayValues().every(row => !row[0]));
+  if (value && value !== '修改内容' && !emptyPlaceholder) throw new Error('Package History column S is already in use.');
+  if (!value || emptyPlaceholder) header.setValue('修改内容');
 }
 
 function packageHistorySetSummary_(sheet, rowNumber, changeId, summary) {
