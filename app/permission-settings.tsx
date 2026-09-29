@@ -5,7 +5,40 @@ import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
 
 type Props = { initialEnabledModules: PortalModuleId[]; onStoreChanged?: () => void };
 type Role = "customer" | "manager" | "superadmin";
-type Store = { id: string; name: string; platform: string; bigseller_name?: string };
+type AdsTopUpOwner = "Client" | "Client Approval" | "Shopee Hub";
+type ProjectLink = { project: string; href: string };
+type StoreLinks = {
+  projectLinks: ProjectLink[];
+  storeGroupLink: string;
+  googleDriveLink: string;
+  adsTopUpOwner: AdsTopUpOwner | "";
+};
+type StoreDraft = StoreLinks & { name: string; market: "MY" | "SG" };
+type Store = { id: string; name: string; platform: string; bigseller_name?: string } & Partial<StoreLinks>;
+const emptyStoreDraft = (): StoreDraft => ({ name: "", market: "MY", projectLinks: [], storeGroupLink: "", googleDriveLink: "", adsTopUpOwner: "" });
+
+function StoreLinkFields({ draft, update }: { draft: StoreDraft; update: (patch: Partial<StoreDraft>) => void }) {
+  const updateProjectLink = (index: number, patch: Partial<ProjectLink>) => update({
+    projectLinks: draft.projectLinks.map((link, position) => position === index ? { ...link, ...patch } : link),
+  });
+  return <>
+    <fieldset className="store-link-fields">
+      <legend>Project Group Links</legend>
+      <p className="store-access-note">Add one row for each project linked to this store.</p>
+      {draft.projectLinks.map((link, index) => <div className="store-project-link" key={index}>
+        <label>Project name<input maxLength={120} value={link.project} onChange={event => updateProjectLink(index, { project: event.target.value })} placeholder="Project name" /></label>
+        <label>Project Group Link<input type="url" maxLength={2048} value={link.href} onChange={event => updateProjectLink(index, { href: event.target.value })} placeholder="https://…" /></label>
+        <button type="button" className="edit-access" aria-label={`Remove project link ${index + 1}`} onClick={() => update({ projectLinks: draft.projectLinks.filter((_, position) => position !== index) })}>Remove</button>
+      </div>)}
+      <button type="button" className="edit-access" onClick={() => update({ projectLinks: [...draft.projectLinks, { project: "", href: "" }] })}>+ Add project link</button>
+    </fieldset>
+    <label>Store Group Link<input type="url" maxLength={2048} value={draft.storeGroupLink} onChange={event => update({ storeGroupLink: event.target.value })} placeholder="https://…" /></label>
+    <label>Google Drive Link<input type="url" maxLength={2048} value={draft.googleDriveLink} onChange={event => update({ googleDriveLink: event.target.value })} placeholder="https://…" /></label>
+    <label>Ads Top Up List<select value={draft.adsTopUpOwner} onChange={event => update({ adsTopUpOwner: event.target.value as StoreLinks["adsTopUpOwner"] })}>
+      <option value="">Not set</option><option value="Client">Client</option><option value="Client Approval">Client Approval</option><option value="Shopee Hub">Shopee Hub</option>
+    </select></label>
+  </>;
+}
 type PortalUser = {
   id: number;
   email: string;
@@ -36,8 +69,8 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
   const [adding, setAdding] = useState(false);
   const [addingStore, setAddingStore] = useState(false);
   const [editingStore, setEditingStore] = useState<Store | null>(null);
-  const [storeNameDraft, setStoreNameDraft] = useState("");
-  const [newStore, setNewStore] = useState({ name: "", market: "MY" as "MY" | "SG" });
+  const [storeDraft, setStoreDraft] = useState<StoreDraft>(emptyStoreDraft);
+  const [newStore, setNewStore] = useState<StoreDraft>(emptyStoreDraft);
   const [newUser, setNewUser] = useState({
     displayName: "",
     email: "",
@@ -107,7 +140,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
       const response = await fetch("/api/admin/stores", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newStore),
+        body: JSON.stringify({ ...newStore, adsTopUpOwner: newStore.adsTopUpOwner || null }),
       });
       const result = await response.json().catch(() => ({ error: "The server returned an invalid response" }));
       if (!response.ok) {
@@ -121,7 +154,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
       await loadUsers();
       onStoreChanged?.();
       setAddingStore(false);
-      setNewStore({ name: "", market: "MY" });
+      setNewStore(emptyStoreDraft());
       setMessage("Store added. Customer access can be assigned under Users & roles.");
     } catch {
       setMessage("Unable to add store. Please try again.");
@@ -129,29 +162,30 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
       setSaving(false);
     }
   }
-  async function saveStoreName() {
+  async function saveStore() {
     if (!editingStore) return;
     setSaving(true);
     try {
       const response = await fetch("/api/admin/stores", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: editingStore.id, name: storeNameDraft }),
+        body: JSON.stringify({ id: editingStore.id, ...storeDraft, adsTopUpOwner: storeDraft.adsTopUpOwner || null }),
       });
       const result = await response.json().catch(() => ({ error: "The server returned an invalid response" }));
       if (!response.ok) {
-        setMessage(result.error ?? "Unable to update store name");
+        setMessage(result.error ?? "Unable to update store");
         return;
       }
       setData(current => current ? {
         ...current,
         stores: current.stores.map(store => store.id === editingStore.id ? result.store : store).sort((a, b) => a.name.localeCompare(b.name)),
       } : current);
+      await loadUsers();
       onStoreChanged?.();
       setEditingStore(null);
-      setMessage("Store name updated.");
+      setMessage("Store updated.");
     } catch {
-      setMessage("Unable to update store name. Please try again.");
+      setMessage("Unable to update store. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -379,7 +413,18 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
                   <h3>{store.name}</h3>
                 </div>
                 <span>{store.platform}</span>
-                <button className="edit-access" onClick={() => { setMessage(""); setEditingStore(store); setStoreNameDraft(store.name); }}>Edit name</button>
+                <button className="edit-access" onClick={() => {
+                  setMessage("");
+                  setEditingStore(store);
+                  setStoreDraft({
+                    name: store.name,
+                    market: store.platform.includes("SG") ? "SG" : "MY",
+                    projectLinks: store.projectLinks?.map(link => ({ ...link })) ?? [],
+                    storeGroupLink: store.storeGroupLink ?? "",
+                    googleDriveLink: store.googleDriveLink ?? "",
+                    adsTopUpOwner: store.adsTopUpOwner ?? "",
+                  });
+                }}>Edit store</button>
               </article>
             ))}
           </section>
@@ -396,6 +441,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
             <div className="access-form">
               <label>Store name<input maxLength={120} required value={newStore.name} onChange={event => setNewStore({ ...newStore, name: event.target.value })} /></label>
               <label>Market<select value={newStore.market} onChange={event => setNewStore({ ...newStore, market: event.target.value as "MY" | "SG" })}><option value="MY">Malaysia (MY)</option><option value="SG">Singapore (SG)</option></select></label>
+              <StoreLinkFields draft={newStore} update={patch => setNewStore(current => ({ ...current, ...patch }))} />
               <button className="primary" disabled={saving || !newStore.name.trim()} onClick={addStore}>{saving ? "Adding…" : "Add store"}</button>
             </div>
           </div>
@@ -403,15 +449,16 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
       )}
 
       {editingStore && (
-        <div className="access-modal" role="dialog" aria-modal="true" aria-label="Edit store name">
+        <div className="access-modal" role="dialog" aria-modal="true" aria-label="Edit store">
           <div className="access-editor card">
             <div className="access-editor-head">
-              <div><p className="kicker">STORE</p><h3>Edit store name</h3></div>
+              <div><p className="kicker">STORE</p><h3>Edit store</h3></div>
               <button aria-label="Close" disabled={saving} onClick={() => setEditingStore(null)}>×</button>
             </div>
             <div className="access-form">
-              <label>Store name<input maxLength={120} required value={storeNameDraft} onChange={event => setStoreNameDraft(event.target.value)} /></label>
-              <button className="primary" disabled={saving || !storeNameDraft.trim()} onClick={saveStoreName}>{saving ? "Saving…" : "Save name"}</button>
+              <label>Store name<input maxLength={120} required value={storeDraft.name} onChange={event => setStoreDraft({ ...storeDraft, name: event.target.value })} /></label>
+              <StoreLinkFields draft={storeDraft} update={patch => setStoreDraft(current => ({ ...current, ...patch }))} />
+              <button className="primary" disabled={saving || !storeDraft.name.trim()} onClick={saveStore}>{saving ? "Saving…" : "Save store"}</button>
             </div>
           </div>
         </div>
