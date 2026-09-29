@@ -13,6 +13,8 @@ const PUBLIC_AUTH_APIS = new Set([
   "/api/auth/recover",
   "/api/auth/password",
   "/api/auth/session",
+  // This endpoint validates a time-limited HMAC in its route handler.
+  "/api/packages/sync-pending",
 ]);
 
 function decodeBase64Url(value: string) {
