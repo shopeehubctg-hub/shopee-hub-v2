@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 export type RegisteredStore = { id: string; name: string; bigseller_name: string };
 
 export function normalizeStoreName(value: string) {
@@ -6,7 +8,8 @@ export function normalizeStoreName(value: string) {
 
 export function proposedStoreId(name: string) {
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  return `shopee-${slug || crypto.randomUUID()}`;
+  const suffix = slug || `store-${createHash("sha256").update(normalizeStoreName(name)).digest("hex").slice(0, 16)}`;
+  return `shopee-${suffix}`;
 }
 
 export function storeNameConflict(stores: RegisteredStore[], name: string, sourceName: string) {

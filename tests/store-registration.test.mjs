@@ -18,3 +18,9 @@ test('generated ID collisions are caught before insertion', () => {
   assert.equal(storeIdConflict(stores, proposedStoreId('ABC')), true);
   assert.equal(storeIdConflict(stores, proposedStoreId('Different Store')), false);
 });
+
+test('non-Latin store names receive a stable ID', () => {
+  const id = proposedStoreId('食补官方店');
+  assert.match(id, /^shopee-store-[a-f0-9]{16}$/);
+  assert.equal(id, proposedStoreId(' 食补官方店 '));
+});
