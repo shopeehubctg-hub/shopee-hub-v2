@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
 
 type Props = { initialEnabledModules: PortalModuleId[]; onStoreChanged?: () => void };
@@ -31,7 +31,7 @@ function StoreLinkFields({ draft, update, idPrefix }: { draft: StoreDraft; updat
   return <>
     <fieldset className="store-link-fields">
       <legend>Project Group Links</legend>
-      <p className="store-access-note">Add one row for each project linked to this store.</p>
+      <p id={`${idPrefix}-project-limit`} className="store-access-note">Add one row per project, up to 20 ({draft.projectLinks.length}/20).</p>
       {draft.projectLinks.map((link, index) => {
         const error = projectLinkError(link);
         const errorId = `${idPrefix}-project-${index}-error`;
@@ -42,7 +42,7 @@ function StoreLinkFields({ draft, update, idPrefix }: { draft: StoreDraft; updat
         <button type="button" className="edit-access" aria-label={`Remove project link ${index + 1}`} onClick={() => update({ projectLinks: draft.projectLinks.filter((_, position) => position !== index) })}>Remove</button>
         {error && <p id={errorId} className="store-field-error" role="alert">{error}</p>}
       </div>})}
-      <button type="button" className="edit-access" onClick={() => update({ projectLinks: [...draft.projectLinks, { project: "", href: "", driveLink: "" }] })}>+ Add project link</button>
+      <button type="button" className="edit-access" disabled={draft.projectLinks.length >= 20} aria-describedby={`${idPrefix}-project-limit`} onClick={() => update({ projectLinks: [...draft.projectLinks, { project: "", href: "", driveLink: "" }] })}>+ Add project link</button>
     </fieldset>
     <label>Store Group Link<input type="url" maxLength={2048} value={draft.storeGroupLink} onChange={event => update({ storeGroupLink: event.target.value })} placeholder="https://…" /></label>
     <label>Store Google Drive Link (default)<input type="url" maxLength={2048} value={draft.googleDriveLink} onChange={event => update({ googleDriveLink: event.target.value })} placeholder="https://…" /></label>
@@ -84,8 +84,39 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
   const [editingStore, setEditingStore] = useState<Store | null>(null);
   const [storeDraft, setStoreDraft] = useState<StoreDraft>(emptyStoreDraft);
   const [newStore, setNewStore] = useState<StoreDraft>(emptyStoreDraft);
+  const storeModalRef = useRef<HTMLDivElement>(null);
+  const storeNameInputRef = useRef<HTMLInputElement>(null);
+  const storeReturnFocusRef = useRef<HTMLButtonElement | null>(null);
   const updateNewStore = (patch: Partial<StoreDraft>) => { setStoreError(""); setNewStore(current => ({ ...current, ...patch })); };
   const updateStoreDraft = (patch: Partial<StoreDraft>) => { setStoreError(""); setStoreDraft(current => ({ ...current, ...patch })); };
+  function closeStoreModal() {
+    setAddingStore(false);
+    setEditingStore(null);
+    setStoreError("");
+    requestAnimationFrame(() => {
+      if (storeReturnFocusRef.current?.isConnected) storeReturnFocusRef.current.focus();
+    });
+  }
+  function handleStoreModalKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Escape" && !saving) {
+      event.preventDefault();
+      closeStoreModal();
+    }
+    if (event.key !== "Tab") return;
+    const focusable = Array.from(storeModalRef.current?.querySelectorAll<HTMLElement>(
+      'button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href]'
+    ) ?? []);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && (document.activeElement === first || !storeModalRef.current?.contains(document.activeElement))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (document.activeElement === last || !storeModalRef.current?.contains(document.activeElement))) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
   const [newUser, setNewUser] = useState({
     displayName: "",
     email: "",
@@ -107,6 +138,9 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
     setEnabled(next);
     setSaved(next);
   }, [initialEnabledModules]);
+  useEffect(() => {
+    if (addingStore || editingStore) storeNameInputRef.current?.focus();
+  }, [addingStore, editingStore]);
   async function saveDefaults() {
     setSaving(true);
     const enabledModules = PORTAL_MODULES.filter(({ id }) =>
@@ -170,8 +204,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
       } : current);
       await loadUsers();
       onStoreChanged?.();
-      setAddingStore(false);
-      setStoreError("");
+      closeStoreModal();
       setNewStore(emptyStoreDraft());
       setMessage("Store added. Customer access can be assigned under Users & roles.");
     } catch {
@@ -202,8 +235,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
       } : current);
       await loadUsers();
       onStoreChanged?.();
-      setEditingStore(null);
-      setStoreError("");
+      closeStoreModal();
       setMessage("Store updated.");
     } catch {
       setStoreError("Unable to update store. Please try again.");
@@ -425,7 +457,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
               <span>Add a store to make it available in the portal.</span>
             </div>
             <span className="store-access-note">Customer visibility is managed separately under Users & roles.</span>
-            <button onClick={() => { setMessage(""); setStoreError(""); setAddingStore(true); }}>+ Add store</button>
+            <button onClick={event => { storeReturnFocusRef.current = event.currentTarget; setMessage(""); setStoreError(""); setAddingStore(true); }}>+ Add store</button>
           </section>
           <section className="store-access-list">
             {data?.stores.map(store => (
@@ -434,7 +466,8 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
                   <h3>{store.name}</h3>
                 </div>
                 <span>{store.platform}</span>
-                <button className="edit-access" onClick={() => {
+                <button className="edit-access" onClick={event => {
+                  storeReturnFocusRef.current = event.currentTarget;
                   setMessage("");
                   setStoreError("");
                   setEditingStore(store);
@@ -454,14 +487,14 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
       )}
 
       {addingStore && (
-        <div className="access-modal" role="dialog" aria-modal="true" aria-label="Add store">
-          <div className="access-editor card">
+        <div className="access-modal" role="dialog" aria-modal="true" aria-label="Add store" onKeyDown={handleStoreModalKeyDown}>
+          <div className="access-editor card" ref={storeModalRef}>
             <div className="access-editor-head">
               <div><p className="kicker">NEW STORE</p><h3>Add store</h3></div>
-              <button aria-label="Close" disabled={saving} onClick={() => { setAddingStore(false); setStoreError(""); }}>×</button>
+              <button aria-label="Close" disabled={saving} onClick={closeStoreModal}>×</button>
             </div>
             <div className="access-form" aria-busy={saving}>
-              <label>Store name<input maxLength={120} required value={newStore.name} onChange={event => updateNewStore({ name: event.target.value })} /></label>
+              <label>Store name<input ref={storeNameInputRef} maxLength={120} required value={newStore.name} onChange={event => updateNewStore({ name: event.target.value })} /></label>
               <label>Market<select value={newStore.market} onChange={event => updateNewStore({ market: event.target.value as "MY" | "SG" })}><option value="MY">Malaysia (MY)</option><option value="SG">Singapore (SG)</option></select></label>
               <StoreLinkFields draft={newStore} update={updateNewStore} idPrefix="add-store" />
               {storeError && <p id="add-store-error" className="store-form-error" role="alert">{storeError}</p>}
@@ -472,14 +505,14 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
       )}
 
       {editingStore && (
-        <div className="access-modal" role="dialog" aria-modal="true" aria-label="Edit store">
-          <div className="access-editor card">
+        <div className="access-modal" role="dialog" aria-modal="true" aria-label="Edit store" onKeyDown={handleStoreModalKeyDown}>
+          <div className="access-editor card" ref={storeModalRef}>
             <div className="access-editor-head">
               <div><p className="kicker">STORE</p><h3>Edit store</h3></div>
-              <button aria-label="Close" disabled={saving} onClick={() => { setEditingStore(null); setStoreError(""); }}>×</button>
+              <button aria-label="Close" disabled={saving} onClick={closeStoreModal}>×</button>
             </div>
             <div className="access-form" aria-busy={saving}>
-              <label>Store name<input maxLength={120} required value={storeDraft.name} onChange={event => updateStoreDraft({ name: event.target.value })} /></label>
+              <label>Store name<input ref={storeNameInputRef} maxLength={120} required value={storeDraft.name} onChange={event => updateStoreDraft({ name: event.target.value })} /></label>
               <StoreLinkFields draft={storeDraft} update={updateStoreDraft} idPrefix="edit-store" />
               {storeError && <p id="edit-store-error" className="store-form-error" role="alert">{storeError}</p>}
               <button className="primary" disabled={saving || !storeDraft.name.trim() || storeDraft.projectLinks.some(projectLinkError)} aria-describedby={storeError ? "edit-store-error" : undefined} onClick={saveStore}>{saving ? "Saving…" : "Save store"}</button>
