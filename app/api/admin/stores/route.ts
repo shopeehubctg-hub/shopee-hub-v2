@@ -5,7 +5,7 @@ import { proposedStoreId, storeIdConflict, storeNameConflict } from "../../../st
 export const dynamic = "force-dynamic";
 
 type Membership = { tenant_id: string; role: string; active: boolean };
-type Store = { id: string; name: string; bigseller_name: string; platform: string };
+type Store = { id: string; name: string; display_name: string | null; bigseller_name: string; platform: string };
 
 async function superAdminMembership() {
   const actor = await getChatGPTUser();
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   if (sourceName.length > 120) return Response.json({ error: "Source name must be 120 characters or fewer" }, { status: 400 });
   const finalSourceName = sourceName || name;
 
-  const existing = await supabaseRest<Store[]>(`stores?select=id,name,bigseller_name,platform&tenant_id=eq.${encodeURIComponent(member.tenant_id)}`);
+  const existing = await supabaseRest<Store[]>(`stores?select=id,name,display_name,bigseller_name,platform&tenant_id=eq.${encodeURIComponent(member.tenant_id)}`);
   if (storeNameConflict(existing, name, finalSourceName)) {
     return Response.json({ error: "A store with this name or source name already exists" }, { status: 409 });
   }
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
   const id = proposedStoreId(name);
   if (storeIdConflict(existing, id)) return Response.json({ error: "This store ID already exists; use a more distinct store name" }, { status: 409 });
   try {
-    const created = await supabaseRest<Store[]>("stores?select=id,name,bigseller_name,platform", {
+    const created = await supabaseRest<Store[]>("stores?select=id,name,display_name,bigseller_name,platform", {
       method: "POST",
       headers: { Prefer: "return=representation" },
       body: JSON.stringify({ id, tenant_id: member.tenant_id, name, platform: `Shopee ${body.market}`, bigseller_name: finalSourceName }),
@@ -61,16 +61,16 @@ export async function PATCH(request: Request) {
   if (!id) return Response.json({ error: "Store ID is required" }, { status: 400 });
   if (!name || name.length > 120) return Response.json({ error: "Store name is required (up to 120 characters)" }, { status: 400 });
 
-  const existing = await supabaseRest<Store[]>(`stores?select=id,name,bigseller_name,platform&tenant_id=eq.${encodeURIComponent(member.tenant_id)}`);
+  const existing = await supabaseRest<Store[]>(`stores?select=id,name,display_name,bigseller_name,platform&tenant_id=eq.${encodeURIComponent(member.tenant_id)}`);
   const target = existing.find(store => store.id === id);
   if (!target) return Response.json({ error: "Store not found" }, { status: 404 });
   if (storeNameConflict(existing, name, name, id)) return Response.json({ error: "This store name is already in use" }, { status: 409 });
-  if (target.name === name) return Response.json({ store: target });
-  const updated = await supabaseRest<Store[]>(`stores?id=eq.${encodeURIComponent(id)}&tenant_id=eq.${encodeURIComponent(member.tenant_id)}&select=id,name,bigseller_name,platform`, {
+  if ((target.display_name ?? target.name) === name) return Response.json({ store: { ...target, name } });
+  const updated = await supabaseRest<Store[]>(`stores?id=eq.${encodeURIComponent(id)}&tenant_id=eq.${encodeURIComponent(member.tenant_id)}&select=id,name,display_name,bigseller_name,platform`, {
     method: "PATCH",
     headers: { Prefer: "return=representation" },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ display_name: name }),
   });
   if (!updated[0]) return Response.json({ error: "Store not found" }, { status: 404 });
-  return Response.json({ store: updated[0] });
+  return Response.json({ store: { ...updated[0], name: updated[0].display_name ?? updated[0].name } });
 }

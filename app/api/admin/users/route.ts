@@ -15,9 +15,9 @@ async function portalUsers(tenantId:string){
   const [users,tenantModules,tenantStoreRows]=await Promise.all([
     supabaseRest<Member[]>(`customer_users?select=*&tenant_id=eq.${encodeURIComponent(tenantId)}&order=email.asc`),
     supabaseRest<Array<{module_id:string;enabled:boolean}>>(`tenant_module_permissions?select=module_id,enabled&tenant_id=eq.${encodeURIComponent(tenantId)}`),
-    supabaseRest<Array<{id:string;name:string;platform:string;bigseller_name:string}>>(`stores?select=id,name,platform,bigseller_name&tenant_id=eq.${encodeURIComponent(tenantId)}&order=name.asc`),
+    supabaseRest<Array<{id:string;name:string;display_name:string|null;platform:string;bigseller_name:string}>>(`stores?select=id,name,display_name,platform,bigseller_name&tenant_id=eq.${encodeURIComponent(tenantId)}&order=name.asc`),
   ]);
-  const tenantStores=tenantStoreRows.filter(store=>canonicalStoreId(store.id)===store.id);
+  const tenantStores=tenantStoreRows.filter(store=>canonicalStoreId(store.id)===store.id).map(store=>({...store,name:store.display_name??store.name}));
   const ids=users.map(user=>user.id);const [moduleRows,storeRows]=ids.length?await Promise.all([
     supabaseRest<Array<{user_id:number;module_id:string;enabled:boolean}>>(`user_module_permissions?select=user_id,module_id,enabled&user_id=in.(${ids.join(",")})`),
     supabaseRest<Array<{user_id:number;store_id:string}>>(`user_store_access?select=user_id,store_id&user_id=in.(${ids.join(",")})`),

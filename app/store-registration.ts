@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-export type RegisteredStore = { id: string; name: string; bigseller_name: string };
+export type RegisteredStore = { id: string; name: string; bigseller_name: string; display_name?: string | null };
 
 export function normalizeStoreName(value: string) {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
@@ -14,7 +14,7 @@ export function proposedStoreId(name: string) {
 
 export function storeNameConflict(stores: RegisteredStore[], name: string, sourceName: string, excludeId?: string) {
   const candidates = new Set([normalizeStoreName(name), normalizeStoreName(sourceName)]);
-  return stores.some(store => store.id !== excludeId && (candidates.has(normalizeStoreName(store.name)) || candidates.has(normalizeStoreName(store.bigseller_name))));
+  return stores.some(store => store.id !== excludeId && [store.name, store.bigseller_name, store.display_name].some(value => value && candidates.has(normalizeStoreName(value))));
 }
 
 export function storeIdConflict(stores: RegisteredStore[], id: string) {

@@ -55,7 +55,7 @@ export const userModulePermissions = pgTable("user_module_permissions", {
 
 export const stores = pgTable("stores", {
   id:text("id").primaryKey(), tenantId:text("tenant_id").notNull().references(()=>tenants.id), name:text("name").notNull(),
-  platform:text("platform").notNull().default("Shopee"), bigSellerName:text("bigseller_name").notNull(), createdAt:createdAt(),
+  displayName:text("display_name"), platform:text("platform").notNull().default("Shopee"), bigSellerName:text("bigseller_name").notNull(), createdAt:createdAt(),
 }, table=>[index("stores_tenant_id_idx").on(table.tenantId),unique("stores_tenant_id_id_key").on(table.tenantId,table.id)]);
 
 export const liveSessions = pgTable("live_sessions", {

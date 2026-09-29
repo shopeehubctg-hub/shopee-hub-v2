@@ -69,8 +69,8 @@ test("store selector shows registered names while retaining Link Directory ident
   assert.match(route, /directoryStores\.map/);
   assert.match(route, /tenantStores[\s\S]*\.map\(\(stored\)/);
   assert.match(route, /stored\.id !== "shopee-kata-care-malaysia"/);
-  assert.match(route, /name: registered\?\.name\?\?directory\.name/);
-  assert.match(route, /name: stored\.name/);
+  assert.match(route, /name: registered\?\.display_name\?\?registered\?\.name\?\?directory\.name/);
+  assert.match(route, /name: stored\.displayName\?\?stored\.name/);
   assert.match(route, /directoryById\.get\(stored\.id\)/);
   assert.match(route, /cache: "no-store"/);
   assert.doesNotMatch(route, /connectedShopeeStoreNames\.map/);

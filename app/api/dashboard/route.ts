@@ -280,20 +280,20 @@ export async function GET(request: Request) {
     const clientEnabledModules=ALL_PORTAL_MODULE_IDS.filter(id=>id==="live_calendar"?tenantEnabled.get(id)===true:tenantEnabled.get(id)!==false);
     const enabledModules=membership.role==="superadmin"?ALL_PORTAL_MODULE_IDS:membership.module_access_mode==="custom"?ALL_PORTAL_MODULE_IDS.filter(id=>customEnabled.has(id)&&(id==="live_calendar"?tenantEnabled.get(id)===true:tenantEnabled.get(id)!==false)):ALL_PORTAL_MODULE_IDS.filter(id=>id==="live_calendar"?tenantEnabled.get(id)===true:tenantEnabled.get(id)!==false);
     const assignedStoreIds=new Set(userStores.map(row=>canonicalStoreId(row.store_id)));
-    const registry=await supabaseRest<RegistryStore[]>(`stores?select=id,name,platform,bigseller_name&tenant_id=eq.${encodeURIComponent(membership.tenant_id)}&order=name.asc`);
+    const registry=await supabaseRest<RegistryStore[]>(`stores?select=id,name,display_name,platform,bigseller_name&tenant_id=eq.${encodeURIComponent(membership.tenant_id)}&order=name.asc`);
     const directoryStores = membership.tenant_id===DIRECTORY_TENANT_ID?await readLinkDirectory():[];
     const directoryVisible=directoryStores.map((directory) => {
       const registered=registry.find(store=>store.id===directory.id)??matchingStore(directory.name,registry);
       return {
         id: registered?.id??directory.id??canonicalIdForDirectoryName(directory.name),
-        name: registered?.name??directory.name,
+        name: registered?.display_name??registered?.name??directory.name,
         sourceName: directory.name,
         bigsellerName: registered?.bigseller_name??directory.name,
         platform: registered?.platform??(isSingaporeStore(directory.name) ? "Shopee SG" : "Shopee MY"),
       };
     });
     const representedIds=new Set(directoryVisible.map(store=>store.id));
-    const visibleStores = [...directoryVisible,...registry.filter(store=>canonicalStoreId(store.id)===store.id&&!representedIds.has(store.id)).map(store=>({id:store.id,name:store.name,sourceName:store.bigseller_name,bigsellerName:store.bigseller_name,platform:store.platform}))]
+    const visibleStores = [...directoryVisible,...registry.filter(store=>canonicalStoreId(store.id)===store.id&&!representedIds.has(store.id)).map(store=>({id:store.id,name:store.display_name??store.name,sourceName:store.bigseller_name,bigsellerName:store.bigseller_name,platform:store.platform}))]
       .filter(store=>membership.role==="superadmin"||membership.store_access_mode==="all"||assignedStoreIds.has(store.id));
     const requestedStoreId = new URL(request.url).searchParams.get("storeId");
     const allStoresRequested = !requestedStoreId || requestedStoreId === "all";
@@ -322,7 +322,7 @@ export async function GET(request: Request) {
       stores: visibleStores.map((store) => {
         const directory = directoryStores.find((item) => item.id===store.id||item.name===store.sourceName);
         return {
-          id:store.id,name:store.name,platform:store.platform,
+          id:store.id,name:store.name,sourceName:store.sourceName,platform:store.platform,
           contacts: directory?.contacts.length ? directory.contacts : contactsForStore(store.sourceName),
           storeGroupLink: directory?.storeGroupLink ?? null,
           driveLink: directory?.driveLink ?? null,
@@ -385,7 +385,7 @@ export async function GET(request: Request) {
       ...stored,
       storedName: stored.name,
       directoryName,
-      name: stored.name,
+      name: stored.displayName??stored.name,
     };
   }) : membership.storeAccessMode === "selected" && membership.role !== "superadmin" ? [] : directoryStores.map(({ name }) => ({
     id: storeIdFor(name), tenantId: tenant.id, name, storedName: name, directoryName: name,
@@ -458,6 +458,7 @@ export async function GET(request: Request) {
       return {
         id,
         name,
+        sourceName:directoryName,
         platform,
         contacts: directory?.contacts.length ? directory.contacts : contactsForStore(directoryName),
         storeGroupLink: directory?.storeGroupLink ?? null,

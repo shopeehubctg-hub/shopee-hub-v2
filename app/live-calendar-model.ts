@@ -1,6 +1,6 @@
 export const DIRECTORY_TENANT_ID = "j-packaging";
 
-export type RegistryStore = { id:string; name:string; bigseller_name:string; platform:string };
+export type RegistryStore = { id:string; name:string; display_name?:string|null; bigseller_name:string; platform:string };
 
 const canonicalIdByDirectoryName:Record<string,string>={
   "skindae sg by ctg4u":"shopee-skindae-sg",

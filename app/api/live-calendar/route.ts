@@ -6,7 +6,7 @@ import { DIRECTORY_TENANT_ID, canonicalStoreId, canonicalIdForDirectoryName, mat
 export const dynamic = "force-dynamic";
 
 type Membership = { id:number; tenant_id:string; role:"customer"|"manager"|"superadmin"; active:boolean; module_access_mode:"role_default"|"custom"; store_access_mode:"all"|"selected" };
-type Store = { id:string; name:string; bigseller_name:string; platform:string };
+type Store = { id:string; name:string; display_name:string|null; bigseller_name:string; platform:string };
 type Session = { id:string; tenant_id:string; store_id:string; title:string; start_at:string; end_at:string; time_zone:string; status:"scheduled"|"cancelled"; internal_note:string|null; created_at:string; updated_at:string };
 type SessionInput = { id?:unknown; storeId?:unknown; directoryName?:unknown; title?:unknown; startLocal?:unknown; endLocal?:unknown; timeZone?:unknown; internalNote?:unknown; confirmOverlap?:unknown; action?:unknown };
 
@@ -30,7 +30,7 @@ async function access() {
       if (userPermissions[0]?.enabled !== true) return { error:Response.json({error:"Live Calendar access disabled"},{status:403}) };
     }
   }
-  const storeRows = await supabaseRest<Store[]>(`stores?select=id,name,bigseller_name,platform&tenant_id=eq.${encodeURIComponent(member.tenant_id)}&order=name.asc`);
+  const storeRows = await supabaseRest<Store[]>(`stores?select=id,name,display_name,bigseller_name,platform&tenant_id=eq.${encodeURIComponent(member.tenant_id)}&order=name.asc`);
   const stores=storeRows.filter(store=>canonicalStoreId(store.id)===store.id);
   if (member.role === "superadmin" || member.role !== "customer" && member.store_access_mode === "all") return { member, user, stores };
   const assigned = await supabaseRest<Array<{store_id:string}>>(`user_store_access?select=store_id&user_id=eq.${member.id}`);
@@ -85,7 +85,7 @@ export async function GET(request:Request) {
     const idFilter = encodeURIComponent(`(${visibleIds.map(id=>JSON.stringify(id)).join(",")})`);
     const statusFilter = auth.member.role === "superadmin" ? "" : "&status=eq.scheduled";
     const sessions = await readAllCalendarPages<Session>((offset,limit)=>supabaseRest<Session[]>(`live_sessions?select=${fields}&tenant_id=eq.${encodeURIComponent(auth.member.tenant_id)}&store_id=in.${idFilter}${statusFilter}&start_at=lt.${encodeURIComponent(toDate.toISOString())}&end_at=gt.${encodeURIComponent(fromDate.toISOString())}&order=start_at.asc,id.asc&offset=${offset}&limit=${limit}`));
-    return Response.json({stores:auth.stores.map(store=>({id:store.id,name:store.name,platform:store.platform,timeZone:storeZone(store)})),sessions,canManage:auth.member.role==="superadmin",unregisteredStores,registryError},{headers:privateHeaders});
+    return Response.json({stores:auth.stores.map(store=>({id:store.id,name:store.display_name??store.name,platform:store.platform,timeZone:storeZone(store)})),sessions,canManage:auth.member.role==="superadmin",unregisteredStores,registryError},{headers:privateHeaders});
   } catch (error) {
     console.error("Live Calendar read failed",error);
     return Response.json({error:"Live Calendar is unavailable"},{status:503});
@@ -108,7 +108,7 @@ export async function POST(request:Request) {
       if(existing)return Response.json({store:existing},{headers:privateHeaders});
       const id=canonicalIdForDirectoryName(body.directoryName);
       const platform=platformForDirectoryName(body.directoryName);
-      const created=await supabaseRest<Store[]>("stores?select=id,name,bigseller_name,platform",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify({id,tenant_id:auth.member.tenant_id,name:body.directoryName,platform,bigseller_name:body.directoryName})});
+      const created=await supabaseRest<Store[]>("stores?select=id,name,display_name,bigseller_name,platform",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify({id,tenant_id:auth.member.tenant_id,name:body.directoryName,platform,bigseller_name:body.directoryName})});
       return Response.json({store:created[0]},{status:201,headers:privateHeaders});
     }
     const input = cleanInput(body,auth.stores);

@@ -199,7 +199,7 @@ export async function GET(request: Request) {
   if (!storeId) {
     return Response.json({ packages:[], source:"store-selection-required", canCreate:false, canDelete:false }, { headers:{ "Cache-Control":"private, no-store" } });
   }
-  const tenantStores = await db.select({ id:stores.id, name:stores.name }).from(stores)
+  const tenantStores = await db.select({ id:stores.id, name:stores.name, displayName:stores.displayName }).from(stores)
     .where(eq(stores.tenantId, membership.tenantId));
   const assignedStoreRows = membership.role === "superadmin" || membership.storeAccessMode === "all"
     ? []
@@ -217,7 +217,7 @@ export async function GET(request: Request) {
     return Response.json({ packages:[], source:"database", canCreate:false, canDelete:false }, { headers:{ "Cache-Control":"private, no-store" } });
   }
   const scopedStoreIds = scopedStores.map(store => store.id);
-  const storeNames = new Map(scopedStores.map(store => [store.id, store.name]));
+  const storeNames = new Map(scopedStores.map(store => [store.id, store.displayName ?? store.name]));
   const allRows = await db.select().from(packages)
     .where(and(eq(packages.tenantId, membership.tenantId), inArray(packages.storeId, scopedStoreIds)))
     .orderBy(desc(packages.updatedAt));

@@ -17,7 +17,7 @@ import { DashboardLoading } from "./dashboard-loading";
 import { LiveCalendar } from "./live-calendar";
 import { projectDriveFolders } from "./project-drive-folders";
 
-type Store = { id: string; name: string; platform: string; contacts: { project: string; href: string }[]; driveLink?: string | null };
+type Store = { id: string; name: string; sourceName?: string; platform: string; contacts: { project: string; href: string }[]; driveLink?: string | null };
 type ManagementAction = { actionDate: string; category: string; title: string; detail: string };
 type CoFundVoucher = { id:number; campaignName:string; campaignDate:string|null; campaignStartAt:string|null; campaignEndAt:string|null; voucherName:string; discountAmount:number; currency:string; quantity:number };
 type DashboardResponse = { stores: Store[]; selectedStoreId: string | null; snapshot: { payload: any; importedAt: string } | null; adBalance: { balance:number; balanceDate:string; sourceUpdatedAt:string|null; syncStatus:string; topUpOwner?:string | null } | null; adPerformance?:DailyAd[]; adPerformanceUpdatedAt?:string|null; adTopUpOverview?:AdTopUpOverview|null; actions?: ManagementAction[]; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; access?:{ role:string; enabledModules:PortalModuleId[]; clientEnabledModules:PortalModuleId[]; canManagePermissions:boolean } };
@@ -44,7 +44,7 @@ const actionFallback = [
 ];
 function driveActionsForStore(store: Store | null | undefined): ClientAction[] {
   if (!store) return [];
-  const folders = projectDriveFolders[store.name];
+  const folders = projectDriveFolders[store.sourceName ?? store.name];
   if (!folders) return [];
   return [
     {
@@ -169,7 +169,7 @@ export default function Home() {
   }
   const allStoresSelected = storeId === "all";
   const store = allStoresSelected ? null : (data?.stores.find(s => s.id === storeId) ?? data?.stores[0]);
-  const staticSnapshot = store ? storeSnapshots[store.name] : null;
+  const staticSnapshot = store ? storeSnapshots[store.sourceName ?? store.name] : null;
   const live = data?.snapshot?.payload ?? staticSnapshot ?? {};
   const noSample = Boolean(live.noSample);
   const overview = Array.isArray(live.overview) ? live.overview : overviewFallback;
