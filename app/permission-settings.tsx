@@ -17,7 +17,14 @@ type StoreDraft = StoreLinks & { name: string; market: "MY" | "SG" };
 type Store = { id: string; name: string; platform: string; bigseller_name?: string } & Partial<StoreLinks>;
 const emptyStoreDraft = (): StoreDraft => ({ name: "", market: "MY", projectLinks: [], storeGroupLink: "", googleDriveLink: "", adsTopUpOwner: "" });
 
-function StoreLinkFields({ draft, update }: { draft: StoreDraft; update: (patch: Partial<StoreDraft>) => void }) {
+function projectLinkError(link: ProjectLink) {
+  if (!link.project.trim() && !link.href.trim() && !link.driveLink?.trim()) return "";
+  if (link.driveLink?.trim() && (!link.project.trim() || !link.href.trim())) return "Add a project name and Project Group Link to save this Drive Link.";
+  if (!link.project.trim() || !link.href.trim()) return "Enter both a project name and Project Group Link.";
+  return "";
+}
+
+function StoreLinkFields({ draft, update, idPrefix }: { draft: StoreDraft; update: (patch: Partial<StoreDraft>) => void; idPrefix: string }) {
   const updateProjectLink = (index: number, patch: Partial<ProjectLink>) => update({
     projectLinks: draft.projectLinks.map((link, position) => position === index ? { ...link, ...patch } : link),
   });
@@ -25,12 +32,16 @@ function StoreLinkFields({ draft, update }: { draft: StoreDraft; update: (patch:
     <fieldset className="store-link-fields">
       <legend>Project Group Links</legend>
       <p className="store-access-note">Add one row for each project linked to this store.</p>
-      {draft.projectLinks.map((link, index) => <div className="store-project-link" key={index}>
-        <label>Project name<input maxLength={120} value={link.project} onChange={event => updateProjectLink(index, { project: event.target.value })} placeholder="Project name" /></label>
-        <label>Project Group Link<input type="url" maxLength={2048} value={link.href} onChange={event => updateProjectLink(index, { href: event.target.value })} placeholder="https://…" /></label>
+      {draft.projectLinks.map((link, index) => {
+        const error = projectLinkError(link);
+        const errorId = `${idPrefix}-project-${index}-error`;
+        return <div className="store-project-link" key={index}>
+        <label>Project name<input maxLength={120} value={link.project} aria-invalid={!!error && !link.project.trim()} aria-describedby={error ? errorId : undefined} onChange={event => updateProjectLink(index, { project: event.target.value })} placeholder="Project name" /></label>
+        <label>Project Group Link<input type="url" maxLength={2048} value={link.href} aria-invalid={!!error && !link.href.trim()} aria-describedby={error ? errorId : undefined} onChange={event => updateProjectLink(index, { href: event.target.value })} placeholder="https://…" /></label>
         <label className="store-project-drive">Project Google Drive Link (optional)<input type="url" maxLength={2048} value={link.driveLink ?? ""} onChange={event => updateProjectLink(index, { driveLink: event.target.value })} placeholder="https://…" /></label>
         <button type="button" className="edit-access" aria-label={`Remove project link ${index + 1}`} onClick={() => update({ projectLinks: draft.projectLinks.filter((_, position) => position !== index) })}>Remove</button>
-      </div>)}
+        {error && <p id={errorId} className="store-field-error" role="alert">{error}</p>}
+      </div>})}
       <button type="button" className="edit-access" onClick={() => update({ projectLinks: [...draft.projectLinks, { project: "", href: "", driveLink: "" }] })}>+ Add project link</button>
     </fieldset>
     <label>Store Group Link<input type="url" maxLength={2048} value={draft.storeGroupLink} onChange={event => update({ storeGroupLink: event.target.value })} placeholder="https://…" /></label>
@@ -66,12 +77,15 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
   const [editing, setEditing] = useState<PortalUser | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [storeError, setStoreError] = useState("");
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
   const [addingStore, setAddingStore] = useState(false);
   const [editingStore, setEditingStore] = useState<Store | null>(null);
   const [storeDraft, setStoreDraft] = useState<StoreDraft>(emptyStoreDraft);
   const [newStore, setNewStore] = useState<StoreDraft>(emptyStoreDraft);
+  const updateNewStore = (patch: Partial<StoreDraft>) => { setStoreError(""); setNewStore(current => ({ ...current, ...patch })); };
+  const updateStoreDraft = (patch: Partial<StoreDraft>) => { setStoreError(""); setStoreDraft(current => ({ ...current, ...patch })); };
   const [newUser, setNewUser] = useState({
     displayName: "",
     email: "",
@@ -136,6 +150,8 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
     }
   }
   async function addStore() {
+    if (newStore.projectLinks.some(projectLinkError)) return;
+    setStoreError("");
     setSaving(true);
     try {
       const response = await fetch("/api/admin/stores", {
@@ -145,7 +161,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
       });
       const result = await response.json().catch(() => ({ error: "The server returned an invalid response" }));
       if (!response.ok) {
-        setMessage(result.error ?? "Unable to add store");
+        setStoreError(result.error ?? "Unable to add store");
         return;
       }
       setData(current => current ? {
@@ -155,16 +171,19 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
       await loadUsers();
       onStoreChanged?.();
       setAddingStore(false);
+      setStoreError("");
       setNewStore(emptyStoreDraft());
       setMessage("Store added. Customer access can be assigned under Users & roles.");
     } catch {
-      setMessage("Unable to add store. Please try again.");
+      setStoreError("Unable to add store. Please try again.");
     } finally {
       setSaving(false);
     }
   }
   async function saveStore() {
     if (!editingStore) return;
+    if (storeDraft.projectLinks.some(projectLinkError)) return;
+    setStoreError("");
     setSaving(true);
     try {
       const response = await fetch("/api/admin/stores", {
@@ -174,7 +193,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
       });
       const result = await response.json().catch(() => ({ error: "The server returned an invalid response" }));
       if (!response.ok) {
-        setMessage(result.error ?? "Unable to update store");
+        setStoreError(result.error ?? "Unable to update store");
         return;
       }
       setData(current => current ? {
@@ -184,9 +203,10 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
       await loadUsers();
       onStoreChanged?.();
       setEditingStore(null);
+      setStoreError("");
       setMessage("Store updated.");
     } catch {
-      setMessage("Unable to update store. Please try again.");
+      setStoreError("Unable to update store. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -405,7 +425,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
               <span>Add a store to make it available in the portal.</span>
             </div>
             <span className="store-access-note">Customer visibility is managed separately under Users & roles.</span>
-            <button onClick={() => { setMessage(""); setAddingStore(true); }}>+ Add store</button>
+            <button onClick={() => { setMessage(""); setStoreError(""); setAddingStore(true); }}>+ Add store</button>
           </section>
           <section className="store-access-list">
             {data?.stores.map(store => (
@@ -416,6 +436,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
                 <span>{store.platform}</span>
                 <button className="edit-access" onClick={() => {
                   setMessage("");
+                  setStoreError("");
                   setEditingStore(store);
                   setStoreDraft({
                     name: store.name,
@@ -437,13 +458,14 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
           <div className="access-editor card">
             <div className="access-editor-head">
               <div><p className="kicker">NEW STORE</p><h3>Add store</h3></div>
-              <button aria-label="Close" disabled={saving} onClick={() => setAddingStore(false)}>×</button>
+              <button aria-label="Close" disabled={saving} onClick={() => { setAddingStore(false); setStoreError(""); }}>×</button>
             </div>
-            <div className="access-form">
-              <label>Store name<input maxLength={120} required value={newStore.name} onChange={event => setNewStore({ ...newStore, name: event.target.value })} /></label>
-              <label>Market<select value={newStore.market} onChange={event => setNewStore({ ...newStore, market: event.target.value as "MY" | "SG" })}><option value="MY">Malaysia (MY)</option><option value="SG">Singapore (SG)</option></select></label>
-              <StoreLinkFields draft={newStore} update={patch => setNewStore(current => ({ ...current, ...patch }))} />
-              <button className="primary" disabled={saving || !newStore.name.trim()} onClick={addStore}>{saving ? "Adding…" : "Add store"}</button>
+            <div className="access-form" aria-busy={saving}>
+              <label>Store name<input maxLength={120} required value={newStore.name} onChange={event => updateNewStore({ name: event.target.value })} /></label>
+              <label>Market<select value={newStore.market} onChange={event => updateNewStore({ market: event.target.value as "MY" | "SG" })}><option value="MY">Malaysia (MY)</option><option value="SG">Singapore (SG)</option></select></label>
+              <StoreLinkFields draft={newStore} update={updateNewStore} idPrefix="add-store" />
+              {storeError && <p id="add-store-error" className="store-form-error" role="alert">{storeError}</p>}
+              <button className="primary" disabled={saving || !newStore.name.trim() || newStore.projectLinks.some(projectLinkError)} aria-describedby={storeError ? "add-store-error" : undefined} onClick={addStore}>{saving ? "Adding…" : "Add store"}</button>
             </div>
           </div>
         </div>
@@ -454,12 +476,13 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
           <div className="access-editor card">
             <div className="access-editor-head">
               <div><p className="kicker">STORE</p><h3>Edit store</h3></div>
-              <button aria-label="Close" disabled={saving} onClick={() => setEditingStore(null)}>×</button>
+              <button aria-label="Close" disabled={saving} onClick={() => { setEditingStore(null); setStoreError(""); }}>×</button>
             </div>
-            <div className="access-form">
-              <label>Store name<input maxLength={120} required value={storeDraft.name} onChange={event => setStoreDraft({ ...storeDraft, name: event.target.value })} /></label>
-              <StoreLinkFields draft={storeDraft} update={patch => setStoreDraft(current => ({ ...current, ...patch }))} />
-              <button className="primary" disabled={saving || !storeDraft.name.trim()} onClick={saveStore}>{saving ? "Saving…" : "Save store"}</button>
+            <div className="access-form" aria-busy={saving}>
+              <label>Store name<input maxLength={120} required value={storeDraft.name} onChange={event => updateStoreDraft({ name: event.target.value })} /></label>
+              <StoreLinkFields draft={storeDraft} update={updateStoreDraft} idPrefix="edit-store" />
+              {storeError && <p id="edit-store-error" className="store-form-error" role="alert">{storeError}</p>}
+              <button className="primary" disabled={saving || !storeDraft.name.trim() || storeDraft.projectLinks.some(projectLinkError)} aria-describedby={storeError ? "edit-store-error" : undefined} onClick={saveStore}>{saving ? "Saving…" : "Save store"}</button>
             </div>
           </div>
         </div>
