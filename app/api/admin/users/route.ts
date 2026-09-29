@@ -4,6 +4,7 @@ import { canonicalStoreId } from "../../../live-calendar-model";
 import { supabaseRest } from "../../../supabase-rest";
 import { supabaseConfig } from "../../../supabase-rest";
 import { randomBytes } from "node:crypto";
+import { storeDetails, storeDirectory } from "../../../store-directory";
 
 export const dynamic="force-dynamic";
 type Role="customer"|"manager"|"superadmin";
@@ -12,12 +13,13 @@ type Member={id:number;email:string;display_name:string|null;tenant_id:string;ro
 async function authSuperAdmin(){const actor=await getChatGPTUser();if(!actor)return{error:Response.json({error:"Authentication required"},{status:401})};const rows=await supabaseRest<Member[]>(`customer_users?select=*&email=eq.${encodeURIComponent(actor.email.toLowerCase())}&limit=1`);const membership=rows[0];if(!membership?.active||membership.role!=="superadmin")return{error:Response.json({error:"Super Admin access required"},{status:403})};return{membership};}
 
 async function portalUsers(tenantId:string){
-  const [users,tenantModules,tenantStoreRows]=await Promise.all([
+  const [users,tenantModules,tenantStoreRows,directory]=await Promise.all([
     supabaseRest<Member[]>(`customer_users?select=*&tenant_id=eq.${encodeURIComponent(tenantId)}&order=email.asc`),
     supabaseRest<Array<{module_id:string;enabled:boolean}>>(`tenant_module_permissions?select=module_id,enabled&tenant_id=eq.${encodeURIComponent(tenantId)}`),
     supabaseRest<Array<{id:string;name:string;display_name:string|null;platform:string;bigseller_name:string}>>(`stores?select=id,name,display_name,platform,bigseller_name&tenant_id=eq.${encodeURIComponent(tenantId)}&order=name.asc`),
+    storeDirectory(tenantId),
   ]);
-  const tenantStores=tenantStoreRows.filter(store=>canonicalStoreId(store.id)===store.id).map(store=>({...store,name:store.display_name??store.name}));
+  const tenantStores=tenantStoreRows.filter(store=>canonicalStoreId(store.id)===store.id).map(store=>({...store,name:store.display_name??store.name,...storeDetails(directory,store.id)}));
   const ids=users.map(user=>user.id);const [moduleRows,storeRows]=ids.length?await Promise.all([
     supabaseRest<Array<{user_id:number;module_id:string;enabled:boolean}>>(`user_module_permissions?select=user_id,module_id,enabled&user_id=in.(${ids.join(",")})`),
     supabaseRest<Array<{user_id:number;store_id:string}>>(`user_store_access?select=user_id,store_id&user_id=in.(${ids.join(",")})`),

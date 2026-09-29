@@ -17,7 +17,7 @@ import { DashboardLoading } from "./dashboard-loading";
 import { LiveCalendar } from "./live-calendar";
 import { projectDriveFolders } from "./project-drive-folders";
 
-type Store = { id: string; name: string; sourceName?: string; platform: string; contacts: { project: string; href: string }[]; driveLink?: string | null };
+type Store = { id: string; name: string; sourceName?: string; platform: string; contacts: { project: string; href: string; driveLink?: string }[]; storeGroupLink?: string | null; driveLink?: string | null };
 type ManagementAction = { actionDate: string; category: string; title: string; detail: string };
 type CoFundVoucher = { id:number; campaignName:string; campaignDate:string|null; campaignStartAt:string|null; campaignEndAt:string|null; voucherName:string; discountAmount:number; currency:string; quantity:number };
 type DashboardResponse = { stores: Store[]; selectedStoreId: string | null; snapshot: { payload: any; importedAt: string } | null; adBalance: { balance:number; balanceDate:string; sourceUpdatedAt:string|null; syncStatus:string; topUpOwner?:string | null } | null; adPerformance?:DailyAd[]; adPerformanceUpdatedAt?:string|null; adTopUpOverview?:AdTopUpOverview|null; actions?: ManagementAction[]; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; access?:{ role:string; enabledModules:PortalModuleId[]; clientEnabledModules:PortalModuleId[]; canManagePermissions:boolean } };
@@ -44,6 +44,11 @@ const actionFallback = [
 ];
 function driveActionsForStore(store: Store | null | undefined): ClientAction[] {
   if (!store) return [];
+  const direct = store.contacts.filter(contact=>contact.driveLink).map(contact=>({
+    title:`${contact.project} Drive`,client:store.name,due:"Available now",type:"Drive",action:"Open Drive",href:contact.driveLink,
+  }));
+  if (direct.length) return direct;
+  if (store.driveLink) return [{title:"Store Drive",client:store.name,due:"Available now",type:"Drive",action:"Open Drive",href:store.driveLink}];
   const folders = projectDriveFolders[store.sourceName ?? store.name];
   if (!folders) return [];
   return [
@@ -251,7 +256,7 @@ export default function Home() {
       <div className="logo"><img src="/shopee-hub-logo-transparent.png" alt="ShopeeHub"/><small>STORE COMMAND CENTER</small></div>
       <button className="sidebar-toggle" onClick={()=>setSidebarCollapsed(current=>!current)} aria-label={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"} title={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"}>{sidebarCollapsed?"›":"‹"}</button>
       <nav>{nav.map(([id,label]) => <button key={id} className={section===id?"active":""} onClick={()=>setSection(id)}><span>{label.slice(0,1)}</span>{label}</button>)}</nav>
-      <div className="fleet contact-card"><p>Contact Shopee Hub Specialist</p><strong>{allStoresSelected ? "Select a project" : (store?.contacts.length ? store.name : "Link unavailable")}</strong><div>{!allStoresSelected && store?.contacts.map(contact=><a key={contact.href} href={contact.href} target="_blank" rel="noopener noreferrer" title={contact.project}>{store.contacts.length > 1 ? contact.project : "Contact"} →</a>)}</div></div>
+      <div className="fleet contact-card"><p>Contact Shopee Hub Specialist</p><strong>{allStoresSelected ? "Select a project" : (store?.contacts.length ? store.name : "Link unavailable")}</strong><div>{!allStoresSelected && store?.contacts.map(contact=><a key={contact.href} href={contact.href} target="_blank" rel="noopener noreferrer" title={contact.project}>{store.contacts.length > 1 ? contact.project : "Contact"} →</a>)}{!allStoresSelected && store?.storeGroupLink && <a href={store.storeGroupLink} target="_blank" rel="noopener noreferrer">Store group →</a>}</div></div>
       <p className="access">{data.access?.role === "superadmin" ? "Super Admin access" : "Private access"}<br/><b>{data.user.email}</b></p>
     </aside>
 

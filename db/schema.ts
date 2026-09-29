@@ -168,7 +168,7 @@ export const linkDirectoryStores = pgTable("link_directory_stores", {
   adsTopUpOwner:text("ads_top_up_owner", {enum:["Client","Client Approval","Shopee Hub"]}),
   storeGroupLink:text("store_group_link"),
   googleDriveLink:text("google_drive_link"),
-  sourceSheetId:text("source_sheet_id").notNull(),
+  sourceSheetId:text("source_sheet_id"),
   sourceTab:text("source_tab").notNull().default("WhatsApp Group"),
   syncedAt:timestamp("synced_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),
 },table=>[uniqueIndex("link_directory_store_name_idx").on(table.tenantId,table.storeName)]);
@@ -178,6 +178,7 @@ export const linkDirectoryProjects = pgTable("link_directory_projects", {
   storeId:text("store_id").notNull().references(()=>linkDirectoryStores.storeId,{onDelete:"cascade"}),
   projectName:text("project_name").notNull(),
   projectGroupLink:text("project_group_link").notNull(),
+  googleDriveLink:text("google_drive_link"),
   createdAt:createdAt(),
 },table=>[uniqueIndex("link_directory_project_idx").on(table.storeId,table.projectName),index("link_directory_projects_store_id_idx").on(table.storeId)]);
 

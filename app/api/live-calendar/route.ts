@@ -1,7 +1,6 @@
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { supabaseRest } from "../../supabase-rest";
-import { directoryStoreNames } from "../../live-calendar-store-registry";
-import { DIRECTORY_TENANT_ID, canonicalStoreId, canonicalIdForDirectoryName, matchingStore, platformForDirectoryName, storeZone, parseStoreLocal, readAllCalendarPages } from "../../live-calendar-model";
+import { canonicalStoreId, storeZone, parseStoreLocal, readAllCalendarPages } from "../../live-calendar-model";
 
 export const dynamic = "force-dynamic";
 
@@ -71,21 +70,13 @@ export async function GET(request:Request) {
     const fromDate = new Date(from), toDate = new Date(to);
     if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime()) || toDate <= fromDate || toDate.getTime()-fromDate.getTime()>370*86400000)
       return Response.json({error:"Invalid calendar range"},{status:400});
-    let unregisteredStores:string[]=[];
-    let registryError:string|null=null;
-    if(auth.member.role==="superadmin"&&auth.member.tenant_id===DIRECTORY_TENANT_ID) {
-      try {
-        const names=await directoryStoreNames();
-        unregisteredStores=names.filter(name=>!matchingStore(name,auth.stores));
-      } catch { registryError="Link Directory could not be checked. Calendar data is still available."; }
-    }
-    if (!auth.stores.length) return Response.json({stores:[],sessions:[],canManage:auth.member.role==="superadmin",unregisteredStores,registryError},{headers:privateHeaders});
+    if (!auth.stores.length) return Response.json({stores:[],sessions:[],canManage:auth.member.role==="superadmin"},{headers:privateHeaders});
     const visibleIds = storeId && storeId!=="all" ? [storeId] : auth.stores.map(store=>store.id);
     const fields = auth.member.role === "superadmin" ? "id,tenant_id,store_id,title,start_at,end_at,time_zone,status,internal_note,created_at,updated_at" : "id,store_id,title,start_at,end_at,time_zone,status";
     const idFilter = encodeURIComponent(`(${visibleIds.map(id=>JSON.stringify(id)).join(",")})`);
     const statusFilter = auth.member.role === "superadmin" ? "" : "&status=eq.scheduled";
     const sessions = await readAllCalendarPages<Session>((offset,limit)=>supabaseRest<Session[]>(`live_sessions?select=${fields}&tenant_id=eq.${encodeURIComponent(auth.member.tenant_id)}&store_id=in.${idFilter}${statusFilter}&start_at=lt.${encodeURIComponent(toDate.toISOString())}&end_at=gt.${encodeURIComponent(fromDate.toISOString())}&order=start_at.asc,id.asc&offset=${offset}&limit=${limit}`));
-    return Response.json({stores:auth.stores.map(store=>({id:store.id,name:store.display_name??store.name,platform:store.platform,timeZone:storeZone(store)})),sessions,canManage:auth.member.role==="superadmin",unregisteredStores,registryError},{headers:privateHeaders});
+    return Response.json({stores:auth.stores.map(store=>({id:store.id,name:store.display_name??store.name,platform:store.platform,timeZone:storeZone(store)})),sessions,canManage:auth.member.role==="superadmin"},{headers:privateHeaders});
   } catch (error) {
     console.error("Live Calendar read failed",error);
     return Response.json({error:"Live Calendar is unavailable"},{status:503});
@@ -100,16 +91,7 @@ export async function POST(request:Request) {
     const body = await request.json().catch(()=>null) as SessionInput|null;
     if (!body) return Response.json({error:"Invalid request"},{status:400});
     if (body.action==="registerStore") {
-      if(auth.member.tenant_id!==DIRECTORY_TENANT_ID)return Response.json({error:"This Link Directory belongs to another tenant"},{status:403});
-      if(typeof body.directoryName!=="string")return Response.json({error:"Directory store name required"},{status:400});
-      const names=await directoryStoreNames();
-      if(!names.includes(body.directoryName))return Response.json({error:"Store is not in Link Directory"},{status:400});
-      const existing=matchingStore(body.directoryName,auth.stores);
-      if(existing)return Response.json({store:existing},{headers:privateHeaders});
-      const id=canonicalIdForDirectoryName(body.directoryName);
-      const platform=platformForDirectoryName(body.directoryName);
-      const created=await supabaseRest<Store[]>("stores?select=id,name,display_name,bigseller_name,platform",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify({id,tenant_id:auth.member.tenant_id,name:body.directoryName,platform,bigseller_name:body.directoryName})});
-      return Response.json({store:created[0]},{status:201,headers:privateHeaders});
+      return Response.json({error:"Add stores under Permission Settings"},{status:410});
     }
     const input = cleanInput(body,auth.stores);
     if ("error" in input) return input.error;
