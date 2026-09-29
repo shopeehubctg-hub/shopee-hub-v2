@@ -76,6 +76,7 @@ function parseCsvLine(line: string) {
 
 type LinkDirectoryContact = { project: string; href: string };
 type LinkDirectoryStore = {
+  id?: string;
   name: string;
   topUpOwner: string | null;
   contacts: LinkDirectoryContact[];
@@ -103,6 +104,7 @@ async function readLinkDirectory(): Promise<LinkDirectoryStore[]> {
     const rows = (await response.text()).trim().split(/\r?\n/).map(parseCsvLine);
     const header = rows[0] ?? [];
     const nameIndex = header.indexOf("Store Name");
+    const idIndex = header.indexOf("Store ID");
     const projectIndex = header.indexOf("Project");
     const projectGroupIndex = header.indexOf("Project Group Link");
     const storeGroupIndex = header.indexOf("Store Group Link");
@@ -121,6 +123,7 @@ async function readLinkDirectory(): Promise<LinkDirectoryStore[]> {
         contacts.push({ project: row[projectIndex]?.trim() || name, href: projectGroupLink });
       }
       stores.set(name, {
+        id: row[idIndex]?.trim() || existing?.id,
         name,
         topUpOwner: existing?.topUpOwner ?? normalizeTopUpOwner(row[ownerIndex]),
         contacts,
@@ -164,12 +167,11 @@ async function readSheetBalances() {
   }
 }
 
-function balanceForStore(balances:Map<string,SheetBalance>, storeName:string, storedName=storeName) {
-  const direct=balances.get(storeName);
-  const stored=balances.get(storedName);
-  if (!direct) return stored ?? null;
-  if (!stored) return direct;
-  return direct.balanceDate >= stored.balanceDate ? direct : stored;
+function balanceForStore(balances:Map<string,SheetBalance>, ...names:string[]) {
+  return names.reduce<SheetBalance|null>((latest,name)=>{
+    const candidate=balances.get(name);
+    return candidate&&(!latest||candidate.balanceDate>latest.balanceDate)?candidate:latest;
+  },null);
 }
 
 function normalizeTopUpOwner(value?: string | null) {
@@ -280,13 +282,18 @@ export async function GET(request: Request) {
     const assignedStoreIds=new Set(userStores.map(row=>canonicalStoreId(row.store_id)));
     const registry=await supabaseRest<RegistryStore[]>(`stores?select=id,name,platform,bigseller_name&tenant_id=eq.${encodeURIComponent(membership.tenant_id)}&order=name.asc`);
     const directoryStores = membership.tenant_id===DIRECTORY_TENANT_ID?await readLinkDirectory():[];
-    const directoryVisible=directoryStores.map(({ name }) => ({
-      id: matchingStore(name,registry)?.id??canonicalIdForDirectoryName(name),
-      name,
-      platform: isSingaporeStore(name) ? "Shopee SG" : "Shopee MY",
-    }));
+    const directoryVisible=directoryStores.map((directory) => {
+      const registered=registry.find(store=>store.id===directory.id)??matchingStore(directory.name,registry);
+      return {
+        id: registered?.id??directory.id??canonicalIdForDirectoryName(directory.name),
+        name: registered?.name??directory.name,
+        sourceName: directory.name,
+        bigsellerName: registered?.bigseller_name??directory.name,
+        platform: registered?.platform??(isSingaporeStore(directory.name) ? "Shopee SG" : "Shopee MY"),
+      };
+    });
     const representedIds=new Set(directoryVisible.map(store=>store.id));
-    const visibleStores = [...directoryVisible,...registry.filter(store=>canonicalStoreId(store.id)===store.id&&!representedIds.has(store.id)).map(store=>({id:store.id,name:store.name,platform:store.platform}))]
+    const visibleStores = [...directoryVisible,...registry.filter(store=>canonicalStoreId(store.id)===store.id&&!representedIds.has(store.id)).map(store=>({id:store.id,name:store.name,sourceName:store.bigseller_name,bigsellerName:store.bigseller_name,platform:store.platform}))]
       .filter(store=>membership.role==="superadmin"||membership.store_access_mode==="all"||assignedStoreIds.has(store.id));
     const requestedStoreId = new URL(request.url).searchParams.get("storeId");
     const allStoresRequested = !requestedStoreId || requestedStoreId === "all";
@@ -294,36 +301,36 @@ export async function GET(request: Request) {
     if (requestedStoreId && !allStoresRequested && !selectedStore) {
       return Response.json({ error: "Store access denied" }, { status: 403 });
     }
-    const selectedDirectory = selectedStore ? directoryStores.find((store) => store.name === selectedStore.name) : undefined;
-    const snapshotPayload = selectedStore ? storeSnapshots[selectedStore.name] ?? null : null;
+    const selectedDirectory = selectedStore ? directoryStores.find((store) => store.id===selectedStore.id||store.name===selectedStore.sourceName) : undefined;
+    const snapshotPayload = selectedStore ? storeSnapshots[selectedStore.sourceName] ?? storeSnapshots[selectedStore.bigsellerName] ?? null : null;
     const canViewAdvertising=enabledModules.includes("advertising");
     const showTopUps=shouldShowAllStoresTopUps(allStoresRequested,membership.role,visibleStores.length,canViewAdvertising);
     const [sheetBalances,productProfile,selectedCoFundVouchers,adPerformance] = await Promise.all([
       canViewAdvertising&&(selectedStore||showTopUps)?readSheetBalances():Promise.resolve(new Map<string,SheetBalance>()),
-      selectedStore?readProductCatalogSheet(selectedStore.name):Promise.resolve(null),
+      selectedStore?readProductCatalogSheet(selectedStore.sourceName):Promise.resolve(null),
       selectedStore?readCoFundVouchers(selectedStore.id):Promise.resolve([]),
       readAdPerformance(authorizedAdStoreIds(visibleStores,selectedStore,canViewAdvertising),membership.tenant_id,allStoresRequested),
     ]);
-    const sheetBalance=selectedStore?balanceForStore(sheetBalances,selectedStore.name):null;
+    const sheetBalance=selectedStore?balanceForStore(sheetBalances,selectedStore.name,selectedStore.sourceName,selectedStore.bigsellerName):null;
     const adTopUpOverview=showTopUps?summarizeAllStoresTopUps(
-      visibleStores.map(store=>({...store,topUpOwner:directoryStores.find(item=>item.name===store.name)?.topUpOwner??topUpOwnerFallbacks[store.name]??null})),
+      visibleStores.map(store=>({...store,topUpOwner:directoryStores.find(item=>item.id===store.id||item.name===store.sourceName)?.topUpOwner??topUpOwnerFallbacks[store.sourceName]??null})),
       adPerformance.rows,
-      new Map(visibleStores.map(store=>[store.id,balanceForStore(sheetBalances,store.name)])),
+      new Map(visibleStores.map(store=>[store.id,balanceForStore(sheetBalances,store.name,store.sourceName,store.bigsellerName)])),
     ):null;
     return Response.json({
       customer: { id: "shopee-hub", name: "Shopee Hub" },
       stores: visibleStores.map((store) => {
-        const directory = directoryStores.find((item) => item.name === store.name);
+        const directory = directoryStores.find((item) => item.id===store.id||item.name===store.sourceName);
         return {
-          ...store,
-          contacts: directory?.contacts.length ? directory.contacts : contactsForStore(store.name),
+          id:store.id,name:store.name,platform:store.platform,
+          contacts: directory?.contacts.length ? directory.contacts : contactsForStore(store.sourceName),
           storeGroupLink: directory?.storeGroupLink ?? null,
           driveLink: directory?.driveLink ?? null,
         };
       }),
       selectedStoreId: allStoresRequested ? "all" : selectedStore?.id ?? null,
       snapshot: snapshotPayload ? withoutAdCampaigns({ payload: snapshotPayload, importedAt: snapshotPayload.sourceUpdated ?? new Date().toISOString() }, canViewAdvertising) : null,
-      adBalance: canViewAdvertising && sheetBalance ? { ...sheetBalance, topUpOwner: selectedDirectory?.topUpOwner ?? topUpOwnerFallbacks[selectedStore?.name ?? ""] ?? null } : null,
+      adBalance: canViewAdvertising && sheetBalance ? { ...sheetBalance, topUpOwner: selectedDirectory?.topUpOwner ?? topUpOwnerFallbacks[selectedStore?.sourceName ?? ""] ?? null } : null,
       adPerformance:adPerformance.daily,
       adPerformanceUpdatedAt:adPerformance.updatedAt,
       adTopUpOverview,
@@ -367,21 +374,18 @@ export async function GET(request: Request) {
     : membership.role === "customer" ? clientEnabledModules : ALL_PORTAL_MODULE_IDS.filter(moduleId=>moduleId!=="live_calendar" || configuredModules.get(moduleId)===true);
   const directoryStores = tenant.id===DIRECTORY_TENANT_ID?await readLinkDirectory():[];
   const directoryByName = new Map(directoryStores.map((store) => [store.name, store]));
+  const directoryById = new Map(directoryStores.filter(store=>store.id).map(store=>[store.id!,store]));
   const directoryOrder = new Map(directoryStores.map((store, index) => [store.name, index]));
-  const kataDisplayNames: Record<string, string> = {
-    "shopee-kata-marine-malaysia": "Kata Skincare Malaysia",
-    "shopee-kata-singapore": "Kata Skincare Singapore",
-  };
   const visibleStores = (tenantStores.length ? tenantStores
     .filter((stored) => stored.id !== "shopee-kata-care-malaysia")
     .map((stored) => {
     const candidates = isSingaporeStore(stored.platform) ? [stored.bigSellerName, stored.name] : [stored.bigSellerName, stored.name, directoryStoreNameFor(stored.bigSellerName ?? ""), directoryStoreNameFor(stored.name)];
-    const directoryName = candidates.find((name) => name && directoryByName.has(name)) ?? stored.name;
+    const directoryName = directoryById.get(stored.id)?.name??candidates.find((name) => name && directoryByName.has(name)) ?? stored.bigSellerName ?? stored.name;
     return {
       ...stored,
       storedName: stored.name,
       directoryName,
-      name: kataDisplayNames[stored.id] ?? directoryByName.get(directoryName)?.name ?? stored.name,
+      name: stored.name,
     };
   }) : membership.storeAccessMode === "selected" && membership.role !== "superadmin" ? [] : directoryStores.map(({ name }) => ({
     id: storeIdFor(name), tenantId: tenant.id, name, storedName: name, directoryName: name,
@@ -406,7 +410,7 @@ export async function GET(request: Request) {
     .orderBy(desc(dashboardSnapshots.importedAt), desc(dashboardSnapshots.id))
     .limit(1);
   const sheetBalances=await sheetBalancesPromise;
-  const sheetBalance = selectedStore ? balanceForStore(sheetBalances,selectedStore.name,selectedStore.storedName) : null;
+  const sheetBalance = selectedStore ? balanceForStore(sheetBalances,selectedStore.name,selectedStore.storedName,selectedStore.directoryName,selectedStore.bigSellerName) : null;
   const topUpOwner = selectedStore
     ? directoryByName.get(selectedStore.directoryName)?.topUpOwner ?? topUpOwnerFallbacks[selectedStore.directoryName] ?? null
     : null;
@@ -417,11 +421,11 @@ export async function GET(request: Request) {
     .orderBy(desc(managementActions.actionDate), desc(managementActions.id))
     .limit(20);
   const selectedCoFundVouchers = selectedStore ? await readCoFundVouchers(selectedStore.id,tenant.id) : [];
-  const sourceShopName=selectedStore?sourceShopNameFor(selectedStore.name):null;
+  const sourceShopName=selectedStore?sourceShopNameFor(selectedStore.directoryName):null;
   const storedProducts=!sourceShopName?[]:await db.select().from(projectProductCatalog)
     .where(eq(projectProductCatalog.sourceShopName,sourceShopName))
     .orderBy(desc(projectProductCatalog.mainProduct),projectProductCatalog.productName);
-  const sheetProductProfile=selectedStore&&!storedProducts.length?await readProductCatalogSheet(selectedStore.name):null;
+  const sheetProductProfile=selectedStore&&!storedProducts.length?await readProductCatalogSheet(selectedStore.directoryName):null;
   const productProfile=storedProducts.length?{
     shopName:sourceShopName!,
     products:storedProducts.map(product=>({
@@ -445,7 +449,7 @@ export async function GET(request: Request) {
   const adTopUpOverview=showTopUps?summarizeAllStoresTopUps(
     visibleStores.map(store=>({...store,topUpOwner:directoryByName.get(store.directoryName)?.topUpOwner??topUpOwnerFallbacks[store.directoryName]??null})),
     adPerformance.rows,
-    new Map(visibleStores.map(store=>[store.id,balanceForStore(sheetBalances,store.name,store.storedName)])),
+    new Map(visibleStores.map(store=>[store.id,balanceForStore(sheetBalances,store.name,store.storedName,store.directoryName,store.bigSellerName)])),
   ):null;
   return Response.json({
     customer: { id: tenant.id, name: tenant.name },
@@ -455,7 +459,7 @@ export async function GET(request: Request) {
         id,
         name,
         platform,
-        contacts: directory?.contacts.length ? directory.contacts : contactsForStore(name),
+        contacts: directory?.contacts.length ? directory.contacts : contactsForStore(directoryName),
         storeGroupLink: directory?.storeGroupLink ?? null,
         driveLink: directory?.driveLink ?? null,
       };

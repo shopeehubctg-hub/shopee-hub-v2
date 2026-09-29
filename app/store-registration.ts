@@ -12,9 +12,9 @@ export function proposedStoreId(name: string) {
   return `shopee-${suffix}`;
 }
 
-export function storeNameConflict(stores: RegisteredStore[], name: string, sourceName: string) {
+export function storeNameConflict(stores: RegisteredStore[], name: string, sourceName: string, excludeId?: string) {
   const candidates = new Set([normalizeStoreName(name), normalizeStoreName(sourceName)]);
-  return stores.some(store => candidates.has(normalizeStoreName(store.name)) || candidates.has(normalizeStoreName(store.bigseller_name)));
+  return stores.some(store => store.id !== excludeId && (candidates.has(normalizeStoreName(store.name)) || candidates.has(normalizeStoreName(store.bigseller_name))));
 }
 
 export function storeIdConflict(stores: RegisteredStore[], id: string) {

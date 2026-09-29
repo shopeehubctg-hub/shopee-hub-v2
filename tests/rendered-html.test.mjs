@@ -57,7 +57,7 @@ test("sidebar contacts the selected project's Shopee Hub specialist", async () =
   assert.match(links, /Mizino SlimPro/);
 });
 
-test("store selector follows the Link Directory store names", async () => {
+test("store selector shows registered names while retaining Link Directory identity", async () => {
   const [route, page] = await Promise.all([
     readFile(new URL("app/api/dashboard/route.ts", root), "utf8"),
     readFile(new URL("app/page.tsx", root), "utf8"),
@@ -69,8 +69,9 @@ test("store selector follows the Link Directory store names", async () => {
   assert.match(route, /directoryStores\.map/);
   assert.match(route, /tenantStores[\s\S]*\.map\(\(stored\)/);
   assert.match(route, /stored\.id !== "shopee-kata-care-malaysia"/);
-  assert.match(route, /"shopee-kata-marine-malaysia": "Kata Skincare Malaysia"/);
-  assert.match(route, /"shopee-kata-singapore": "Kata Skincare Singapore"/);
+  assert.match(route, /name: registered\?\.name\?\?directory\.name/);
+  assert.match(route, /name: stored\.name/);
+  assert.match(route, /directoryById\.get\(stored\.id\)/);
   assert.match(route, /cache: "no-store"/);
   assert.doesNotMatch(route, /connectedShopeeStoreNames\.map/);
   assert.match(page, /\{s\.name\} · \{s\.platform\.replace\("Shopee ", ""\)\}<\/option>/);

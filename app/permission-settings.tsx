@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
 
-type Props = { initialEnabledModules: PortalModuleId[]; onStoreCreated?: () => void };
+type Props = { initialEnabledModules: PortalModuleId[]; onStoreChanged?: () => void };
 type Role = "customer" | "manager" | "superadmin";
 type Store = { id: string; name: string; platform: string; bigseller_name?: string };
 type PortalUser = {
@@ -24,7 +24,7 @@ type UserData = {
   clientDefaults: PortalModuleId[];
 };
 
-export function PermissionSettings({ initialEnabledModules, onStoreCreated }: Props) {
+export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Props) {
   const [tab, setTab] = useState<"users" | "stores" | "modules">("users");
   const [enabled, setEnabled] = useState(new Set(initialEnabledModules));
   const [saved, setSaved] = useState(new Set(initialEnabledModules));
@@ -35,7 +35,9 @@ export function PermissionSettings({ initialEnabledModules, onStoreCreated }: Pr
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
   const [addingStore, setAddingStore] = useState(false);
-  const [newStore, setNewStore] = useState({ name: "", market: "MY" as "MY" | "SG", sourceName: "" });
+  const [editingStore, setEditingStore] = useState<Store | null>(null);
+  const [storeNameDraft, setStoreNameDraft] = useState("");
+  const [newStore, setNewStore] = useState({ name: "", market: "MY" as "MY" | "SG" });
   const [newUser, setNewUser] = useState({
     displayName: "",
     email: "",
@@ -117,12 +119,39 @@ export function PermissionSettings({ initialEnabledModules, onStoreCreated }: Pr
         stores: [...current.stores, result.store].sort((a, b) => a.name.localeCompare(b.name)),
       } : current);
       await loadUsers();
-      onStoreCreated?.();
+      onStoreChanged?.();
       setAddingStore(false);
-      setNewStore({ name: "", market: "MY", sourceName: "" });
+      setNewStore({ name: "", market: "MY" });
       setMessage("Store added. Customer access can be assigned under Users & roles.");
     } catch {
       setMessage("Unable to add store. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function saveStoreName() {
+    if (!editingStore) return;
+    setSaving(true);
+    try {
+      const response = await fetch("/api/admin/stores", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: editingStore.id, name: storeNameDraft }),
+      });
+      const result = await response.json().catch(() => ({ error: "The server returned an invalid response" }));
+      if (!response.ok) {
+        setMessage(result.error ?? "Unable to update store name");
+        return;
+      }
+      setData(current => current ? {
+        ...current,
+        stores: current.stores.map(store => store.id === editingStore.id ? result.store : store).sort((a, b) => a.name.localeCompare(b.name)),
+      } : current);
+      onStoreChanged?.();
+      setEditingStore(null);
+      setMessage("Store name updated.");
+    } catch {
+      setMessage("Unable to update store name. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -348,9 +377,9 @@ export function PermissionSettings({ initialEnabledModules, onStoreCreated }: Pr
               <article className="card store-access-row" key={store.id}>
                 <div>
                   <h3>{store.name}</h3>
-                  <p>Source: {store.bigseller_name || store.name}</p>
                 </div>
                 <span>{store.platform}</span>
+                <button className="edit-access" onClick={() => { setMessage(""); setEditingStore(store); setStoreNameDraft(store.name); }}>Edit name</button>
               </article>
             ))}
           </section>
@@ -367,9 +396,22 @@ export function PermissionSettings({ initialEnabledModules, onStoreCreated }: Pr
             <div className="access-form">
               <label>Store name<input maxLength={120} required value={newStore.name} onChange={event => setNewStore({ ...newStore, name: event.target.value })} /></label>
               <label>Market<select value={newStore.market} onChange={event => setNewStore({ ...newStore, market: event.target.value as "MY" | "SG" })}><option value="MY">Malaysia (MY)</option><option value="SG">Singapore (SG)</option></select></label>
-              <label>Source name (optional)<input maxLength={120} value={newStore.sourceName} onChange={event => setNewStore({ ...newStore, sourceName: event.target.value })} placeholder="Use store name" /></label>
-              <p className="store-access-note">Source name is the name used in imports, such as BigSeller or AdBalance. New stores do not grant selected customer access automatically.</p>
               <button className="primary" disabled={saving || !newStore.name.trim()} onClick={addStore}>{saving ? "Adding…" : "Add store"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingStore && (
+        <div className="access-modal" role="dialog" aria-modal="true" aria-label="Edit store name">
+          <div className="access-editor card">
+            <div className="access-editor-head">
+              <div><p className="kicker">STORE</p><h3>Edit store name</h3></div>
+              <button aria-label="Close" disabled={saving} onClick={() => setEditingStore(null)}>×</button>
+            </div>
+            <div className="access-form">
+              <label>Store name<input maxLength={120} required value={storeNameDraft} onChange={event => setStoreNameDraft(event.target.value)} /></label>
+              <button className="primary" disabled={saving || !storeNameDraft.trim()} onClick={saveStoreName}>{saving ? "Saving…" : "Save name"}</button>
             </div>
           </div>
         </div>

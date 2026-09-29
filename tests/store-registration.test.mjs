@@ -11,6 +11,8 @@ test('duplicate checking normalizes case and whitespace across display and sourc
   assert.equal(storeNameConflict(stores, '  SCALE   STORY sg ', 'New Source'), true);
   assert.equal(storeNameConflict(stores, 'New Store', ' scale story sg BY ctg4u '), true);
   assert.equal(storeNameConflict(stores, 'New Store', 'New Source'), false);
+  assert.equal(storeNameConflict(stores, 'Scale Story SG', 'Scale Story SG', 'shopee-scale-story-sg'), false);
+  assert.equal(storeNameConflict(stores, 'Other Source', 'Other Source', 'shopee-scale-story-sg'), true);
 });
 
 test('generated ID collisions are caught before insertion', () => {
