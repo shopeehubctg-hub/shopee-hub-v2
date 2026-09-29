@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { autoTopUpEligibleForStore, calculatePricePerUnit, calculateShopeePrice, calculateShopeePriceForCustomerTarget, categoryIndexForProduct, COMMISSION_CATEGORIES, commissionRateFor, maximumCoFundVoucher, resolvedCategoryForProduct, reviewPriceLadder, SERVICE_MODES } from "./price-calculator-model";
+import { autoTopUpEligibleForStore, calculatePricePerUnit, calculateShopeePrice, calculateShopeePriceForCustomerTarget, categoryIndexForProduct, commissionRateFor, maximumCoFundVoucher, resolvedCategoryForProduct, reviewPriceLadder, SERVICE_MODES } from "./price-calculator-model";
 import type { CalculatorSnapshot, PackagePrefill } from "./calculator-types";
 import type { ProjectProductProfile } from "./product-catalog";
 import { VOUCHER_PRESET_SOURCE, voucherPresetFor } from "./voucher-presets.js";
@@ -63,8 +63,7 @@ export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[
   },[productProfile]);
   const [selectedCategoryKey,setSelectedCategoryKey] = useState("");
   const selectedCategoryOption = categoryOptions.find(option=>option.key===selectedCategoryKey) ?? categoryOptions[0];
-  const category = String(selectedCategoryOption?.categoryIndex ?? Math.max(0,COMMISSION_CATEGORIES.findIndex(item=>item.cluster==="FMCG"&&item.name.startsWith("Beauty ›"))));
-  const commission = selectedCategoryOption?.rate ?? commissionRateFor(category,true);
+  const commission = selectedCategoryOption?.rate ?? 0;
   const selectedCategory = selectedCategoryOption?.name ?? "No Product Category configured";
   const storeVoucherPreset = voucherPresetFor(storeName);
   const [voucherRates,setVoucherRates] = useState<Record<ServiceMode,NumberValue>>({nonCampaign:storeVoucherPreset.normal,campaign:storeVoucherPreset.campaign});
@@ -232,7 +231,7 @@ export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[
           <small>Categories with the same Commission Rate are grouped</small>
         </label>
         <label className="commission-field">Commission Fee Rate
-          <div className="auto-profile-value commission-rate-value">{selectedCategoryOption?pct(commission):"Not configured"}</div>
+          <div className="auto-profile-value commission-rate-value">{pct(commission)}</div>
         </label>
         <div className="setup-toggle-field"><label className="setup-toggle"><input type="checkbox" checked={fees.isSpayLater} onChange={event=>updateFee("isSpayLater",event.target.checked)}/><span><b>SPayLater</b></span></label><small>Transaction Fee {fees.isSpayLater?"4.86%":"3.78%"}</small></div>
         <div className="setup-toggle-field"><label className="setup-toggle"><input type="checkbox" checked={fees.isPreorder} onChange={event=>updateFee("isPreorder",event.target.checked)}/><span><b>Pre-Order Listing</b></span></label><small>Add {pct(positive(fees.preorder))}</small></div>
@@ -258,7 +257,7 @@ export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[
 
     <section className="fee-strip">
       <article><span>Transaction Fee</span><strong>{pct(transactionRate)}</strong><small>{fees.isSpayLater?"SPayLater ON":"Default"}</small></article>
-      <article><span>Commission Fee</span><strong>{pct(commission)}</strong><small>{selectedCategoryOption?"Product & Commission Profile":"Fallback category rate"}</small></article>
+      <article><span>Commission Fee</span><strong>{pct(commission)}</strong><small>{selectedCategoryOption?"Product & Commission Profile":"No product data imported"}</small></article>
       <article><span>Service Fee</span><strong>5.94% / 8.10%</strong><small>Non-Campaign / Campaign · Capped at RM108</small></article>
       <article><span>Pre-Order Service Fee</span><strong>{fees.isPreorder?pct(positive(fees.preorder)):"OFF"}</strong><small>Default 2.14%</small></article>
       <article><span>Platform Support Fee</span><strong>RM 0.54</strong><small>Per order</small></article>
