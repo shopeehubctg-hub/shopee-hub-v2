@@ -13,6 +13,8 @@ import {
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { canAccessModule, canAccessStore } from "../../module-access";
 import { blocksNewVersionForUnsyncedSheet } from "../../package-version-policy";
+import { emailChangeSummary } from "./email-change-summary";
+import { versionChangeSummary } from "./version-change-summary";
 import { syncHistoryToGoogleSheet } from "./history-sync";
 
 export const dynamic = "force-dynamic";
@@ -399,6 +401,7 @@ async function savePackage(request: Request) {
   const versionId = crypto.randomUUID();
   let nextVersion = 1;
   let previousComponents: ComponentLine[] = [];
+  let previousVersion:typeof packageVersions.$inferSelect|undefined;
   let existingPackage:typeof packages.$inferSelect|null=null;
   if (requestedPackageId) {
     const [existing] = await db.select().from(packages)
@@ -419,10 +422,18 @@ async function savePackage(request: Request) {
     existingPackage=existing;
     nextVersion = Number(latest?.version ?? 0) + 1;
     previousComponents = latest?.components ?? [];
+    previousVersion = latest;
   }
 
   const diff = componentDiff(previousComponents, components);
   const metadata:PackageMetadata={name:body.name.trim(),market:markets.join(","),channel:platforms.map(item=>item.platform).join(", "),packageSku:platforms[0].packageSku};
+  const [oldPrices, oldSkus] = previousVersion ? await Promise.all([
+    db.select().from(packagePrices).where(eq(packagePrices.versionId,previousVersion.id)),
+    db.select().from(packagePlatformSkus).where(eq(packagePlatformSkus.versionId,previousVersion.id)),
+  ]) : [[], []];
+  const changeSummary = nextVersion === 1 ? "新开配套" : previousVersion
+    ? emailChangeSummary({components,calculatorSettings:{_packageMetadata:metadata}},previousVersion,schedules,oldPrices,platforms,oldSkus)
+    : "配套资料修改（历史比较资料不足）";
   await db.transaction(async tx => {
     if (!requestedPackageId) {
       await tx.insert(packages).values({
@@ -449,7 +460,7 @@ async function savePackage(request: Request) {
       addedComponents:diff.added,
       removedComponents:diff.removed,
       sheetSyncStatus:mode==="draft"?"not_sent":"pending",
-      calculatorSettings:{...(body.calculatorSettings ?? {}),_packageMetadata:metadata},
+      calculatorSettings:{...(body.calculatorSettings ?? {}),_packageMetadata:metadata,_packageHistorySummary:{schema:1,summary:changeSummary}},
       changeNote:body.changeNote?.trim() || (nextVersion === 1 ? "Initial version" : `Version ${nextVersion}`),
       effectiveFrom:schedules.find(item=>item.priceType==="campaign")!.effectiveFrom,
       effectiveTo:schedules.find(item=>item.priceType==="campaign")!.effectiveTo,
@@ -494,6 +505,7 @@ async function savePackage(request: Request) {
     currentComponents:formatComponents(components),
     changedBy:user.email,
     syncStatus:"Synced",
+    changeSummary,
   });
   if (sync.status!=="synced") {
     await db.update(packageVersions).set({ sheetSyncStatus:sync.status }).where(eq(packageVersions.id, versionId));
@@ -566,6 +578,7 @@ export async function PATCH(request:Request) {
       shopeeSku:platformMap.Shopee??"",lazadaSku:platformMap.Lazada??"",tiktokSku:platformMap["TikTok Shop"]??"",
       addedComponents:formatComponents(version.addedComponents),removedComponents:formatComponents(version.removedComponents),
       currentComponents:formatComponents(version.components),changedBy:user.email,syncStatus:"Synced",
+      changeSummary:await versionChangeSummary(db,version),
     });
     if(sync.status!=="synced"){
       await db.update(packageVersions).set({sheetSyncStatus:sync.status}).where(eq(packageVersions.id,version.id));
