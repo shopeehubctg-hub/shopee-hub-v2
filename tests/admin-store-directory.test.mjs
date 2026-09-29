@@ -55,6 +55,8 @@ test("only Super Admin may add stores with linked Supabase details", async () =>
   assert.equal(response.status,201);
   assert.equal(state.stores.length,1);
   assert.equal(state.profiles[0].ads_top_up_owner,"Shopee Hub");
+  assert.equal(state.profiles[0].source_sheet_id,null);
+  assert.equal(state.profiles[0].source_tab,"Dashboard");
   assert.equal(state.projects[0].google_drive_link,"https://drive.google.com/launch");
 });
 
