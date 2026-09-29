@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { emailChangeSummary } from '../app/api/packages/email-change-summary.ts';
+import { emailChangeSummary, storedChangeSummary } from '../app/api/packages/email-change-summary.ts';
 
 const component={inventorySku:'SKU-A',name:'Product',quantity:1,kind:'product'};
 const snapshot={components:[component],calculatorSettings:{_packageMetadata:{name:'Package A',market:'MY'}}};
@@ -36,4 +36,14 @@ test('V1 and edit templates include summary in text and HTML with escaped values
   assert.match(edited.body,/修改内容：OXM Inventory SKU 修改/);
   assert.match(edited.htmlBody,/修改内容：OXM Inventory SKU 修改/);
   assert.match(edited.htmlBody,/range=A3/);
+});
+
+test('stored summary is validated and email uses the Sheet value without a network call',()=>{
+  assert.equal(storedChangeSummary({_packageHistorySummary:{schema:1,summary:'OXM Inventory SKU 修改'}}),'OXM Inventory SKU 修改');
+  assert.equal(storedChangeSummary({_packageHistorySummary:{schema:2,summary:'fake'}}),null);
+  const context=vm.createContext({SPREADSHEET_ID:'sheet',SpreadsheetApp:{openById:()=>({getSheetByName:()=>({getSheetId:()=>123})})},HISTORY_SHEET:'Package History',packageSyncRequest_:()=>{throw new Error('Network is unavailable');}});
+  vm.runInContext(readFileSync(new URL('../integrations/PackageEmailNotifications.gs',import.meta.url),'utf8'),context);
+  const row=['time','example-v2','','Store','Package A','2','','','2026-10-01','2026-10-31'];
+  row[18]='OXM Inventory SKU 修改';
+  assert.match(context.packageEmailMessage_(row,2).body,/修改内容：OXM Inventory SKU 修改/);
 });

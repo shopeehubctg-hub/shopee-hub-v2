@@ -22,3 +22,9 @@ export function emailChangeSummary(current: VersionSnapshot, previous: VersionSn
   }
   return changes.length ? changes.join(" ｜") : "配套资料修改";
 }
+
+// This reserved field is written by the server, never trusted from a save body.
+export function storedChangeSummary(settings: Record<string,unknown>|null) {
+  const value = settings?._packageHistorySummary as {schema?:unknown;summary?:unknown}|undefined;
+  return value?.schema === 1 && typeof value.summary === "string" && value.summary.trim() && value.summary.length <= 1000 ? value.summary : null;
+}
