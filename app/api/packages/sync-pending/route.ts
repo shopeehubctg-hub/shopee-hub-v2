@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { packageAuditLog, packagePlatformSkus, packagePrices, packages, packageVersions, stores } from "../../../../db/schema";
 import { validSyncJobSignature } from "../sync-job-auth";
+import { emailChangeSummary } from "../email-change-summary";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -33,11 +34,27 @@ export async function POST(request: Request) {
   if (bodyText.length > 4096 || !validSyncJobSignature(bodyText, request.headers.get("x-package-sync-time"), request.headers.get("x-package-sync-signature"), process.env.GOOGLE_SHEETS_HISTORY_SECRET)) {
     return Response.json({ok:false,error:"Authentication required"}, {status:401});
   }
-  let body: {action?:string;versionIds?:string[]};
+  let body: {action?:string;versionIds?:string[];changeId?:string};
   try { body = JSON.parse(bodyText); } catch { return Response.json({ok:false,error:"Invalid request"},{status:400}); }
-  if (!body || !["pull", "confirm"].includes(body.action ?? "")) return Response.json({ok:false,error:"Invalid action"},{status:400});
+  if (!body || !["pull", "confirm", "changes"].includes(body.action ?? "")) return Response.json({ok:false,error:"Invalid action"},{status:400});
   try {
     const db = await getDb();
+    if (body.action === "changes") {
+      const match = typeof body.changeId === "string" && body.changeId.length < 200 ? /^(.*)-v(\d+)$/.exec(body.changeId) : null;
+      if (!match || !Number.isSafeInteger(Number(match[2]))) return Response.json({ok:false,error:"Invalid Change ID"},{status:400});
+      const [current] = await db.select().from(packageVersions).where(and(eq(packageVersions.packageId,match[1]),eq(packageVersions.version,Number(match[2])))).limit(1);
+      if (!current) return Response.json({ok:false,error:"Package version not found"},{status:404});
+      if (current.version === 1) return Response.json({ok:true,summary:"新开配套"});
+      const [previous] = await db.select().from(packageVersions).where(and(eq(packageVersions.packageId,current.packageId),lt(packageVersions.version,current.version))).orderBy(desc(packageVersions.version)).limit(1);
+      if (!previous) return Response.json({ok:true,summary:"配套资料修改（历史比较资料不足）"});
+      const [prices,oldPrices,skus,oldSkus] = await Promise.all([
+        db.select().from(packagePrices).where(eq(packagePrices.versionId,current.id)),
+        db.select().from(packagePrices).where(eq(packagePrices.versionId,previous.id)),
+        db.select().from(packagePlatformSkus).where(eq(packagePlatformSkus.versionId,current.id)),
+        db.select().from(packagePlatformSkus).where(eq(packagePlatformSkus.versionId,previous.id)),
+      ]);
+      return Response.json({ok:true,summary:emailChangeSummary(current,previous,prices,oldPrices,skus,oldSkus)},{headers:{"Cache-Control":"no-store"}});
+    }
     if (body.action === "pull") {
       const rows = await db.select({item:packages,version:packageVersions,storeName:stores.name})
         .from(packageVersions).innerJoin(packages,eq(packages.id,packageVersions.packageId))
