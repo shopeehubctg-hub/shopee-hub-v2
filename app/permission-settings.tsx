@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
 
-type Props = { initialEnabledModules: PortalModuleId[] };
+type Props = { initialEnabledModules: PortalModuleId[]; onStoreCreated?: () => void };
 type Role = "customer" | "manager" | "superadmin";
 type Store = { id: string; name: string; platform: string; bigseller_name?: string };
 type PortalUser = {
@@ -24,7 +24,7 @@ type UserData = {
   clientDefaults: PortalModuleId[];
 };
 
-export function PermissionSettings({ initialEnabledModules }: Props) {
+export function PermissionSettings({ initialEnabledModules, onStoreCreated }: Props) {
   const [tab, setTab] = useState<"users" | "stores" | "modules">("users");
   const [enabled, setEnabled] = useState(new Set(initialEnabledModules));
   const [saved, setSaved] = useState(new Set(initialEnabledModules));
@@ -117,6 +117,7 @@ export function PermissionSettings({ initialEnabledModules }: Props) {
         stores: [...current.stores, result.store].sort((a, b) => a.name.localeCompare(b.name)),
       } : current);
       await loadUsers();
+      onStoreCreated?.();
       setAddingStore(false);
       setNewStore({ name: "", market: "MY", sourceName: "" });
       setMessage("Store added. Customer access can be assigned under Users & roles.");
