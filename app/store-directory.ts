@@ -73,7 +73,7 @@ export function parseStoreDetails(body: Record<string, unknown>): { value: Store
     const project = typeof item.project === "string" ? item.project.trim() : "";
     const href = typeof item.href === "string" ? item.href.trim() : "";
     const driveLink = typeof item.driveLink === "string" ? item.driveLink.trim() : "";
-    if (!project && !href) continue;
+    if (!project && !href && !driveLink) continue;
     if (!project || !href || project.length > 120 || href.length > 2000 || driveLink.length > 2000 || !validWebUrl(href) || !validWebUrl(driveLink))
       return { error: "Enter a valid project name and group link" };
     const key = project.toLowerCase();
@@ -94,6 +94,7 @@ export async function saveStoreDetails(tenantId: string, storeId: string, storeN
     store_group_link: details.storeGroupLink || null,
     google_drive_link: details.googleDriveLink || null,
     source_sheet_id: previous ? undefined : null,
+    source_tab: previous ? undefined : "Dashboard",
   };
   await supabaseRest(`link_directory_stores?on_conflict=store_id`, {
     method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify(profile),

@@ -169,7 +169,7 @@ export const linkDirectoryStores = pgTable("link_directory_stores", {
   storeGroupLink:text("store_group_link"),
   googleDriveLink:text("google_drive_link"),
   sourceSheetId:text("source_sheet_id"),
-  sourceTab:text("source_tab").notNull().default("WhatsApp Group"),
+  sourceTab:text("source_tab").notNull().default("Dashboard"),
   syncedAt:timestamp("synced_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),
 },table=>[uniqueIndex("link_directory_store_name_idx").on(table.tenantId,table.storeName)]);
 

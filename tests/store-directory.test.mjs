@@ -28,6 +28,7 @@ test("store details validate links, owner and distinct project names", () => {
   assert.equal(valid.value.projectLinks.length, 2);
   assert.notEqual(valid.value.projectLinks[0].driveLink, valid.value.projectLinks[1].driveLink);
   assert.equal("error" in directory.parseStoreDetails({projectLinks:[{project:"A",href:"javascript:alert(1)"}]}),true);
+  assert.equal("error" in directory.parseStoreDetails({projectLinks:[{project:"",href:"",driveLink:"https://drive.google.com/folder"}]}),true);
   assert.equal("error" in directory.parseStoreDetails({projectLinks:[{project:"A",href:"https://one.test"},{project:"a",href:"https://two.test"}]}),true);
   assert.equal("error" in directory.parseStoreDetails({adsTopUpOwner:"unknown",projectLinks:[]}),true);
 });
