@@ -6,7 +6,7 @@ import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
 type Props = { initialEnabledModules: PortalModuleId[]; onStoreChanged?: () => void };
 type Role = "customer" | "manager" | "superadmin";
 type AdsTopUpOwner = "Client" | "Client Approval" | "Shopee Hub";
-type ProjectLink = { project: string; href: string };
+type ProjectLink = { project: string; href: string; driveLink?: string };
 type StoreLinks = {
   projectLinks: ProjectLink[];
   storeGroupLink: string;
@@ -28,12 +28,13 @@ function StoreLinkFields({ draft, update }: { draft: StoreDraft; update: (patch:
       {draft.projectLinks.map((link, index) => <div className="store-project-link" key={index}>
         <label>Project name<input maxLength={120} value={link.project} onChange={event => updateProjectLink(index, { project: event.target.value })} placeholder="Project name" /></label>
         <label>Project Group Link<input type="url" maxLength={2048} value={link.href} onChange={event => updateProjectLink(index, { href: event.target.value })} placeholder="https://…" /></label>
+        <label className="store-project-drive">Project Google Drive Link (optional)<input type="url" maxLength={2048} value={link.driveLink ?? ""} onChange={event => updateProjectLink(index, { driveLink: event.target.value })} placeholder="https://…" /></label>
         <button type="button" className="edit-access" aria-label={`Remove project link ${index + 1}`} onClick={() => update({ projectLinks: draft.projectLinks.filter((_, position) => position !== index) })}>Remove</button>
       </div>)}
-      <button type="button" className="edit-access" onClick={() => update({ projectLinks: [...draft.projectLinks, { project: "", href: "" }] })}>+ Add project link</button>
+      <button type="button" className="edit-access" onClick={() => update({ projectLinks: [...draft.projectLinks, { project: "", href: "", driveLink: "" }] })}>+ Add project link</button>
     </fieldset>
     <label>Store Group Link<input type="url" maxLength={2048} value={draft.storeGroupLink} onChange={event => update({ storeGroupLink: event.target.value })} placeholder="https://…" /></label>
-    <label>Google Drive Link<input type="url" maxLength={2048} value={draft.googleDriveLink} onChange={event => update({ googleDriveLink: event.target.value })} placeholder="https://…" /></label>
+    <label>Store Google Drive Link (default)<input type="url" maxLength={2048} value={draft.googleDriveLink} onChange={event => update({ googleDriveLink: event.target.value })} placeholder="https://…" /></label>
     <label>Ads Top Up List<select value={draft.adsTopUpOwner} onChange={event => update({ adsTopUpOwner: event.target.value as StoreLinks["adsTopUpOwner"] })}>
       <option value="">Not set</option><option value="Client">Client</option><option value="Client Approval">Client Approval</option><option value="Shopee Hub">Shopee Hub</option>
     </select></label>
