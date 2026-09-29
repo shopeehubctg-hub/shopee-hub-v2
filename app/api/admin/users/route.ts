@@ -15,7 +15,7 @@ async function portalUsers(tenantId:string){
   const [users,tenantModules,tenantStoreRows]=await Promise.all([
     supabaseRest<Member[]>(`customer_users?select=*&tenant_id=eq.${encodeURIComponent(tenantId)}&order=email.asc`),
     supabaseRest<Array<{module_id:string;enabled:boolean}>>(`tenant_module_permissions?select=module_id,enabled&tenant_id=eq.${encodeURIComponent(tenantId)}`),
-    supabaseRest<Array<{id:string;name:string;platform:string}>>(`stores?select=id,name,platform&tenant_id=eq.${encodeURIComponent(tenantId)}&order=name.asc`),
+    supabaseRest<Array<{id:string;name:string;platform:string;bigseller_name:string}>>(`stores?select=id,name,platform,bigseller_name&tenant_id=eq.${encodeURIComponent(tenantId)}&order=name.asc`),
   ]);
   const tenantStores=tenantStoreRows.filter(store=>canonicalStoreId(store.id)===store.id);
   const ids=users.map(user=>user.id);const [moduleRows,storeRows]=ids.length?await Promise.all([

@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { proposedStoreId, storeIdConflict, storeNameConflict } from '../app/store-registration.ts';
+
+const stores = [
+  { id: 'shopee-scale-story-sg', name: 'Scale Story SG', bigseller_name: 'Scale Story SG by CTG4u' },
+  { id: 'shopee-abc', name: 'Other Store', bigseller_name: 'Other Source' },
+];
+
+test('duplicate checking normalizes case and whitespace across display and source names', () => {
+  assert.equal(storeNameConflict(stores, '  SCALE   STORY sg ', 'New Source'), true);
+  assert.equal(storeNameConflict(stores, 'New Store', ' scale story sg BY ctg4u '), true);
+  assert.equal(storeNameConflict(stores, 'New Store', 'New Source'), false);
+});
+
+test('generated ID collisions are caught before insertion', () => {
+  assert.equal(proposedStoreId('ABC'), 'shopee-abc');
+  assert.equal(storeIdConflict(stores, proposedStoreId('ABC')), true);
+  assert.equal(storeIdConflict(stores, proposedStoreId('Different Store')), false);
+});

@@ -5,7 +5,7 @@ import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
 
 type Props = { initialEnabledModules: PortalModuleId[] };
 type Role = "customer" | "manager" | "superadmin";
-type Store = { id: string; name: string; platform: string };
+type Store = { id: string; name: string; platform: string; bigseller_name?: string };
 type PortalUser = {
   id: number;
   email: string;
@@ -25,7 +25,7 @@ type UserData = {
 };
 
 export function PermissionSettings({ initialEnabledModules }: Props) {
-  const [tab, setTab] = useState<"users" | "modules">("users");
+  const [tab, setTab] = useState<"users" | "stores" | "modules">("users");
   const [enabled, setEnabled] = useState(new Set(initialEnabledModules));
   const [saved, setSaved] = useState(new Set(initialEnabledModules));
   const [data, setData] = useState<UserData | null>(null);
@@ -34,6 +34,8 @@ export function PermissionSettings({ initialEnabledModules }: Props) {
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
+  const [addingStore, setAddingStore] = useState(false);
+  const [newStore, setNewStore] = useState({ name: "", market: "MY" as "MY" | "SG", sourceName: "" });
   const [newUser, setNewUser] = useState({
     displayName: "",
     email: "",
@@ -97,6 +99,33 @@ export function PermissionSettings({ initialEnabledModules }: Props) {
       setSaving(false);
     }
   }
+  async function addStore() {
+    setSaving(true);
+    try {
+      const response = await fetch("/api/admin/stores", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newStore),
+      });
+      const result = await response.json().catch(() => ({ error: "The server returned an invalid response" }));
+      if (!response.ok) {
+        setMessage(result.error ?? "Unable to add store");
+        return;
+      }
+      setData(current => current ? {
+        ...current,
+        stores: [...current.stores, result.store].sort((a, b) => a.name.localeCompare(b.name)),
+      } : current);
+      await loadUsers();
+      setAddingStore(false);
+      setNewStore({ name: "", market: "MY", sourceName: "" });
+      setMessage("Store added. Customer access can be assigned under Users & roles.");
+    } catch {
+      setMessage("Unable to add store. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
   async function saveUser() {
     if (!editing) return;
     setSaving(true);
@@ -149,6 +178,12 @@ export function PermissionSettings({ initialEnabledModules }: Props) {
           onClick={() => setTab("users")}
         >
           Users & roles
+        </button>
+        <button
+          className={tab === "stores" ? "active" : ""}
+          onClick={() => setTab("stores")}
+        >
+          Stores
         </button>
         <button
           className={tab === "modules" ? "active" : ""}
@@ -295,6 +330,48 @@ export function PermissionSettings({ initialEnabledModules }: Props) {
             </button>
           </div>
         </>
+      )}
+
+      {tab === "stores" && (
+        <>
+          <section className="access-toolbar card">
+            <div>
+              <strong>{data?.stores.length ?? 0} registered stores</strong>
+              <span>Add a store to make it available in the portal.</span>
+            </div>
+            <span className="store-access-note">Customer visibility is managed separately under Users & roles.</span>
+            <button onClick={() => { setMessage(""); setAddingStore(true); }}>+ Add store</button>
+          </section>
+          <section className="store-access-list">
+            {data?.stores.map(store => (
+              <article className="card store-access-row" key={store.id}>
+                <div>
+                  <h3>{store.name}</h3>
+                  <p>Source: {store.bigseller_name || store.name}</p>
+                </div>
+                <span>{store.platform}</span>
+              </article>
+            ))}
+          </section>
+        </>
+      )}
+
+      {addingStore && (
+        <div className="access-modal" role="dialog" aria-modal="true" aria-label="Add store">
+          <div className="access-editor card">
+            <div className="access-editor-head">
+              <div><p className="kicker">NEW STORE</p><h3>Add store</h3></div>
+              <button aria-label="Close" disabled={saving} onClick={() => setAddingStore(false)}>×</button>
+            </div>
+            <div className="access-form">
+              <label>Store name<input maxLength={120} required value={newStore.name} onChange={event => setNewStore({ ...newStore, name: event.target.value })} /></label>
+              <label>Market<select value={newStore.market} onChange={event => setNewStore({ ...newStore, market: event.target.value as "MY" | "SG" })}><option value="MY">Malaysia (MY)</option><option value="SG">Singapore (SG)</option></select></label>
+              <label>Source name (optional)<input maxLength={120} value={newStore.sourceName} onChange={event => setNewStore({ ...newStore, sourceName: event.target.value })} placeholder="Use store name" /></label>
+              <p className="store-access-note">Source name is the name used in imports, such as BigSeller or AdBalance. New stores do not grant selected customer access automatically.</p>
+              <button className="primary" disabled={saving || !newStore.name.trim()} onClick={addStore}>{saving ? "Adding…" : "Add store"}</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {(adding || editing) && (
