@@ -48,28 +48,25 @@ test("package control is wired into the command center", async () => {
 });
 
 test("sidebar contacts the selected project's Shopee Hub specialist", async () => {
-  const [page, route, links] = await Promise.all([readFile(new URL("app/page.tsx", root), "utf8"), readFile(new URL("app/api/dashboard/route.ts", root), "utf8"), readFile(new URL("app/project-group-links.ts", root), "utf8")]);
+  const [page, route] = await Promise.all([readFile(new URL("app/page.tsx", root), "utf8"), readFile(new URL("app/api/dashboard/route.ts", root), "utf8")]);
   assert.match(page, /Contact Shopee Hub Specialist/);
   assert.match(page, /store\?\.contacts\.map/);
-  assert.match(route, /contactsForStore\(name\)/);
-  assert.match(links, /HF6D8uRYwGW37rTJ3wOYi6/);
-  assert.match(links, /Mizino Placenta/);
-  assert.match(links, /Mizino SlimPro/);
+  assert.match(route, /directory\.links\.get\(store\.id\)/);
+  assert.match(route, /linksById\.get\(id\)/);
 });
 
-test("store selector shows registered names while retaining Link Directory identity", async () => {
+test("store selector uses registered stores and Supabase directory details", async () => {
   const [route, page] = await Promise.all([
     readFile(new URL("app/api/dashboard/route.ts", root), "utf8"),
     readFile(new URL("app/page.tsx", root), "utf8"),
   ]);
-  assert.match(route, /readLinkDirectory/);
-  assert.match(route, /header\.indexOf\("Store Name"\)/);
-  assert.match(route, /header\.indexOf\("Project Group Link"\)/);
-  assert.match(route, /header\.indexOf\("Google Drive Link"\)/);
-  assert.match(route, /directoryStores\.map/);
+  assert.match(route, /storeDirectory\(membership\.tenant_id\)/);
+  assert.match(route, /linkDirectoryStores/);
+  assert.match(route, /linkDirectoryProjects/);
+  assert.doesNotMatch(route, /readLinkDirectory|LINK_DIRECTORY_CSV/);
   assert.match(route, /tenantStores[\s\S]*\.map\(\(stored\)/);
   assert.match(route, /stored\.id !== "shopee-kata-care-malaysia"/);
-  assert.match(route, /name: registered\?\.display_name\?\?registered\?\.name\?\?directory\.name/);
+  assert.match(route, /name:store\.display_name\?\?store\.name/);
   assert.match(route, /name: stored\.displayName\?\?stored\.name/);
   assert.match(route, /directoryById\.get\(stored\.id\)/);
   assert.match(route, /cache: "no-store"/);
@@ -346,7 +343,7 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(packageControl, /standaloneCreate/);
   assert.match(packageControl, /Calculator Settings Attached/);
   assert.match(packageControl, /Calculator Snapshot/);
-  assert.match(packageRoute, /calculatorSettings:\{\.\.\.\(body\.calculatorSettings \?\? \{\}\),_packageMetadata:metadata\}/);
+  assert.match(packageRoute, /calculatorSettings:\{\.\.\.\(body\.calculatorSettings \?\? \{\}\),_packageMetadata:metadata,_packageHistorySummary:\{schema:1,summary:changeSummary\}\}/);
   assert.match(schema, /calculatorSettings/);
   assert.match(migration, /calculator_settings/);
 });

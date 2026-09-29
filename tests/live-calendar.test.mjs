@@ -11,8 +11,8 @@ const compiled=await build({
   stdin:{contents:'export { GET, POST, PATCH } from "./app/api/live-calendar/route"; export { PATCH as updateUser } from "./app/api/admin/users/route"; export * from "./app/live-calendar-model";',resolveDir:process.cwd(),loader:"ts"},
   bundle:true,write:false,platform:"node",format:"esm",
   plugins:[{name:"calendar-test-adapters",setup(build){
-    build.onResolve({filter:/\/(chatgpt-auth|supabase-rest|live-calendar-store-registry)$/},args=>({path:args.path.split("/").pop(),namespace:"calendar-test"}));
-    build.onLoad({filter:/.*/,namespace:"calendar-test"},args=>({contents:args.path==="chatgpt-auth"?'export async function getChatGPTUser(){return globalThis.__calendarUser;}':args.path==="supabase-rest"?'export async function supabaseRest(path,init){return globalThis.__calendarRest(path,init);} export function supabaseConfig(){return {url:"https://unused.test",secret:"test"};}':'export async function directoryStoreNames(){globalThis.__directoryReads++;return globalThis.__directoryNames;}',loader:"js"}));
+    build.onResolve({filter:/\/(chatgpt-auth|supabase-rest|store-directory)$/},args=>({path:args.path.split("/").pop(),namespace:"calendar-test"}));
+    build.onLoad({filter:/.*/,namespace:"calendar-test"},args=>({contents:args.path==="chatgpt-auth"?'export async function getChatGPTUser(){return globalThis.__calendarUser;}':args.path==="store-directory"?'export async function storeDirectory(){return {byId:new Map(),links:new Map()};} export function storeDetails(){return {projectLinks:[],storeGroupLink:"",googleDriveLink:"",adsTopUpOwner:null};}':'export async function supabaseRest(path,init){return globalThis.__calendarRest(path,init);} export function supabaseConfig(){return {url:"https://unused.test",secret:"test"};}',loader:"js"}));
   }}],
 });
 const api=await import(`data:text/javascript;base64,${Buffer.from(compiled.outputFiles[0].text).toString("base64")}`);
@@ -27,8 +27,6 @@ const session=(extra={})=>({id,tenant_id:"j-packaging",store_id:sg.id,title:"SG 
 
 beforeEach(()=>{
   globalThis.__calendarUser={email:"admin@example.test"};
-  globalThis.__directoryNames=["SkinDae SG by CTG4u","New SG Store"];
-  globalThis.__directoryReads=0;
   state={member:{id:1,tenant_id:"j-packaging",role:"superadmin",active:true,module_access_mode:"role_default",store_access_mode:"all"},tenantActive:true,tenantModule:true,userModule:true,stores:[my,sg],assigned:[sg.id],sessions:[],calls:[]};
   globalThis.__calendarRest=async(path,init={})=>{
     state.calls.push({path,init});
@@ -79,18 +77,18 @@ test("selected-store client reads only its store, without cancelled sessions or 
   state.sessions=[session(),session({id:"my",store_id:my.id}),session({id:"other",tenant_id:"other"}),session({id:"cancelled",status:"cancelled"})];
   const result=await(await api.GET(new Request("https://calendar.test/api/live-calendar"))).json();
   assert.deepEqual(result.stores.map(store=>store.id),[sg.id]);assert.equal(result.sessions.length,1);
-  assert.equal("internal_note" in result.sessions[0],false);assert.equal(result.unregisteredStores.length,0);assert.equal(globalThis.__directoryReads,0);
+  assert.equal("internal_note" in result.sessions[0],false);assert.equal("unregisteredStores" in result,false);
   assert.equal((await api.GET(new Request(`https://calendar.test/api/live-calendar?storeId=${my.id}`))).status,403);
   assert.equal((await api.POST(request("POST",input()))).status,403);
   assert.equal((await api.POST(request("POST",{action:"registerStore",directoryName:"New SG Store"}))).status,403);
   assert.equal((await api.PATCH(request("PATCH",{id,action:"cancel"}))).status,403);
 });
 
-test("global Directory is invisible and unregistrable for another tenant",async()=>{
+test("legacy calendar registration is retired for another tenant",async()=>{
   state.member.tenant_id="other";state.stores=[{...sg,id:"other-store",tenant_id:"other"}];
   const result=await(await api.GET(new Request("https://calendar.test/api/live-calendar"))).json();
-  assert.deepEqual(result.unregisteredStores,[]);assert.equal(globalThis.__directoryReads,0);
-  assert.equal((await api.POST(request("POST",{action:"registerStore",directoryName:"New SG Store",tenant_id:"j-packaging"}))).status,403);
+  assert.equal("unregisteredStores" in result,false);
+  assert.equal((await api.POST(request("POST",{action:"registerStore",directoryName:"New SG Store",tenant_id:"j-packaging"}))).status,410);
   assert.equal(state.calls.some(call=>call.init.method==="POST"),false);
 });
 
@@ -113,12 +111,11 @@ test("legacy customer all never grants fleet calendar access without explicit st
   assert.equal(manager.stores.length,2);assert.equal(manager.sessions.length,1);
 });
 
-test("admin registration validates Directory and uses the tenant derived from membership",async()=>{
-  assert.equal((await api.POST(request("POST",{action:"registerStore",directoryName:"Injected Store"}))).status,400);
+test("calendar store registration is retired in favor of Add Store",async()=>{
+  assert.equal((await api.POST(request("POST",{action:"registerStore",directoryName:"Injected Store"}))).status,410);
   const response=await api.POST(request("POST",{action:"registerStore",directoryName:"New SG Store",tenant_id:"other"}));
-  assert.equal(response.status,201);
-  const created=(await response.json()).store;
-  assert.equal(created.tenant_id,"j-packaging");assert.equal(created.platform,"Shopee SG");
+  assert.equal(response.status,410);
+  assert.equal(state.calls.some(call=>call.init.method==="POST"),false);
 });
 
 test("SG timezone, real calendar dates and overnight UTC conversion are validated",async()=>{

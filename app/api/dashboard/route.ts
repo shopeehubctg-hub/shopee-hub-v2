@@ -1,9 +1,9 @@
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { coFundVouchers, customerUsers, dashboardSnapshots, managementActions, projectProductCatalog, stores, tenantModulePermissions, tenants, userModulePermissions, userStoreAccess } from "../../../db/schema";
+import { coFundVouchers, customerUsers, dashboardSnapshots, linkDirectoryProjects, linkDirectoryStores, managementActions, projectProductCatalog, stores, tenantModulePermissions, tenants, userModulePermissions, userStoreAccess } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { ALL_PORTAL_MODULE_IDS } from "../../module-permissions";
-import { contactsForStore, directoryStoreNameFor } from "../../project-group-links";
+import { storeDirectory } from "../../store-directory";
 import { storeSnapshots } from "../../store-snapshots";
 import { readProductCatalogSheet, sourceShopNameFor } from "../../product-catalog";
 import { supabaseRest } from "../../supabase-rest";
@@ -11,12 +11,11 @@ import { aggregateAdPerformanceByDate, authorizedAdStoreIds, latestAdSyncTime } 
 import { withoutAdCampaigns } from "../../dashboard-snapshot.js";
 import { shouldShowAllStoresTopUps, summarizeAllStoresTopUps } from "../../ad-topup-overview.js";
 import { balanceCsvColumns, isCurrentBalanceDate, parseAdBalance } from "../../ad-balance-validation.js";
-import { DIRECTORY_TENANT_ID, canonicalStoreId, canonicalIdForDirectoryName, matchingStore, type RegistryStore } from "../../live-calendar-model";
+import { canonicalStoreId, type RegistryStore } from "../../live-calendar-model";
 
 export const dynamic = "force-dynamic";
 
 const AD_BALANCE_SHEET_CSV = "https://docs.google.com/spreadsheets/d/13NOwTGkbDjW8y869CvS6lr6H8I7XRn3I0urt_-rqkgs/export?format=csv&gid=421872532";
-const LINK_DIRECTORY_CSV = "https://docs.google.com/spreadsheets/d/1iMNKdNs5tqgXgWUQhtg-UhWcb0mP3SlGYbTOyx4avkc/gviz/tq?tqx=out:csv&sheet=WhatsApp%20Group";
 const GOOGLE_SHEET_TIMEOUT_MS = 5_000;
 const adBalanceAliases: Record<string, string> = {
   "Scale Story SG by CTG4u": "Scale Story SG",
@@ -40,21 +39,6 @@ const adBalanceAliases: Record<string, string> = {
   "Naturelish Eco Plus by CTG4u": "Eco Plus by Naturelish",
   "Kata Skincare Malaysia": "KATA Marine Malaysia",
 };
-const topUpOwnerFallbacks: Record<string, string> = {
-  "AgePros By Swissmed":"shopee_hub", "Berlanco Beauty Official":"shopee_hub", "Beyoute Official Store":"shopee_hub", "BioTech by Swissmed":"shopee_hub",
-  "Bonlife Official Store":"client", "CTG4u Malaysia":"client_approval", "Daionica Official Store":"client", "Dancoly Paris HQ":"shopee_hub",
-  "Dr Smile Whitening by CTG4u":"client", "Funffy by CTG4u":"client_approval", "GoHerb Official Store":"client", "Hair Factory Official":"shopee_hub",
-  "iLady Haircare by CTG4u":"client_approval", "J Packaging":"shopee_hub", "Jeeroul by CTG4u":"client_approval", "Jen Mommy Essential Oil":"client",
-  "Jourish Natural Wellness":"client_approval", "Kata Skincare Malaysia":"client", "LivAct Official Store":"shopee_hub", "M+ SkinPro by CTG4u":"client",
-  "Master Nerv Official Store":"shopee_hub", "MCS Skincare by CTG4u":"client", "MFormula Official":"client", "Mizino Official Store":"shopee_hub",
-  "Mizino Premium":"shopee_hub", "Moesie Malaysia":"client", "Naturelish Bugucare by CTG4u":"client_approval", "Naturelish Eco Plus by CTG4u":"client_approval",
-  "Naturelish Isokae by CTG4u":"client_approval", "NatureLish Recovit by CTG4u":"shopee_hub", "Naturelish Uro360 by CTG4u":"shopee_hub",
-  "NINOKO Official Store":"client", "NomoQ by CTG4u":"client", "PAW PAWs Official":"client", "Petavit Official Store":"client",
-  "Scale Gem Collagen by CTG4u":"shopee_hub", "Scale Story Official Store":"shopee_hub", "SkinDae MY by CTG4u":"shopee_hub",
-  "True Golden Care by Naturelish":"client", "White Skin Care":"shopee_hub", "Yuan Chuan Tang Herbal by CTG4u":"client", "Zeero Skincare Official":"client",
-};
-const fallbackConnectedShopeeStoreNames = Object.keys(topUpOwnerFallbacks);
-
 function parseCsvLine(line: string) {
   const cells: string[] = [];
   let cell = "";
@@ -72,69 +56,6 @@ function parseCsvLine(line: string) {
   }
   cells.push(cell);
   return cells;
-}
-
-type LinkDirectoryContact = { project: string; href: string };
-type LinkDirectoryStore = {
-  id?: string;
-  name: string;
-  topUpOwner: string | null;
-  contacts: LinkDirectoryContact[];
-  storeGroupLink: string | null;
-  driveLink: string | null;
-};
-
-function fallbackDirectoryStores(): LinkDirectoryStore[] {
-  return fallbackConnectedShopeeStoreNames.map((name) => ({
-    name,
-    topUpOwner: topUpOwnerFallbacks[name] ?? null,
-    contacts: contactsForStore(name),
-    storeGroupLink: null,
-    driveLink: null,
-  }));
-}
-
-async function readLinkDirectory(): Promise<LinkDirectoryStore[]> {
-  try {
-    const response = await fetch(LINK_DIRECTORY_CSV, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(GOOGLE_SHEET_TIMEOUT_MS),
-    });
-    if (!response.ok) return fallbackDirectoryStores();
-    const rows = (await response.text()).trim().split(/\r?\n/).map(parseCsvLine);
-    const header = rows[0] ?? [];
-    const nameIndex = header.indexOf("Store Name");
-    const idIndex = header.indexOf("Store ID");
-    const projectIndex = header.indexOf("Project");
-    const projectGroupIndex = header.indexOf("Project Group Link");
-    const storeGroupIndex = header.indexOf("Store Group Link");
-    const driveIndex = header.indexOf("Google Drive Link");
-    const ownerIndex = header.indexOf("Ads Top Up List");
-    if (nameIndex < 0) return fallbackDirectoryStores();
-
-    const stores = new Map<string, LinkDirectoryStore>();
-    for (const row of rows.slice(1)) {
-      const name = row[nameIndex]?.trim();
-      if (!name) continue;
-      const existing = stores.get(name);
-      const projectGroupLink = row[projectGroupIndex]?.trim();
-      const contacts = existing?.contacts ? [...existing.contacts] : [];
-      if (projectGroupLink && !contacts.some((contact) => contact.href === projectGroupLink)) {
-        contacts.push({ project: row[projectIndex]?.trim() || name, href: projectGroupLink });
-      }
-      stores.set(name, {
-        id: row[idIndex]?.trim() || existing?.id,
-        name,
-        topUpOwner: existing?.topUpOwner ?? normalizeTopUpOwner(row[ownerIndex]),
-        contacts,
-        storeGroupLink: existing?.storeGroupLink ?? row[storeGroupIndex]?.trim() ?? null,
-        driveLink: existing?.driveLink ?? row[driveIndex]?.trim() ?? null,
-      });
-    }
-    return stores.size ? [...stores.values()] : fallbackDirectoryStores();
-  } catch {
-    return fallbackDirectoryStores();
-  }
 }
 
 type SheetBalance = {balance:number;balanceDate:string;sourceStoreName:string;sourceUpdatedAt:null;syncStatus:"current"};
@@ -179,14 +100,6 @@ function normalizeTopUpOwner(value?: string | null) {
   if (/shopee\s*hub/i.test(value ?? "")) return "shopee_hub";
   if (/client/i.test(value ?? "")) return "client";
   return null;
-}
-
-function storeIdFor(name: string) {
-  return `shopee-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
-}
-
-function isSingaporeStore(name: string) {
-  return /\bSG\b|Singapore|\.sg$/i.test(name);
 }
 
 async function readCoFundVouchers(storeId:string, tenantId?:string) {
@@ -280,20 +193,15 @@ export async function GET(request: Request) {
     const clientEnabledModules=ALL_PORTAL_MODULE_IDS.filter(id=>id==="live_calendar"?tenantEnabled.get(id)===true:tenantEnabled.get(id)!==false);
     const enabledModules=membership.role==="superadmin"?ALL_PORTAL_MODULE_IDS:membership.module_access_mode==="custom"?ALL_PORTAL_MODULE_IDS.filter(id=>customEnabled.has(id)&&(id==="live_calendar"?tenantEnabled.get(id)===true:tenantEnabled.get(id)!==false)):ALL_PORTAL_MODULE_IDS.filter(id=>id==="live_calendar"?tenantEnabled.get(id)===true:tenantEnabled.get(id)!==false);
     const assignedStoreIds=new Set(userStores.map(row=>canonicalStoreId(row.store_id)));
-    const registry=await supabaseRest<RegistryStore[]>(`stores?select=id,name,display_name,platform,bigseller_name&tenant_id=eq.${encodeURIComponent(membership.tenant_id)}&order=name.asc`);
-    const directoryStores = membership.tenant_id===DIRECTORY_TENANT_ID?await readLinkDirectory():[];
-    const directoryVisible=directoryStores.map((directory) => {
-      const registered=registry.find(store=>store.id===directory.id)??matchingStore(directory.name,registry);
-      return {
-        id: registered?.id??directory.id??canonicalIdForDirectoryName(directory.name),
-        name: registered?.display_name??registered?.name??directory.name,
-        sourceName: directory.name,
-        bigsellerName: registered?.bigseller_name??directory.name,
-        platform: registered?.platform??(isSingaporeStore(directory.name) ? "Shopee SG" : "Shopee MY"),
-      };
-    });
-    const representedIds=new Set(directoryVisible.map(store=>store.id));
-    const visibleStores = [...directoryVisible,...registry.filter(store=>canonicalStoreId(store.id)===store.id&&!representedIds.has(store.id)).map(store=>({id:store.id,name:store.display_name??store.name,sourceName:store.bigseller_name,bigsellerName:store.bigseller_name,platform:store.platform}))]
+    const [registry,directory]=await Promise.all([
+      supabaseRest<RegistryStore[]>(`stores?select=id,name,display_name,platform,bigseller_name&tenant_id=eq.${encodeURIComponent(membership.tenant_id)}&order=name.asc`),
+      storeDirectory(membership.tenant_id),
+    ]);
+    const visibleStores = registry.filter(store=>canonicalStoreId(store.id)===store.id).map(store=>({
+      id:store.id,name:store.display_name??store.name,
+      sourceName:directory.byId.get(store.id)?.store_name??store.bigseller_name,
+      bigsellerName:store.bigseller_name,platform:store.platform,
+    }))
       .filter(store=>membership.role==="superadmin"||membership.store_access_mode==="all"||assignedStoreIds.has(store.id));
     const requestedStoreId = new URL(request.url).searchParams.get("storeId");
     const allStoresRequested = !requestedStoreId || requestedStoreId === "all";
@@ -301,7 +209,7 @@ export async function GET(request: Request) {
     if (requestedStoreId && !allStoresRequested && !selectedStore) {
       return Response.json({ error: "Store access denied" }, { status: 403 });
     }
-    const selectedDirectory = selectedStore ? directoryStores.find((store) => store.id===selectedStore.id||store.name===selectedStore.sourceName) : undefined;
+    const selectedDirectory = selectedStore ? directory.byId.get(selectedStore.id) : undefined;
     const snapshotPayload = selectedStore ? storeSnapshots[selectedStore.sourceName] ?? storeSnapshots[selectedStore.bigsellerName] ?? null : null;
     const canViewAdvertising=enabledModules.includes("advertising");
     const showTopUps=shouldShowAllStoresTopUps(allStoresRequested,membership.role,visibleStores.length,canViewAdvertising);
@@ -313,24 +221,24 @@ export async function GET(request: Request) {
     ]);
     const sheetBalance=selectedStore?balanceForStore(sheetBalances,selectedStore.name,selectedStore.sourceName,selectedStore.bigsellerName):null;
     const adTopUpOverview=showTopUps?summarizeAllStoresTopUps(
-      visibleStores.map(store=>({...store,topUpOwner:directoryStores.find(item=>item.id===store.id||item.name===store.sourceName)?.topUpOwner??topUpOwnerFallbacks[store.sourceName]??null})),
+      visibleStores.map(store=>({...store,topUpOwner:normalizeTopUpOwner(directory.byId.get(store.id)?.ads_top_up_owner)})),
       adPerformance.rows,
       new Map(visibleStores.map(store=>[store.id,balanceForStore(sheetBalances,store.name,store.sourceName,store.bigsellerName)])),
     ):null;
     return Response.json({
       customer: { id: "shopee-hub", name: "Shopee Hub" },
       stores: visibleStores.map((store) => {
-        const directory = directoryStores.find((item) => item.id===store.id||item.name===store.sourceName);
+        const profile = directory.byId.get(store.id);
         return {
           id:store.id,name:store.name,sourceName:store.sourceName,platform:store.platform,
-          contacts: directory?.contacts.length ? directory.contacts : contactsForStore(store.sourceName),
-          storeGroupLink: directory?.storeGroupLink ?? null,
-          driveLink: directory?.driveLink ?? null,
+          contacts: directory.links.get(store.id)??[],
+          storeGroupLink: profile?.store_group_link ?? null,
+          driveLink: profile?.google_drive_link ?? null,
         };
       }),
       selectedStoreId: allStoresRequested ? "all" : selectedStore?.id ?? null,
       snapshot: snapshotPayload ? withoutAdCampaigns({ payload: snapshotPayload, importedAt: snapshotPayload.sourceUpdated ?? new Date().toISOString() }, canViewAdvertising) : null,
-      adBalance: canViewAdvertising && sheetBalance ? { ...sheetBalance, topUpOwner: selectedDirectory?.topUpOwner ?? topUpOwnerFallbacks[selectedStore?.sourceName ?? ""] ?? null } : null,
+      adBalance: canViewAdvertising && sheetBalance ? { ...sheetBalance, topUpOwner: normalizeTopUpOwner(selectedDirectory?.ads_top_up_owner) } : null,
       adPerformance:adPerformance.daily,
       adPerformanceUpdatedAt:adPerformance.updatedAt,
       adTopUpOverview,
@@ -340,7 +248,7 @@ export async function GET(request: Request) {
       user: { email: user.email },
       access: { role:membership.role, enabledModules, clientEnabledModules, canManagePermissions:membership.role==="superadmin" },
       dataSources: {
-        directory: "Google Sheets · WhatsApp Group / Link Directory",
+        directory: "Store directory",
         advertisingBalance: "Daily advertising balance",
         performance: snapshotPayload ? "Portable snapshot exported from the ChatGPT Sites dashboard" : "Advertising exports and bundled dashboard data",
       },
@@ -372,28 +280,29 @@ export async function GET(request: Request) {
   const enabledModules = membership.role === "superadmin" ? ALL_PORTAL_MODULE_IDS : membership.moduleAccessMode === "custom"
     ? ALL_PORTAL_MODULE_IDS.filter(moduleId=>userModuleRows.find(row=>row.moduleId===moduleId)?.enabled===true && (moduleId!=="live_calendar" || configuredModules.get(moduleId)===true))
     : membership.role === "customer" ? clientEnabledModules : ALL_PORTAL_MODULE_IDS.filter(moduleId=>moduleId!=="live_calendar" || configuredModules.get(moduleId)===true);
-  const directoryStores = tenant.id===DIRECTORY_TENANT_ID?await readLinkDirectory():[];
-  const directoryByName = new Map(directoryStores.map((store) => [store.name, store]));
-  const directoryById = new Map(directoryStores.filter(store=>store.id).map(store=>[store.id!,store]));
-  const directoryOrder = new Map(directoryStores.map((store, index) => [store.name, index]));
-  const visibleStores = (tenantStores.length ? tenantStores
+  const [profiles,projects]=await Promise.all([
+    db.select().from(linkDirectoryStores).where(eq(linkDirectoryStores.tenantId,tenant.id)),
+    db.select().from(linkDirectoryProjects).orderBy(linkDirectoryProjects.id),
+  ]);
+  const directoryById=new Map(profiles.map(profile=>[profile.storeId,profile]));
+  const linksById=new Map<string,Array<{project:string;href:string;driveLink:string}>>();
+  for(const project of projects){
+    if(!directoryById.has(project.storeId))continue;
+    const links=linksById.get(project.storeId)??[];
+    links.push({project:project.projectName,href:project.projectGroupLink,driveLink:project.googleDriveLink??""});
+    linksById.set(project.storeId,links);
+  }
+  const visibleStores = tenantStores
     .filter((stored) => stored.id !== "shopee-kata-care-malaysia")
     .map((stored) => {
-    const candidates = isSingaporeStore(stored.platform) ? [stored.bigSellerName, stored.name] : [stored.bigSellerName, stored.name, directoryStoreNameFor(stored.bigSellerName ?? ""), directoryStoreNameFor(stored.name)];
-    const directoryName = directoryById.get(stored.id)?.name??candidates.find((name) => name && directoryByName.has(name)) ?? stored.bigSellerName ?? stored.name;
+    const directoryName = directoryById.get(stored.id)?.storeName??stored.bigSellerName??stored.name;
     return {
       ...stored,
       storedName: stored.name,
       directoryName,
       name: stored.displayName??stored.name,
     };
-  }) : membership.storeAccessMode === "selected" && membership.role !== "superadmin" ? [] : directoryStores.map(({ name }) => ({
-    id: storeIdFor(name), tenantId: tenant.id, name, storedName: name, directoryName: name,
-    platform: isSingaporeStore(name) ? "Shopee SG" : "Shopee MY", bigSellerName: name, createdAt: "",
-  }))).sort((a, b) => {
-    const directoryDifference = (directoryOrder.get(a.directoryName) ?? Number.MAX_SAFE_INTEGER) - (directoryOrder.get(b.directoryName) ?? Number.MAX_SAFE_INTEGER);
-    return directoryDifference || a.platform.localeCompare(b.platform) || a.name.localeCompare(b.name);
-  });
+  }).sort((a,b)=>a.name.localeCompare(b.name));
   const requestedStoreId = new URL(request.url).searchParams.get("storeId");
   const allStoresRequested = !requestedStoreId || requestedStoreId === "all";
   const selectedStore = requestedStoreId && !allStoresRequested
@@ -412,7 +321,7 @@ export async function GET(request: Request) {
   const sheetBalances=await sheetBalancesPromise;
   const sheetBalance = selectedStore ? balanceForStore(sheetBalances,selectedStore.name,selectedStore.storedName,selectedStore.directoryName,selectedStore.bigSellerName) : null;
   const topUpOwner = selectedStore
-    ? directoryByName.get(selectedStore.directoryName)?.topUpOwner ?? topUpOwnerFallbacks[selectedStore.directoryName] ?? null
+    ? normalizeTopUpOwner(directoryById.get(selectedStore.id)?.adsTopUpOwner)
     : null;
   const actions = await db.select().from(managementActions)
     .where(selectedStore
@@ -447,22 +356,22 @@ export async function GET(request: Request) {
 
   const adPerformance=await readAdPerformance(authorizedAdStoreIds(visibleStores,selectedStore,canViewAdvertising),tenant.id,allStoresRequested);
   const adTopUpOverview=showTopUps?summarizeAllStoresTopUps(
-    visibleStores.map(store=>({...store,topUpOwner:directoryByName.get(store.directoryName)?.topUpOwner??topUpOwnerFallbacks[store.directoryName]??null})),
+    visibleStores.map(store=>({...store,topUpOwner:normalizeTopUpOwner(directoryById.get(store.id)?.adsTopUpOwner)})),
     adPerformance.rows,
     new Map(visibleStores.map(store=>[store.id,balanceForStore(sheetBalances,store.name,store.storedName,store.directoryName,store.bigSellerName)])),
   ):null;
   return Response.json({
     customer: { id: tenant.id, name: tenant.name },
     stores: visibleStores.map(({ id, name, platform, directoryName }) => {
-      const directory = directoryByName.get(directoryName);
+      const directory = directoryById.get(id);
       return {
         id,
         name,
         sourceName:directoryName,
         platform,
-        contacts: directory?.contacts.length ? directory.contacts : contactsForStore(directoryName),
+        contacts: linksById.get(id)??[],
         storeGroupLink: directory?.storeGroupLink ?? null,
-        driveLink: directory?.driveLink ?? null,
+        driveLink: directory?.googleDriveLink ?? null,
       };
     }),
     selectedStoreId: allStoresRequested ? "all" : (selectedStore?.id ?? null),
