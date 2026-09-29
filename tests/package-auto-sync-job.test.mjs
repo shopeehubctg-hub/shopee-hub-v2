@@ -80,3 +80,14 @@ test('retry enriches the existing row once and refuses to replace a saved summar
   assert.throws(()=>f.context.packageSyncWrite_({...payload,changeSummary:'Disc Price 修改'}),/summary differs/);
   assert.equal(f.rows[1][18],payload.changeSummary);
 });
+
+test('an empty Google Table placeholder can be renamed while occupied columns are preserved',()=>{
+  const f=scriptFixture();f.rows[0][18]='Column 19';
+  const payload={changeId:'example-package-v1',store:'Store',packageName:'Package',version:1,changeSummary:'新开配套'};
+  assert.equal(f.context.packageSyncWrite_(payload),true);
+  assert.equal(f.rows[0][18],'修改内容');
+  const occupied=scriptFixture([['Timestamp','Change ID'],['date','existing']]);
+  occupied.rows[0][18]='Column 19';occupied.rows[1][18]='Existing data';
+  assert.throws(()=>occupied.context.packageSyncWrite_(payload),/column S is already in use/);
+  assert.equal(occupied.rows[1][18],'Existing data');assert.equal(occupied.rows.length,2);
+});
