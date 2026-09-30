@@ -1,22 +1,24 @@
 export const VOUCHER_PRESET_SOURCE = {
-  spreadsheetUrl:"https://docs.google.com/spreadsheets/d/1pzXhiklrLR6lrXlxj9zhYumUKw5FxXT3/edit",
-  month:"Last Month Avg.",
-  metric:"Rounded Up Buffer",
-  updated:"2026-08-05",
+  spreadsheetUrl:"https://docs.google.com/spreadsheets/d/1gTTmWXao1j9nDzg5MJdVCOAGwRaRV222_2nC-t1Kg2k/edit",
+  month:"Final tab",
+  metric:"Average 顾客可用到的Voucher",
+  updated:"2026-09-30",
 };
 
 export const STORE_VOUCHER_PRESETS = {
-  "Agepros":{normal:14,campaign:19}, "Beyoute":{normal:14,campaign:20}, "Biotech":{normal:9,campaign:23},
-  "Bugucare":{normal:15,campaign:20}, "CTG4u":{normal:16,campaign:21}, "Dr Smile":{normal:11,campaign:19},
-  "Eco Plus":{normal:9,campaign:25}, "Funffy":{normal:15,campaign:24}, "iProCare":{normal:13,campaign:22},
-  "ISOKAE":{normal:18,campaign:21}, "Jeeroul":{normal:15,campaign:17}, "Jourish":{normal:14,campaign:22},
-  "Kata Marine":{normal:14,campaign:19}, "LivAct":{normal:13,campaign:21}, "M+":{normal:14,campaign:20},
-  "MasterNerv":{normal:13,campaign:20}, "MCS":{normal:14,campaign:22}, "MFormula":{normal:14,campaign:19},
-  "Mizino":{normal:12,campaign:19}, "Mizino Premium":{normal:13,campaign:20}, "Moesie":{normal:13,campaign:19},
-  "Ninoko":{normal:14,campaign:21}, "NomoQ":{normal:13,campaign:19}, "Recovit":{normal:15,campaign:24},
-  "Scale Gem":{normal:14,campaign:23}, "Scale Story":{normal:14,campaign:18}, "SkinDae":{normal:14,campaign:21},
-  "TGC":{normal:15,campaign:21}, "URO360":{normal:15,campaign:21}, "YCT Herbal":{normal:14,campaign:19},
-  "Zeero":{normal:11,campaign:19},
+  "Agepros":{normal:16,campaign:20}, "Berlanco Beauty Official":{normal:14,campaign:19},
+  "Beyoute":{normal:15,campaign:21}, "Biotech":{normal:16,campaign:19},
+  "Bugucare":{normal:16,campaign:22}, "CTG4u":{normal:15,campaign:20}, "Dr Smile":{normal:10,campaign:20},
+  "Eco Plus":{normal:18,campaign:26}, "Funffy":{normal:15,campaign:19},
+  "GoHerb Official Store":{normal:15,campaign:20}, "iLady Haircare by CTG4u":{normal:15,campaign:22},
+  "ISOKAE":{normal:16,campaign:20}, "Jeeroul":{normal:15,campaign:21}, "Jourish":{normal:14,campaign:15},
+  "Kata Marine":{normal:15,campaign:20}, "LivAct":{normal:15,campaign:20}, "M+":{normal:15,campaign:21},
+  "MasterNerv":{normal:15,campaign:23}, "MCS":{normal:14,campaign:20}, "MFormula":{normal:14,campaign:20},
+  "Mizino":{normal:14,campaign:19}, "Mizino Premium":{normal:14,campaign:19}, "Moesie":{normal:14,campaign:19},
+  "Ninoko":{normal:14,campaign:23}, "NomoQ":{normal:14,campaign:19}, "Recovit":{normal:15,campaign:23},
+  "Scale Gem":{normal:13,campaign:21}, "Scale Story":{normal:14,campaign:21}, "SkinDae":{normal:15,campaign:20},
+  "Supu":{normal:9,campaign:20}, "TGC":{normal:15,campaign:21}, "URO360":{normal:15,campaign:20},
+  "YCT Herbal":{normal:14,campaign:20}, "Zeero":{normal:14,campaign:19},
 };
 
 const STORE_ALIASES = {
@@ -31,6 +33,7 @@ const STORE_ALIASES = {
   "Scale Story Official Store":"Scale Story", "SkinDae MY by CTG4u":"SkinDae",
   "True Golden Care by Naturelish":"TGC", "Naturelish Uro360 by CTG4u":"URO360",
   "Yuan Chuan Tang Herbal by CTG4u":"YCT Herbal", "Zeero Skincare Official":"Zeero",
+  "SUPU • 食补":"Supu",
 };
 
 export function voucherPresetFor(storeName="") {
