@@ -287,14 +287,14 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /Categories with the same Commission Rate are grouped/);
   assert.doesNotMatch(calculator, /其他计算设定/);
   assert.doesNotMatch(calculator, /Voucher preset 根据/);
-  assert.match(voucherPresets, /Last Month Avg\./);
+  assert.match(voucherPresets, /Final tab/);
   assert.match(calculator, /<h2>Markup Calculator<\/h2>/);
   assert.doesNotMatch(calculator, /scenario-voucher/);
   assert.doesNotMatch(calculator, /Campaign Day 最高百分比收费/);
   assert.match(page, /storeName=\{allStoresSelected/);
-  assert.match(voucherPresets, /Rounded Up Buffer/);
+  assert.match(voucherPresets, /Average 顾客可用到的Voucher/);
   assert.match(voucherPresets, /Mizino Premium/);
-  assert.match(voucherPresets, /normal:13,campaign:20/);
+  assert.match(voucherPresets, /"Mizino Premium":\{normal:14,campaign:19\}/);
   assert.match(calculator, /CoFund Voucher/);
   assert.doesNotMatch(calculator, /Extra Profit Target/);
   assert.match(calculator, /SPayLater/);
