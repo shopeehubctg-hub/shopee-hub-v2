@@ -102,7 +102,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   const hasSelectedStore=Boolean(storeId&&storeId!=="all");
   const allStoresSelected=storeId==="all";
 
-  async function load() {
+  async function load(afterSave=false) {
     const sequence=++loadSequence.current;
     if (!hasPackageScope) {
       setItems([]);
@@ -122,7 +122,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     } catch {
       if (sequence===loadSequence.current) {
         setMessageType("error");
-        setMessage("Packages could not be refreshed. Try refreshing the page.");
+        setMessage(afterSave?"Package saved, but the list could not be refreshed. Reload the page to see it.":"Packages could not be loaded. Try refreshing the page.");
       }
     }
   }
@@ -359,7 +359,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       }
       setMessageType(data?.savedAsDraft?"warning":"success");
       setMessage(savedMessage);
-      void load();
+      void load(true);
     } catch {
       setFormErrors([{section:"Saving",message:"We could not reach the server. Check your internet connection and try again."}]);
     } finally {
