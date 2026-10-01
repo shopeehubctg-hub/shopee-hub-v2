@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CalculatorSnapshot, PackagePrefill } from "./calculator-types";
 import { packageHistoryChanges, packageHistoryTime, type PackageHistorySnapshot } from "./package-history";
+import { packagePriceDisplay } from "./package-price-display";
 
 type ComponentLine = { inventorySku:string; name:string; quantity:number; kind:"product"|"gift" };
 type PlatformName = "Shopee"|"Lazada"|"TikTok Shop";
@@ -39,7 +40,7 @@ const blankLine = ():ComponentLine => ({ inventorySku:"", name:"", quantity:1, k
 const blankPeriod = () => ({ promotionType:"monthly" as "monthly"|"custom", promotionMonth:"", effectiveFrom:"", effectiveTo:"" });
 const blankForm = () => ({
   name:"", markets:["MY"] as MarketName[],
-  samePricing:false,
+  samePricing:false, sameDates:false,
   nonCampaign:blankPeriod(), campaign:{...blankPeriod(),promotionType:"custom" as const,campaignEvents:["dday"] as CampaignEvent[]},
   prices:{
     MY:{ nonCampaignOriginal:"", nonCampaignSelling:"", campaignOriginal:"", campaignSelling:"" },
@@ -243,7 +244,14 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       const nonCampaign:PriceScheduleInput={market,priceType:"non_campaign",originalPrice:form.prices[market].nonCampaignOriginal,sellingPrice:form.prices[market].nonCampaignSelling,promotionType:form.nonCampaign.promotionType,effectiveFrom:form.nonCampaign.effectiveFrom,effectiveTo:form.nonCampaign.effectiveTo};
       schedules.push(nonCampaign);
       if (form.samePricing) {
-        schedules.push({...nonCampaign,priceType:"campaign"});
+        if (form.sameDates) {
+          schedules.push({...nonCampaign,priceType:"campaign"});
+          return;
+        }
+        form.campaign.campaignEvents.forEach(campaignEvent=>{
+          const dates=campaignDates(form.campaign.promotionMonth,campaignEvent);
+          schedules.push({...nonCampaign,priceType:"campaign",promotionType:"custom",effectiveFrom:dates.from,effectiveTo:dates.to});
+        });
         return;
       }
       form.campaign.campaignEvents.forEach(campaignEvent=>{
@@ -272,7 +280,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       if (period.effectiveFrom&&period.effectiveTo&&period.effectiveTo<period.effectiveFrom) addError("Pricing & Promotion",`${label} end date cannot be before its start date.`);
     };
     validatePeriod("Non-Campaign",form.nonCampaign);
-    if (!form.samePricing) {
+    if (!(form.samePricing&&form.sameDates)) {
       if (!form.campaign.promotionMonth) addError("Pricing & Promotion","Select the Campaign month.");
       if (!form.campaign.campaignEvents.length) addError("Pricing & Promotion","Select at least one Campaign event.");
     }
@@ -420,13 +428,18 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     const samePricing=markets.every(market=>{
       const nonCampaign=priceFor(market,"non_campaign");
       const campaignSchedules=sourceSchedules.filter(line=>line.market===market&&line.priceType==="campaign");
-      return Boolean(nonCampaign&&campaignSchedules.length===1&&campaignSchedules.every(line=>line.originalPrice===nonCampaign.originalPrice&&line.sellingPrice===nonCampaign.sellingPrice&&line.promotionType===nonCampaign.promotionType&&line.effectiveFrom===nonCampaign.effectiveFrom&&line.effectiveTo===nonCampaign.effectiveTo));
+      return Boolean(nonCampaign&&campaignSchedules.length>0&&campaignSchedules.every(line=>line.originalPrice===nonCampaign.originalPrice&&line.sellingPrice===nonCampaign.sellingPrice));
+    });
+    const sameDates=samePricing&&markets.every(market=>{
+      const nonCampaign=priceFor(market,"non_campaign");
+      const campaignSchedules=sourceSchedules.filter(line=>line.market===market&&line.priceType==="campaign");
+      return Boolean(nonCampaign&&campaignSchedules.length===1&&campaignSchedules[0].promotionType===nonCampaign.promotionType&&campaignSchedules[0].effectiveFrom===nonCampaign.effectiveFrom&&campaignSchedules[0].effectiveTo===nonCampaign.effectiveTo);
     });
     setEditingPackageId(stored ? item.id : null);
     setEditingVersion(stored ? item.version : null);
     setEditingStore({id:item.storeId,name:item.storeName??storeName});
     setForm({
-      name:item.name,markets,samePricing,
+      name:item.name,markets,samePricing,sameDates,
       nonCampaign:{promotionType:nc.promotionType,promotionMonth:nc.promotionType==="monthly"?nc.effectiveFrom.slice(0,7):"",effectiveFrom:nc.effectiveFrom,effectiveTo:nc.effectiveTo},
       campaign:{promotionType:"custom",promotionMonth:campaign.effectiveFrom.slice(0,7),campaignEvents:[...new Set(sourceSchedules.filter(line=>line.priceType==="campaign").map(line=>campaignEventForDates(line.effectiveFrom,line.effectiveTo)))],effectiveFrom:campaign.effectiveFrom,effectiveTo:campaign.effectiveTo},
       prices:{MY:{nonCampaignOriginal:String(priceFor("MY","non_campaign")?.originalPrice??""),nonCampaignSelling:String(priceFor("MY","non_campaign")?.sellingPrice??""),campaignOriginal:String(priceFor("MY","campaign")?.originalPrice??""),campaignSelling:String(priceFor("MY","campaign")?.sellingPrice??"")},SG:{nonCampaignOriginal:String(priceFor("SG","non_campaign")?.originalPrice??""),nonCampaignSelling:String(priceFor("SG","non_campaign")?.sellingPrice??""),campaignOriginal:String(priceFor("SG","campaign")?.originalPrice??""),campaignSelling:String(priceFor("SG","campaign")?.sellingPrice??"")}},
@@ -468,7 +481,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         <div><span className={`package-status ${item.status}`}>{item.status}</span><span className={`sync-status ${item.pendingVersion?"pending":item.sheetSyncStatus ?? "pending"}`}>Sheet {item.pendingVersion?`v${item.pendingVersion} needs sync`:item.sheetSyncStatus==="not_sent"?"not sent":item.sheetSyncStatus ?? "preview"}</span><h3>{item.name}</h3></div>
         <div className="package-price"><small>{item.market}</small><del>{money(item.originalPrice,item.market,source==="database")}</del><strong>{money(item.sellingPrice,item.market,source==="database")}</strong></div>
       </div>
-      {item.priceSchedules?.length?<div className="package-schedule-summary">{item.priceSchedules.map(line=><div key={`${line.market}-${line.priceType}`}><span>{line.market} · {line.priceType==="campaign"?"Campaign":"Non-Campaign"}</span><b>{money(line.sellingPrice,line.market)}</b><small>{line.effectiveFrom} → {line.effectiveTo}</small></div>)}</div>:null}
+      {item.priceSchedules?.length?<div className="package-schedule-summary">{packagePriceDisplay(item.priceSchedules).map(line=><div key={line.key}><span>{line.market} · {line.label}</span><b>{money(line.sellingPrice,line.market)}</b>{line.periods.map(period=><small key={period}>{period}</small>)}</div>)}</div>:null}
       <div className="platform-skus">{(item.platforms?.length?item.platforms:[{platform:"Shopee" as const,packageSku:item.packageSku}]).map(platform=><div key={platform.platform}><span>{platform.platform}</span><b>{platform.packageSku}</b></div>)}</div>
       <div className="package-meta">{allStoresSelected&&<span>Store <b>{item.storeName??item.storeId}</b></span>}<span>Version <b>v{item.version}</b></span><span>Promotion <b>{item.promotionType==="monthly"?"Full Month":"Custom Dates"}</b></span><span>Effective <b>{item.effectiveFrom} → {item.effectiveTo || "Open Ended"}</b></span><span>Discount <b>{item.originalPrice?Math.round((1-item.sellingPrice/item.originalPrice)*100):0}%</b></span></div>
       <div className="component-list">{item.components.map((line,index)=><div key={`${line.inventorySku}-${index}`}><span className={`component-kind ${line.kind}`}>{line.kind}</span><b>{line.inventorySku}</b><span>{line.name}</span><strong>× {line.quantity}</strong></div>)}</div>
@@ -516,19 +529,20 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       </section>
 
       <section className="form-section pricing-section"><div className="form-section-title"><span>2</span><div><h4>Pricing & Promotion Periods</h4><p>Set Non-Campaign and Campaign prices for each market</p></div></div>
-        <label className={`same-pricing-toggle${form.samePricing?" selected":""}`}><input type="checkbox" checked={form.samePricing} onChange={event=>setForm({...form,samePricing:event.target.checked})}/><span><b>Same for Both Non-Campaign &amp; Campaign Day Pricing</b><small>Use the Non-Campaign prices and promotion dates for Campaign Day too.</small></span></label>
-        {form.samePricing&&<div className="same-pricing-note">Campaign Day pricing is hidden because it will be copied automatically from Non-Campaign when you save.</div>}
-        {([['nonCampaign','Non-Campaign'],...(!form.samePricing?([['campaign','Campaign']] as const):[])] as const).map(([periodKey,title])=>{
+        <label className={`same-pricing-toggle${form.samePricing?" selected":""}`}><input type="checkbox" checked={form.samePricing} onChange={event=>setForm({...form,samePricing:event.target.checked})}/><span><b>Same for Both Non-Campaign &amp; Campaign Day Pricing</b><small>Use the Non-Campaign prices for Campaign Day too. Campaign dates stay separate.</small></span></label>
+        {form.samePricing&&<label className="same-pricing-toggle"><input type="checkbox" checked={form.sameDates} onChange={event=>setForm({...form,sameDates:event.target.checked})}/><span><b>Use the same dates too</b><small>Campaign and Non-Campaign will share one date range.</small></span></label>}
+        {form.samePricing&&!form.sameDates&&<div className="same-pricing-note">Campaign prices will match Non-Campaign prices. Choose the Campaign dates below.</div>}
+        {([['nonCampaign','Non-Campaign'],...(!(form.samePricing&&form.sameDates)?([['campaign','Campaign']] as const):[])] as const).map(([periodKey,title])=>{
           const period=form[periodKey];
           return <div className={`scenario-editor ${periodKey}`} key={periodKey}>
             <div className="scenario-editor-head"><div><b>{title}</b><span>{title==="Campaign"?"Campaign Day Price & Dates":"Always-On Price & Dates"}</span></div>{periodKey==="nonCampaign"&&<div className="promotion-toggle"><button type="button" className={period.promotionType==="monthly"?"active":""} onClick={()=>setForm({...form,[periodKey]:{...period,promotionType:"monthly"}})}>Full Month</button><button type="button" className={period.promotionType==="custom"?"active":""} onClick={()=>setForm({...form,[periodKey]:{...period,promotionType:"custom"}})}>Custom Dates</button></div>}</div>
-            <div className="scenario-body"><div className="market-price-grid">{form.markets.map(market=>{
+            <div className="scenario-body">{!(periodKey==="campaign"&&form.samePricing)&&<div className="market-price-grid">{form.markets.map(market=>{
               const prefix=periodKey==="campaign"?"campaign":"nonCampaign";
               const originalKey=`${prefix}Original` as keyof typeof form.prices.MY;
               const sellingKey=`${prefix}Selling` as keyof typeof form.prices.MY;
               const same=Boolean(form.prices[market][originalKey])&&Number(form.prices[market][originalKey])===Number(form.prices[market][sellingKey]);
               return <div className={`market-price-card ${same?"same-price-warning":""}`} key={market}><strong>{market} <small>{market==="MY"?"RM":"S$"}</small></strong><label>Original Price <em>*</em><input required type="number" min="0.01" step="0.01" value={form.prices[market][originalKey]} onChange={event=>updatePrice(market,originalKey,event.target.value)}/></label><label>Selling Price<input required type="number" min="0.01" step="0.01" value={form.prices[market][sellingKey]} onChange={event=>updatePrice(market,sellingKey,event.target.value)}/></label>{same&&<div className="same-price-alert">⚠️ Original Price equals Selling Price — please double-check.</div>}</div>;
-            })}</div>
+            })}</div>}
             {periodKey==="campaign"?<div className="campaign-date-controls"><label>Campaign Month<input type="month" value={period.promotionMonth} onChange={event=>updatePromotionMonth(periodKey,event.target.value)}/></label><fieldset><legend>Campaign Events · Multi-Select</legend>{([['dday','D-Day'],['mid_month','Mid Month Madness'],['payday','Payday']] as const).map(([value,label])=><label key={value} className={form.campaign.campaignEvents.includes(value)?"selected":""}><input type="checkbox" checked={form.campaign.campaignEvents.includes(value)} onChange={()=>updateCampaignEvent(value)}/><span><b>{label}</b><small>{value==="dday"?"2 Days Before To Double Day":value==="mid_month"?"14th–15th":"24th–25th"}</small></span></label>)}</fieldset><div className="campaign-date-list">{form.campaign.campaignEvents.map(event=>{const dates=campaignDates(period.promotionMonth,event);return <span key={event}><b>{event==="dday"?"D-Day":event==="mid_month"?"Mid Month":"Payday"}</b>{dates.from||"—"} → {dates.to||"—"}</span>})}</div></div>:period.promotionType==="monthly"?<div className="date-fields"><label>Promotion Month<input type="month" value={period.promotionMonth} onChange={event=>updatePromotionMonth(periodKey,event.target.value)}/></label><div className="date-preview"><span>Start <b>{period.effectiveFrom||"—"}</b></span><span>End <b>{period.effectiveTo||"—"}</b></span></div></div>:<div className="date-fields"><label>Start Date<input type="date" value={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveFrom:event.target.value}})}/></label><label>End Date<input type="date" value={period.effectiveTo} min={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveTo:event.target.value}})}/></label></div>}
             </div>
           </div>;
