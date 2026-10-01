@@ -215,9 +215,26 @@ export async function GET(request: Request) {
     return Response.json({ packages:sample, source:"sheet-migration-preview", canCreate:storeId !== "all", canDelete:false }, { headers:{ "Cache-Control":"private, no-store" } });
   }
   const ids = rows.map(row => row.id);
-  const versions = await db.select().from(packageVersions).where(inArray(packageVersions.packageId, ids)).orderBy(desc(packageVersions.version));
-  const prices = await db.select().from(packagePrices).where(inArray(packagePrices.packageId, ids)).orderBy(desc(packagePrices.createdAt));
-  const platformRows = await db.select().from(packagePlatformSkus).where(inArray(packagePlatformSkus.packageId, ids));
+  const [versions,prices,platformRows] = await Promise.all([
+    db.select().from(packageVersions).where(inArray(packageVersions.packageId, ids)).orderBy(desc(packageVersions.version)),
+    db.select().from(packagePrices).where(inArray(packagePrices.packageId, ids)).orderBy(desc(packagePrices.createdAt)),
+    db.select().from(packagePlatformSkus).where(inArray(packagePlatformSkus.packageId, ids)),
+  ]);
+  const versionsByPackage = new Map<string,typeof versions>();
+  const pricesByVersion = new Map<string,typeof prices>();
+  const platformsByVersion = new Map<string,typeof platformRows>();
+  versions.forEach(version=>{
+    if (!versionsByPackage.has(version.packageId)) versionsByPackage.set(version.packageId,[]);
+    versionsByPackage.get(version.packageId)!.push(version);
+  });
+  prices.forEach(price=>{
+    if (!pricesByVersion.has(price.versionId)) pricesByVersion.set(price.versionId,[]);
+    pricesByVersion.get(price.versionId)!.push(price);
+  });
+  platformRows.forEach(platform=>{
+    if (!platformsByVersion.has(platform.versionId)) platformsByVersion.set(platform.versionId,[]);
+    platformsByVersion.get(platform.versionId)!.push(platform);
+  });
   const latestVersion = new Map<string, typeof versions[number]>();
   const latestPublishedVersion = new Map<string, typeof versions[number]>();
   versions.forEach(version => { if (!latestVersion.has(version.packageId)) latestVersion.set(version.packageId, version); });
@@ -227,9 +244,9 @@ export async function GET(request: Request) {
       const version = ["active","scheduled","expired"].includes(row.status)
         ? latestPublishedVersion.get(row.id) ?? latestVersion.get(row.id)
         : latestVersion.get(row.id);
-      const versionPrices = version ? prices.filter(item => item.versionId === version.id) : [];
+      const versionPrices = version ? pricesByVersion.get(version.id)??[] : [];
       const price = versionPrices.find(item => item.priceType === "campaign" && (item.currency === "SGD" ? "SG" : item.market) === "MY") ?? versionPrices[0];
-      const currentPlatforms = version ? platformRows.filter(item => item.versionId === version.id).map(({ platform, packageSku }) => ({ platform, packageSku })) : [];
+      const currentPlatforms = version ? (platformsByVersion.get(version.id)??[]).map(({ platform, packageSku }) => ({ platform, packageSku })) : [];
       return {
         ...row,
         status:["active","scheduled","expired"].includes(row.status)
@@ -261,8 +278,9 @@ export async function GET(request: Request) {
           effectiveFrom:item.effectiveFrom,
           effectiveTo:item.effectiveTo ?? "",
         })),
-        history:versions.filter(item => item.packageId === row.id).map(item => {
-          const historyPrice = prices.find(priceItem => priceItem.versionId === item.id);
+        history:(versionsByPackage.get(row.id)??[]).map(item => {
+          const historyPrices=pricesByVersion.get(item.id)??[];
+          const historyPrice = historyPrices[0];
           return {
             version:item.version,
             name:versionMetadata(item.calculatorSettings)?.name ?? null,
@@ -274,10 +292,10 @@ export async function GET(request: Request) {
             effectiveTo:item.effectiveTo,
             originalPrice:historyPrice?.originalPrice,
             sellingPrice:historyPrice?.sellingPrice,
-            priceSchedules:prices.filter(priceItem=>priceItem.versionId===item.id).map(priceItem=>({market:priceItem.currency === "SGD" ? "SG" : priceItem.market,priceType:priceItem.priceType,originalPrice:priceItem.originalPrice/100,sellingPrice:priceItem.sellingPrice/100,promotionType:priceItem.promotionType,effectiveFrom:priceItem.effectiveFrom,effectiveTo:priceItem.effectiveTo??""})),
+            priceSchedules:historyPrices.map(priceItem=>({market:priceItem.currency === "SGD" ? "SG" : priceItem.market,priceType:priceItem.priceType,originalPrice:priceItem.originalPrice/100,sellingPrice:priceItem.sellingPrice/100,promotionType:priceItem.promotionType,effectiveFrom:priceItem.effectiveFrom,effectiveTo:priceItem.effectiveTo??""})),
             addedComponents:item.addedComponents,
             removedComponents:item.removedComponents,
-            platforms:platformRows.filter(platformItem => platformItem.versionId === item.id).map(({ platform, packageSku }) => ({ platform, packageSku })),
+            platforms:(platformsByVersion.get(item.id)??[]).map(({ platform, packageSku }) => ({ platform, packageSku })),
             sheetSyncStatus:item.sheetSyncStatus,
             calculatorSettings:publicCalculatorSettings(item.calculatorSettings ?? null),
             createdAt:item.createdAt,
