@@ -9,6 +9,17 @@ export async function syncHistoryToGoogleSheet(payload: Record<string, unknown>)
   const secret = process.env.GOOGLE_SHEETS_HISTORY_SECRET;
   if (!webhookUrl || !secret) return { status: "pending", reason: "Google Sheets webhook is not configured" };
 
+  // Isolated package QC uses a local receipt so synthetic TEST packages never
+  // reach the real customer history Sheet. Production cannot enable this path.
+  if (webhookUrl === "staging://package-history-receipt") {
+    const isolatedPreview = process.env.VERCEL_ENV === "preview"
+      && process.env.VERCEL_GIT_COMMIT_REF === "codex/package-batch-history-staging-candidate"
+      && process.env.SUPABASE_URL === "https://ubjfuveoqbvouryldqfu.supabase.co";
+    return isolatedPreview
+      ? { status: "synced" }
+      : { status: "failed", reason: "Staging receipt is unavailable outside isolated Preview" };
+  }
+
   let reason = "Google Sheets webhook failed";
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
