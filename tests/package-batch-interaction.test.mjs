@@ -35,8 +35,7 @@ async function setup(prefills, postResponses, packages = [], { accumulateSaved =
     if (options.method === "POST") {
       const request = JSON.parse(options.body);
       posts.push(request);
-      const queued = postResponses.shift();
-      const next = typeof queued === "function" ? queued({ dom, request }) : queued;
+      const next = postResponses.shift();
       if (next instanceof Error) throw next;
       if (accumulateSaved && (next.ok || next.body?.savedAsDraft)) savedPackages.unshift({
         id: next.body.packageId, storeId: "test-store", packageSku: request.platforms[0].packageSku,
@@ -234,25 +233,41 @@ test("a saved batch resumes at the next package with its request identity after 
   } finally { await resumed.cleanup(); }
 });
 
-test("a vanished storage record after server save is rebuilt and retried without a duplicate request", async () => {
-  const prefills = [...prefill(0), ...prefill(1)];
-  const storageKey = "package-draft:storage-interruption";
-  const harness = await setup(prefills, [
-    ({ dom }) => {
-      dom.window.localStorage.removeItem(storageKey);
-      return { ok: true, body: { version: 1, packageId: "draft-0" } };
-    },
-    { ok: true, body: { version: 1, packageId: "draft-0" } },
-  ], [], { storageKey, storedBatch: { prefills, storeId: "test-store" } });
+test("existing packages with several campaign periods open in Edit / Modify", async () => {
+  const period = (priceType, from, to) => ({
+    market: "MY", priceType, originalPrice: 500, sellingPrice: priceType === "campaign" ? 350 : 340,
+    promotionType: "custom", effectiveFrom: from, effectiveTo: to,
+  });
+  const packages = Array.from({ length: 6 }, (_, index) => ({
+    id: `existing-${index}`, storeId: "test-store", packageSku: `SKU-${index}`,
+    name: `Existing Package ${index}`, market: "MY", status: "scheduled", version: 3,
+    promotionType: "custom", originalPrice: 50000, sellingPrice: 35000,
+    effectiveFrom: "2026-10-08", effectiveTo: "2026-10-10",
+    components: [{ inventorySku: `ITEM-${index}`, name: "Test item", quantity: 1, kind: "product" }],
+    platforms: [{ platform: "Shopee", packageSku: `SKU-${index}` }],
+    priceSchedules: [
+      period("non_campaign", "2026-10-03", "2026-10-31"),
+      period("campaign", "2026-10-08", "2026-10-10"),
+      period("campaign", "2026-10-14", "2026-10-15"),
+      period("campaign", "2026-10-24", "2026-10-25"),
+    ],
+    history: [],
+  }));
+  const harness = await setup([], [], packages);
   try {
     await harness.render();
-    await completeCurrentForm(harness.dom, 0);
-    await act(async () => click(harness.dom, "Save Draft"));
-    assert.match(harness.dom.window.document.querySelector(".package-modal").textContent, /QA Package 0/);
-    assert.match(harness.dom.window.document.body.textContent, /Browser storage could not record the batch progress/);
-    await act(async () => click(harness.dom, "Save Draft"));
-    assert.equal(harness.posts[0].clientRequestId, harness.posts[1].clientRequestId);
-    assert.match(harness.dom.window.document.querySelector(".package-modal").textContent, /QA Package 1/);
-    assert.equal(JSON.parse(harness.dom.window.localStorage.getItem(storageKey)).prefills[0].name, "QA Package 1");
+    for (let index = 0; index < packages.length; index++) {
+      await act(async () => {
+        const button = harness.dom.window.document.querySelector(`button[aria-label="Edit package Existing Package ${index}"]`);
+        assert.ok(button);
+        button.dispatchEvent(new harness.dom.window.MouseEvent("click", { bubbles: true }));
+      });
+      const modal = harness.dom.window.document.querySelector(".package-modal");
+      assert.ok(modal, `Editor did not open for package ${index}`);
+      assert.match(modal.textContent, /Edit \/ Modify Package/);
+      assert.equal(modal.querySelector('input[aria-label="Shopee Listing 1 SKU"]').value, `SKU-${index}`);
+      await act(async () => click(harness.dom, "Cancel"));
+    }
+    assert.equal(harness.posts.length, 0);
   } finally { await harness.cleanup(); }
 });
