@@ -1,3 +1,5 @@
+import type { CalculatorSnapshot } from "./calculator-types";
+
 export type PackageHistorySnapshot = {
   name?: string | null;
   market?: string | null;
@@ -9,8 +11,37 @@ export type PackageHistorySnapshot = {
   }[];
 };
 
+function isCalculatorSnapshot(value: unknown): value is CalculatorSnapshot {
+  if (!value || typeof value !== "object") return false;
+  const snapshot = value as Record<string, unknown>;
+  return (snapshot.serviceScenario === "Non-Campaign Day" || snapshot.serviceScenario === "Campaign Day")
+    && typeof snapshot.category === "string"
+    && ["facebookPrice", "suggestedShopeePrice", "commissionRate", "serviceRate", "actualPayout"]
+      .every(field => typeof snapshot[field] === "number" && Number.isFinite(snapshot[field]))
+    && ["discountValue", "facebookPricePerUnit", "customerPricePerUnit"]
+      .every(field => snapshot[field] == null || (typeof snapshot[field] === "number" && Number.isFinite(snapshot[field])));
+}
+
+export function calculatorSnapshots(value: unknown): CalculatorSnapshot[] {
+  if (!value || typeof value !== "object") return [];
+  const scenarios = (value as { scenarios?: unknown }).scenarios;
+  const candidates = Array.isArray(scenarios) ? scenarios : [value];
+  return candidates.filter(isCalculatorSnapshot);
+}
+
+export function publicCalculatorSettings(value: Record<string, unknown> | null) {
+  const snapshots = calculatorSnapshots(value);
+  if (!snapshots.length) return null;
+  if (Array.isArray(value?.scenarios)) return { scenarios: snapshots };
+  const { _packageMetadata, _packageHistorySummary, ...snapshot } = snapshots[0] as CalculatorSnapshot & Record<string, unknown>;
+  void _packageMetadata;
+  void _packageHistorySummary;
+  return snapshot;
+}
+
 const missing = "Not recorded";
 const sortedLines = (lines: string[]) => lines.sort().join("\n") || "None";
+const priceText = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value.toFixed(2) : missing;
 
 export function packageHistoryFields(snapshot: PackageHistorySnapshot) {
   return {
@@ -18,8 +49,8 @@ export function packageHistoryFields(snapshot: PackageHistorySnapshot) {
     "Selling markets": snapshot.market ? sortedLines(snapshot.market.split(",").map(value => value.trim())) : missing,
     "Platform listing SKUs": snapshot.platforms ? sortedLines(snapshot.platforms.map(line => `${line.platform}: ${line.packageSku}`)) : missing,
     "Inventory items": snapshot.components ? sortedLines(snapshot.components.map(line => `${line.inventorySku} · ${line.name} ×${line.quantity} (${line.kind})`)) : missing,
-    "Prices & promotion dates": snapshot.priceSchedules ? sortedLines(snapshot.priceSchedules.map(line =>
-      `${line.market} ${line.priceType === "campaign" ? "Campaign" : "Non-Campaign"}: ${line.market === "SG" ? "S$" : "RM"} ${line.originalPrice.toFixed(2)} → ${line.sellingPrice.toFixed(2)} · ${line.effectiveFrom} → ${line.effectiveTo} (${line.promotionType})`,
+    "Prices & promotion dates": Array.isArray(snapshot.priceSchedules) ? sortedLines(snapshot.priceSchedules.map(line =>
+      `${line.market} ${line.priceType === "campaign" ? "Campaign" : "Non-Campaign"}: ${line.market === "SG" ? "S$" : "RM"} ${priceText(line.originalPrice)} → ${priceText(line.sellingPrice)} · ${line.effectiveFrom} → ${line.effectiveTo} (${line.promotionType})`,
     )) : missing,
   };
 }

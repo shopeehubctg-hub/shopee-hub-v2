@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { packageHistoryChanges, packageHistoryFields, packageHistoryTime } from '../app/package-history.ts';
+import { calculatorSnapshots, packageHistoryChanges, packageHistoryFields, packageHistoryTime, publicCalculatorSettings } from '../app/package-history.ts';
 
 const initial = {
   name: 'Package A', market: 'MY,SG',
@@ -46,6 +46,14 @@ test('legacy records remain unknown rather than borrowing current package detail
   assert.equal(packageHistoryFields({})['Package name'], 'Not recorded');
 });
 
+test('incomplete legacy price rows do not crash View History', () => {
+  const history = packageHistoryFields({
+    priceSchedules: [{ market: 'MY', priceType: 'campaign', originalPrice: undefined,
+      sellingPrice: undefined, promotionType: 'custom', effectiveFrom: '2026-10-08', effectiveTo: '2026-10-10' }],
+  });
+  assert.match(history['Prices & promotion dates'], /RM Not recorded → Not recorded/);
+});
+
 test('initial version and removals retain complete snapshots', () => {
   assert.equal(packageHistoryChanges(undefined,initial).length,5);
   const removed = {...initial,components:[],platforms:[]};
@@ -58,4 +66,35 @@ test('audit timestamps use Malaysia time and tolerate legacy missing dates', () 
   assert.match(packageHistoryTime('2026-09-28T10:00:00Z'),/18:00:00 MYT$/);
   assert.equal(packageHistoryTime(''),'Not recorded');
   assert.equal(packageHistoryTime('invalid'),'Not recorded');
+});
+
+test('edited package with metadata-only calculator history opens without a calculator snapshot', () => {
+  const stored = {
+    _packageMetadata: { name: 'Kata Combo C PWP', market: 'MY' },
+    _packageHistorySummary: { schema: 1, summary: '配套资料修改' },
+  };
+  const publicSettings = publicCalculatorSettings(stored);
+  assert.equal(publicSettings, null);
+  assert.deepEqual(calculatorSnapshots(stored), []);
+  assert.deepEqual(calculatorSnapshots(publicSettings), []);
+});
+
+test('complete normal and campaign calculator snapshots remain available in history', () => {
+  const makeSnapshot = serviceScenario => ({
+    source: 'Shopee Pricing Calculator', serviceScenario, category: 'Skincare',
+    facebookPrice: 100, suggestedShopeePrice: 120, commissionRate: 9.72,
+    serviceRate: 5.94, actualPayout: 80,
+  });
+  const normal = makeSnapshot('Non-Campaign Day');
+  const campaign = makeSnapshot('Campaign Day');
+  const stored = {
+    scenarios: [normal, campaign],
+    _packageMetadata: { name: 'Kata Combo C PWP' },
+    _packageHistorySummary: { schema: 1, summary: '配套资料修改' },
+  };
+  assert.deepEqual(publicCalculatorSettings(stored), { scenarios: [normal, campaign] });
+  assert.deepEqual(calculatorSnapshots(publicCalculatorSettings(stored)), [normal, campaign]);
+  assert.deepEqual(publicCalculatorSettings({ ...normal, _packageHistorySummary: stored._packageHistorySummary }), normal);
+  assert.deepEqual(calculatorSnapshots({ scenarios: [{ serviceScenario: 'Campaign Day' }, campaign] }), [campaign]);
+  assert.deepEqual(calculatorSnapshots({ scenarios: [{ ...campaign, discountValue: 'invalid' }, campaign] }), [campaign]);
 });
