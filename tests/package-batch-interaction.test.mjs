@@ -35,7 +35,8 @@ async function setup(prefills, postResponses, packages = [], { accumulateSaved =
     if (options.method === "POST") {
       const request = JSON.parse(options.body);
       posts.push(request);
-      const next = postResponses.shift();
+      const queued = postResponses.shift();
+      const next = typeof queued === "function" ? queued({ dom, request }) : queued;
       if (next instanceof Error) throw next;
       if (accumulateSaved && (next.ok || next.body?.savedAsDraft)) savedPackages.unshift({
         id: next.body.packageId, storeId: "test-store", packageSku: request.platforms[0].packageSku,
@@ -231,6 +232,29 @@ test("a saved batch resumes at the next package with its request identity after 
     assert.equal(resumed.posts[0].clientRequestId, checkpoint.requestIds["qa package 1"]);
     assert.equal(resumed.dom.window.localStorage.getItem(storageKey), null);
   } finally { await resumed.cleanup(); }
+});
+
+test("a vanished storage record after server save is rebuilt and retried without a duplicate request", async () => {
+  const prefills = [...prefill(0), ...prefill(1)];
+  const storageKey = "package-draft:storage-interruption";
+  const harness = await setup(prefills, [
+    ({ dom }) => {
+      dom.window.localStorage.removeItem(storageKey);
+      return { ok: true, body: { version: 1, packageId: "draft-0" } };
+    },
+    { ok: true, body: { version: 1, packageId: "draft-0" } },
+  ], [], { storageKey, storedBatch: { prefills, storeId: "test-store" } });
+  try {
+    await harness.render();
+    await completeCurrentForm(harness.dom, 0);
+    await act(async () => click(harness.dom, "Save Draft"));
+    assert.match(harness.dom.window.document.querySelector(".package-modal").textContent, /QA Package 0/);
+    assert.match(harness.dom.window.document.body.textContent, /Browser storage could not record the batch progress/);
+    await act(async () => click(harness.dom, "Save Draft"));
+    assert.equal(harness.posts[0].clientRequestId, harness.posts[1].clientRequestId);
+    assert.match(harness.dom.window.document.querySelector(".package-modal").textContent, /QA Package 1/);
+    assert.equal(JSON.parse(harness.dom.window.localStorage.getItem(storageKey)).prefills[0].name, "QA Package 1");
+  } finally { await harness.cleanup(); }
 });
 
 test("existing packages with several campaign periods open in Edit / Modify", async () => {

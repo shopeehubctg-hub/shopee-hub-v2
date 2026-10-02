@@ -181,10 +181,10 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     if (!prefills.length) return;
     const grouped=groupPrefills(prefills);
     const stored=readStoredBatch();
+    const requestIds={...batchRequestIds.current,...stored?.requestIds};
+    grouped.forEach(group=>{ const name=batchName(group[0].name); requestIds[name]??=crypto.randomUUID(); });
+    batchRequestIds.current=requestIds;
     if (stored) {
-      const requestIds={...stored.requestIds};
-      grouped.forEach(group=>{ const name=batchName(group[0].name); requestIds[name]??=crypto.randomUUID(); });
-      batchRequestIds.current=requestIds;
       try { saveStoredBatch({...stored,requestIds}); } catch { /* Save is blocked until storage is available. */ }
     }
     openPrefill(grouped[0]);
