@@ -31,7 +31,8 @@ type PackageItem = {
   components:ComponentLine[]; platforms:PlatformLine[]; sheetSyncStatus?:"not_sent"|"pending"|"synced"|"failed"; history?:HistoryLine[];
   priceSchedules?:PriceSchedule[];
 };
-type Props = { storeId:string; storeName:string; canCreate?:boolean; prefills?:PackagePrefill[]; standaloneCreate?:boolean; onPrefillsAccepted?:()=>void };
+type Props = { storeId:string; storeName:string; canCreate?:boolean; prefills?:PackagePrefill[]; standaloneCreate?:boolean; draftStorageKey?:string; onPrefillsAccepted?:()=>void };
+type StoredBatch = { prefills:PackagePrefill[]; storeId?:string; requestIds?:Record<string,string> };
 
 const PLATFORM_NAMES:PlatformName[] = ["Shopee","Lazada","TikTok Shop"];
 const HISTORY_SHEET_URL = "https://docs.google.com/spreadsheets/d/1mpB7KVCGzP_9IXYVbhJZsLsndM4ladU3cJre5cfALAA/edit#gid=2129880014";
@@ -72,12 +73,14 @@ function campaignEventForDates(from:string,to:string):CampaignEvent {
   return "dday";
 }
 
-export function PackageControl({ storeId, storeName, canCreate=true, prefills=[], standaloneCreate=false, onPrefillsAccepted }:Props) {
+export function PackageControl({ storeId, storeName, canCreate=true, prefills=[], standaloneCreate=false, draftStorageKey, onPrefillsAccepted }:Props) {
   const [items,setItems] = useState<PackageItem[]>([]);
+  const [loadedStoreId,setLoadedStoreId] = useState("");
   const [source,setSource] = useState("");
   const [canDelete,setCanDelete] = useState(false);
   const [filter,setFilter] = useState("all");
   const [search,setSearch] = useState("");
+  const [displayCount,setDisplayCount] = useState(30);
   const [showCreate,setShowCreate] = useState(false);
   const [saving,setSaving] = useState(false);
   const [message,setMessage] = useState("");
@@ -95,12 +98,13 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   const [prefillQueue,setPrefillQueue] = useState<PackagePrefill[][]>([]);
   const [prefillBatch,setPrefillBatch] = useState<PackagePrefill[]>([]);
   const createRequestId=useRef<string>("");
+  const batchRequestIds=useRef<Record<string,string>>({});
   const loadSequence=useRef(0);
   const hasPackageScope=Boolean(storeId);
   const hasSelectedStore=Boolean(storeId&&storeId!=="all");
   const allStoresSelected=storeId==="all";
 
-  async function load() {
+  async function load(afterSave=false) {
     const sequence=++loadSequence.current;
     if (!hasPackageScope) {
       setItems([]);
@@ -108,19 +112,23 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       setCanDelete(false);
       return;
     }
-    setItems([]);
-    setSource("");
-    setCanDelete(false);
-    const response = await fetch(`/api/packages?storeId=${encodeURIComponent(storeId)}`,{cache:"no-store"});
-    if (sequence!==loadSequence.current) return;
-    if (response.ok) {
+    try {
+      const response = await fetch(`/api/packages?storeId=${encodeURIComponent(storeId)}`,{cache:"no-store"});
+      if (!response.ok) throw new Error("Package list unavailable");
       const data=await response.json();
+      if (sequence!==loadSequence.current) return;
       setItems(data.packages ?? []);
+      setLoadedStoreId(storeId);
       setSource(data.source ?? "");
       setCanDelete(data.canDelete === true);
+    } catch {
+      if (sequence===loadSequence.current) {
+        setMessageType("error");
+        setMessage(afterSave?"Package saved, but the list could not be refreshed. Reload the page to see it.":"Packages could not be loaded. Try refreshing the page.");
+      }
     }
   }
-  useEffect(()=>{ load(); },[storeId]);
+  useEffect(()=>{ void load(); },[storeId]);
   function groupPrefills(input:PackagePrefill[]) {
     const groups = new Map<string,PackagePrefill[]>();
     input.forEach(item=>{
@@ -129,9 +137,33 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     });
     return [...groups.values()];
   }
+  function batchName(name:string) { return name.trim().toLowerCase(); }
+  function readStoredBatch():StoredBatch|null {
+    if (!draftStorageKey) return null;
+    try {
+      const saved=window.localStorage.getItem(draftStorageKey);
+      return saved?JSON.parse(saved) as StoredBatch:null;
+    } catch { return null; }
+  }
+  function saveStoredBatch(batch:StoredBatch) {
+    if (!draftStorageKey) return;
+    window.localStorage.setItem(draftStorageKey,JSON.stringify(batch));
+  }
   function openPrefill(group:PackagePrefill[]) {
     resetForm();
     const first=group[0];
+    const stored=readStoredBatch();
+    let recoveryUnavailable=Boolean(draftStorageKey&&!stored);
+    if (stored) {
+      const name=batchName(first.name);
+      const requestId=stored.requestIds?.[name]??batchRequestIds.current[name]??crypto.randomUUID();
+      batchRequestIds.current[name]=requestId;
+      createRequestId.current=requestId;
+      try { saveStoredBatch({...stored,requestIds:{...stored.requestIds,[name]:requestId}}); }
+      catch { recoveryUnavailable=true; }
+    } else if (draftStorageKey) {
+      createRequestId.current=batchRequestIds.current[batchName(first.name)]??createRequestId.current;
+    }
     const nonCampaign=group.find(item=>item.calculatorSettings.serviceScenario==="Non-Campaign Day")??first;
     const campaign=group.find(item=>item.calculatorSettings.serviceScenario==="Campaign Day")??first;
     const nonCampaignPrice=nonCampaign.sellingPrice.toFixed(2);
@@ -141,25 +173,35 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       campaignOriginal:"",campaignSelling:campaignPrice,
     }},changeNote:"Created from Shopee Pricing Calculator"}));
     setCalculatorSettings(first.calculatorSettings);
-    setMessage("");
+    setMessageType(recoveryUnavailable?"warning":"success");
+    setMessage(recoveryUnavailable?"This package batch is unavailable in browser storage. Restore storage before saving so the remaining packages can be recovered.":"");
     setShowCreate(true);
   }
   useEffect(()=>{
     if (!prefills.length) return;
     const grouped=groupPrefills(prefills);
+    const stored=readStoredBatch();
+    const requestIds={...batchRequestIds.current,...stored?.requestIds};
+    grouped.forEach(group=>{ const name=batchName(group[0].name); requestIds[name]??=crypto.randomUUID(); });
+    batchRequestIds.current=requestIds;
+    if (stored) {
+      try { saveStoredBatch({...stored,requestIds}); } catch { /* Save is blocked until storage is available. */ }
+    }
     openPrefill(grouped[0]);
     setPrefillQueue(grouped.slice(1));
     setPrefillBatch(prefills);
     onPrefillsAccepted?.();
   },[prefills[0]?.requestId]);
 
-  const visible = useMemo(()=>items.filter(item =>
+  const scopedItems=useMemo(()=>loadedStoreId===storeId?items:[],[items,loadedStoreId,storeId]);
+  const visible = useMemo(()=>scopedItems.filter(item =>
     (filter==="all"||item.status===filter) &&
     `${item.packageSku} ${item.name} ${item.platforms?.map(platform=>platform.packageSku).join(" ")}`.toLowerCase().includes(search.toLowerCase())
-  ),[items,filter,search]);
-  const active = items.filter(item=>item.status==="active").length;
-  const scheduled = items.filter(item=>item.status==="scheduled").length;
-  const drafts = items.filter(item=>item.status==="draft"||item.status==="review").length;
+  ),[scopedItems,filter,search]);
+  const displayed = visible.slice(0,displayCount);
+  const active = scopedItems.filter(item=>item.status==="active").length;
+  const scheduled = scopedItems.filter(item=>item.status==="scheduled").length;
+  const drafts = scopedItems.filter(item=>item.status==="draft"||item.status==="review").length;
 
   function resetForm() {
     createRequestId.current=crypto.randomUUID();
@@ -302,27 +344,33 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
 
   async function save(mode:"draft"|"publish") {
     if (!validateForm()) return;
+    if (draftStorageKey && prefillBatch.length) {
+      let stored=readStoredBatch();
+      if (!stored) {
+        try {
+          saveStoredBatch({prefills:prefillBatch,storeId,requestIds:batchRequestIds.current});
+          stored=readStoredBatch();
+        } catch { /* Keep the current package open for retry. */ }
+      }
+      if (stored?.requestIds?.[batchName(prefillBatch[0].name)]!==createRequestId.current) {
+        setFormErrors([{section:"Saving",message:"This package batch could not be verified in browser storage. Restore storage and reload before saving."}]);
+        return;
+      }
+    }
     setSaving(true);
     setMessage("");
     setFormErrors([]);
     try {
+      const clientRequestId=editingPackageId?undefined:(createRequestId.current ||= crypto.randomUUID());
       const response = await fetch("/api/packages",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({name:form.name,mode,clientRequestId:editingPackageId?undefined:(createRequestId.current ||= crypto.randomUUID()),markets:form.markets,changeNote:form.changeNote,
+        body:JSON.stringify({name:form.name,mode,clientRequestId,markets:form.markets,changeNote:form.changeNote,
           priceSchedules:priceSchedules(),storeId:editingStore?.id??storeId,storeName:editingStore?.name??storeName,components,platforms,packageId:editingPackageId,expectedVersion:editingVersion??undefined,
-          calculatorSettings:calculatorSettings?{scenarios:prefillBatch.filter(item=>item.name===form.name).map(item=>item.calculatorSettings)}:null}),
+          calculatorSettings:calculatorSettings?{scenarios:prefillBatch.filter(item=>batchName(item.name)===batchName(prefillBatch[0]?.name??"")).map(item=>item.calculatorSettings)}:null}),
       });
       const data = await response.json().catch(()=>null);
-      if (!response.ok) {
-        if(data?.savedAsDraft){
-          setMessageType("warning");
-          setMessage(data.error);
-          await load();
-          setShowCreate(false);
-          resetForm();
-          return;
-        }
+      if (!response.ok && !data?.savedAsDraft) {
         if (editingPackageId && data?.packageId && data?.version) {
           setMessageType("warning");
           setMessage(data.error ?? "Changes are saved in history and awaiting Google Sheet sync. Use Retry Sheet Sync on the package card.");
@@ -337,14 +385,33 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         setFormErrors(apiErrors.length?apiErrors:[{section:"Saving",message:"We could not save the package. Please try again."}]);
         return;
       }
-      setMessageType("success");
-      setMessage(mode==="draft"?`Draft saved · Version ${data.version} · not sent to Google Sheet`:editingPackageId&&!editingDraft?`Changes saved · Version ${data.version} · View History to review the edit`:`Package created · Version ${data.version} · Google Sheet synced`);
-      await load();
+      const savedMessage=data?.savedAsDraft?data.error:mode==="draft"
+        ? `Draft saved · Version ${data.version} · not sent to Google Sheet`
+        : editingPackageId&&!editingDraft?`Changes saved · Version ${data.version} · View History to review the edit`
+        : `Package created · Version ${data.version} · Google Sheet synced`;
       if (editingPackageId) setOpenHistory(editingPackageId);
       const next = prefillQueue[0];
+      const currentName=batchName(prefillBatch[0]?.name??"");
+      const remaining=prefillBatch.filter(item=>batchName(item.name)!==currentName);
+      const stored=readStoredBatch();
+      let recoveryFailed=Boolean(draftStorageKey&&prefillBatch.length&&(
+        !stored || stored.requestIds?.[currentName]!==clientRequestId || !stored.prefills?.some(item=>batchName(item.name)===currentName)
+      ));
+      if (stored&&!recoveryFailed) {
+        try {
+          if (remaining.length) saveStoredBatch({...stored,prefills:remaining});
+          else window.localStorage.removeItem(draftStorageKey!);
+        } catch { recoveryFailed=true; }
+      }
+      if (recoveryFailed) {
+        setMessageType("warning");
+        setMessage(`${savedMessage}. Browser storage could not record the batch progress. Retry this save after storage is available; the request ID prevents a duplicate package.`);
+        void load(true);
+        return;
+      }
       if (next) {
         setPrefillQueue(current=>current.slice(1));
-        setPrefillBatch(current=>current.filter(item=>item.name!==form.name));
+        setPrefillBatch(remaining);
         openPrefill(next);
       } else {
         if (standaloneCreate) {
@@ -355,6 +422,9 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         setPrefillBatch([]);
         resetForm();
       }
+      setMessageType(data?.savedAsDraft?"warning":"success");
+      setMessage(savedMessage);
+      void load(true);
     } catch {
       setFormErrors([{section:"Saving",message:"We could not reach the server. Check your internet connection and try again."}]);
     } finally {
@@ -451,7 +521,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     </div>
 
     <section className="metric-grid package-metrics">
-      <article className="metric"><span>Total Packages</span><strong>{items.length}</strong><em>{storeName}</em></article>
+      <article className="metric"><span>Total Packages</span><strong>{scopedItems.length}</strong><em>{storeName}</em></article>
       <article className="metric"><span>Active Now</span><strong>{active}</strong><em>Currently Selling</em></article>
       <article className="metric"><span>Scheduled</span><strong>{scheduled}</strong><em>Future promotions</em></article>
       <article className="metric warn"><span>Needs Review</span><strong>{drafts}</strong><em>Draft + Review</em></article>
@@ -463,7 +533,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     </div>
     {message&&<div className={`package-message ${messageType}`} role={messageType==="error"?"alert":"status"} aria-live={messageType==="error"?"assertive":"polite"}>{message}{messageType==="warning"&&<a href={HISTORY_SHEET_URL} target="_blank" rel="noopener noreferrer">Open History Sheet</a>}</div>}
 
-    <div className="package-list">{visible.map(item=><article className="package-card" key={item.id}>
+    <div className="package-list">{displayed.map(item=><article className="package-card" key={item.id}>
       <div className="package-card-head">
         <div><span className={`package-status ${item.status}`}>{item.status}</span><span className={`sync-status ${item.pendingVersion?"pending":item.sheetSyncStatus ?? "pending"}`}>Sheet {item.pendingVersion?`v${item.pendingVersion} needs sync`:item.sheetSyncStatus==="not_sent"?"not sent":item.sheetSyncStatus ?? "preview"}</span><h3>{item.name}</h3></div>
         <div className="package-price"><small>{item.market}</small><del>{money(item.originalPrice,item.market,source==="database")}</del><strong>{money(item.sellingPrice,item.market,source==="database")}</strong></div>
@@ -483,6 +553,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       </div>)}</div>}
       <div className="package-card-foot"><span>{item.components.length} Inventory SKU Lines</span><button onClick={()=>setOpenHistory(openHistory===item.id?null:item.id)} aria-label={`${openHistory===item.id?"Hide":"View"} history for ${item.name}`}>{openHistory===item.id?"Hide History":"View History"}</button>{item.status==="draft"&&source==="database"&&<button onClick={()=>publishDraft(item)} disabled={saving} aria-label={`Create package ${item.name}`}>Create Package</button>}{item.pendingVersion&&source==="database"&&<button onClick={()=>retrySheetSync(item)} disabled={saving} aria-label={`Retry Google Sheet sync for ${item.name} version ${item.pendingVersion}`}>Retry Sheet Sync</button>}{!(item.pendingVersion&&source==="database")&&<button onClick={()=>startVersion(item)} disabled={saving} aria-label={`${item.status==="draft"?"Edit draft":source==="database"?"Edit package":"Migrate and edit"} ${item.name}`}>{item.status==="draft"&&source==="database"?"Edit Draft":source==="database"?"Edit / Modify":"Migrate & Edit"}</button>}{canDelete&&source==="database"&&<button onClick={()=>deletePackage(item)} disabled={saving} className="package-delete" aria-label={`Remove package ${item.name}`}>Remove Package</button>}</div>
     </article>)}</div>
+    {visible.length>displayCount&&<button type="button" className="package-load-more" onClick={()=>setDisplayCount(count=>count+30)}>Show more packages ({visible.length-displayCount} remaining)</button>}
     {!visible.length&&<div className="package-empty"><strong>{!hasPackageScope?"Select a Store":allStoresSelected?"No Packages In Accessible Stores":"No Packages In This View"}</strong><span>{!hasPackageScope?"Package information will appear after you choose a store.":allStoresSelected?"Only packages from stores you have permission to access appear here.":"Choose another filter or create the first package."}</span></div>}
 
     {showCreate&&<div className={`package-modal${standaloneCreate?" standalone":""}`} role={standaloneCreate?undefined:"dialog"} aria-modal={standaloneCreate?undefined:"true"} aria-labelledby={standaloneCreate?undefined:"package-form-title"}><div className="package-form">
@@ -492,7 +563,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
 
       {formErrors.length>0&&<div className="package-error-popout" role="alert" aria-live="assertive"><div><b>We could not save this package. Please check:</b><button type="button" onClick={()=>setFormErrors([])} aria-label="Dismiss errors">×</button></div>{([...new Set(formErrors.map(error=>error.section))] as FormSection[]).map(section=><div className="package-error-group" key={section}><strong>{section}</strong><ul>{formErrors.filter(error=>error.section===section).map(error=><li key={`${error.section}-${error.message}`}>{error.message}</li>)}</ul></div>)}</div>}
 
-      {prefillBatch.length>0&&<section className="calculator-batch-transfer"><div><b>✓ {groupPrefills(prefillBatch).length} Calculator Package{groupPrefills(prefillBatch).length===1?"":"s"} Brought Over</b><span>Non-Campaign and Campaign prices are grouped by package. The next package opens after you save this one.</span></div><div className="calculator-batch-list">{groupPrefills(prefillBatch).map((group,index)=>{const nonCampaign=group.find(item=>item.calculatorSettings.serviceScenario==="Non-Campaign Day")??group[0];const campaign=group.find(item=>item.calculatorSettings.serviceScenario==="Campaign Day")??group[0];return <div className={index===0?"current":""} key={group[0].name}><span>{index===0?"Current":"Queued"}</span><b>{group[0].name}</b><strong><small>Non-Campaign</small>{money(nonCampaign.sellingPrice,"MY")}</strong><strong><small>Campaign</small>{money(campaign.sellingPrice,"MY")}</strong></div>})}</div></section>}
+      {prefillBatch.length>0&&<section className="calculator-batch-transfer"><div><b>{prefillQueue.length+1} Calculator Packages Remaining</b><span>Non-Campaign and Campaign prices are grouped by package. Save each completed package as a draft to open the next one.</span></div><div className="calculator-batch-list">{groupPrefills(prefillBatch).slice(0,3).map((group,index)=>{const nonCampaign=group.find(item=>item.calculatorSettings.serviceScenario==="Non-Campaign Day")??group[0];const campaign=group.find(item=>item.calculatorSettings.serviceScenario==="Campaign Day")??group[0];return <div className={index===0?"current":""} key={group[0].name}><span>{index===0?"Current":"Queued"}</span><b>{group[0].name}</b><strong><small>Non-Campaign</small>{money(nonCampaign.sellingPrice,"MY")}</strong><strong><small>Campaign</small>{money(campaign.sellingPrice,"MY")}</strong></div>})}{prefillQueue.length>2&&<small>+ {prefillQueue.length-2} more in queue</small>}</div></section>}
 
       <section className="form-section"><div className="form-section-title"><span>1</span><div><h4>Package Details</h4><p>Name, markets and shared promotion dates</p></div></div>
         <div className="form-grid package-detail-grid">
@@ -545,7 +616,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       </section>
 
       <label className="change-note">Change Note<input value={form.changeNote} onChange={event=>setForm({...form,changeNote:event.target.value})} placeholder="What changed and why?"/></label>
-      <div className="form-actions"><button className="secondary" onClick={closeCreate}>Cancel</button>{(!editingPackageId||editingDraft)&&<button className="secondary" onClick={()=>save("draft")} disabled={saving}>Save Draft</button>}<button onClick={()=>save("publish")} disabled={saving}>{saving?"Saving…":prefillQueue.length?`Create & Continue (${prefillQueue.length} More)`:editingDraft?"Create Package":editingPackageId?"Save Changes":"Create Package"}</button></div>
+      <div className="form-actions"><button className="secondary" onClick={closeCreate}>Cancel</button>{(!editingPackageId||editingDraft)&&<button className="secondary" onClick={()=>save("draft")} disabled={saving}>{saving?"Saving…":prefillQueue.length?`Save Draft & Next (${prefillQueue.length} More)`:"Save Draft"}</button>}<button onClick={()=>save("publish")} disabled={saving}>{saving?"Saving…":prefillQueue.length?`Create & Continue (${prefillQueue.length} More)`:editingDraft?"Create Package":editingPackageId?"Save Changes":"Create Package"}</button></div>
     </div></div>}
   </div>;
 }
