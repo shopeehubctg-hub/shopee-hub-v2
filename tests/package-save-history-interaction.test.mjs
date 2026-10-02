@@ -81,7 +81,17 @@ test('Save Changes refreshes and auto-opens metadata-only history without crashi
     await act(async () => click('Edit / Modify'));
     assert.ok(dom.window.document.querySelector('.package-modal'));
     assert.equal(dom.window.document.querySelector('.same-pricing-toggle input').checked, true);
-    assert.equal(dom.window.document.querySelectorAll('.campaign-period-list input[type="date"]').length, 4);
+    assert.equal(dom.window.document.querySelector('.scenario-editor.campaign'), null, 'same pricing hides the entire Campaign card, including dates');
+    assert.match(dom.window.document.querySelector('.package-modal').textContent, /Previously saved Campaign dates are preserved/);
+    assert.match(dom.window.document.querySelector('.package-modal').textContent, /Campaign date edits will not be saved if you check it again/);
+    await act(async () => dom.window.document.querySelector('.same-pricing-toggle input').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+    const pendingCampaignEnd = dom.window.document.querySelectorAll('.campaign-period-list input[type="date"]')[1];
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(pendingCampaignEnd, '2026-11-02');
+      pendingCampaignEnd.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    });
+    await act(async () => dom.window.document.querySelector('.same-pricing-toggle input').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+    assert.equal(dom.window.document.querySelector('.scenario-editor.campaign'), null);
     await act(async () => click('Save Changes'));
     assert.equal(posts, 1);
     assert.equal(dom.window.document.querySelector('.package-modal'), null);
@@ -90,6 +100,9 @@ test('Save Changes refreshes and auto-opens metadata-only history without crashi
     assert.match(dom.window.document.body.textContent, /Kata Combo C PWP/);
     assert.equal(dom.window.document.querySelector('.calculator-history'), null);
     await act(async () => click('Edit / Modify'));
+    assert.equal(dom.window.document.querySelector('.scenario-editor.campaign'), null);
+    await act(async () => dom.window.document.querySelector('.same-pricing-toggle input').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+    assert.equal(dom.window.document.querySelectorAll('.campaign-period-list input[type="date"]').length, 4, 'unchecking exposes existing Campaign dates for extension');
     const firstCampaignEnd = dom.window.document.querySelector('.campaign-period-list .date-fields:nth-child(1) input[type="date"]:nth-of-type(2)')
       ?? dom.window.document.querySelectorAll('.campaign-period-list input[type="date"]')[1];
     assert.ok(firstCampaignEnd, 'existing package should expose Campaign end dates');

@@ -111,6 +111,30 @@ async function completeCurrentForm(dom, index) {
   });
 }
 
+test("same pricing hides the Campaign card and copies Non-Campaign dates even after a Campaign month was entered", async () => {
+  const harness = await setup(prefill(0), [{ ok: true, body: { version: 1, packageId: "same-pricing-draft" } }]);
+  try {
+    await harness.render();
+    await act(async () => {
+      input(harness.dom, 'input[aria-label="Shopee Listing 1 SKU"]', "SAME-PRICE-SKU");
+      input(harness.dom, '.scenario-editor.nonCampaign input[type="number"]', "1000");
+      input(harness.dom, '.scenario-editor.nonCampaign input[type="month"]', "2026-10");
+      input(harness.dom, '.scenario-editor.campaign input[type="month"]', "2026-11");
+      input(harness.dom, '.component-row input', "SAME-PRICE-ITEM");
+      input(harness.dom, '.component-row input:nth-of-type(2)', "Test item");
+    });
+    await act(async () => harness.dom.window.document.querySelector('.same-pricing-toggle input').dispatchEvent(new harness.dom.window.MouseEvent('click', { bubbles: true })));
+    assert.equal(harness.dom.window.document.querySelector('.scenario-editor.campaign'), null);
+    assert.match(harness.dom.window.document.querySelector('.pricing-section').textContent, /Campaign dates will follow Non-Campaign dates/);
+    await act(async () => click(harness.dom, "Save Draft"));
+    assert.equal(harness.posts.length, 1);
+    assert.deepEqual(harness.posts[0].priceSchedules.map(line => [line.priceType, line.originalPrice, line.sellingPrice, line.effectiveFrom, line.effectiveTo]), [
+      ["non_campaign", "1000", "80.00", "2026-10-01", "2026-10-31"],
+      ["campaign", "1000", "80.00", "2026-10-01", "2026-10-31"],
+    ]);
+  } finally { await harness.cleanup(); }
+});
+
 test("large calculator batch saves drafts one at a time and advances only after a response", async () => {
   const prefills = Array.from({ length: 35 }, (_, index) => prefill(index)).flat();
   const harness = await setup(prefills, Array.from({ length: 35 }, (_, index) => ({ ok: true, body: { version: 1, packageId: `draft-${index}` } })), [], { accumulateSaved: true });

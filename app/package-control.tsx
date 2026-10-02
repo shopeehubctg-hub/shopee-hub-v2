@@ -292,22 +292,27 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       const campaignSelling=form.samePricing?nonCampaign.sellingPrice:form.prices[market].campaignSelling;
       if (editingPackageId) {
         const retained=originalCampaignSchedules.current.filter(line=>line.market===market);
+        if (form.samePricing) {
+          if (retained.length) retained.forEach(line=>schedules.push({...line,originalPrice:campaignOriginal,sellingPrice:campaignSelling}));
+          else schedules.push({...nonCampaign,priceType:"campaign"});
+          return;
+        }
         const first=retained[0];
-        const pricesEdited=!form.samePricing&&Boolean(first)&&(
+        const pricesEdited=Boolean(first)&&(
           Number(campaignOriginal)!==first.originalPrice||Number(campaignSelling)!==first.sellingPrice
         );
         campaignPeriods.forEach(period=>{
           const existing=period.originalFrom===undefined?undefined:retained.find(line=>line.effectiveFrom===period.originalFrom&&line.effectiveTo===period.originalTo);
           schedules.push({...(existing??first??nonCampaign),
             market,priceType:"campaign",promotionType:existing?.promotionType??"custom",
-            originalPrice:!form.samePricing&&!pricesEdited&&existing?String(existing.originalPrice):campaignOriginal,
-            sellingPrice:!form.samePricing&&!pricesEdited&&existing?String(existing.sellingPrice):campaignSelling,
+            originalPrice:!pricesEdited&&existing?String(existing.originalPrice):campaignOriginal,
+            sellingPrice:!pricesEdited&&existing?String(existing.sellingPrice):campaignSelling,
             effectiveFrom:period.effectiveFrom,effectiveTo:period.effectiveTo,
           });
         });
         return;
       }
-      if (form.samePricing&&!form.campaign.promotionMonth) {
+      if (form.samePricing) {
         schedules.push({...nonCampaign,priceType:"campaign"});
         return;
       }
@@ -338,7 +343,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     };
     validatePeriod("Non-Campaign",form.nonCampaign);
     {
-      if (editingPackageId) {
+      if (editingPackageId&&!form.samePricing) {
         if (!campaignPeriods.length) addError("Pricing & Promotion","Add at least one Campaign date range.");
         campaignPeriods.forEach((period,index)=>{
           if (!period.effectiveFrom||!period.effectiveTo) addError("Pricing & Promotion",`Enter both dates for Campaign period ${index+1}.`);
@@ -346,9 +351,9 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         });
         const keys=campaignPeriods.map(period=>`${period.effectiveFrom}|${period.effectiveTo}`);
         if (new Set(keys).size!==keys.length) addError("Pricing & Promotion","Campaign date ranges must be unique.");
-      } else {
-        if (!form.samePricing&&!form.campaign.promotionMonth) addError("Pricing & Promotion","Select the Campaign month.");
-        if ((form.campaign.promotionMonth||!form.samePricing)&&!form.campaign.campaignEvents.length) addError("Pricing & Promotion","Select at least one Campaign event.");
+      } else if (!form.samePricing) {
+        if (!form.campaign.promotionMonth) addError("Pricing & Promotion","Select the Campaign month.");
+        if (!form.campaign.campaignEvents.length) addError("Pricing & Promotion","Select at least one Campaign event.");
       }
     }
 
@@ -621,15 +626,16 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         </div>}
       </section>
 
-      <section className="form-section pricing-section"><div className="form-section-title"><span>2</span><div><h4>Pricing & Promotion Periods</h4><p>Set Non-Campaign and Campaign prices for each market</p></div></div>
-        <label className={`same-pricing-toggle${form.samePricing?" selected":""}`}><input type="checkbox" checked={form.samePricing} onChange={event=>setForm({...form,samePricing:event.target.checked})}/><span><b>Same for Both Non-Campaign &amp; Campaign Day Pricing</b><small>Use the Non-Campaign prices for Campaign Day. Set Campaign dates separately below.</small></span></label>
-        {form.samePricing&&<div className="same-pricing-note">Campaign prices will match Non-Campaign prices. {editingPackageId?"Campaign dates can still be extended separately.":"Choose a Campaign month for separate dates, or leave it blank to copy Non-Campaign dates."}</div>}
+      <section className="form-section pricing-section"><div className="form-section-title"><span>2</span><div><h4>Pricing & Promotion Periods</h4><p>{form.samePricing?"Set one price and period for both day types":"Set Non-Campaign and Campaign prices for each market"}</p></div></div>
+        <label className={`same-pricing-toggle${form.samePricing?" selected":""}`}><input type="checkbox" checked={form.samePricing} onChange={event=>setForm({...form,samePricing:event.target.checked})}/><span><b>Same for Both Non-Campaign &amp; Campaign Day Pricing</b><small>Use the Non-Campaign prices for Campaign Day.</small></span></label>
+        {form.samePricing&&<div className="same-pricing-note">Campaign prices will match Non-Campaign prices. {editingPackageId?"Previously saved Campaign dates are preserved. Uncheck this option to edit or extend them. Campaign date edits will not be saved if you check it again.":"Campaign dates will follow Non-Campaign dates."}</div>}
         {([['nonCampaign','Non-Campaign'],['campaign','Campaign']] as const).map(([periodKey,title])=>{
+          if (periodKey==="campaign"&&form.samePricing) return null;
           const period=form[periodKey];
-          return <div className={`scenario-editor ${periodKey}${periodKey==="campaign"&&form.samePricing?" same-pricing":""}`} key={periodKey}>
+          return <div className={`scenario-editor ${periodKey}`} key={periodKey}>
             <div className="scenario-editor-head"><div><b>{title}</b><span>{title==="Campaign"?"Campaign Day Price & Dates":"Always-On Price & Dates"}</span></div>{periodKey==="nonCampaign"&&<div className="promotion-toggle"><button type="button" className={period.promotionType==="monthly"?"active":""} onClick={()=>setForm({...form,[periodKey]:{...period,promotionType:"monthly"}})}>Full Month</button><button type="button" className={period.promotionType==="custom"?"active":""} onClick={()=>setForm({...form,[periodKey]:{...period,promotionType:"custom"}})}>Custom Dates</button></div>}</div>
             {periodKey==="campaign"&&editingPackageId&&<div className="same-pricing-note">Edit an end date to extend a Campaign period, or add another date range. Existing periods and prices stay unchanged unless you edit them. New ranges use the Campaign price shown for each market{form.samePricing?" (matching the Non-Campaign price)":""}.</div>}
-            <div className="scenario-body"><div className="market-price-grid">{!(periodKey==="campaign"&&form.samePricing)&&form.markets.map(market=>{
+            <div className="scenario-body"><div className="market-price-grid">{form.markets.map(market=>{
               const prefix=periodKey==="campaign"?"campaign":"nonCampaign";
               const originalKey=`${prefix}Original` as keyof typeof form.prices.MY;
               const sellingKey=`${prefix}Selling` as keyof typeof form.prices.MY;
