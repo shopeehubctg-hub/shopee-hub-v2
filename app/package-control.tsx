@@ -31,7 +31,8 @@ type PackageItem = {
   components:ComponentLine[]; platforms:PlatformLine[]; sheetSyncStatus?:"not_sent"|"pending"|"synced"|"failed"; history?:HistoryLine[];
   priceSchedules?:PriceSchedule[];
 };
-type Props = { storeId:string; storeName:string; canCreate?:boolean; prefills?:PackagePrefill[]; standaloneCreate?:boolean; onPrefillsAccepted?:()=>void };
+type Props = { storeId:string; storeName:string; canCreate?:boolean; prefills?:PackagePrefill[]; standaloneCreate?:boolean; draftStorageKey?:string; onPrefillsAccepted?:()=>void };
+type StoredBatch = { prefills:PackagePrefill[]; storeId?:string; requestIds?:Record<string,string> };
 
 const PLATFORM_NAMES:PlatformName[] = ["Shopee","Lazada","TikTok Shop"];
 const HISTORY_SHEET_URL = "https://docs.google.com/spreadsheets/d/1mpB7KVCGzP_9IXYVbhJZsLsndM4ladU3cJre5cfALAA/edit#gid=2129880014";
@@ -72,7 +73,7 @@ function campaignEventForDates(from:string,to:string):CampaignEvent {
   return "dday";
 }
 
-export function PackageControl({ storeId, storeName, canCreate=true, prefills=[], standaloneCreate=false, onPrefillsAccepted }:Props) {
+export function PackageControl({ storeId, storeName, canCreate=true, prefills=[], standaloneCreate=false, draftStorageKey, onPrefillsAccepted }:Props) {
   const [items,setItems] = useState<PackageItem[]>([]);
   const [loadedStoreId,setLoadedStoreId] = useState("");
   const [source,setSource] = useState("");
@@ -135,9 +136,30 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     });
     return [...groups.values()];
   }
+  function batchName(name:string) { return name.trim().toLowerCase(); }
+  function readStoredBatch():StoredBatch|null {
+    if (!draftStorageKey) return null;
+    try {
+      const saved=window.localStorage.getItem(draftStorageKey);
+      return saved?JSON.parse(saved) as StoredBatch:null;
+    } catch { return null; }
+  }
+  function saveStoredBatch(batch:StoredBatch) {
+    if (!draftStorageKey) return;
+    window.localStorage.setItem(draftStorageKey,JSON.stringify(batch));
+  }
   function openPrefill(group:PackagePrefill[]) {
     resetForm();
     const first=group[0];
+    const stored=readStoredBatch();
+    let recoveryUnavailable=Boolean(draftStorageKey&&!stored);
+    if (stored) {
+      const name=batchName(first.name);
+      const requestId=stored.requestIds?.[name]??crypto.randomUUID();
+      createRequestId.current=requestId;
+      try { saveStoredBatch({...stored,requestIds:{...stored.requestIds,[name]:requestId}}); }
+      catch { recoveryUnavailable=true; }
+    }
     const nonCampaign=group.find(item=>item.calculatorSettings.serviceScenario==="Non-Campaign Day")??first;
     const campaign=group.find(item=>item.calculatorSettings.serviceScenario==="Campaign Day")??first;
     const nonCampaignPrice=nonCampaign.sellingPrice.toFixed(2);
@@ -147,7 +169,8 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       campaignOriginal:"",campaignSelling:campaignPrice,
     }},changeNote:"Created from Shopee Pricing Calculator"}));
     setCalculatorSettings(first.calculatorSettings);
-    setMessage("");
+    setMessageType(recoveryUnavailable?"warning":"success");
+    setMessage(recoveryUnavailable?"This package batch is unavailable in browser storage. Restore storage before saving so the remaining packages can be recovered.":"");
     setShowCreate(true);
   }
   useEffect(()=>{
@@ -310,16 +333,24 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
 
   async function save(mode:"draft"|"publish") {
     if (!validateForm()) return;
+    if (draftStorageKey && prefillBatch.length) {
+      const stored=readStoredBatch();
+      if (stored?.requestIds?.[batchName(prefillBatch[0].name)]!==createRequestId.current) {
+        setFormErrors([{section:"Saving",message:"This package batch could not be verified in browser storage. Restore storage and reload before saving."}]);
+        return;
+      }
+    }
     setSaving(true);
     setMessage("");
     setFormErrors([]);
     try {
+      const clientRequestId=editingPackageId?undefined:(createRequestId.current ||= crypto.randomUUID());
       const response = await fetch("/api/packages",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({name:form.name,mode,clientRequestId:editingPackageId?undefined:(createRequestId.current ||= crypto.randomUUID()),markets:form.markets,changeNote:form.changeNote,
+        body:JSON.stringify({name:form.name,mode,clientRequestId,markets:form.markets,changeNote:form.changeNote,
           priceSchedules:priceSchedules(),storeId:editingStore?.id??storeId,storeName:editingStore?.name??storeName,components,platforms,packageId:editingPackageId,expectedVersion:editingVersion??undefined,
-          calculatorSettings:calculatorSettings?{scenarios:prefillBatch.filter(item=>item.name===prefillBatch[0]?.name).map(item=>item.calculatorSettings)}:null}),
+          calculatorSettings:calculatorSettings?{scenarios:prefillBatch.filter(item=>batchName(item.name)===batchName(prefillBatch[0]?.name??"")).map(item=>item.calculatorSettings)}:null}),
       });
       const data = await response.json().catch(()=>null);
       if (!response.ok && !data?.savedAsDraft) {
@@ -343,10 +374,27 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         : `Package created · Version ${data.version} · Google Sheet synced`;
       if (editingPackageId) setOpenHistory(editingPackageId);
       const next = prefillQueue[0];
+      const currentName=batchName(prefillBatch[0]?.name??"");
+      const remaining=prefillBatch.filter(item=>batchName(item.name)!==currentName);
+      const stored=readStoredBatch();
+      let recoveryFailed=Boolean(draftStorageKey&&prefillBatch.length&&(
+        !stored || stored.requestIds?.[currentName]!==clientRequestId || !stored.prefills?.some(item=>batchName(item.name)===currentName)
+      ));
+      if (stored&&!recoveryFailed) {
+        try {
+          if (remaining.length) saveStoredBatch({...stored,prefills:remaining});
+          else window.localStorage.removeItem(draftStorageKey!);
+        } catch { recoveryFailed=true; }
+      }
+      if (recoveryFailed) {
+        setMessageType("warning");
+        setMessage(`${savedMessage}. Browser storage could not record the batch progress. Retry this save after storage is available; the request ID prevents a duplicate package.`);
+        void load(true);
+        return;
+      }
       if (next) {
         setPrefillQueue(current=>current.slice(1));
-        const currentName=prefillBatch[0]?.name;
-        setPrefillBatch(current=>current.filter(item=>item.name!==currentName));
+        setPrefillBatch(remaining);
         openPrefill(next);
       } else {
         if (standaloneCreate) {

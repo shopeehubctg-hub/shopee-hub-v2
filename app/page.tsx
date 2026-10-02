@@ -121,6 +121,7 @@ export default function Home() {
   const [adRangeStart, setAdRangeStart] = useState("");
   const [adRangeEnd, setAdRangeEnd] = useState("");
   const [packagePrefills, setPackagePrefills] = useState<PackagePrefill[]>([]);
+  const [packageDraftKey, setPackageDraftKey] = useState("");
   const [standalonePackageCreate, setStandalonePackageCreate] = useState(false);
 
   async function load(id?: string) {
@@ -154,9 +155,9 @@ export default function Home() {
         if (saved) {
           const draft = JSON.parse(saved) as { prefills:PackagePrefill[]; storeId?:string };
           setPackagePrefills(draft.prefills ?? []);
+          setPackageDraftKey(draftKey);
           setStandalonePackageCreate(true);
           setStoreSelectionMade(true);
-          window.localStorage.removeItem(`package-draft:${draftKey}`);
           load(draft.storeId && draft.storeId !== "all" ? draft.storeId : undefined);
           return;
         }
@@ -281,7 +282,7 @@ export default function Home() {
         </section>
       </div>}
 
-      {section==="packages" && <div className="page"><PackageControl storeId={storeSelectionMade?storeId:""} storeName={!storeSelectionMade?"No Store Selected":allStoresSelected?"All Accessible Stores":(store?.name ?? "Selected Store")} prefills={packagePrefills} standaloneCreate={standalonePackageCreate} onPrefillsAccepted={()=>setPackagePrefills([])} /></div>}
+      {section==="packages" && <div className="page"><PackageControl storeId={storeSelectionMade?storeId:""} storeName={!storeSelectionMade?"No Store Selected":allStoresSelected?"All Accessible Stores":(store?.name ?? "Selected Store")} prefills={packagePrefills} standaloneCreate={standalonePackageCreate} draftStorageKey={packageDraftKey ? `package-draft:${packageDraftKey}` : undefined} onPrefillsAccepted={()=>setPackagePrefills([])} /></div>}
       {section==="calculator" && <div className="page" aria-label="Price Calculator"><PriceCalculator storeName={allStoresSelected?"":(store?.name??"")} productProfile={allStoresSelected?null:data?.productProfile} coFundVouchers={allStoresSelected?[]:data?.coFundVouchers} onCreatePackage={prefill=>openPackageDraft([prefill])} onCreatePackages={openPackageDraft} /></div>}
       {section==="design" && <div className="page"><DesignChecker storeId={storeId}/></div>}
       {section==="protection" && <div className="page"><FakeSellerReport storeName={store?.name ?? "Selected store"} allStores={allStoresSelected} cases={fakeSellerCases}/></div>}
