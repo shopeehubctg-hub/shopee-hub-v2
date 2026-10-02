@@ -46,6 +46,14 @@ test('legacy records remain unknown rather than borrowing current package detail
   assert.equal(packageHistoryFields({})['Package name'], 'Not recorded');
 });
 
+test('incomplete legacy price rows do not crash View History', () => {
+  const history = packageHistoryFields({
+    priceSchedules: [{ market: 'MY', priceType: 'campaign', originalPrice: undefined,
+      sellingPrice: undefined, promotionType: 'custom', effectiveFrom: '2026-10-08', effectiveTo: '2026-10-10' }],
+  });
+  assert.match(history['Prices & promotion dates'], /RM Not recorded → Not recorded/);
+});
+
 test('initial version and removals retain complete snapshots', () => {
   assert.equal(packageHistoryChanges(undefined,initial).length,5);
   const removed = {...initial,components:[],platforms:[]};
