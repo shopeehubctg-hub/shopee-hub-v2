@@ -98,6 +98,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   const [prefillQueue,setPrefillQueue] = useState<PackagePrefill[][]>([]);
   const [prefillBatch,setPrefillBatch] = useState<PackagePrefill[]>([]);
   const createRequestId=useRef<string>("");
+  const batchRequestIds=useRef<Record<string,string>>({});
   const loadSequence=useRef(0);
   const hasPackageScope=Boolean(storeId);
   const hasSelectedStore=Boolean(storeId&&storeId!=="all");
@@ -155,10 +156,13 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     let recoveryUnavailable=Boolean(draftStorageKey&&!stored);
     if (stored) {
       const name=batchName(first.name);
-      const requestId=stored.requestIds?.[name]??crypto.randomUUID();
+      const requestId=stored.requestIds?.[name]??batchRequestIds.current[name]??crypto.randomUUID();
+      batchRequestIds.current[name]=requestId;
       createRequestId.current=requestId;
       try { saveStoredBatch({...stored,requestIds:{...stored.requestIds,[name]:requestId}}); }
       catch { recoveryUnavailable=true; }
+    } else if (draftStorageKey) {
+      createRequestId.current=batchRequestIds.current[batchName(first.name)]??createRequestId.current;
     }
     const nonCampaign=group.find(item=>item.calculatorSettings.serviceScenario==="Non-Campaign Day")??first;
     const campaign=group.find(item=>item.calculatorSettings.serviceScenario==="Campaign Day")??first;
@@ -176,6 +180,13 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   useEffect(()=>{
     if (!prefills.length) return;
     const grouped=groupPrefills(prefills);
+    const stored=readStoredBatch();
+    if (stored) {
+      const requestIds={...stored.requestIds};
+      grouped.forEach(group=>{ const name=batchName(group[0].name); requestIds[name]??=crypto.randomUUID(); });
+      batchRequestIds.current=requestIds;
+      try { saveStoredBatch({...stored,requestIds}); } catch { /* Save is blocked until storage is available. */ }
+    }
     openPrefill(grouped[0]);
     setPrefillQueue(grouped.slice(1));
     setPrefillBatch(prefills);
@@ -334,7 +345,13 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   async function save(mode:"draft"|"publish") {
     if (!validateForm()) return;
     if (draftStorageKey && prefillBatch.length) {
-      const stored=readStoredBatch();
+      let stored=readStoredBatch();
+      if (!stored) {
+        try {
+          saveStoredBatch({prefills:prefillBatch,storeId,requestIds:batchRequestIds.current});
+          stored=readStoredBatch();
+        } catch { /* Keep the current package open for retry. */ }
+      }
       if (stored?.requestIds?.[batchName(prefillBatch[0].name)]!==createRequestId.current) {
         setFormErrors([{section:"Saving",message:"This package batch could not be verified in browser storage. Restore storage and reload before saving."}]);
         return;
