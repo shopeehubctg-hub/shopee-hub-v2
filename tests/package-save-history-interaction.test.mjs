@@ -88,3 +88,60 @@ test('Save Changes refreshes and auto-opens metadata-only history without crashi
     dom.window.close();
   }
 });
+
+test('View History opens a legacy metadata-only package without editing it', async () => {
+  const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', { url: 'https://local.test/' });
+  const keys = ['window', 'document', 'navigator', 'HTMLElement', 'Event', 'MouseEvent', 'fetch'];
+  const previous = Object.fromEntries(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  for (const [key, value] of Object.entries({
+    window: dom.window, document: dom.window.document, navigator: dom.window.navigator,
+    HTMLElement: dom.window.HTMLElement, Event: dom.window.Event, MouseEvent: dom.window.MouseEvent,
+  })) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+  const history = {
+    version: 2, name: 'Kata Combo C PWP', market: 'MY',
+    platforms: [{ platform: 'Shopee', packageSku: 'KATA-C' }],
+    components: [{ inventorySku: 'KATA-ITEM', name: 'Kata Item', quantity: 1, kind: 'product' }],
+    priceSchedules: [{ market: 'MY', priceType: 'campaign', originalPrice: 500, sellingPrice: 460,
+      promotionType: 'custom', effectiveFrom: '2026-10-08', effectiveTo: '2026-10-10' }],
+    changeNote: 'Existing edit', promotionType: 'custom', effectiveFrom: '2026-10-08', effectiveTo: '2026-10-10',
+    addedComponents: [], removedComponents: [], sheetSyncStatus: 'synced',
+    createdAt: '2026-10-02T05:43:59Z', createdBy: 'editor@example.com',
+    calculatorSettings: { _packageMetadata: { name: 'Kata Combo C PWP' },
+      _packageHistorySummary: { schema: 1, summary: '配套资料修改' } },
+  };
+  let posts = 0;
+  Object.defineProperty(globalThis, 'fetch', { configurable: true, writable: true, value: async (_url, options = {}) => {
+    if (options.method === 'POST') posts++;
+    return { ok: true, json: async () => ({ packages: [{
+      id: 'kata-package', storeId: 'kata-store', storeName: 'Kata Skincare Malaysia',
+      packageSku: 'KATA-C', name: 'Kata Combo C PWP', market: 'MY', status: 'scheduled', version: 2,
+      promotionType: 'custom', originalPrice: 50000, sellingPrice: 46000,
+      effectiveFrom: '2026-10-08', effectiveTo: '2026-10-10',
+      components: history.components, platforms: history.platforms, priceSchedules: history.priceSchedules,
+      history: [history],
+    }], source: 'database', canDelete: false }) };
+  }});
+  const { createRoot } = await import('react-dom/client');
+  const root = createRoot(dom.window.document.getElementById('root'));
+  try {
+    await act(async () => root.render(React.createElement(PackageControl, { storeId: 'kata-store', storeName: 'Kata Skincare Malaysia' })));
+    assert.equal(dom.window.document.querySelector('.version-history'), null);
+    const button = dom.window.document.querySelector('button[aria-label="View history for Kata Combo C PWP"]');
+    assert.ok(button, 'existing package should offer View History');
+    await act(async () => button.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
+    assert.ok(dom.window.document.querySelector('.version-history'), 'history should open');
+    assert.match(dom.window.document.querySelector('.version-history').textContent, /Existing edit/);
+    assert.equal(dom.window.document.querySelector('.calculator-history'), null);
+    assert.equal(posts, 0, 'viewing history must not save or modify the package');
+  } finally {
+    await act(async () => root.unmount());
+    for (const key of keys) {
+      if (previous[key]) Object.defineProperty(globalThis, key, previous[key]);
+      else delete globalThis[key];
+    }
+    delete globalThis.IS_REACT_ACT_ENVIRONMENT;
+    dom.window.close();
+  }
+});
