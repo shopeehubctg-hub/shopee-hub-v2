@@ -41,6 +41,7 @@ export function publicCalculatorSettings(value: Record<string, unknown> | null) 
 
 const missing = "Not recorded";
 const sortedLines = (lines: string[]) => lines.sort().join("\n") || "None";
+const priceText = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value.toFixed(2) : missing;
 
 export function packageHistoryFields(snapshot: PackageHistorySnapshot) {
   return {
@@ -48,8 +49,8 @@ export function packageHistoryFields(snapshot: PackageHistorySnapshot) {
     "Selling markets": snapshot.market ? sortedLines(snapshot.market.split(",").map(value => value.trim())) : missing,
     "Platform listing SKUs": snapshot.platforms ? sortedLines(snapshot.platforms.map(line => `${line.platform}: ${line.packageSku}`)) : missing,
     "Inventory items": snapshot.components ? sortedLines(snapshot.components.map(line => `${line.inventorySku} · ${line.name} ×${line.quantity} (${line.kind})`)) : missing,
-    "Prices & promotion dates": snapshot.priceSchedules ? sortedLines(snapshot.priceSchedules.map(line =>
-      `${line.market} ${line.priceType === "campaign" ? "Campaign" : "Non-Campaign"}: ${line.market === "SG" ? "S$" : "RM"} ${line.originalPrice.toFixed(2)} → ${line.sellingPrice.toFixed(2)} · ${line.effectiveFrom} → ${line.effectiveTo} (${line.promotionType})`,
+    "Prices & promotion dates": Array.isArray(snapshot.priceSchedules) ? sortedLines(snapshot.priceSchedules.map(line =>
+      `${line.market} ${line.priceType === "campaign" ? "Campaign" : "Non-Campaign"}: ${line.market === "SG" ? "S$" : "RM"} ${priceText(line.originalPrice)} → ${priceText(line.sellingPrice)} · ${line.effectiveFrom} → ${line.effectiveTo} (${line.promotionType})`,
     )) : missing,
   };
 }
