@@ -12,6 +12,7 @@ import {
 } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { canAccessModule, canAccessStore } from "../../module-access";
+import { publicCalculatorSettings } from "../../package-history";
 import { blocksNewVersionForUnsyncedSheet } from "../../package-version-policy";
 import { emailChangeSummary } from "./email-change-summary";
 import { versionChangeSummary } from "./version-change-summary";
@@ -150,13 +151,6 @@ function versionMetadata(settings:Record<string,unknown>|null):PackageMetadata|n
   return typeof record.name==="string" && typeof record.market==="string" && typeof record.channel==="string" && typeof record.packageSku==="string"
     ? record as PackageMetadata : null;
 }
-function publicCalculatorSettings(settings:Record<string,unknown>|null) {
-  if (!settings) return null;
-  const { _packageMetadata, ...visible }=settings;
-  void _packageMetadata;
-  return Object.keys(visible).length ? visible : null;
-}
-
 function historyWebhookConfigured() {
   return Boolean(process.env.GOOGLE_SHEETS_HISTORY_WEBHOOK_URL && process.env.GOOGLE_SHEETS_HISTORY_SECRET);
 }

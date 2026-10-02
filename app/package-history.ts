@@ -1,3 +1,5 @@
+import type { CalculatorSnapshot } from "./calculator-types";
+
 export type PackageHistorySnapshot = {
   name?: string | null;
   market?: string | null;
@@ -8,6 +10,34 @@ export type PackageHistorySnapshot = {
     promotionType: string; effectiveFrom: string; effectiveTo: string;
   }[];
 };
+
+function isCalculatorSnapshot(value: unknown): value is CalculatorSnapshot {
+  if (!value || typeof value !== "object") return false;
+  const snapshot = value as Record<string, unknown>;
+  return (snapshot.serviceScenario === "Non-Campaign Day" || snapshot.serviceScenario === "Campaign Day")
+    && typeof snapshot.category === "string"
+    && ["facebookPrice", "suggestedShopeePrice", "commissionRate", "serviceRate", "actualPayout"]
+      .every(field => typeof snapshot[field] === "number" && Number.isFinite(snapshot[field]))
+    && ["discountValue", "facebookPricePerUnit", "customerPricePerUnit"]
+      .every(field => snapshot[field] == null || (typeof snapshot[field] === "number" && Number.isFinite(snapshot[field])));
+}
+
+export function calculatorSnapshots(value: unknown): CalculatorSnapshot[] {
+  if (!value || typeof value !== "object") return [];
+  const scenarios = (value as { scenarios?: unknown }).scenarios;
+  const candidates = Array.isArray(scenarios) ? scenarios : [value];
+  return candidates.filter(isCalculatorSnapshot);
+}
+
+export function publicCalculatorSettings(value: Record<string, unknown> | null) {
+  const snapshots = calculatorSnapshots(value);
+  if (!snapshots.length) return null;
+  if (Array.isArray(value?.scenarios)) return { scenarios: snapshots };
+  const { _packageMetadata, _packageHistorySummary, ...snapshot } = snapshots[0] as CalculatorSnapshot & Record<string, unknown>;
+  void _packageMetadata;
+  void _packageHistorySummary;
+  return snapshot;
+}
 
 const missing = "Not recorded";
 const sortedLines = (lines: string[]) => lines.sort().join("\n") || "None";
