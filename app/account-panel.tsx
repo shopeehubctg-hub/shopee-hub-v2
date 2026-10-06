@@ -20,7 +20,7 @@ function MappingInfo({ row }: { row: AccountStoreRow }) {
   return <div className="account-mapping">
     <span className={`account-mapping-status ${row.mappingStatus ?? "unknown"}`}>{row.mappingStatus ? mappingLabels[row.mappingStatus] : "—"}</span>
     {row.mappingReason && <small>{row.mappingReason}</small>}
-    {candidates.length > 0 && <details><summary>{candidates.length} candidate{candidates.length === 1 ? "" : "s"}</summary><ul>{candidates.map(candidate => <li key={candidate.mappingId}><b>{candidate.username}</b><span>{candidate.storeName || "Store unlinked"} · {candidate.mappingId}</span></li>)}</ul></details>}
+    {candidates.length > 0 && <details><summary>{candidates.length} candidate{candidates.length === 1 ? "" : "s"}</summary><ul>{candidates.map(candidate => <li key={candidate.mappingId || candidate.storeId || candidate.storeName}><b>{candidate.username || candidate.storeName}</b><span>{candidate.username ? candidate.storeName : "Username unconfirmed"}{candidate.mappingId ? ` · ${candidate.mappingId}` : ""}</span></li>)}</ul></details>}
   </div>;
 }
 

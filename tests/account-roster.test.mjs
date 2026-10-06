@@ -5,6 +5,17 @@ import {execFileSync} from 'node:child_process';
 let source=readFileSync('app/account-roster.ts','utf8').replace("import 'server-only';",'').replace("import snapshotData from './account-roster-data.json';","const snapshotData={};").replaceAll("'./account-ledger'",`'${process.cwd()}/app/account-ledger.ts'`);
 const compiled=execFileSync('node_modules/.bin/esbuild',['--bundle','--format=esm','--platform=node','--target=node20','--loader=ts'],{input:source});
 const {accountRosterFallback,mergeAccountRoster}=await import(`data:text/javascript;base64,${compiled.toString('base64')}`);
+test('Dashboard candidates for JEEROUL and SUPU remain unconfirmed financial bindings',()=>{
+  const actual=JSON.parse(readFileSync('app/account-roster-data.json','utf8'));
+  const result=accountRosterFallback('j-packaging','2026-10','2026-10-06',new Map(),actual);
+  for(const project of ['JEEROUL','SUPU']) {
+    const row=result.stores.find(r=>r.project===project&&r.market==='MY');
+    assert.equal(row.mappingStatus,'missing');assert.equal(row.storeId,null);
+    assert.equal(row.candidates.length,1);assert.equal(row.candidates[0].mappingId,'');
+    assert.equal(row.candidates[0].username,'');assert.equal(row.collected,null);
+    assert.equal(row.expectedNetFee,null);
+  }
+});
 const snapshot={tenantId:'j-packaging',invoiceMonth:'2026-10',statementMonth:'2026-09',generatedAt:'2026-10-06T04:00:00Z',sourceReference:'private-source',rows:[{id:'one',entity:'Entity',market:'MY',project:'Project',termsVersion:'NEW',mappingStatus:'candidate',mappingReason:'Needs confirmation',sourceRow:8,candidates:[{mappingId:'m',username:'store-user',storeId:null,storeName:'Store'}]}]};
 test('snapshot only visible to intended dataset tenant and exact billing cycle',()=>{assert.equal(accountRosterFallback('other','2026-10','2026-10-06',new Map(),snapshot),null);assert.equal(accountRosterFallback('j-packaging','2026-11','2026-10-06',new Map(),snapshot),null);});
 test('historical binding remains candidate, never finance or live sync; internal provenance stays server-side',()=>{const result=accountRosterFallback('j-packaging','2026-10','2026-10-06',new Map(),snapshot);assert.equal(result.stores[0].storeId,null);assert.equal(result.stores[0].mappingStatus,'candidate');assert.equal(result.stores[0].status,'pending_mapping');assert.equal(result.stores[0].expectedNetFee,null);assert.equal(result.summaries[0].billed,null);assert.equal(result.summaries[0].pendingStores,1);assert.equal(result.updatedAt,null);assert.equal(result.rosterUpdatedAt,snapshot.generatedAt);assert.doesNotMatch(JSON.stringify(result),/private-source|sourceRow/);});

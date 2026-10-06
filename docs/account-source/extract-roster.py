@@ -34,6 +34,10 @@ crosswalk = {
 }
 rows=[]
 excluded=[]
+dashboard_candidates={
+ 'JEEROUL':{'mappingId':'','username':'','storeId':'shopee-jeeroul-by-ctg4u','storeName':'Jeeroul by CTG4u'},
+ 'SUPU':{'mappingId':'','username':'','storeId':'shopee-supu','storeName':'Supu'}
+}
 for market in ['MY','SG']:
  tab=f'SHOPEE {market} (JOLIN YONG)'
  for rowno, cells in enumerate(book[tab].iter_rows(values_only=True),1):
@@ -57,6 +61,9 @@ for market in ['MY','SG']:
    state='candidate';reason='Store candidate found; billing identity needs confirmation.'
   else:
    state='missing';reason='Store mapping missing; confirm username and store.'
+  if market=='MY' and key in dashboard_candidates:
+   candidates.append(dashboard_candidates[key].copy())
+   reason='Store candidate found; username and billing mapping need confirmation.'
   rows.append({'id':f'roster-2026-10-{market.lower()}-{rowno}', 'entity':entity,'market':market,
     'project':project,'termsVersion':'NEW' if version=='NEW VER' else 'OLD',
     'mappingStatus':state,'mappingReason':reason,'candidates':candidates,'sourceRow':rowno,
@@ -66,6 +73,9 @@ snapshot={'tenantId':'j-packaging','invoiceMonth':'2026-10','statementMonth':'20
  'generatedAt':datetime.now(ZoneInfo('Asia/Kuala_Lumpur')).isoformat(),'rows':rows,
  'sources':[{'file':p.name,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in [billing,master]],
  'excluded':excluded,'mappingPolicy':'Historical candidates only. No financial store binding is confirmed.'}
+snapshot['dashboardCandidateEvidence']={'verifiedAt':'2026-10-06', 'tenantId':'j-packaging',
+ 'storeIds':['shopee-jeeroul-by-ctg4u','shopee-supu'],
+ 'method':'Read-only stores lookup plus existing Dashboard references; directory IDs and usernames remain unknown.'}
 (root/'app/account-roster-data.json').write_text(json.dumps(snapshot,ensure_ascii=False,indent=2)+'\n')
 print(json.dumps({'rows':len(rows),'MY':sum(r['market']=='MY' for r in rows),'SG':sum(r['market']=='SG' for r in rows),
  'mapping':{s:sum(r['mappingStatus']==s for r in rows) for s in ['candidate','ambiguous','missing']}}))

@@ -2,7 +2,7 @@
   "tenantId": "j-packaging",
   "invoiceMonth": "2026-10",
   "statementMonth": "2026-09",
-  "generatedAt": "2026-10-06T12:24:25.186384+08:00",
+  "generatedAt": "2026-10-06T12:32:35.624158+08:00",
   "rows": [
     {
       "id": "roster-2026-10-my-2",
@@ -116,8 +116,15 @@
       "project": "JEEROUL",
       "termsVersion": "NEW",
       "mappingStatus": "missing",
-      "mappingReason": "Store mapping missing; confirm username and store.",
-      "candidates": [],
+      "mappingReason": "Store candidate found; username and billing mapping need confirmation.",
+      "candidates": [
+        {
+          "mappingId": "",
+          "username": "",
+          "storeId": "shopee-jeeroul-by-ctg4u",
+          "storeName": "Jeeroul by CTG4u"
+        }
+      ],
       "sourceRow": 7,
       "internalExternal": "INTERNAL",
       "sourceTab": "SHOPEE MY (JOLIN YONG)"
@@ -401,8 +408,15 @@
       "project": "SUPU",
       "termsVersion": "NEW",
       "mappingStatus": "missing",
-      "mappingReason": "Store mapping missing; confirm username and store.",
-      "candidates": [],
+      "mappingReason": "Store candidate found; username and billing mapping need confirmation.",
+      "candidates": [
+        {
+          "mappingId": "",
+          "username": "",
+          "storeId": "shopee-supu",
+          "storeName": "Supu"
+        }
+      ],
       "sourceRow": 21,
       "internalExternal": "INTERNAL",
       "sourceTab": "SHOPEE MY (JOLIN YONG)"
@@ -1229,5 +1243,14 @@
       "reason": "Affiliate billing, not a Shopee store"
     }
   ],
-  "mappingPolicy": "Historical candidates only. No financial store binding is confirmed."
+  "mappingPolicy": "Historical candidates only. No financial store binding is confirmed.",
+  "dashboardCandidateEvidence": {
+    "verifiedAt": "2026-10-06",
+    "tenantId": "j-packaging",
+    "storeIds": [
+      "shopee-jeeroul-by-ctg4u",
+      "shopee-supu"
+    ],
+    "method": "Read-only stores lookup plus existing Dashboard references; directory IDs and usernames remain unknown."
+  }
 }
