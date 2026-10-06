@@ -6,7 +6,7 @@ let source=readFileSync('app/api/admin/account/route.ts','utf8');
 source=source.replace(/import \{ getChatGPTUser \}[^;]+;/,"const getChatGPTUser=async()=>globalThis.__actor;")
 .replace(/import \{ supabaseRest \}[^;]+;/,"async function supabaseRest<T>(path:string):Promise<T> { return globalThis.__rest(path); }")
 .replace(/import \{ accountRosterFallback, mergeAccountRoster \}[^;]+;/,"const accountRosterFallback=(...args)=>globalThis.__fallback?.(...args)??null; const mergeAccountRoster=(account,roster)=>account;")
-.replaceAll("'../../../account-ledger'",`'${process.cwd()}/app/account-ledger.ts'`);
+.replaceAll("'../../../live-calendar-model'",`'${process.cwd()}/app/live-calendar-model.ts'`).replaceAll("'../../../account-ledger'",`'${process.cwd()}/app/account-ledger.ts'`);
 const compiled=execFileSync('node_modules/.bin/esbuild',['--bundle','--format=esm','--platform=node','--target=node20','--loader=ts'],{input:source});
 const {GET}=await import(`data:text/javascript;base64,${compiled.toString('base64')}`);
 const request=()=>new Request('https://example.test/api/admin/account?invoiceMonth=2026-10');

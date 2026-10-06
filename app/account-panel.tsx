@@ -5,23 +5,9 @@ import type { AccountCurrency, AccountCurrencySummary, AccountResponse, AccountS
 import { accountMoney } from "./account-display";
 
 const currencies: AccountCurrency[] = ["MYR", "SGD"];
-const storeStatuses: Record<AccountStoreRow["status"], string> = {
-  pending_source: "Pending import",
-  pending_mapping: "Pending store mapping",
-  pending_terms: "Pending fee terms",
-  pending_statement: "Pending statement",
-  assessed: "Assessed",
-  invoiced: "Invoiced",
-};
-const mappingLabels = { resolved: "Mapped", candidate: "Needs confirmation", ambiguous: "Review mapping", missing: "No mapping" } as const;
-
-function MappingInfo({ row }: { row: AccountStoreRow }) {
-  const candidates = row.candidates ?? [];
-  return <div className="account-mapping">
-    <span className={`account-mapping-status ${row.mappingStatus ?? "unknown"}`}>{row.mappingStatus ? mappingLabels[row.mappingStatus] : "—"}</span>
-    {row.mappingReason && <small>{row.mappingReason}</small>}
-    {candidates.length > 0 && <details><summary>{candidates.length} candidate{candidates.length === 1 ? "" : "s"}</summary><ul>{candidates.map(candidate => <li key={candidate.mappingId || candidate.storeId || candidate.storeName}><b>{candidate.username || candidate.storeName}</b><span>{candidate.username ? candidate.storeName : "Username unconfirmed"}{candidate.mappingId ? ` · ${candidate.mappingId}` : ""}</span></li>)}</ul></details>}
-  </div>;
+function StoreNames({ row }: { row: AccountStoreRow }) {
+  const names = [...new Set(row.storeId ? [row.storeName] : (row.candidates ?? []).filter(candidate => candidate.storeId).map(candidate => candidate.storeName))];
+  return <div className="account-mapping">{names.length ? names.map(name => <span key={name}>{name}</span>) : "—"}</div>;
 }
 
 function monthLabel(month: string) {
@@ -58,7 +44,6 @@ export function AccountPanel() {
   const [invoiceMonth, setInvoiceMonth] = useState("2026-10");
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState<"all" | "MY" | "SG">("all");
-  const [mapping, setMapping] = useState<"all" | "pending">("all");
   const [refreshKey, setRefreshKey] = useState(0);
   const [data, setData] = useState<AccountResponse | null>(null);
   const [error, setError] = useState("");
@@ -87,7 +72,6 @@ export function AccountPanel() {
   const updatedAt = accountUpdatedAt(data?.updatedAt ?? null);
   const visibleRows = (data?.stores ?? []).filter(row => {
     if (market !== "all" && row.market !== market) return false;
-    if (mapping === "pending" && row.mappingStatus === "resolved") return false;
     const searchText = [row.project, row.storeName, row.entity, ...(row.candidates ?? []).flatMap(candidate => [candidate.username, candidate.storeName])].join(" ").toLocaleLowerCase();
     return searchText.includes(query.trim().toLocaleLowerCase());
   });
@@ -100,8 +84,8 @@ export function AccountPanel() {
       {updatedAt && <p className="account-updated">Last updated {updatedAt} MYT</p>}
       <section className="account-currencies" aria-label="Income by currency">{currencies.map(currency => <CurrencyCard key={currency} currency={currency} summary={data.summaries.find(item => item.currency === currency)} invoiceMonth={displayMonth} today={data.today} />)}</section>
       <section className="account-stores" aria-labelledby="account-stores-title"><div className="account-stores-head"><div><p className="kicker">INVOICE MONTH · {monthLabel(displayMonth)}</p><h3 id="account-stores-title">Billing records</h3></div><span>{visibleRows.length} of {data.stores.length} billing records</span></div>
-        {data.stores.length > 0 && <div className="account-filters"><label>Search project or store<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Project, entity, username…" /></label><label>Market<select value={market} onChange={event => setMarket(event.target.value as "all" | "MY" | "SG")}><option value="all">All markets</option><option value="MY">Malaysia</option><option value="SG">Singapore</option></select></label><label>Mapping<select value={mapping} onChange={event => setMapping(event.target.value as "all" | "pending")}><option value="all">All mappings</option><option value="pending">Needs review</option></select></label></div>}
-        {visibleRows.length ? <div className="account-table-scroll"><table><thead><tr><th scope="col">Billing project</th><th scope="col">Entity / market</th><th scope="col">Terms</th><th scope="col">Store mapping</th><th scope="col">Status</th><th scope="col">Statement / service period</th><th scope="col">Expected net fee</th><th scope="col">Invoiced</th><th scope="col">Received</th><th scope="col">Outstanding</th></tr></thead><tbody>{visibleRows.map(row => <tr key={row.id}><td data-label="Billing project"><strong>{row.project || row.storeName}</strong>{row.storeId && row.storeName && row.storeName !== row.project && <small>{row.storeName}</small>}</td><td data-label="Entity / market"><strong>{row.entity || "—"}</strong><small>{row.market === "MY" ? "Malaysia" : row.market === "SG" ? "Singapore" : "Market unknown"}</small></td><td data-label="Terms">{row.termsVersion || "—"}</td><td data-label="Store mapping"><MappingInfo row={row} /></td><td data-label="Status"><span className={`account-row-status ${row.status}`}>{storeStatuses[row.status]}</span></td><td data-label="Statement / service period"><strong>{row.statementMonth || "—"}</strong><small>{row.servicePeriodStart && row.servicePeriodEnd ? `${row.servicePeriodStart} – ${row.servicePeriodEnd}` : "Service period unknown"}</small></td><td data-label="Expected net fee">{accountMoney(row.expectedNetFee, row.currency)}</td><td data-label="Invoiced">{accountMoney(row.billed, row.currency)}</td><td data-label="Received">{accountMoney(row.collected, row.currency)}</td><td data-label="Outstanding">{accountMoney(row.outstanding, row.currency)}</td></tr>)}</tbody></table></div>
+        {data.stores.length > 0 && <div className="account-filters"><label>Search project or store<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Project, entity or store…" /></label><label>Market<select value={market} onChange={event => setMarket(event.target.value as "all" | "MY" | "SG")}><option value="all">All markets</option><option value="MY">Malaysia</option><option value="SG">Singapore</option></select></label></div>}
+        {visibleRows.length ? <div className="account-table-scroll"><table><thead><tr><th scope="col">Billing project</th><th scope="col">Entity / market</th><th scope="col">Store name</th><th scope="col">Statement / service period</th><th scope="col">Expected net fee</th><th scope="col">Invoiced</th><th scope="col">Received</th><th scope="col">Outstanding</th></tr></thead><tbody>{visibleRows.map(row => <tr key={row.id}><td data-label="Billing project"><strong>{row.project || row.storeName}</strong>{row.storeId && row.storeName && row.storeName !== row.project && <small>{row.storeName}</small>}</td><td data-label="Entity / market"><strong>{row.entity || "—"}</strong><small>{row.market === "MY" ? "Malaysia" : row.market === "SG" ? "Singapore" : "Market unknown"}</small></td><td data-label="Store name"><StoreNames row={row} /></td><td data-label="Statement / service period"><strong>{row.statementMonth || "—"}</strong><small>{row.servicePeriodStart && row.servicePeriodEnd ? `${row.servicePeriodStart} – ${row.servicePeriodEnd}` : "Service period unknown"}</small></td><td data-label="Expected net fee">{accountMoney(row.expectedNetFee, row.currency)}</td><td data-label="Invoiced">{accountMoney(row.billed, row.currency)}</td><td data-label="Received">{accountMoney(row.collected, row.currency)}</td><td data-label="Outstanding">{accountMoney(row.outstanding, row.currency)}</td></tr>)}</tbody></table></div>
           : <div className="account-empty">{data.stores.length ? "No projects match these filters." : `No billing projects for ${monthLabel(displayMonth)}.`}</div>}
       </section>
     </>}

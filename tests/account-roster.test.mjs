@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
-let source=readFileSync('app/account-roster.ts','utf8').replace("import 'server-only';",'').replace("import snapshotData from './account-roster-data.json';","const snapshotData={};").replaceAll("'./account-ledger'",`'${process.cwd()}/app/account-ledger.ts'`);
+let source=readFileSync('app/account-roster.ts','utf8').replace("import 'server-only';",'').replace("import snapshotData from './account-roster-data.json';","const snapshotData={};").replaceAll("'./account-selector'",`'${process.cwd()}/app/account-selector.ts'`).replaceAll("'./account-ledger'",`'${process.cwd()}/app/account-ledger.ts'`);
 const compiled=execFileSync('node_modules/.bin/esbuild',['--bundle','--format=esm','--platform=node','--target=node20','--loader=ts'],{input:source});
 const {accountRosterFallback,mergeAccountRoster}=await import(`data:text/javascript;base64,${compiled.toString('base64')}`);
 test('Dashboard candidates for JEEROUL and SUPU remain unconfirmed financial bindings',()=>{

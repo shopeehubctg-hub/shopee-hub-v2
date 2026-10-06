@@ -1,5 +1,6 @@
 import 'server-only';
 import snapshotData from './account-roster-data.json';
+import { accountSelectorCandidates } from './account-selector';
 import { emptyAccount } from './account-ledger';
 import type { AccountMappingCandidate, AccountResponse } from './account-contract';
 export type AccountRosterSnapshot = {
@@ -25,7 +26,7 @@ export function accountRosterFallback(tenantId:string,invoiceMonth:string,today:
     return {id:row.id,rosterKey:row.id,storeId:candidate?.storeId??null,storeName:candidate?.storeId?(storeNames.get(candidate.storeId)??row.project):row.project,
       project:row.project,entity:row.entity,market:row.market,termsVersion:row.termsVersion,
       mappingStatus,mappingReason:row.mappingStatus==='resolved'&&!resolved?'Dashboard store mapping requires verification':row.mappingReason,
-      candidates:row.candidates.map(c=>({mappingId:c.mappingId,username:c.username,storeId:c.storeId,storeName:c.storeName})),currency:row.market==='MY'?'MYR' as const:'SGD' as const,
+      candidates:accountSelectorCandidates(row.candidates,row.market,storeNames),currency:row.market==='MY'?'MYR' as const:'SGD' as const,
       statementMonth:snapshot.statementMonth,invoiceMonth,servicePeriodStart:null,servicePeriodEnd:null,
       status:resolved?'pending_source' as const:'pending_mapping' as const,
       expectedNetFee:null,billed:null,collected:null,outstanding:null};

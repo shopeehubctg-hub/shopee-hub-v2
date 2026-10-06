@@ -1,3 +1,4 @@
+import { canonicalStoreId } from '../../../live-calendar-model';
 import { getChatGPTUser } from '../../../chatgpt-auth';
 import { supabaseRest } from '../../../supabase-rest';
 import { buildAccount, emptyAccount, malaysiaDate } from '../../../account-ledger';
@@ -26,7 +27,7 @@ export async function GET(request:Request) {
     const invoiceMonth=new URL(request.url).searchParams.get('invoiceMonth')??today.slice(0,7);
     if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(invoiceMonth)) return Response.json({error:'Choose a valid invoice month'},{status:400});
     const stores=await rows<{id:string;name:string;display_name:string|null}>('stores','id,name,display_name',member.tenant_id);
-    const storeNames=new Map(stores.map(s=>[s.id,s.display_name??s.name]));
+    const storeNames=new Map(stores.filter(s=>canonicalStoreId(s.id)===s.id).map(s=>[s.id,s.display_name??s.name]));
     try {
       const [cycles,terms,assessments,invoices,receipts,allocations]=await Promise.all([
         rows<Cycle>('account_billing_cycles','id,statement_month,invoice_month,service_period_start,service_period_end,updated_at',member.tenant_id),
