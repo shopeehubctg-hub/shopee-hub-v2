@@ -15,6 +15,7 @@ import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
 import { PermissionSettings } from "./permission-settings";
 import { DashboardLoading } from "./dashboard-loading";
 import { LiveCalendar } from "./live-calendar";
+import { AccountPanel } from "./account-panel";
 import { projectDriveFolders } from "./project-drive-folders";
 
 type Store = { id: string; name: string; sourceName?: string; platform: string; contacts: { project: string; href: string; driveLink?: string }[]; storeGroupLink?: string | null; driveLink?: string | null };
@@ -110,7 +111,7 @@ export default function Home() {
   const [loadError, setLoadError] = useState("");
   const loadSequence = useRef(0);
   const allowedSections = data?.access?.enabledModules ?? [];
-  const section = (requestedSection === "permissions" ? data?.access?.canManagePermissions : allowedSections.includes(requestedSection as PortalModuleId))
+  const section = (requestedSection === "account" ? data?.access?.role === "superadmin" : requestedSection === "permissions" ? data?.access?.canManagePermissions : allowedSections.includes(requestedSection as PortalModuleId))
     ? requestedSection : allowedSections[0] ?? (data?.access?.canManagePermissions ? "permissions" : "");
   const [storeId, setStoreId] = useState("");
   const [storeSelectionMade,setStoreSelectionMade] = useState(false);
@@ -146,6 +147,7 @@ export default function Home() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("section") === "permissions") setSection("permissions");
+    if (params.get("section") === "account") setSection("account");
     if (params.get("section") === "live_calendar") setSection("live_calendar");
     const draftKey = params.get("packageDraft");
     if (params.get("section") === "packages") setSection("packages");
@@ -241,6 +243,7 @@ export default function Home() {
   const nav = useMemo(() => {
     const allowed = new Set(data?.access?.enabledModules ?? []);
     const items: (readonly [string, string])[] = PORTAL_MODULES.filter(({ id }) => allowed.has(id)).map(({ id, label }) => [id, id === "packages" ? "Packages & Pricing" : label] as const);
+    if (data?.access?.role === "superadmin") items.push(["account", "Account"] as const);
     if (data?.access?.canManagePermissions) items.push(["permissions", "Permission Settings"] as const);
     return items;
   }, [data?.access]);
@@ -263,11 +266,11 @@ export default function Home() {
 
     <section className="workspace">
       <header className="header">
-        <div><p className="kicker">SHOPEE HUB PERFORMANCE</p><h1>{section==="packages"&&!storeSelectionMade?"No Store Selected":allStoresSelected ? "All Stores" : (store?.name ?? "J Packaging")}</h1></div>
-        <div className="toolbar">
+        <div><p className="kicker">{section==="account"?"SHOPEE HUB":"SHOPEE HUB PERFORMANCE"}</p><h1>{section==="account"?"Account":section==="packages"&&!storeSelectionMade?"No Store Selected":allStoresSelected ? "All Stores" : (store?.name ?? "J Packaging")}</h1></div>
+        {section!=="account"&&<div className="toolbar">
           <label>Store<select value={section==="packages"&&!storeSelectionMade?"":storeId} disabled={loading} onChange={e=>{setStoreSelectionMade(true);load(e.target.value)}}><option value="" disabled>Select a Store</option><option value="all">All Stores</option>{data?.stores.map(s=><option key={s.id} value={s.id}>{s.name} · {s.platform.replace("Shopee ", "")}</option>) ?? <option value="j-packaging-shopee">J Packaging · MY</option>}</select></label>
           <button onClick={()=>load(storeId)} disabled={loading}>{loading?"Updating…":"Update data"}</button>
-        </div>
+        </div>}
       </header>
 
       {section==="overview" && <div className="page">
@@ -287,6 +290,7 @@ export default function Home() {
       {section==="design" && <div className="page"><DesignChecker storeId={storeId}/></div>}
       {section==="protection" && <div className="page"><FakeSellerReport storeName={store?.name ?? "Selected store"} allStores={allStoresSelected} cases={fakeSellerCases}/></div>}
       {section==="permissions" && data?.access?.canManagePermissions && <div className="page"><PermissionSettings initialEnabledModules={data.access.clientEnabledModules} onStoreChanged={()=>load(storeId && storeId!=="all" ? storeId : undefined)}/></div>}
+      {section==="account" && data?.access?.role==="superadmin" && <div className="page"><AccountPanel /></div>}
       {section==="live_calendar" && <div className="page"><LiveCalendar initialStoreId={storeId} initialView={data.access?.role==="superadmin"?"month":"list"}/></div>}
 
       {section==="advertising" && <div className="page"><div className="page-title ad-page-title"><div><h2>Advertising</h2></div><div className="ad-period-controls"><label><span>View by</span><select aria-label="Advertising period type" value={adPeriodMode} onChange={event=>setAdPeriodMode(event.target.value as "mtd"|"month"|"date"|"range")}><option value="mtd">Month to date</option><option value="month">Month</option><option value="date">Date</option><option value="range">Custom range</option></select></label>{adPeriodMode === "month" && <label><span>Month</span><input aria-label="Advertising month" type="month" value={selectedAdMonth} min={availableAdMonths[availableAdMonths.length-1]} max={availableAdMonths[0]} onChange={event=>setAdMonth(event.target.value)}/></label>}{adPeriodMode === "date" && <label><span>Date</span><input aria-label="Advertising date" type="date" value={selectedAdDate} min={earliestAdDate} max={availableAdDates[0]} onChange={event=>setAdDate(event.target.value)} disabled={!availableAdDates.length}/></label>}{adPeriodMode === "range" && <><label><span>From</span><input aria-label="Advertising range start" type="date" value={selectedRangeStart} min={earliestAdDate} max={selectedRangeEnd} onChange={event=>setAdRangeStart(event.target.value)}/></label><label><span>To</span><input aria-label="Advertising range end" type="date" value={selectedRangeEnd} min={selectedRangeStart} max={availableAdDates[0]} onChange={event=>setAdRangeEnd(event.target.value)}/></label></>}</div></div>
