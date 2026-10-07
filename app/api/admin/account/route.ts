@@ -3,6 +3,8 @@ import { getChatGPTUser } from '../../../chatgpt-auth';
 import { supabaseRest } from '../../../supabase-rest';
 import { buildAccount, emptyAccount, malaysiaDate } from '../../../account-ledger';
 import { accountRosterFallback, mergeAccountRoster } from '../../../account-roster';
+import { applyAccountSettings, type AccountSetting } from '../../../account-settings-model';
+import type { AccountResponse } from '../../../account-contract';
 import type { Cycle, Term, Assessment, Invoice, Receipt, Allocation } from '../../../account-ledger';
 export const dynamic='force-dynamic';
 // Select only public UI fields. Internal evidence, legal entity and raw source rows never leave the server.
@@ -26,8 +28,12 @@ export async function GET(request:Request) {
     const today=malaysiaDate();
     const invoiceMonth=new URL(request.url).searchParams.get('invoiceMonth')??today.slice(0,7);
     if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(invoiceMonth)) return Response.json({error:'Choose a valid invoice month'},{status:400});
-    const stores=await rows<{id:string;name:string;display_name:string|null}>('stores','id,name,display_name',member.tenant_id);
+    const stores=await rows<{id:string;name:string;display_name:string|null;platform:string}>('stores','id,name,display_name,platform',member.tenant_id);
     const storeNames=new Map(stores.filter(s=>canonicalStoreId(s.id)===s.id).map(s=>[s.id,s.display_name??s.name]));
+    let settings:AccountSetting[]=[];let settingsAvailable=true;
+    try { settings=await rows<AccountSetting>('account_billing_unit_versions','id,roster_key,roster_project,legal_entity,currency,change_action,version::text,effective_month,store_id,fee_rule,created_at',member.tenant_id); }
+    catch(error){if(error instanceof Error&&/"code":"(PGRST205|42P01)"/.test(error.message))settingsAvailable=false;else throw error;}
+    const decorate=(account:AccountResponse)=>{account.settingsAvailable=settingsAvailable;account.storeOptions=stores.filter(s=>canonicalStoreId(s.id)===s.id).map(s=>({id:s.id,name:s.display_name??s.name,platform:s.platform})).sort((a,b)=>a.name.localeCompare(b.name));return applyAccountSettings(account,settings,storeNames);};
     try {
       const [cycles,terms,assessments,invoices,receipts,allocations]=await Promise.all([
         rows<Cycle>('account_billing_cycles','id,statement_month,invoice_month,service_period_start,service_period_end,updated_at',member.tenant_id),
@@ -38,10 +44,10 @@ export async function GET(request:Request) {
         rows<Allocation>('account_receipt_allocations','id,invoice_id,receipt_id,amount::text,updated_at',member.tenant_id),
       ]);
       const account=buildAccount({cycles,terms,assessments,invoices,receipts,allocations,storeNames},invoiceMonth,today);
-      return Response.json(mergeAccountRoster(account,accountRosterFallback(member.tenant_id,invoiceMonth,today,storeNames)));
+      return Response.json(decorate(mergeAccountRoster(account,accountRosterFallback(member.tenant_id,invoiceMonth,today,storeNames))));
     } catch(error) {
       // Missing migration is an explicit setup state; permission/network/data errors are failures.
-      if(error instanceof Error&&(/"code":"(PGRST205|42P01)"/.test(error.message))) return Response.json(accountRosterFallback(member.tenant_id,invoiceMonth,today,storeNames)??emptyAccount(invoiceMonth,today,'not_configured'));
+      if(error instanceof Error&&(/"code":"(PGRST205|42P01)"/.test(error.message))) return Response.json(decorate(accountRosterFallback(member.tenant_id,invoiceMonth,today,storeNames)??emptyAccount(invoiceMonth,today,'not_configured')));
       throw error;
     }
   } catch {

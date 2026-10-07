@@ -6,7 +6,7 @@ let source=readFileSync('app/api/admin/account/route.ts','utf8');
 source=source.replace(/import \{ getChatGPTUser \}[^;]+;/,"const getChatGPTUser=async()=>globalThis.__actor;")
 .replace(/import \{ supabaseRest \}[^;]+;/,"async function supabaseRest<T>(path:string):Promise<T> { return globalThis.__rest(path); }")
 .replace(/import \{ accountRosterFallback, mergeAccountRoster \}[^;]+;/,"const accountRosterFallback=(...args)=>globalThis.__fallback?.(...args)??null; const mergeAccountRoster=(account,roster)=>account;")
-.replaceAll("'../../../live-calendar-model'",`'${process.cwd()}/app/live-calendar-model.ts'`).replaceAll("'../../../account-ledger'",`'${process.cwd()}/app/account-ledger.ts'`);
+.replaceAll("'../../../live-calendar-model'",`'${process.cwd()}/app/live-calendar-model.ts'`).replaceAll("'../../../account-settings-model'",`'${process.cwd()}/app/account-settings-model.ts'`).replaceAll("'../../../account-ledger'",`'${process.cwd()}/app/account-ledger.ts'`);
 const compiled=execFileSync('node_modules/.bin/esbuild',['--bundle','--format=esm','--platform=node','--target=node20','--loader=ts'],{input:source});
 const {GET}=await import(`data:text/javascript;base64,${compiled.toString('base64')}`);
 const request=()=>new Request('https://example.test/api/admin/account?invoiceMonth=2026-10');
@@ -24,4 +24,7 @@ test('every read uses server membership tenant; caller tenant cannot override; u
 });
 test('permission and transport failure is not disguised as an empty account',async()=>{
  globalThis.__actor={email:'admin@example.test'};globalThis.__rest=async path=>{if(path.startsWith('customer_users?'))return [{active:true,role:'superadmin',tenant_id:'tenant-a'}];if(path.startsWith('tenants?'))return [{active:true}];throw new Error('403 secret internal details');};const response=await GET(request());assert.equal(response.status,503);assert.doesNotMatch(JSON.stringify(await response.json()),/secret/);
+});
+test('GET exposes full canonical current selector options including MY and SG, and disables saving when schema is absent',async()=>{
+ globalThis.__actor={email:'admin@example.test'};globalThis.__rest=async path=>{if(path.startsWith('customer_users?'))return [{active:true,role:'superadmin',tenant_id:'tenant-a'}];if(path.startsWith('tenants?'))return [{active:true}];if(path.startsWith('stores?'))return [{id:'shopee-supu',name:'Supu',display_name:'SUPU • 食补',platform:'Shopee MY'},{id:'shopee-skindae-sg',name:'SkinDae SG',display_name:null,platform:'Shopee SG'},{id:'shopee-skindae-sg-by-ctg4u',name:'Alias',display_name:null,platform:'Shopee SG'}];throw new Error('Supabase REST 404: {"code":"PGRST205"}');};const response=await GET(request());assert.equal(response.status,200);const data=await response.json();assert.equal(data.settingsAvailable,false);assert.equal(data.storeOptions.length,2);assert.ok(data.storeOptions.some(s=>s.name==='SUPU • 食补'));assert.ok(data.storeOptions.some(s=>s.platform==='Shopee SG'));assert.ok(data.storeOptions.every(s=>s.id!=='shopee-skindae-sg-by-ctg4u'));assert.equal(data.summaries[0].collected,null);
 });
