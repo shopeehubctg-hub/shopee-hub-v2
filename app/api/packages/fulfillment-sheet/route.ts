@@ -2,7 +2,7 @@ import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { customerUsers, packagePlatformSkus, packages, packageVersions, stores } from "../../../../db/schema";
 import { getChatGPTUser } from "../../../chatgpt-auth";
-import { canAccessModule } from "../../../module-access";
+import { canAccessModule, canAccessStore } from "../../../module-access";
 import { buildKitRows, KitExportError } from "../../../package-kit-export";
 
 export const dynamic="force-dynamic";
@@ -17,7 +17,7 @@ export async function POST(request:Request) {
   const db=await getDb();
   const [membership]=await db.select({tenantId:customerUsers.tenantId,role:customerUsers.role,active:customerUsers.active,moduleAccessMode:customerUsers.moduleAccessMode,storeAccessMode:customerUsers.storeAccessMode,id:customerUsers.id})
     .from(customerUsers).where(eq(customerUsers.email,user.email.toLowerCase())).limit(1);
-  if (!membership||!membership.active||membership.role!=="superadmin"||!await canAccessModule(db,membership,"packages")) return fail("Super Admin access is required.",403);
+  if (!membership||!membership.active||membership.role==="customer"||!await canAccessModule(db,membership,"packages")) return fail("Manager or Super Admin access is required.",403);
   let input:unknown;
   try { input=await request.json(); } catch { return fail("Invalid request.",400); }
   if (!input||typeof input!=="object") return fail("Invalid request.",400);
@@ -28,7 +28,7 @@ export async function POST(request:Request) {
     return fail("Choose one store and 1–100 packages from that store.",400);
   }
   const [store]=await db.select({id:stores.id}).from(stores).where(and(eq(stores.id,storeId),eq(stores.tenantId,membership.tenantId))).limit(1);
-  if (!store) return fail("Store access denied.",403);
+  if (!store||!await canAccessStore(db,membership,storeId)) return fail("Store access denied.",403);
   const selected=await db.select({id:packages.id,name:packages.name,status:packages.status}).from(packages)
     .where(and(eq(packages.tenantId,membership.tenantId),eq(packages.storeId,storeId),isNull(packages.deletedAt),inArray(packages.id,packageIds)));
   if (selected.length!==packageIds.length) return fail("One or more packages are no longer available in this store. Refresh the page.",409);
