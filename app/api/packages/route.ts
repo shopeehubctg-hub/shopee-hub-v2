@@ -202,7 +202,7 @@ export async function GET(request: Request) {
     .orderBy(desc(packages.updatedAt));
   const rows=allRows.filter(row=>row.deletedAt===null);
   if (!rows.length) {
-    if(allRows.length)return Response.json({packages:[],source:"database",canCreate:storeId!=="all",canDelete:membership.role==="superadmin"},{headers:{"Cache-Control":"private, no-store"}});
+    if(allRows.length)return Response.json({packages:[],source:"database",canCreate:storeId!=="all",canDelete:membership.role==="superadmin",canExportKits:membership.role!=="customer"&&storeId!=="all"},{headers:{"Cache-Control":"private, no-store"}});
     const sample = seedPackages
       .filter(item => scopedStoreIds.includes(item.storeId))
       .map(item => ({ ...item, storeName:storeNames.get(item.storeId) ?? "Accessible Store" }));
@@ -301,6 +301,7 @@ export async function GET(request: Request) {
     source:"database",
     canCreate:storeId !== "all",
     canDelete:membership.role === "superadmin",
+    canExportKits:membership.role !== "customer" && storeId !== "all",
   });
 }
 
