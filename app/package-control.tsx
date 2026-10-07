@@ -32,6 +32,8 @@ type PackageItem = {
   components:ComponentLine[]; platforms:PlatformLine[]; sheetSyncStatus?:"not_sent"|"pending"|"synced"|"failed"; history?:HistoryLine[];
   priceSchedules?:PriceSchedule[];
 };
+type KitExportPreview = { packageCount:number; rowCount:number; signature:string };
+type KitExportResponse = KitExportPreview & { rows:Array<{kitSku:string;inventorySku:string;quantity:number;price:1}> };
 type Props = { storeId:string; storeName:string; canCreate?:boolean; prefills?:PackagePrefill[]; standaloneCreate?:boolean; draftStorageKey?:string; onPrefillsAccepted?:()=>void };
 type StoredBatch = { prefills:PackagePrefill[]; storeId?:string; requestIds?:Record<string,string> };
 
@@ -78,6 +80,11 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   const [loadedStoreId,setLoadedStoreId] = useState("");
   const [source,setSource] = useState("");
   const [canDelete,setCanDelete] = useState(false);
+  const [canExportKits,setCanExportKits] = useState(false);
+  const [selectedKitIds,setSelectedKitIds] = useState<string[]>([]);
+  const [kitPreview,setKitPreview] = useState<KitExportPreview|null>(null);
+  const [kitBusy,setKitBusy] = useState(false);
+  const [kitError,setKitError] = useState("");
   const [filter,setFilter] = useState("all");
   const [search,setSearch] = useState("");
   const [displayCount,setDisplayCount] = useState(30);
@@ -112,6 +119,10 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       setItems([]);
       setSource("store-selection-required");
       setCanDelete(false);
+      setCanExportKits(false);
+      setSelectedKitIds([]);
+      setKitPreview(null);
+      setKitError("");
       return;
     }
     try {
@@ -123,6 +134,10 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       setLoadedStoreId(storeId);
       setSource(data.source ?? "");
       setCanDelete(data.canDelete === true);
+      setCanExportKits(data.canExportKits === true);
+      setSelectedKitIds([]);
+      setKitPreview(null);
+      setKitError("");
     } catch {
       if (sequence===loadSequence.current) {
         setMessageType("error");
@@ -131,6 +146,48 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     }
   }
   useEffect(()=>{ void load(); },[storeId]);
+
+  async function checkedKitRows():Promise<KitExportResponse> {
+    const response=await fetch("/api/packages/fulfillment-sheet",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({storeId,packageIds:selectedKitIds}),cache:"no-store",
+    });
+    const data=await response.json();
+    if (!response.ok) throw new Error(data.error??"Could not validate these packages.");
+    return data as KitExportResponse;
+  }
+
+  async function previewKitExport() {
+    setKitBusy(true); setKitError("");
+    try {
+      const result=await checkedKitRows();
+      setKitPreview({packageCount:result.packageCount,rowCount:result.rowCount,signature:result.signature});
+    } catch(error) { setKitError(error instanceof Error?error.message:"Could not validate these packages."); }
+    finally { setKitBusy(false); }
+  }
+
+  async function downloadKitExport() {
+    if (!kitPreview) return;
+    setKitBusy(true); setKitError("");
+    try {
+      const result=await checkedKitRows();
+      if (result.signature!==kitPreview.signature||result.rowCount!==kitPreview.rowCount) {
+        setKitPreview({packageCount:result.packageCount,rowCount:result.rowCount,signature:result.signature});
+        throw new Error("Package data changed since the preview. Review the updated row count, then download again.");
+      }
+      const {makeKitWorkbook}=await import("./package-kit-workbook");
+      const bytes=makeKitWorkbook(result.rows);
+      const url=URL.createObjectURL(new Blob([bytes],{type:"application/vnd.ms-excel"}));
+      const anchor=document.createElement("a");
+      anchor.href=url;
+      anchor.download=`${storeName.replace(/[^a-z0-9_-]+/gi,"-")}-Kit-Products.xls`;
+      document.body.append(anchor); anchor.click(); anchor.remove();
+      window.setTimeout(()=>URL.revokeObjectURL(url),60_000);
+      setKitPreview(null);
+      setSelectedKitIds([]);
+    } catch(error) { setKitError(error instanceof Error?error.message:"Could not generate the file."); }
+    finally { setKitBusy(false); }
+  }
   function groupPrefills(input:PackagePrefill[]) {
     const groups = new Map<string,PackagePrefill[]>();
     input.forEach(item=>{
@@ -556,6 +613,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       <div className="package-hero-actions">
         <a href={HISTORY_SHEET_URL} target="_blank" rel="noopener noreferrer">Google Sheet History</a>
         <span>{!hasPackageScope?"Select a Store":allStoresSelected?"Accessible Stores":source==="sheet-migration-preview"?"Sheet Migration Preview":"Live Database"}</span>
+        {canExportKits&&hasSelectedStore&&loadedStoreId===storeId&&source==="database"&&<button type="button" className="kit-export-button" onClick={previewKitExport} disabled={!selectedKitIds.length||kitBusy}>Generate Fulfillment Sheet{selectedKitIds.length?` (${selectedKitIds.length})`:""}</button>}
         {canCreate&&hasSelectedStore&&<button onClick={openNew}>+ New Package</button>}
       </div>
     </div>
@@ -572,10 +630,11 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       <input value={search} onChange={event=>setSearch(event.target.value)} placeholder="Search package or platform SKU" />
     </div>
     {message&&<div className={`package-message ${messageType}`} role={messageType==="error"?"alert":"status"} aria-live={messageType==="error"?"assertive":"polite"}>{message}{messageType==="warning"&&<a href={HISTORY_SHEET_URL} target="_blank" rel="noopener noreferrer">Open History Sheet</a>}</div>}
+    {kitError&&!kitPreview&&<div className="package-message error" role="alert">{kitError}</div>}
 
     <div className="package-list">{displayed.map(item=><article className="package-card" key={item.id}>
       <div className="package-card-head">
-        <div><span className={`package-status ${item.status}`}>{item.status}</span><span className={`sync-status ${item.pendingVersion?"pending":item.sheetSyncStatus ?? "pending"}`}>Sheet {item.pendingVersion?`v${item.pendingVersion} needs sync`:item.sheetSyncStatus==="not_sent"?"not sent":item.sheetSyncStatus ?? "preview"}</span><h3>{item.name}</h3></div>
+        <div>{canExportKits&&hasSelectedStore&&source==="database"&&<label className="kit-package-selector"><input type="checkbox" checked={selectedKitIds.includes(item.id)} disabled={item.sheetSyncStatus!=="synced"||Boolean(item.pendingVersion)||["draft","review"].includes(item.status)} onChange={event=>{setKitError("");setKitPreview(null);setSelectedKitIds(current=>event.target.checked?[...current,item.id]:current.filter(id=>id!==item.id));}} aria-label={`Select ${item.name} for fulfillment sheet`}/><span>Select for Fulfillment Sheet</span></label>}<span className={`package-status ${item.status}`}>{item.status}</span><span className={`sync-status ${item.pendingVersion?"pending":item.sheetSyncStatus ?? "pending"}`}>Sheet {item.pendingVersion?`v${item.pendingVersion} needs sync`:item.sheetSyncStatus==="not_sent"?"not sent":item.sheetSyncStatus ?? "preview"}</span><h3>{item.name}</h3></div>
         <div className="package-price"><small>{item.market}</small><del>{money(item.originalPrice,item.market,source==="database")}</del><strong>{money(item.sellingPrice,item.market,source==="database")}</strong></div>
       </div>
       {item.priceSchedules?.length?<div className="package-schedule-summary">{item.priceSchedules.map((line,index)=><div key={`${line.market}-${line.priceType}-${line.effectiveFrom}-${line.effectiveTo}-${index}`}><span>{line.market} · {line.priceType==="campaign"?"Campaign":"Non-Campaign"}</span><b>{Number.isFinite(line.sellingPrice)?money(line.sellingPrice,line.market):"—"}</b><small>{line.effectiveFrom} → {line.effectiveTo}</small></div>)}</div>:null}
@@ -595,6 +654,8 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     </article>)}</div>
     {visible.length>displayCount&&<button type="button" className="package-load-more" onClick={()=>setDisplayCount(count=>count+30)}>Show more packages ({visible.length-displayCount} remaining)</button>}
     {!visible.length&&<div className="package-empty"><strong>{!hasPackageScope?"Select a Store":allStoresSelected?"No Packages In Accessible Stores":"No Packages In This View"}</strong><span>{!hasPackageScope?"Package information will appear after you choose a store.":allStoresSelected?"Only packages from stores you have permission to access appear here.":"Choose another filter or create the first package."}</span></div>}
+
+    {kitPreview&&<div className="package-modal" role="dialog" aria-modal="true" aria-labelledby="kit-export-title"><div className="package-form kit-export-dialog"><div className="package-form-head"><div><p className="kicker">ANCHANTO KIT PRODUCTS</p><h3 id="kit-export-title">Generate Fulfillment Sheet</h3><span>{storeName}</span></div><button type="button" onClick={()=>{setKitPreview(null);setKitError("");}} aria-label="Close">×</button></div><p>{kitPreview.packageCount} selected package{kitPreview.packageCount===1?"":"s"} will generate <strong>{kitPreview.rowCount} rows</strong> in the Kit Products sheet. Price is 1 for every row.</p><p>The download does not change packages or upload anything to Anchanto.</p>{kitError&&<div className="package-message error" role="alert">{kitError}</div>}<div className="form-actions"><button type="button" className="secondary" onClick={()=>{setKitPreview(null);setKitError("");}}>Cancel</button><button type="button" onClick={downloadKitExport} disabled={kitBusy}>{kitBusy?"Checking…":"Download .xls"}</button></div></div></div>}
 
     {showCreate&&<div className={`package-modal${standaloneCreate?" standalone":""}`} role={standaloneCreate?undefined:"dialog"} aria-modal={standaloneCreate?undefined:"true"} aria-labelledby={standaloneCreate?undefined:"package-form-title"}><div className="package-form">
       <div className="package-form-head"><div><p className="kicker">{editingDraft?"EDIT DRAFT":editingPackageId?"EDIT PACKAGE":"NEW PACKAGE"}</p><h3 id="package-form-title">{editingDraft?"Edit Draft":editingPackageId?"Edit / Modify Package":"Create A Package"}</h3><span>{editingStore?.name??storeName}{prefillQueue.length?` · ${prefillQueue.length} Ready Package${prefillQueue.length===1?"":"s"} Remaining`:""}</span></div><button onClick={closeCreate} aria-label="Close">×</button></div>
