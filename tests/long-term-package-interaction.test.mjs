@@ -47,18 +47,21 @@ test('an existing package can become long-term and then receive an end date', as
   try{
     await act(async()=>root.render(React.createElement(PackageControl,{storeId:'store-1',storeName:'Test Store'})));
     await click('Edit / Modify');
-    const longTerm=[...dom.window.document.querySelectorAll('.package-modal label')].find(node=>node.textContent.includes('Long-term Package')).querySelector('input');
-    assert.equal(longTerm.checked,false);
-    await act(async()=>longTerm.dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true})));
+    const topLevelCheckboxes=dom.window.document.querySelectorAll('.pricing-section > .same-pricing-toggle');
+    assert.equal(topLevelCheckboxes.length,1,'only the shared pricing toggle remains above the date cards');
+    const longTerm=dom.window.document.querySelector('.nonCampaign .promotion-toggle button:last-child');
+    assert.equal(longTerm.textContent,'Long-term Package');
+    assert.equal(longTerm.getAttribute('aria-pressed'),'false');
+    await click('Long-term Package');
     assert.match(dom.window.document.querySelector('.package-modal').textContent,/End Date: Ongoing/);
     await click('Save Changes');
     assert.equal(submitted.length,1);
     assert.equal(submitted[0].longTerm,true);
     assert.equal(submitted[0].priceSchedules.find(line=>line.priceType==='non_campaign').effectiveTo,null);
     await click('Edit / Modify');
-    const openEnded=[...dom.window.document.querySelectorAll('.package-modal label')].find(node=>node.textContent.includes('Long-term Package')).querySelector('input');
-    assert.equal(openEnded.checked,true);
-    await click('Set End Date');
+    const openEnded=dom.window.document.querySelector('.nonCampaign .promotion-toggle button:last-child');
+    assert.equal(openEnded.getAttribute('aria-pressed'),'true');
+    await click('Custom Dates');
     const end=[...dom.window.document.querySelectorAll('.scenario-editor input[type="date"]')].find(input=>input.closest('label')?.textContent==='End Date');
     assert.ok(end);
     await act(async()=>{
