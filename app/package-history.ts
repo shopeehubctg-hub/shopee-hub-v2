@@ -7,7 +7,7 @@ export type PackageHistorySnapshot = {
   components?: { inventorySku: string; name: string; quantity: number; kind: string }[];
   priceSchedules?: {
     market: string; priceType: string; originalPrice: number; sellingPrice: number;
-    promotionType: string; effectiveFrom: string; effectiveTo: string;
+    promotionType: string; effectiveFrom: string; effectiveTo: string | null;
   }[];
 };
 
@@ -50,7 +50,7 @@ export function packageHistoryFields(snapshot: PackageHistorySnapshot) {
     "Platform listing SKUs": snapshot.platforms ? sortedLines(snapshot.platforms.map(line => `${line.platform}: ${line.packageSku}`)) : missing,
     "Inventory items": snapshot.components ? sortedLines(snapshot.components.map(line => `${line.inventorySku} · ${line.name} ×${line.quantity} (${line.kind})`)) : missing,
     "Prices & promotion dates": Array.isArray(snapshot.priceSchedules) ? sortedLines(snapshot.priceSchedules.map(line =>
-      `${line.market} ${line.priceType === "campaign" ? "Campaign" : "Non-Campaign"}: ${line.market === "SG" ? "S$" : "RM"} ${priceText(line.originalPrice)} → ${priceText(line.sellingPrice)} · ${line.effectiveFrom} → ${line.effectiveTo} (${line.promotionType})`,
+      `${line.market} ${line.priceType === "campaign" ? "Campaign" : "Non-Campaign"}: ${line.market === "SG" ? "S$" : "RM"} ${priceText(line.originalPrice)} → ${priceText(line.sellingPrice)} · ${line.effectiveFrom} → ${line.effectiveTo ?? "Ongoing"} (${line.promotionType})`,
     )) : missing,
   };
 }
