@@ -54,7 +54,9 @@ function readPortalSession(value: string | undefined): string | null {
 
 export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   const requestHeaders = await headers();
-  const email = requestHeaders.get(USER_EMAIL_HEADER);
+  // Public Vercel requests cannot assert an identity through proxy headers.
+  // Vercel portal identity must come from the server-signed session cookie.
+  const email = process.env.VERCEL === "1" ? null : requestHeaders.get(USER_EMAIL_HEADER);
   if (!email) {
     const portalEmail = readPortalSession((await cookies()).get(PORTAL_SESSION_COOKIE)?.value);
     return portalEmail ? { displayName:portalEmail, email:portalEmail, fullName:null } : null;
