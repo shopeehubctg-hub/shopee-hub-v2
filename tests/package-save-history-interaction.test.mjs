@@ -50,7 +50,7 @@ test('Save Changes refreshes and auto-opens metadata-only history without crashi
       assert.equal(request.expectedVersion, posts === 1 ? 2 : 3);
       assert.ok(request.priceSchedules.every(line => line.sellingPrice === '450'), 'matching prices must remain unchanged across both date types');
       const expectedCampaignPeriods = [
-        ['2026-10-01', posts === 1 ? '2026-10-31' : '2026-11-02'],
+        ['2026-10-01', '2026-10-31'],
         ['2026-10-14', '2026-10-15'],
       ];
       if (posts === 2) expectedCampaignPeriods.push(['2026-11-14', '2026-11-15']);
@@ -85,11 +85,7 @@ test('Save Changes refreshes and auto-opens metadata-only history without crashi
     assert.match(dom.window.document.querySelector('.package-modal').textContent, /Previously saved Campaign dates are preserved/);
     assert.match(dom.window.document.querySelector('.package-modal').textContent, /Campaign date edits will not be saved if you check it again/);
     await act(async () => dom.window.document.querySelector('.same-pricing-toggle input').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
-    const pendingCampaignEnd = dom.window.document.querySelectorAll('.campaign-custom-periods input[type="date"]')[1];
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(pendingCampaignEnd, '2026-11-02');
-      pendingCampaignEnd.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-    });
+    assert.equal(dom.window.document.querySelector('.campaign-custom-periods'), null, 'saved date inputs are removed from the editor');
     await act(async () => dom.window.document.querySelector('.same-pricing-toggle input').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
     assert.equal(dom.window.document.querySelector('.scenario-editor.campaign'), null);
     await act(async () => click('Save Changes'));
@@ -103,14 +99,7 @@ test('Save Changes refreshes and auto-opens metadata-only history without crashi
     assert.equal(dom.window.document.querySelector('.scenario-editor.campaign'), null);
     await act(async () => dom.window.document.querySelector('.same-pricing-toggle input').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
     assert.match(dom.window.document.querySelector('.campaign-month-editor').textContent, /October 2026/);
-    assert.equal(dom.window.document.querySelectorAll('.campaign-custom-periods input[type="date"]').length, 2, 'unchecking exposes saved custom dates');
-    const firstCampaignEnd = dom.window.document.querySelectorAll('.campaign-custom-periods input[type="date"]')[1];
-    assert.ok(firstCampaignEnd, 'existing package should expose Campaign end dates');
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(firstCampaignEnd, '2026-11-02');
-      firstCampaignEnd.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-      firstCampaignEnd.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-    });
+    assert.equal(dom.window.document.querySelector('.campaign-custom-periods'), null, 'saved dates stay in the record without showing input fields');
     await act(async () => click('+ Add Campaign Month'));
     assert.match(dom.window.document.querySelector('.campaign-month-editor').textContent, /November 2026/);
     const november = [...dom.window.document.querySelectorAll('.campaign-month-card')].find(card => card.textContent.includes('November 2026'));
