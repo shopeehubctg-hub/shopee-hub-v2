@@ -33,7 +33,7 @@ test('an existing package can become long-term and then receive an end date', as
     }
     return {ok:true,json:async()=>({source:'database',canCreate:true,canDelete:false,packages:[{
       id:'pkg-1',storeId:'store-1',storeName:'Test Store',packageSku:'TEST-SKU',name:'Test Package',market:'MY',status:'active',version,
-      promotionType:'custom',originalPrice:10000,sellingPrice:9000,effectiveFrom:'2026-10-01',effectiveTo:prices.find(p=>p.priceType==='non_campaign').effectiveTo,
+      promotionType:'custom',originalPrice:10000,sellingPrice:9000,effectiveFrom:'2026-10-01',effectiveTo:prices.find(p=>p.priceType==='non_campaign').effectiveTo,samePricing:submitted.at(-1)?.samePricing??true,
       components:[{inventorySku:'ITEM-1',name:'Item',quantity:1,kind:'product'}],platforms:[{platform:'Shopee',packageSku:'TEST-SKU'}],priceSchedules:prices,history:[],
     }]})};
   };
@@ -83,6 +83,7 @@ test('an existing package can become long-term and then receive an end date', as
     await click('Save Changes');
     assert.equal(submitted[2].longTerm,false);
     assert.equal(submitted[2].campaignLongTerm,true);
+    assert.equal(submitted[2].samePricing,false);
     assert.equal(submitted[2].priceSchedules.find(line=>line.priceType==='campaign').effectiveTo,null);
     await click('Edit / Modify');
     assert.equal(dom.window.document.querySelector('.campaign-duration button:last-child').getAttribute('aria-pressed'),'true');

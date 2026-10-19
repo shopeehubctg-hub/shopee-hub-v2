@@ -29,7 +29,7 @@ type PackageItem = {
   id:string; storeId:string; storeName?:string; packageSku:string; name:string; market:string; status:string; version:number;
   pendingVersion?:number|null;
   promotionType:"monthly"|"custom"; originalPrice:number; sellingPrice:number; effectiveFrom:string; effectiveTo?:string|null;
-  components:ComponentLine[]; platforms:PlatformLine[]; sheetSyncStatus?:"not_sent"|"pending"|"synced"|"failed"; history?:HistoryLine[];
+  components:ComponentLine[]; platforms:PlatformLine[]; sheetSyncStatus?:"not_sent"|"pending"|"synced"|"failed"; history?:HistoryLine[]; samePricing?:boolean;
   priceSchedules?:PriceSchedule[];
 };
 type KitExportPreview = { packageCount:number; rowCount:number; signature:string };
@@ -475,7 +475,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         method:"POST",
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({name:form.name,mode,clientRequestId,markets:form.markets,changeNote:form.changeNote,
-          priceSchedules:schedules,longTerm:form.longTerm,campaignLongTerm:campaignLines.length>0&&campaignLines.every(line=>line.effectiveTo===null),storeId:editingStore?.id??storeId,storeName:editingStore?.name??storeName,components,platforms,packageId:editingPackageId,expectedVersion:editingVersion??undefined,
+          priceSchedules:schedules,samePricing:form.samePricing,longTerm:form.longTerm,campaignLongTerm:campaignLines.length>0&&campaignLines.every(line=>line.effectiveTo===null),storeId:editingStore?.id??storeId,storeName:editingStore?.name??storeName,components,platforms,packageId:editingPackageId,expectedVersion:editingVersion??undefined,
           calculatorSettings:calculatorSettings?{scenarios:prefillBatch.filter(item=>batchName(item.name)===batchName(prefillBatch[0]?.name??"")).map(item=>item.calculatorSettings)}:null}),
       });
       const data = await response.json().catch(()=>null);
@@ -596,10 +596,10 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     const campaign=schedules.find(line=>line.priceType==="campaign")??fallbackSchedule("campaign");
     const markets=[...new Set(schedules.map(line=>line.market))] as MarketName[];
     const priceFor=(market:MarketName,type:PriceType)=>schedules.find(line=>line.market===market&&line.priceType===type);
-    const samePricing=markets.every(market=>{
+    const samePricing=item.samePricing??markets.every(market=>{
       const nonCampaign=priceFor(market,"non_campaign");
       const campaignSchedules=sourceSchedules.filter(line=>line.market===market&&line.priceType==="campaign");
-      return Boolean(nonCampaign&&campaignSchedules.length===1&&campaignSchedules.every(line=>line.originalPrice===nonCampaign.originalPrice&&line.sellingPrice===nonCampaign.sellingPrice&&line.effectiveFrom===nonCampaign.effectiveFrom&&line.effectiveTo===nonCampaign.effectiveTo));
+      return Boolean(nonCampaign&&campaignSchedules.length>0&&campaignSchedules.every(line=>line.originalPrice===nonCampaign.originalPrice&&line.sellingPrice===nonCampaign.sellingPrice));
     });
     originalCampaignSchedules.current=sourceSchedules.filter(line=>line.priceType==="campaign").map(line=>({...line}));
     setCampaignPeriods(sourceSchedules.filter(line=>line.market===markets[0]&&line.priceType==="campaign").map(line=>({effectiveFrom:line.effectiveFrom,effectiveTo:line.effectiveTo??"",originalFrom:line.effectiveFrom,originalTo:line.effectiveTo??""})));

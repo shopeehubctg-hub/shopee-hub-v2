@@ -261,6 +261,7 @@ export async function GET(request: Request) {
         addedComponents:version?.addedComponents ?? [],
         removedComponents:version?.removedComponents ?? [],
         sheetSyncStatus:version?.sheetSyncStatus ?? "pending",
+        samePricing:typeof version?.calculatorSettings?._samePricing==="boolean" ? version.calculatorSettings._samePricing : undefined,
         pendingVersion:["active","scheduled","expired"].includes(row.status) && latestVersion.get(row.id)?.version !== version?.version &&
           ["pending","failed"].includes(latestVersion.get(row.id)?.sheetSyncStatus ?? "") ? latestVersion.get(row.id)?.version : null,
         calculatorSettings:publicCalculatorSettings(version?.calculatorSettings ?? null),
@@ -337,6 +338,7 @@ async function savePackage(request: Request) {
     platforms?: PlatformLine[];
     calculatorSettings?: Record<string, unknown> | null;
     priceSchedules?: PriceScheduleInput[];
+    samePricing?: boolean;
     longTerm?: boolean;
     campaignLongTerm?: boolean;
   };
@@ -504,7 +506,7 @@ async function savePackage(request: Request) {
       addedComponents:diff.added,
       removedComponents:diff.removed,
       sheetSyncStatus:mode==="draft"?"not_sent":"pending",
-      calculatorSettings:{...(body.calculatorSettings ?? {}),_longTermLifecycle:longTermLifecycle,_packageMetadata:metadata,_packageHistorySummary:{schema:1,summary:changeSummary}},
+      calculatorSettings:{...(body.calculatorSettings ?? {}),_samePricing:body.samePricing===true,_longTermLifecycle:longTermLifecycle,_packageMetadata:metadata,_packageHistorySummary:{schema:1,summary:changeSummary}},
       changeNote:body.changeNote?.trim() || (nextVersion === 1 ? "Initial version" : `Version ${nextVersion}`),
       effectiveFrom:primaryPeriod.effectiveFrom,
       effectiveTo:primaryPeriod.effectiveTo,
