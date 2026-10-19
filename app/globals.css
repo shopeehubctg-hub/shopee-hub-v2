@@ -382,3 +382,4 @@ body{background:var(--paper);color:var(--ink)}
 .package-long-term-badge{display:inline-flex;align-items:center;width:max-content;margin:0 0 8px;padding:5px 10px;border-radius:999px;background:#e5f6ec;color:#087044;font-size:11px;font-weight:800}
 .scenario-editor-head .promotion-toggle{margin-bottom:0;flex-wrap:wrap;justify-content:flex-end}
 .scenario-editor-head .promotion-toggle button{white-space:nowrap}
+.campaign-duration{justify-content:flex-end;margin:8px 12px 0}

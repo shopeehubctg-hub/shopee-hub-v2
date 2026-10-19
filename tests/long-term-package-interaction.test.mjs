@@ -73,6 +73,30 @@ test('an existing package can become long-term and then receive an end date', as
     assert.equal(submitted.length,2);
     assert.equal(submitted[1].longTerm,false);
     assert.equal(submitted[1].priceSchedules.find(line=>line.priceType==='non_campaign').effectiveTo,'2026-11-15');
+    await click('Edit / Modify');
+    const samePricing=dom.window.document.querySelector('.same-pricing-toggle input');
+    if(samePricing.checked) await act(async()=>samePricing.dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true})));
+    const campaignLongTerm=dom.window.document.querySelector('.campaign-duration button:last-child');
+    assert.equal(campaignLongTerm.textContent,'Long-term Package');
+    await act(async()=>campaignLongTerm.dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true})));
+    assert.match(dom.window.document.querySelector('.campaign .scenario-body').textContent,/End Date: Ongoing/);
+    await click('Save Changes');
+    assert.equal(submitted[2].longTerm,false);
+    assert.equal(submitted[2].campaignLongTerm,true);
+    assert.equal(submitted[2].priceSchedules.find(line=>line.priceType==='campaign').effectiveTo,null);
+    await click('Edit / Modify');
+    assert.equal(dom.window.document.querySelector('.campaign-duration button:last-child').getAttribute('aria-pressed'),'true');
+    await click('Campaign Dates');
+    const campaignEnd=[...dom.window.document.querySelectorAll('.campaign input[type="date"]')].find(input=>input.closest('label')?.textContent==='Campaign 1 End Date');
+    assert.ok(campaignEnd);
+    await act(async()=>{
+      Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value').set.call(campaignEnd,'2026-12-15');
+      campaignEnd.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+      campaignEnd.dispatchEvent(new dom.window.Event('change',{bubbles:true}));
+    });
+    await click('Save Changes');
+    assert.equal(submitted[3].campaignLongTerm,false);
+    assert.equal(submitted[3].priceSchedules.find(line=>line.priceType==='campaign').effectiveTo,'2026-12-15');
   } finally {
     await act(async()=>root.unmount());
     for(const key of keys) old[key]?Object.defineProperty(globalThis,key,old[key]):delete globalThis[key];

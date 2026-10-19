@@ -162,7 +162,8 @@ function publishedStatus(periods:Array<{effectiveFrom:string;effectiveTo:string|
 }
 
 function lifecyclePrices<T extends {priceType:string;effectiveFrom:string;effectiveTo:string|null}>(prices:T[],settings:Record<string,unknown>|null|undefined) {
-  return settings?._longTermLifecycle === true ? prices.filter(price=>price.priceType==="non_campaign") : prices;
+  if (settings?._longTermLifecycle === true) return prices;
+  return prices.map(price=>({...price,effectiveTo:price.effectiveTo??price.effectiveFrom}));
 }
 
 function marketToday() {
@@ -337,6 +338,7 @@ async function savePackage(request: Request) {
     calculatorSettings?: Record<string, unknown> | null;
     priceSchedules?: PriceScheduleInput[];
     longTerm?: boolean;
+    campaignLongTerm?: boolean;
   };
   const mode = body.mode ?? "draft";
   if (mode!=="draft"&&mode!=="publish") return packageError("Saving","Choose Create Package or Save Draft.");
@@ -354,14 +356,17 @@ async function savePackage(request: Request) {
   if (!markets.length || markets.some(market=>schedules.filter(item=>item.market===market&&item.priceType==="non_campaign").length!==1||!schedules.some(item=>item.market===market&&item.priceType==="campaign"))) {
     return packageError("Pricing & Promotion","Select at least one market and complete its Non-Campaign and Campaign pricing.");
   }
-  if (schedules.some(item=>!["MY","SG"].includes(item.market)||!["campaign","non_campaign"].includes(item.priceType)||!["monthly","custom"].includes(item.promotionType)||!item.effectiveFrom||(!item.effectiveTo&&!body.longTerm)||(item.effectiveTo!==null&&item.effectiveTo<item.effectiveFrom))) {
+  if (schedules.some(item=>!["MY","SG"].includes(item.market)||!["campaign","non_campaign"].includes(item.priceType)||!["monthly","custom"].includes(item.promotionType)||!item.effectiveFrom||(item.effectiveTo!==null&&!item.effectiveTo)||(item.effectiveTo===null&&!body.longTerm&&!body.campaignLongTerm)||(item.effectiveTo!==null&&item.effectiveTo<item.effectiveFrom))) {
     return packageError("Pricing & Promotion","Every price requires a valid start date and end date. The end date cannot be earlier than the start date.");
   }
-  if (markets.some(market=>schedules.filter(item=>item.market===market&&item.priceType==="non_campaign").some(item=>!item.effectiveTo)!==Boolean(body.longTerm))) {
+  if (markets.some(market=>schedules.filter(item=>item.market===market&&item.priceType==="non_campaign").some(item=>item.effectiveTo===null)!==Boolean(body.longTerm))) {
     return packageError("Pricing & Promotion","Long-term Package must have no end date; other packages need an end date.");
   }
-  if (schedules.some(item=>item.priceType==="campaign"&&!item.effectiveTo&&(!body.longTerm||!schedules.some(base=>base.market===item.market&&base.priceType==="non_campaign"&&base.effectiveFrom===item.effectiveFrom&&base.originalPrice===item.originalPrice&&base.sellingPrice===item.sellingPrice)))) {
-    return packageError("Pricing & Promotion","An open-ended Campaign period must match the Long-term Package dates and prices.");
+  if (markets.some(market=>body.campaignLongTerm&&schedules.filter(item=>item.market===market&&item.priceType==="campaign").length!==1)) {
+    return packageError("Pricing & Promotion","Long-term Campaign pricing needs one open-ended date range per market.");
+  }
+  if (schedules.some(item=>item.priceType==="campaign"&&((body.campaignLongTerm&&item.effectiveTo!==null)||(item.effectiveTo===null&&!body.campaignLongTerm&&(!body.longTerm||!schedules.some(base=>base.market===item.market&&base.priceType==="non_campaign"&&base.effectiveTo===null&&base.effectiveFrom===item.effectiveFrom&&base.originalPrice===item.originalPrice&&base.sellingPrice===item.sellingPrice)))))) {
+    return packageError("Pricing & Promotion","Open-ended Campaign dates must be selected as Long-term Package or match the shared Non-Campaign pricing.");
   }
   const periodKeys=(market:string,priceType:"non_campaign"|"campaign")=>schedules.filter(item=>item.market===market&&item.priceType===priceType).map(item=>`${item.promotionType}|${item.effectiveFrom}|${item.effectiveTo}`).sort().join(",");
   if (markets.some(market=>periodKeys(market,"non_campaign")!==periodKeys(markets[0],"non_campaign")||periodKeys(market,"campaign")!==periodKeys(markets[0],"campaign"))) {
@@ -455,8 +460,8 @@ async function savePackage(request: Request) {
     db.select().from(packagePrices).where(eq(packagePrices.versionId,previousVersion.id)),
     db.select().from(packagePlatformSkus).where(eq(packagePlatformSkus.versionId,previousVersion.id)),
   ]) : [[], []];
-  const longTermLifecycle=Boolean(body.longTerm||previousVersion?.calculatorSettings?._longTermLifecycle===true||oldPrices.some(item=>item.priceType==="non_campaign"&&item.effectiveTo===null));
-  if(longTermLifecycle&&!body.longTerm){
+  const longTermLifecycle=Boolean(body.longTerm||body.campaignLongTerm||previousVersion?.calculatorSettings?._longTermLifecycle===true);
+  if(previousVersion?.calculatorSettings?._longTermLifecycle===true&&oldPrices.some(item=>item.priceType==="non_campaign"&&item.effectiveTo===null)&&!body.longTerm&&!body.campaignLongTerm){
     for(const market of markets){
       const base=schedules.find(item=>item.market===market&&item.priceType==="non_campaign")!;
       const end=base.effectiveTo!;
@@ -469,7 +474,7 @@ async function savePackage(request: Request) {
       if(!schedules.some(item=>item.market===market&&item.priceType==="campaign"))schedules.push({...base,priceType:"campaign"});
     }
   }
-  const primaryPeriod=schedules.find(item=>item.priceType===(longTermLifecycle?"non_campaign":"campaign"))!;
+  const primaryPeriod=schedules.find(item=>item.effectiveTo===null)??schedules.find(item=>item.priceType==="campaign")!;
   const changeSummary = nextVersion === 1 ? "新开配套" : previousVersion
     ? emailChangeSummary({components,calculatorSettings:{_packageMetadata:metadata}},previousVersion,schedules,oldPrices,platforms,oldSkus)
     : "配套资料修改（历史比较资料不足）";
