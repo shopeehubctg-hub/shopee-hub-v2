@@ -392,6 +392,10 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       let next="";
       do {next=new Date(Date.UTC(year,month+offset++,1)).toISOString().slice(0,7);} while(campaignMonths.includes(next));
       setCampaignMonths(current=>[...current,next]);
+      const nextEnd=monthDates(next).to;
+      setForm(current=>current.longTerm||!current.nonCampaign.effectiveTo||current.nonCampaign.effectiveTo>=nextEnd?current:{
+        ...current,nonCampaign:{...current.nonCampaign,promotionType:"custom",effectiveTo:nextEnd},
+      });
     };
     return <div className="campaign-date-controls campaign-month-editor">
       {campaignMonths.map(month=>{
@@ -409,6 +413,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         </div>;
       })}
       <button type="button" onClick={addMonth}>+ Add Campaign Month</button>
+      <small>Adding a month also extends the Non-Campaign end date through that month. Review both dates before saving.</small>
     </div>;
   }
 
