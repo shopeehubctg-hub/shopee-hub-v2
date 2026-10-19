@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CalculatorSnapshot, PackagePrefill } from "./calculator-types";
 import { calculatorSnapshots, packageHistoryChanges, packageHistoryTime, type PackageHistorySnapshot } from "./package-history";
-import { defaultRecurringEvent, recurringEventIds, recurringEventLabels, recurringEventWindow, validateRecurringCampaign, type RecurringCampaignEvent, type RecurringCampaignRule, type RecurringEventId } from "./recurring-campaign";
+import { defaultRecurringEvent, recurringEventIds, recurringEventLabels, validateRecurringCampaign, type RecurringCampaignEvent, type RecurringCampaignRule, type RecurringEventId } from "./recurring-campaign";
 
 type ComponentLine = { inventorySku:string; name:string; quantity:number; kind:"product"|"gift" };
 type PlatformName = "Shopee"|"Lazada"|"TikTok Shop";
@@ -377,17 +377,14 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   }
 
   function recurringCampaignEditor() {
-    const previewMonth=form.campaign.effectiveFrom.slice(0,7)||new Date().toISOString().slice(0,7);
     return <div className="recurring-campaign-editor">
       <div className="date-fields"><label>Campaign Start Date<input type="date" value={form.campaign.effectiveFrom} onChange={event=>setForm(current=>({...current,campaign:{...current.campaign,effectiveFrom:event.target.value}}))}/></label><label>End Date (optional)<input type="date" value={form.campaign.effectiveTo} min={form.campaign.effectiveFrom} onChange={event=>setForm(current=>({...current,campaign:{...current.campaign,effectiveTo:event.target.value}}))}/></label><span>{form.campaign.effectiveTo?`Ends ${form.campaign.effectiveTo}`:"Ongoing every month"}</span></div>
       <p>Choose monthly events and set each event price. All other days use the Non-Campaign price.</p>
       {recurringEvents.map(event=>{
         const selected=form.campaign.campaignEvents.includes(event.id);
-        const window=recurringEventWindow(previewMonth,event);
         return <div className={`recurring-event${selected?" selected":""}`} key={event.id}>
-          <label className="recurring-event-title"><input type="checkbox" checked={selected} onChange={()=>setForm(current=>({...current,campaign:{...current.campaign,campaignEvents:selected?current.campaign.campaignEvents.filter(id=>id!==event.id):[...current.campaign.campaignEvents,event.id]}}))}/><b>{recurringEventLabels[event.id]}</b><small>{window.from} → {window.to} each month</small></label>
-          {selected&&<><div className="recurring-window-fields">{event.id==="dday"?<><label>Days before double date<input type="number" min="0" max="5" value={-(event.startOffset??-2)} onChange={change=>updateRecurringEvent(event.id,current=>({...current,startOffset:-Number(change.target.value)}))}/></label><label>Days after double date<input type="number" min="0" max="5" value={event.endOffset??0} onChange={change=>updateRecurringEvent(event.id,current=>({...current,endOffset:Number(change.target.value)}))}/></label></>:<><label>Start day<input type="number" min="1" max="31" value={event.startDay??1} onChange={change=>updateRecurringEvent(event.id,current=>({...current,startDay:Number(change.target.value)}))}/></label><label>End day<input type="number" min="1" max="31" value={event.endDay??1} onChange={change=>updateRecurringEvent(event.id,current=>({...current,endDay:Number(change.target.value)}))}/></label></>}</div>
-            <div className="recurring-event-prices">{form.markets.map(market=><div key={market}><b>{market} {market==="SG"?"S$":"RM"}</b><label>Original Price<input type="number" min="0.01" step="0.01" value={event.prices[market]?.originalPrice??""} onChange={change=>updateRecurringEvent(event.id,current=>({...current,prices:{...current.prices,[market]:{...current.prices[market],originalPrice:change.target.value,sellingPrice:current.prices[market]?.sellingPrice??""}}}))}/></label><label>Selling Price<input type="number" min="0.01" step="0.01" value={event.prices[market]?.sellingPrice??""} onChange={change=>updateRecurringEvent(event.id,current=>({...current,prices:{...current.prices,[market]:{originalPrice:current.prices[market]?.originalPrice??"",sellingPrice:change.target.value}}}))}/></label></div>)}</div></>}
+          <label className="recurring-event-title"><input type="checkbox" checked={selected} onChange={()=>setForm(current=>({...current,campaign:{...current.campaign,campaignEvents:selected?current.campaign.campaignEvents.filter(id=>id!==event.id):[...current.campaign.campaignEvents,event.id]}}))}/><b>{recurringEventLabels[event.id]}</b></label>
+          {selected&&<div className="recurring-event-prices">{form.markets.map(market=><div key={market}><b>{market} {market==="SG"?"S$":"RM"}</b><label>Original Price<input type="number" min="0.01" step="0.01" value={event.prices[market]?.originalPrice??""} onChange={change=>updateRecurringEvent(event.id,current=>({...current,prices:{...current.prices,[market]:{...current.prices[market],originalPrice:change.target.value,sellingPrice:current.prices[market]?.sellingPrice??""}}}))}/></label><label>Selling Price<input type="number" min="0.01" step="0.01" value={event.prices[market]?.sellingPrice??""} onChange={change=>updateRecurringEvent(event.id,current=>({...current,prices:{...current.prices,[market]:{originalPrice:current.prices[market]?.originalPrice??"",sellingPrice:change.target.value}}}))}/></label></div>)}</div>}
         </div>;
       })}
     </div>;
