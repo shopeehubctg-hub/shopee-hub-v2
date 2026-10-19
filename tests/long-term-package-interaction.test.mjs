@@ -34,7 +34,7 @@ test('an existing package can become long-term and then receive an end date', as
     return {ok:true,json:async()=>({source:'database',canCreate:true,canDelete:false,packages:[{
       id:'pkg-1',storeId:'store-1',storeName:'Test Store',packageSku:'TEST-SKU',name:'Test Package',market:'MY',status:'active',version,
       promotionType:'custom',originalPrice:10000,sellingPrice:9000,effectiveFrom:'2026-10-01',effectiveTo:prices.find(p=>p.priceType==='non_campaign').effectiveTo,samePricing:submitted.at(-1)?.samePricing??true,
-      components:[{inventorySku:'ITEM-1',name:'Item',quantity:1,kind:'product'}],platforms:[{platform:'Shopee',packageSku:'TEST-SKU'}],priceSchedules:prices,history:[],
+      components:[{inventorySku:'ITEM-1',name:'Item',quantity:1,kind:'product'}],platforms:[{platform:'Shopee',packageSku:'TEST-SKU'}],priceSchedules:prices,recurringCampaign:submitted.at(-1)?.recurringCampaign??null,history:[],
     }]})};
   };
   const {createRoot}=await import('react-dom/client');
@@ -79,16 +79,17 @@ test('an existing package can become long-term and then receive an end date', as
     const campaignLongTerm=dom.window.document.querySelector('.campaign-duration button:last-child');
     assert.equal(campaignLongTerm.textContent,'Long-term Package');
     await act(async()=>campaignLongTerm.dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true})));
-    assert.match(dom.window.document.querySelector('.campaign .scenario-body').textContent,/End Date: Ongoing/);
+    assert.match(dom.window.document.querySelector('.campaign .scenario-body').textContent,/Ongoing every month/);
     await click('Save Changes');
     assert.equal(submitted[2].longTerm,false);
     assert.equal(submitted[2].campaignLongTerm,true);
     assert.equal(submitted[2].samePricing,false);
     assert.equal(submitted[2].priceSchedules.find(line=>line.priceType==='campaign').effectiveTo,null);
+    assert.equal(submitted[2].recurringCampaign.events[0].id,'dday');
+    assert.equal(submitted[2].recurringCampaign.events[0].prices.MY.sellingPrice,90);
     await click('Edit / Modify');
     assert.equal(dom.window.document.querySelector('.campaign-duration button:last-child').getAttribute('aria-pressed'),'true');
-    await click('Campaign Dates');
-    const campaignEnd=[...dom.window.document.querySelectorAll('.campaign input[type="date"]')].find(input=>input.closest('label')?.textContent==='Campaign 1 End Date');
+    const campaignEnd=[...dom.window.document.querySelectorAll('.campaign input[type="date"]')].find(input=>input.closest('label')?.textContent==='End Date (optional)');
     assert.ok(campaignEnd);
     await act(async()=>{
       Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value').set.call(campaignEnd,'2026-12-15');
@@ -96,7 +97,8 @@ test('an existing package can become long-term and then receive an end date', as
       campaignEnd.dispatchEvent(new dom.window.Event('change',{bubbles:true}));
     });
     await click('Save Changes');
-    assert.equal(submitted[3].campaignLongTerm,false);
+    assert.equal(submitted[3].campaignLongTerm,true);
+    assert.equal(submitted[3].recurringCampaign.endDate,'2026-12-15');
     assert.equal(submitted[3].priceSchedules.find(line=>line.priceType==='campaign').effectiveTo,'2026-12-15');
   } finally {
     await act(async()=>root.unmount());

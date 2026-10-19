@@ -13,6 +13,7 @@ import {
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { canAccessModule, canAccessStore } from "../../module-access";
 import { publicCalculatorSettings } from "../../package-history";
+import { activeRecurringEvent, readRecurringCampaign, recurringEventLabels, validateRecurringCampaign, type RecurringCampaignRule, type RecurringMarket } from "../../recurring-campaign";
 import { blocksNewVersionForUnsyncedSheet } from "../../package-version-policy";
 import { emailChangeSummary } from "./email-change-summary";
 import { versionChangeSummary } from "./version-change-summary";
@@ -245,6 +246,13 @@ export async function GET(request: Request) {
         : latestVersion.get(row.id);
       const versionPrices = version ? pricesByVersion.get(version.id)??[] : [];
       const price = versionPrices.find(item => item.priceType === "campaign" && (item.currency === "SGD" ? "SG" : item.market) === "MY") ?? versionPrices[0];
+      const versionMarkets=row.market.split(",").map(market=>market.trim()).filter(market=>market==="MY"||market==="SG") as RecurringMarket[];
+      const recurringCampaign=readRecurringCampaign(version?.calculatorSettings?._recurringCampaign,versionMarkets);
+      const currentEvent=recurringCampaign?activeRecurringEvent(recurringCampaign,marketToday()):null;
+      const displayMarket=versionMarkets.includes("MY")?"MY":versionMarkets[0];
+      const eventPrice=displayMarket?currentEvent?.prices[displayMarket]:null;
+      const normalPrice=versionPrices.find(item=>item.priceType==="non_campaign"&&(item.currency==="SGD"?"SG":item.market)===displayMarket);
+      const displayPrice=recurringCampaign ? eventPrice?{originalPrice:Math.round(eventPrice.originalPrice*100),sellingPrice:Math.round(eventPrice.sellingPrice*100)}:normalPrice??price : price;
       const currentPlatforms = version ? (platformsByVersion.get(version.id)??[]).map(({ platform, packageSku }) => ({ platform, packageSku })) : [];
       return {
         ...row,
@@ -262,13 +270,15 @@ export async function GET(request: Request) {
         removedComponents:version?.removedComponents ?? [],
         sheetSyncStatus:version?.sheetSyncStatus ?? "pending",
         samePricing:typeof version?.calculatorSettings?._samePricing==="boolean" ? version.calculatorSettings._samePricing : undefined,
+        recurringCampaign,
+        currentPriceLabel:recurringCampaign?(currentEvent?recurringEventLabels[currentEvent.id]:"Non-Campaign Day"):undefined,
         pendingVersion:["active","scheduled","expired"].includes(row.status) && latestVersion.get(row.id)?.version !== version?.version &&
           ["pending","failed"].includes(latestVersion.get(row.id)?.sheetSyncStatus ?? "") ? latestVersion.get(row.id)?.version : null,
         calculatorSettings:publicCalculatorSettings(version?.calculatorSettings ?? null),
         effectiveFrom:version?.effectiveFrom ?? price?.effectiveFrom ?? "",
         effectiveTo:version ? version.effectiveTo : price?.effectiveTo ?? null,
-        originalPrice:price?.originalPrice ?? 0,
-        sellingPrice:price?.sellingPrice ?? 0,
+        originalPrice:displayPrice?.originalPrice ?? 0,
+        sellingPrice:displayPrice?.sellingPrice ?? 0,
         priceSchedules:versionPrices.map(item=>({
           market:item.currency === "SGD" ? "SG" : item.market,
           priceType:item.priceType,
@@ -281,6 +291,7 @@ export async function GET(request: Request) {
         history:(versionsByPackage.get(row.id)??[]).map(item => {
           const historyPrices=pricesByVersion.get(item.id)??[];
           const historyPrice = historyPrices[0];
+          const historyMarkets=(versionMetadata(item.calculatorSettings)?.market??row.market).split(",").map(market=>market.trim()).filter(market=>market==="MY"||market==="SG") as RecurringMarket[];
           return {
             version:item.version,
             name:versionMetadata(item.calculatorSettings)?.name ?? null,
@@ -293,6 +304,7 @@ export async function GET(request: Request) {
             originalPrice:historyPrice?.originalPrice,
             sellingPrice:historyPrice?.sellingPrice,
             priceSchedules:historyPrices.map(priceItem=>({market:priceItem.currency === "SGD" ? "SG" : priceItem.market,priceType:priceItem.priceType,originalPrice:priceItem.originalPrice/100,sellingPrice:priceItem.sellingPrice/100,promotionType:priceItem.promotionType,effectiveFrom:priceItem.effectiveFrom,effectiveTo:priceItem.effectiveTo})),
+            recurringCampaign:readRecurringCampaign(item.calculatorSettings?._recurringCampaign,historyMarkets),
             addedComponents:item.addedComponents,
             removedComponents:item.removedComponents,
             platforms:(platformsByVersion.get(item.id)??[]).map(({ platform, packageSku }) => ({ platform, packageSku })),
@@ -341,6 +353,7 @@ async function savePackage(request: Request) {
     samePricing?: boolean;
     longTerm?: boolean;
     campaignLongTerm?: boolean;
+    recurringCampaign?: unknown;
   };
   const mode = body.mode ?? "draft";
   if (mode!=="draft"&&mode!=="publish") return packageError("Saving","Choose Create Package or Save Draft.");
@@ -355,6 +368,12 @@ async function savePackage(request: Request) {
   if (markets.some(market=>!["MY","SG"].includes(market)) || schedules.some(item=>!markets.includes(item.market))) {
     return packageError("Pricing & Promotion","The selected markets do not match the price cards. Select MY or SG again.");
   }
+  let recurringCampaign:RecurringCampaignRule|null=null;
+  if(body.recurringCampaign!=null){
+    try { recurringCampaign=validateRecurringCampaign(body.recurringCampaign,markets as RecurringMarket[]); }
+    catch(error) { return packageError("Pricing & Promotion",error instanceof Error?error.message:"Check the recurring Campaign details."); }
+    if(body.samePricing) return packageError("Pricing & Promotion","Uncheck Same Pricing to set monthly Campaign event prices.");
+  }
   if (!markets.length || markets.some(market=>schedules.filter(item=>item.market===market&&item.priceType==="non_campaign").length!==1||!schedules.some(item=>item.market===market&&item.priceType==="campaign"))) {
     return packageError("Pricing & Promotion","Select at least one market and complete its Non-Campaign and Campaign pricing.");
   }
@@ -367,8 +386,16 @@ async function savePackage(request: Request) {
   if (markets.some(market=>body.campaignLongTerm&&schedules.filter(item=>item.market===market&&item.priceType==="campaign").length!==1)) {
     return packageError("Pricing & Promotion","Long-term Campaign pricing needs one open-ended date range per market.");
   }
-  if (schedules.some(item=>item.priceType==="campaign"&&((body.campaignLongTerm&&item.effectiveTo!==null)||(item.effectiveTo===null&&!body.campaignLongTerm&&(!body.longTerm||!schedules.some(base=>base.market===item.market&&base.priceType==="non_campaign"&&base.effectiveTo===null&&base.effectiveFrom===item.effectiveFrom&&base.originalPrice===item.originalPrice&&base.sellingPrice===item.sellingPrice)))))) {
+  if (schedules.some(item=>item.priceType==="campaign"&&((body.campaignLongTerm&&item.effectiveTo!==null&&!recurringCampaign)||(item.effectiveTo===null&&!body.campaignLongTerm&&(!body.longTerm||!schedules.some(base=>base.market===item.market&&base.priceType==="non_campaign"&&base.effectiveTo===null&&base.effectiveFrom===item.effectiveFrom&&base.originalPrice===item.originalPrice&&base.sellingPrice===item.sellingPrice)))))) {
     return packageError("Pricing & Promotion","Open-ended Campaign dates must be selected as Long-term Package or match the shared Non-Campaign pricing.");
+  }
+  if(recurringCampaign&&markets.some(market=>{
+    const base=schedules.find(item=>item.market===market&&item.priceType==="non_campaign");
+    const campaign=schedules.filter(item=>item.market===market&&item.priceType==="campaign");
+    const firstPrice=recurringCampaign!.events[0].prices[market as RecurringMarket];
+    return !base||base.effectiveFrom>recurringCampaign!.startDate||(!body.longTerm&&(recurringCampaign!.endDate===null||base.effectiveTo===null||base.effectiveTo<recurringCampaign!.endDate))||campaign.length!==1||campaign[0].effectiveFrom!==recurringCampaign!.startDate||campaign[0].effectiveTo!==recurringCampaign!.endDate||!firstPrice||campaign[0].originalPrice!==Math.round(firstPrice.originalPrice*100)||campaign[0].sellingPrice!==Math.round(firstPrice.sellingPrice*100);
+  })) {
+    return packageError("Pricing & Promotion","Recurring Campaign dates and first event price must match the Campaign card. Non-Campaign pricing must cover the same period.");
   }
   const periodKeys=(market:string,priceType:"non_campaign"|"campaign")=>schedules.filter(item=>item.market===market&&item.priceType===priceType).map(item=>`${item.promotionType}|${item.effectiveFrom}|${item.effectiveTo}`).sort().join(",");
   if (markets.some(market=>periodKeys(market,"non_campaign")!==periodKeys(markets[0],"non_campaign")||periodKeys(market,"campaign")!==periodKeys(markets[0],"campaign"))) {
@@ -462,7 +489,7 @@ async function savePackage(request: Request) {
     db.select().from(packagePrices).where(eq(packagePrices.versionId,previousVersion.id)),
     db.select().from(packagePlatformSkus).where(eq(packagePlatformSkus.versionId,previousVersion.id)),
   ]) : [[], []];
-  const longTermLifecycle=Boolean(body.longTerm||body.campaignLongTerm||previousVersion?.calculatorSettings?._longTermLifecycle===true);
+  const longTermLifecycle=Boolean(body.longTerm||body.campaignLongTerm||recurringCampaign||previousVersion?.calculatorSettings?._longTermLifecycle===true);
   if(previousVersion?.calculatorSettings?._longTermLifecycle===true&&oldPrices.some(item=>item.priceType==="non_campaign"&&item.effectiveTo===null)&&!body.longTerm&&!body.campaignLongTerm){
     for(const market of markets){
       const base=schedules.find(item=>item.market===market&&item.priceType==="non_campaign")!;
@@ -478,7 +505,7 @@ async function savePackage(request: Request) {
   }
   const primaryPeriod=schedules.find(item=>item.effectiveTo===null)??schedules.find(item=>item.priceType==="campaign")!;
   const changeSummary = nextVersion === 1 ? "新开配套" : previousVersion
-    ? emailChangeSummary({components,calculatorSettings:{_packageMetadata:metadata}},previousVersion,schedules,oldPrices,platforms,oldSkus)
+    ? emailChangeSummary({components,calculatorSettings:{_packageMetadata:metadata,_recurringCampaign:recurringCampaign}},previousVersion,schedules,oldPrices,platforms,oldSkus)
     : "配套资料修改（历史比较资料不足）";
   await db.transaction(async tx => {
     if (!requestedPackageId) {
@@ -506,7 +533,7 @@ async function savePackage(request: Request) {
       addedComponents:diff.added,
       removedComponents:diff.removed,
       sheetSyncStatus:mode==="draft"?"not_sent":"pending",
-      calculatorSettings:{...(body.calculatorSettings ?? {}),_samePricing:body.samePricing===true,_longTermLifecycle:longTermLifecycle,_packageMetadata:metadata,_packageHistorySummary:{schema:1,summary:changeSummary}},
+      calculatorSettings:{...(body.calculatorSettings ?? {}),_samePricing:body.samePricing===true,_longTermLifecycle:longTermLifecycle,_recurringCampaign:recurringCampaign,_packageMetadata:metadata,_packageHistorySummary:{schema:1,summary:changeSummary}},
       changeNote:body.changeNote?.trim() || (nextVersion === 1 ? "Initial version" : `Version ${nextVersion}`),
       effectiveFrom:primaryPeriod.effectiveFrom,
       effectiveTo:primaryPeriod.effectiveTo,
@@ -540,7 +567,7 @@ async function savePackage(request: Request) {
     packageName:body.name.trim(),
     version:nextVersion,
     action:nextVersion === 1 ? "Created" : "Version Updated",
-    promotionType:schedules.map(item=>`${item.market} ${item.priceType==="campaign"?"Campaign":"Non-Campaign"}: ${!item.effectiveTo?"Long-term Package":item.promotionType==="custom"?"Custom":"Monthly"}`).join(" | "),
+    promotionType:schedules.map(item=>`${item.market} ${item.priceType==="campaign"?"Campaign":"Non-Campaign"}: ${item.priceType==="campaign"&&recurringCampaign?`Monthly ${recurringCampaign.events.map(event=>recurringEventLabels[event.id]).join(", ")}`:!item.effectiveTo?"Long-term Package":item.promotionType==="custom"?"Custom":"Monthly"}`).join(" | "),
     startDate:schedules.filter(item=>item.market===markets[0]).map(item=>`${item.priceType==="campaign"?"Campaign":"Non-Campaign"} ${item.effectiveFrom}`).join(" | "),
     endDate:schedules.filter(item=>item.market===markets[0]).map(item=>`${item.priceType==="campaign"?"Campaign":"Non-Campaign"} ${item.effectiveTo??"Ongoing"}`).join(" | "),
     shopeeSku:platformMap["Shopee"] ?? "",
