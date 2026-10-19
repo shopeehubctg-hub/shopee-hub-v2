@@ -83,6 +83,7 @@ test('an existing package can become long-term and then receive an end date', as
     assert.deepEqual([...dom.window.document.querySelectorAll('.recurring-event-title b')].map(node=>node.textContent),['Double Day','Mid Month Madness','Payday']);
     assert.equal(dom.window.document.querySelector('.recurring-window-fields'),null);
     assert.equal(dom.window.document.querySelector('.recurring-event-title small'),null);
+    assert.equal(dom.window.document.querySelectorAll('.recurring-shared-prices input').length,2,'one Campaign price for MY');
     await click('Save Changes');
     assert.equal(submitted[2].longTerm,false);
     assert.equal(submitted[2].campaignLongTerm,true);
@@ -92,11 +93,11 @@ test('an existing package can become long-term and then receive an end date', as
     assert.deepEqual(submitted[2].recurringCampaign.events.map(event=>event.prices.MY.sellingPrice),[90,90,90]);
     await click('Edit / Modify');
     assert.equal(dom.window.document.querySelector('.campaign-duration button:last-child').getAttribute('aria-pressed'),'true');
-    const paydayPrice=dom.window.document.querySelectorAll('.recurring-event')[2].querySelectorAll('.recurring-event-prices input')[1];
+    const sharedCampaignPrice=dom.window.document.querySelectorAll('.recurring-shared-prices input')[1];
     await act(async()=>{
-      Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value').set.call(paydayPrice,'88');
-      paydayPrice.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
-      paydayPrice.dispatchEvent(new dom.window.Event('change',{bubbles:true}));
+      Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value').set.call(sharedCampaignPrice,'88');
+      sharedCampaignPrice.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+      sharedCampaignPrice.dispatchEvent(new dom.window.Event('change',{bubbles:true}));
     });
     const campaignEnd=[...dom.window.document.querySelectorAll('.campaign input[type="date"]')].find(input=>input.closest('label')?.textContent==='End Date (optional)');
     assert.ok(campaignEnd);
@@ -108,7 +109,7 @@ test('an existing package can become long-term and then receive an end date', as
     await click('Save Changes');
     assert.equal(submitted[3].campaignLongTerm,true);
     assert.equal(submitted[3].recurringCampaign.endDate,'2026-12-15');
-    assert.equal(submitted[3].recurringCampaign.events[2].prices.MY.sellingPrice,88);
+    assert.deepEqual(submitted[3].recurringCampaign.events.map(event=>event.prices.MY.sellingPrice),[88,88,88]);
     assert.equal(submitted[3].priceSchedules.find(line=>line.priceType==='campaign').effectiveTo,'2026-12-15');
   } finally {
     await act(async()=>root.unmount());

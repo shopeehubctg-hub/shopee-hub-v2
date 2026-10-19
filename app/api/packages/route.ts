@@ -373,6 +373,11 @@ async function savePackage(request: Request) {
     try { recurringCampaign=validateRecurringCampaign(body.recurringCampaign,markets as RecurringMarket[]); }
     catch(error) { return packageError("Pricing & Promotion",error instanceof Error?error.message:"Check the recurring Campaign details."); }
     if(body.samePricing) return packageError("Pricing & Promotion","Uncheck Same Pricing to set monthly Campaign event prices.");
+    if(recurringCampaign.events.some(event=>markets.some(market=>{
+      const first=recurringCampaign!.events[0].prices[market as RecurringMarket];
+      const current=event.prices[market as RecurringMarket];
+      return !first||!current||first.originalPrice!==current.originalPrice||first.sellingPrice!==current.sellingPrice;
+    }))) return packageError("Pricing & Promotion","Use one shared Campaign price for Double Day, Mid Month Madness and Payday.");
   }
   if (!markets.length || markets.some(market=>schedules.filter(item=>item.market===market&&item.priceType==="non_campaign").length!==1||!schedules.some(item=>item.market===market&&item.priceType==="campaign"))) {
     return packageError("Pricing & Promotion","Select at least one market and complete its Non-Campaign and Campaign pricing.");

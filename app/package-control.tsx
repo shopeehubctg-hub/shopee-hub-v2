@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CalculatorSnapshot, PackagePrefill } from "./calculator-types";
 import { calculatorSnapshots, packageHistoryChanges, packageHistoryTime, type PackageHistorySnapshot } from "./package-history";
-import { defaultRecurringEvent, recurringEventIds, recurringEventLabels, validateRecurringCampaign, type RecurringCampaignEvent, type RecurringCampaignRule, type RecurringEventId } from "./recurring-campaign";
+import { defaultRecurringEvent, recurringEventIds, recurringEventLabels, validateRecurringCampaign, type RecurringCampaignEvent, type RecurringCampaignRule } from "./recurring-campaign";
 
 type ComponentLine = { inventorySku:string; name:string; quantity:number; kind:"product"|"gift" };
 type PlatformName = "Shopee"|"Lazada"|"TikTok Shop";
@@ -356,35 +356,25 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       schema:1,startDate:form.campaign.effectiveFrom,endDate:form.campaign.effectiveTo||null,
       events:recurringEvents.filter(event=>form.campaign.campaignEvents.includes(event.id)).map(event=>({
         ...event,prices:Object.fromEntries(form.markets.map(market=>[market,{
-          originalPrice:Number(event.prices[market]?.originalPrice),sellingPrice:Number(event.prices[market]?.sellingPrice),
+          originalPrice:Number(form.prices[market].campaignOriginal),sellingPrice:Number(form.prices[market].campaignSelling),
         }])) as RecurringCampaignEvent["prices"],
       })),
     };
   }
 
-  function updateRecurringEvent(id:RecurringEventId,change:(event:RecurringEventDraft)=>RecurringEventDraft) {
-    setRecurringEvents(current=>current.map(event=>event.id===id?change(event):event));
-  }
-
   function activateRecurringCampaign() {
-    setRecurringEvents(current=>current.map(event=>({
-      ...event,prices:Object.fromEntries(form.markets.map(market=>[market,{
-        originalPrice:event.prices[market]?.originalPrice||form.prices[market].campaignOriginal,
-        sellingPrice:event.prices[market]?.sellingPrice||form.prices[market].campaignSelling,
-      }])) as RecurringEventDraft["prices"],
-    })));
     setForm(current=>({...current,campaignLongTerm:true,campaign:{...current.campaign,promotionType:"custom",campaignEvents:current.campaign.campaignEvents.length?current.campaign.campaignEvents:["dday","mid_month","payday"],effectiveFrom:campaignPeriods[0]?.effectiveFrom||current.campaign.effectiveFrom||monthDates(current.campaign.promotionMonth).from,effectiveTo:""}}));
   }
 
   function recurringCampaignEditor() {
     return <div className="recurring-campaign-editor">
       <div className="date-fields"><label>Campaign Start Date<input type="date" value={form.campaign.effectiveFrom} onChange={event=>setForm(current=>({...current,campaign:{...current.campaign,effectiveFrom:event.target.value}}))}/></label><label>End Date (optional)<input type="date" value={form.campaign.effectiveTo} min={form.campaign.effectiveFrom} onChange={event=>setForm(current=>({...current,campaign:{...current.campaign,effectiveTo:event.target.value}}))}/></label><span>{form.campaign.effectiveTo?`Ends ${form.campaign.effectiveTo}`:"Ongoing every month"}</span></div>
-      <p>Choose monthly events and set each event price. All other days use the Non-Campaign price.</p>
+      <div className="recurring-shared-prices"><b>Campaign Price</b><div>{form.markets.map(market=><div key={market}><b>{market} {market==="SG"?"S$":"RM"}</b><label>Original Price<input type="number" min="0.01" step="0.01" value={form.prices[market].campaignOriginal} onChange={change=>updatePrice(market,"campaignOriginal",change.target.value)}/></label><label>Selling Price<input type="number" min="0.01" step="0.01" value={form.prices[market].campaignSelling} onChange={change=>updatePrice(market,"campaignSelling",change.target.value)}/></label></div>)}</div></div>
+      <p>Apply this Campaign price to the selected events. Other days use the Non-Campaign price.</p>
       {recurringEvents.map(event=>{
         const selected=form.campaign.campaignEvents.includes(event.id);
         return <div className={`recurring-event${selected?" selected":""}`} key={event.id}>
           <label className="recurring-event-title"><input type="checkbox" checked={selected} onChange={()=>setForm(current=>({...current,campaign:{...current.campaign,campaignEvents:selected?current.campaign.campaignEvents.filter(id=>id!==event.id):[...current.campaign.campaignEvents,event.id]}}))}/><b>{recurringEventLabels[event.id]}</b></label>
-          {selected&&<div className="recurring-event-prices">{form.markets.map(market=><div key={market}><b>{market} {market==="SG"?"S$":"RM"}</b><label>Original Price<input type="number" min="0.01" step="0.01" value={event.prices[market]?.originalPrice??""} onChange={change=>updateRecurringEvent(event.id,current=>({...current,prices:{...current.prices,[market]:{...current.prices[market],originalPrice:change.target.value,sellingPrice:current.prices[market]?.sellingPrice??""}}}))}/></label><label>Selling Price<input type="number" min="0.01" step="0.01" value={event.prices[market]?.sellingPrice??""} onChange={change=>updateRecurringEvent(event.id,current=>({...current,prices:{...current.prices,[market]:{originalPrice:current.prices[market]?.originalPrice??"",sellingPrice:change.target.value}}}))}/></label></div>)}</div>}
         </div>;
       })}
     </div>;
@@ -398,8 +388,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       const campaignOriginal=form.samePricing?nonCampaign.originalPrice:form.prices[market].campaignOriginal;
       const campaignSelling=form.samePricing?nonCampaign.sellingPrice:form.prices[market].campaignSelling;
       if (!form.samePricing&&form.campaignLongTerm) {
-        const first=recurringEvents.find(event=>form.campaign.campaignEvents.includes(event.id));
-        schedules.push({market,priceType:"campaign",originalPrice:first?.prices[market]?.originalPrice??"",sellingPrice:first?.prices[market]?.sellingPrice??"",promotionType:"custom",effectiveFrom:form.campaign.effectiveFrom,effectiveTo:form.campaign.effectiveTo||null});
+        schedules.push({market,priceType:"campaign",originalPrice:campaignOriginal,sellingPrice:campaignSelling,promotionType:"custom",effectiveFrom:form.campaign.effectiveFrom,effectiveTo:form.campaign.effectiveTo||null});
         return;
       }
       if (editingPackageId) {
@@ -486,7 +475,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         if (original>0&&selling>original) addError("Pricing & Promotion",`${market} ${label} selling price cannot be higher than the original price.`);
       };
       validatePrice("Non-Campaign",form.prices[market].nonCampaignOriginal,form.prices[market].nonCampaignSelling);
-      if (!form.samePricing&&!form.campaignLongTerm) validatePrice("Campaign",form.prices[market].campaignOriginal,form.prices[market].campaignSelling);
+      if (!form.samePricing) validatePrice("Campaign",form.prices[market].campaignOriginal,form.prices[market].campaignSelling);
     });
 
     if (!components.length) addError("Inventory Items","Add at least one OXM inventory item.");
