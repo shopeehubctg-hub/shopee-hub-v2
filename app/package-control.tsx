@@ -83,18 +83,28 @@ function campaignEventForDates(from:string,to:string):CampaignEvent|null {
   })??null;
 }
 
-function packageCampaignLabel(from:string,to:string|null,event?:CampaignEvent) {
-  const month=from.slice(0,7);
+function packageMonthLabel(month:string) {
   const parsed=/^\d{4}-\d{2}$/.test(month)?new Date(month+"-01T00:00:00Z"):null;
-  const monthLabel=parsed&&!Number.isNaN(parsed.getTime())?parsed.toLocaleString("en-US",{month:"short",year:"numeric",timeZone:"UTC"}):"Campaign";
-  const eventId=event??campaignEventForDates(from,to??"");
-  if (eventId) return monthLabel+" · "+recurringEventLabels[eventId];
-  const endMonth=to?.slice(0,7);
-  if (endMonth&&endMonth!==month&&/^\d{4}-\d{2}$/.test(endMonth)) {
-    const endLabel=new Date(endMonth+"-01T00:00:00Z").toLocaleString("en-US",{month:"short",year:"numeric",timeZone:"UTC"});
-    return monthLabel+"–"+endLabel+" · Campaign Day";
+  return parsed&&!Number.isNaN(parsed.getTime())?parsed.toLocaleString("en-US",{month:"long",year:"numeric",timeZone:"UTC"}):"Campaign";
+}
+
+function packageCampaignMonths(from:string,to:string|null) {
+  const event=campaignEventForDates(from,to??"");
+  const label=event?recurringEventLabels[event]:"Campaign Day";
+  if(!to)return [{month:"Every month",label}];
+  const first=from.slice(0,7),last=to.slice(0,7);
+  if(!/^\d{4}-\d{2}$/.test(first)||!/^\d{4}-\d{2}$/.test(last)||last<first)return [{month:first,label}];
+  const months:{month:string;label:string}[]=[];
+  let year=Number(first.slice(0,4)),month=Number(first.slice(5));
+  for(let count=0;count<36;count++){
+    const key=`${year}-${String(month).padStart(2,"0")}`;
+    if(key>last)break;
+    months.push({month:key,label});
+    if(key===last)break;
+    if(++month===13){year++;month=1;}
   }
-  return monthLabel+" · Campaign Day";
+  if(months.at(-1)?.month!==last)months.push({month:"Every month",label});
+  return months;
 }
 
 function PackagePriceSummary({item}:{item:PackageItem}) {
@@ -102,28 +112,31 @@ function PackagePriceSummary({item}:{item:PackageItem}) {
   const markets=(["MY","SG"] as MarketName[]).filter(market=>schedules.some(line=>line.market===market));
   return <div className="package-market-prices">{markets.map(market=>{
     const marketSchedules=schedules.filter(line=>line.market===market);
-    const normal=marketSchedules.find(line=>line.priceType==="non_campaign");
     const campaign=item.recurringCampaign
-      ? item.recurringCampaign.events.flatMap(event=>event.prices[market]?[{sellingPrice:event.prices[market]!.sellingPrice,label:"Every month · "+recurringEventLabels[event.id]}]:[])
-      : marketSchedules.filter(line=>line.priceType==="campaign").map(line=>({sellingPrice:line.sellingPrice,label:packageCampaignLabel(line.effectiveFrom,line.effectiveTo)}));
-    const groups=new Map<number,{price:number;normal:boolean;campaignLabels:Set<string>}>();
-    const add=(price:number,isNormal:boolean,label?:string)=>{
-      if(!Number.isFinite(price))return;
-      const key=Math.round(price*100);
-      const group=groups.get(key)??{price,normal:false,campaignLabels:new Set<string>()};
+      ? item.recurringCampaign.events.flatMap(event=>event.prices[market]?[{...event.prices[market]!,months:[{month:"Every month",label:recurringEventLabels[event.id]}]}]:[])
+      : marketSchedules.filter(line=>line.priceType==="campaign").map(line=>({...line,months:packageCampaignMonths(line.effectiveFrom,line.effectiveTo)}));
+    const groups=new Map<string,{originalPrice:number;sellingPrice:number;normal:boolean;campaignMonths:Map<string,Set<string>>}>();
+    const add=(originalPrice:number,sellingPrice:number,isNormal:boolean,months:{month:string;label:string}[]=[])=>{
+      if(!Number.isFinite(originalPrice)||!Number.isFinite(sellingPrice))return;
+      const key=`${Math.round(originalPrice*100)}:${Math.round(sellingPrice*100)}`;
+      const group=groups.get(key)??{originalPrice,sellingPrice,normal:false,campaignMonths:new Map<string,Set<string>>()};
       if(isNormal)group.normal=true;
-      if(label)group.campaignLabels.add(label);
+      for(const {month,label} of months){
+        const labels=group.campaignMonths.get(month)??new Set<string>();
+        labels.add(label);
+        group.campaignMonths.set(month,labels);
+      }
       groups.set(key,group);
     };
-    if(normal)add(normal.sellingPrice,true);
-    campaign.forEach(line=>add(line.sellingPrice,false,line.label));
-    const oneSharedPrice=groups.size===1&&campaign.length>0&&Boolean(normal);
+    marketSchedules.filter(line=>line.priceType==="non_campaign").forEach(line=>add(line.originalPrice,line.sellingPrice,true));
+    campaign.forEach(line=>add(line.originalPrice,line.sellingPrice,false,line.months));
+    const oneSharedPrice=groups.size===1&&campaign.length>0&&marketSchedules.some(line=>line.priceType==="non_campaign");
     return <div className="package-market-column" key={market}>
       <h4>{market} <small>{market==="MY"?"RM":"S$"}</small></h4>
-      {[...groups.values()].map(group=><div className="package-market-price-row" key={Math.round(group.price*100)}>
+      {[...groups.entries()].map(([key,group])=><div className="package-market-price-row" key={key}>
         <span>{oneSharedPrice?"Campaign Day & Normal Day Same Price":group.normal?"Normal Day Price":"Campaign Day Price"}</span>
-        <strong>{money(group.price,market)}</strong>
-        {group.campaignLabels.size>0&&<small>{[...group.campaignLabels].join(" · ")}</small>}
+        <div className="package-market-price-values"><small>Original Price <del>{money(group.originalPrice,market)}</del></small><strong>{money(group.sellingPrice,market)}</strong></div>
+        {group.campaignMonths.size>0&&<div className="package-campaign-months">{[...group.campaignMonths.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([month,labels])=><div className="package-campaign-month" key={month}><b>{month==="Every month"?month:packageMonthLabel(month)}</b><span>{[...labels].sort((a,b)=>["Double Day","Mid Month Madness","Payday","Campaign Day"].indexOf(a)-["Double Day","Mid Month Madness","Payday","Campaign Day"].indexOf(b)).join(" · ")}</span></div>)}</div>}
       </div>)}
     </div>;
   })}</div>;
