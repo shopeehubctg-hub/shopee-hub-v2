@@ -138,10 +138,12 @@ test('package card separates MY and SG and merges repeated campaign prices', asy
     line('MY','campaign',1122.5,'2026-10-08','2026-10-10'),
     line('MY','campaign',1122.5,'2026-10-14','2026-10-15'),
     line('MY','campaign',1122.5,'2026-10-24','2026-10-25'),
+    line('MY','campaign',1122.5,'2026-11-09','2026-11-11'),
     line('SG','non_campaign',327,'2026-10-01','2026-10-31'),
     line('SG','campaign',327,'2026-10-08','2026-10-10'),
     line('SG','campaign',327,'2026-10-14','2026-10-15'),
     line('SG','campaign',327,'2026-10-24','2026-10-25'),
+    line('SG','campaign',327,'2026-11-09','2026-11-11'),
   ];
   globalThis.fetch=async()=>({ok:true,json:async()=>({source:'database',canCreate:true,canDelete:false,packages:[{
     id:'pkg-my-sg',storeId:'store-1',name:'Oct Promo B',market:'SG,MY',status:'active',version:3,
@@ -157,11 +159,14 @@ test('package card separates MY and SG and merges repeated campaign prices', asy
     const myRows=[...markets[0].querySelectorAll('.package-market-price-row')];
     const sgRows=[...markets[1].querySelectorAll('.package-market-price-row')];
     assert.equal(myRows.length,2);
-    assert.match(myRows[0].textContent,/Normal Day PriceRM 1005\.76/);
-    assert.match(myRows[1].textContent,/Campaign Day PriceRM 1122\.50/);
-    assert.match(myRows[1].textContent,/Double Day.*Mid Month Madness.*Payday/);
+    assert.match(myRows[0].textContent,/Normal Day PriceOriginal Price RM 2494\.00RM 1005\.76/);
+    assert.match(myRows[1].textContent,/Campaign Day PriceOriginal Price RM 2494\.00RM 1122\.50/);
+    const myMonths=[...myRows[1].querySelectorAll('.package-campaign-month')];
+    assert.deepEqual(myMonths.map(node=>node.querySelector('b').textContent),['October 2026','November 2026']);
+    assert.match(myMonths[0].textContent,/Double Day.*Mid Month Madness.*Payday/);
+    assert.equal(myMonths[1].querySelector('span').textContent,'Double Day');
     assert.equal(sgRows.length,1);
-    assert.match(sgRows[0].textContent,/Campaign Day & Normal Day Same PriceS\$ 327\.00/);
+    assert.match(sgRows[0].textContent,/Campaign Day & Normal Day Same PriceOriginal Price S\$ 500\.00S\$ 327\.00/);
     assert.doesNotMatch(dom.window.document.querySelector('.package-card').textContent,/2026-10-/);
   } finally {
     await act(async()=>root.unmount());
