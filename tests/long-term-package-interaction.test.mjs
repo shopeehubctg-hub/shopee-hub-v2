@@ -80,10 +80,11 @@ test('an existing package can become long-term and then receive an end date', as
     assert.equal(campaignLongTerm.textContent,'Long-term Package');
     await act(async()=>campaignLongTerm.dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true})));
     assert.match(dom.window.document.querySelector('.campaign .scenario-body').textContent,/Ongoing every month/);
-    assert.deepEqual([...dom.window.document.querySelectorAll('.recurring-event-title b')].map(node=>node.textContent),['Double Day','Mid Month Madness','Payday']);
+    assert.deepEqual([...dom.window.document.querySelectorAll('.recurring-event-options b')].map(node=>node.textContent),['Double Day','Mid Month Madness','Payday']);
     assert.equal(dom.window.document.querySelector('.recurring-window-fields'),null);
-    assert.equal(dom.window.document.querySelector('.recurring-event-title small'),null);
-    assert.equal(dom.window.document.querySelectorAll('.recurring-shared-prices input').length,2,'one Campaign price for MY');
+    assert.equal(dom.window.document.querySelector('.recurring-event-options small'),null);
+    assert.equal(dom.window.document.querySelectorAll('.campaign .market-price-grid input').length,2,'one Campaign price for MY');
+    assert.equal(dom.window.document.querySelector('.campaign .recurring-end-date-control input'),null);
     await click('Save Changes');
     assert.equal(submitted[2].longTerm,false);
     assert.equal(submitted[2].campaignLongTerm,true);
@@ -97,13 +98,14 @@ test('an existing package can become long-term and then receive an end date', as
     assert.doesNotMatch(campaignSummary[1].textContent,/days before|day 14|2026-/);
     await click('Edit / Modify');
     assert.equal(dom.window.document.querySelector('.campaign-duration button:last-child').getAttribute('aria-pressed'),'true');
-    const sharedCampaignPrice=dom.window.document.querySelectorAll('.recurring-shared-prices input')[1];
+    const sharedCampaignPrice=dom.window.document.querySelectorAll('.campaign .market-price-grid input')[1];
     await act(async()=>{
       Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value').set.call(sharedCampaignPrice,'88');
       sharedCampaignPrice.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
       sharedCampaignPrice.dispatchEvent(new dom.window.Event('change',{bubbles:true}));
     });
-    const campaignEnd=[...dom.window.document.querySelectorAll('.campaign input[type="date"]')].find(input=>input.closest('label')?.textContent==='End Date (optional)');
+    await click('Set End Date');
+    const campaignEnd=[...dom.window.document.querySelectorAll('.campaign input[type="date"]')].find(input=>input.closest('label')?.textContent==='End Date');
     assert.ok(campaignEnd);
     await act(async()=>{
       Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value').set.call(campaignEnd,'2026-12-15');
