@@ -137,7 +137,7 @@ test("Shopee calculator reverse-solves listing price and itemized fees", async (
   const { calculateShopeePrice } = await import("../app/price-calculator-model.js");
   const fees = {
     transaction:3.78, commission:12.96, service:5.94, serviceCap:108,
-    preorder:2.14, isPreorder:false, platformSupport:0.54,
+    preorder:2.16, isPreorder:false, platformSupport:0.54,
     shopeeVoucher:16, sellerVoucher:0, cofundVoucher:20,
     sellerShipping:0, facebookShipping:10, extraProfit:0,
   };
@@ -162,7 +162,7 @@ test("Shopee calculator applies category SST, pre-order fee and RM108 service ca
   assert.deepEqual(Object.keys(SERVICE_MODES), ["nonCampaign","campaign"]);
   const base = {
     transaction:3.78, commission:12.96, service:8.1, serviceCap:108,
-    preorder:2.14, isPreorder:true, platformSupport:0.54,
+    preorder:2.16, isPreorder:true, platformSupport:0.54,
     shopeeVoucher:16, sellerVoucher:0, cofundVoucher:20,
     sellerShipping:0, facebookShipping:10, extraProfit:25,
   };
@@ -170,14 +170,18 @@ test("Shopee calculator applies category SST, pre-order fee and RM108 service ca
   assert.ok(Math.abs(result.payout - 2015) < 0.000001);
   assert.equal(result.serviceFee, 108);
   assert.equal(result.serviceCapped, true);
-  assert.ok(Math.abs(result.preorderFee - result.feeBase * 0.0214) < 0.000001);
+  assert.ok(Math.abs(result.preorderFee - result.feeBase * 0.0216) < 0.000001);
+  const previousRate=calculateShopeePrice({facebookPrice:2000},{...base,preorder:2.14},30);
+  const currentRate=calculateShopeePrice({facebookPrice:2000},base,30);
+  assert.ok(Math.abs(previousRate.requiredPrice-currentRate.requiredPrice)<0.000001,"fixed markup keeps the listing price unchanged");
+  assert.ok(Math.abs(previousRate.payout-currentRate.payout-currentRate.feeBase*0.0002)<0.000001,"the extra 0.02 percentage points reduce payout by the correct amount");
 });
 
 test("Shopee calculator accepts a user-adjusted markup rate", async () => {
   const { calculateShopeePrice } = await import("../app/price-calculator-model.js");
   const fees = {
     transaction:3.78, commission:12.96, service:5.94, serviceCap:108,
-    preorder:2.14, isPreorder:false, platformSupport:0.54,
+    preorder:2.16, isPreorder:false, platformSupport:0.54,
     shopeeVoucher:16, sellerVoucher:0, cofundVoucher:20,
     sellerShipping:0, facebookShipping:10, extraProfit:0,
   };
@@ -216,7 +220,7 @@ test("Shopee calculator reverse-solves a customer-price target", async () => {
   const { calculateShopeePriceForCustomerTarget } = await import("../app/price-calculator-model.js");
   const fees = {
     transaction:3.78, commission:12.96, service:5.94, serviceCap:108,
-    preorder:2.14, isPreorder:false, platformSupport:0.54,
+    preorder:2.16, isPreorder:false, platformSupport:0.54,
     shopeeVoucher:20, sellerVoucher:0, cofundVoucher:20,
     sellerShipping:0, facebookShipping:10, extraProfit:0,
   };
@@ -266,7 +270,7 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(model, /Essential Goods/);
   assert.match(model, /Cheese & Cheese Powder/);
   assert.match(calculator, /Capped at RM108/);
-  assert.match(calculator, /2\.14%/);
+  assert.match(calculator, /2\.16%/);
   assert.match(calculator, /Markup/);
   assert.match(calculator, /Pre-Order Listing/);
   assert.doesNotMatch(calculator, /markupBlocked/);
@@ -294,7 +298,7 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(page, /storeName=\{allStoresSelected/);
   assert.match(voucherPresets, /Average 顾客可用到的Voucher/);
   assert.match(voucherPresets, /Mizino Premium/);
-  assert.match(voucherPresets, /"Mizino Premium":\{normal:14,campaign:19\}/);
+  assert.match(voucherPresets, /"Mizino Premium":\{normal:10,campaign:21\}/);
   assert.match(calculator, /CoFund Voucher/);
   assert.doesNotMatch(calculator, /Extra Profit Target/);
   assert.match(calculator, /SPayLater/);
@@ -343,7 +347,7 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(packageControl, /standaloneCreate/);
   assert.match(packageControl, /Calculator Settings Attached/);
   assert.match(packageControl, /Calculator Snapshot/);
-  assert.match(packageRoute, /calculatorSettings:\{\.\.\.\(body\.calculatorSettings \?\? \{\}\),_packageMetadata:metadata,_packageHistorySummary:\{schema:1,summary:changeSummary\}\}/);
+  assert.match(packageRoute, /calculatorSettings:\{\.\.\.\(body\.calculatorSettings \?\? \{\}\),_samePricing:body\.samePricing===true,_longTermLifecycle:longTermLifecycle,_recurringCampaign:recurringCampaign,_packageMetadata:metadata,_packageHistorySummary:\{schema:1,summary:changeSummary\}\}/);
   assert.match(schema, /calculatorSettings/);
   assert.match(migration, /calculator_settings/);
 });
