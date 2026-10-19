@@ -91,6 +91,10 @@ test('an existing package can become long-term and then receive an end date', as
     assert.equal(submitted[2].priceSchedules.find(line=>line.priceType==='campaign').effectiveTo,null);
     assert.deepEqual(submitted[2].recurringCampaign.events.map(event=>event.id),['dday','mid_month','payday']);
     assert.deepEqual(submitted[2].recurringCampaign.events.map(event=>event.prices.MY.sellingPrice),[90,90,90]);
+    const campaignSummary=dom.window.document.querySelectorAll('.package-schedule-summary > div');
+    assert.equal(campaignSummary.length,2,'Normal and shared Campaign prices appear once each');
+    assert.match(campaignSummary[1].textContent,/Double Day.*Mid Month Madness.*Payday/);
+    assert.doesNotMatch(campaignSummary[1].textContent,/days before|day 14|2026-/);
     await click('Edit / Modify');
     assert.equal(dom.window.document.querySelector('.campaign-duration button:last-child').getAttribute('aria-pressed'),'true');
     const sharedCampaignPrice=dom.window.document.querySelectorAll('.recurring-shared-prices input')[1];
