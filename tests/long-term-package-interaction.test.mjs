@@ -92,10 +92,11 @@ test('an existing package can become long-term and then receive an end date', as
     assert.equal(submitted[2].priceSchedules.find(line=>line.priceType==='campaign').effectiveTo,null);
     assert.deepEqual(submitted[2].recurringCampaign.events.map(event=>event.id),['dday','mid_month','payday']);
     assert.deepEqual(submitted[2].recurringCampaign.events.map(event=>event.prices.MY.sellingPrice),[90,90,90]);
-    const campaignSummary=dom.window.document.querySelectorAll('.package-schedule-summary > div');
-    assert.equal(campaignSummary.length,2,'Normal and shared Campaign prices appear once each');
-    assert.match(campaignSummary[1].textContent,/Double Day.*Mid Month Madness.*Payday/);
-    assert.doesNotMatch(campaignSummary[1].textContent,/days before|day 14|2026-/);
+    const campaignSummary=dom.window.document.querySelectorAll('.package-market-price-row');
+    assert.equal(campaignSummary.length,1,'same Normal and Campaign price appears only once');
+    assert.match(campaignSummary[0].textContent,/Campaign Day & Normal Day Same Price/);
+    assert.match(campaignSummary[0].textContent,/Double Day.*Mid Month Madness.*Payday/);
+    assert.doesNotMatch(campaignSummary[0].textContent,/days before|day 14|2026-/);
     await click('Edit / Modify');
     assert.equal(dom.window.document.querySelector('.campaign-duration button:last-child').getAttribute('aria-pressed'),'true');
     const sharedCampaignPrice=dom.window.document.querySelectorAll('.campaign .market-price-grid input')[1];
@@ -117,6 +118,51 @@ test('an existing package can become long-term and then receive an end date', as
     assert.equal(submitted[3].recurringCampaign.endDate,'2026-12-15');
     assert.deepEqual(submitted[3].recurringCampaign.events.map(event=>event.prices.MY.sellingPrice),[88,88,88]);
     assert.equal(submitted[3].priceSchedules.find(line=>line.priceType==='campaign').effectiveTo,'2026-12-15');
+  } finally {
+    await act(async()=>root.unmount());
+    for(const key of keys) old[key]?Object.defineProperty(globalThis,key,old[key]):delete globalThis[key];
+    delete globalThis.IS_REACT_ACT_ENVIRONMENT;
+    dom.window.close();
+  }
+});
+
+test('package card separates MY and SG and merges repeated campaign prices', async () => {
+  const dom=new JSDOM('<div id="root"></div>',{url:'https://local.test/'});
+  const keys=['window','document','navigator','HTMLElement','Event','MouseEvent','fetch'];
+  const old=Object.fromEntries(keys.map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
+  for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,navigator:dom.window.navigator,HTMLElement:dom.window.HTMLElement,Event:dom.window.Event,MouseEvent:dom.window.MouseEvent})) Object.defineProperty(globalThis,key,{configurable:true,writable:true,value});
+  globalThis.IS_REACT_ACT_ENVIRONMENT=true;
+  const line=(market,priceType,sellingPrice,effectiveFrom,effectiveTo)=>({market,priceType,originalPrice:market==='MY'?2494:500,sellingPrice,promotionType:'custom',effectiveFrom,effectiveTo});
+  const priceSchedules=[
+    line('MY','non_campaign',1005.76,'2026-10-01','2026-10-31'),
+    line('MY','campaign',1122.5,'2026-10-08','2026-10-10'),
+    line('MY','campaign',1122.5,'2026-10-14','2026-10-15'),
+    line('MY','campaign',1122.5,'2026-10-24','2026-10-25'),
+    line('SG','non_campaign',327,'2026-10-01','2026-10-31'),
+    line('SG','campaign',327,'2026-10-08','2026-10-10'),
+    line('SG','campaign',327,'2026-10-14','2026-10-15'),
+    line('SG','campaign',327,'2026-10-24','2026-10-25'),
+  ];
+  globalThis.fetch=async()=>({ok:true,json:async()=>({source:'database',canCreate:true,canDelete:false,packages:[{
+    id:'pkg-my-sg',storeId:'store-1',name:'Oct Promo B',market:'SG,MY',status:'active',version:3,
+    promotionType:'custom',originalPrice:249400,sellingPrice:112250,effectiveFrom:'2026-10-01',effectiveTo:'2026-10-31',
+    components:[],platforms:[],priceSchedules,history:[],
+  }]})});
+  const {createRoot}=await import('react-dom/client');
+  const root=createRoot(dom.window.document.getElementById('root'));
+  try {
+    await act(async()=>root.render(React.createElement(PackageControl,{storeId:'store-1',storeName:'Test Store'})));
+    const markets=[...dom.window.document.querySelectorAll('.package-market-column')];
+    assert.deepEqual(markets.map(node=>node.querySelector('h4').textContent),['MY RM','SG S$']);
+    const myRows=[...markets[0].querySelectorAll('.package-market-price-row')];
+    const sgRows=[...markets[1].querySelectorAll('.package-market-price-row')];
+    assert.equal(myRows.length,2);
+    assert.match(myRows[0].textContent,/Normal Day PriceRM 1005\.76/);
+    assert.match(myRows[1].textContent,/Campaign Day PriceRM 1122\.50/);
+    assert.match(myRows[1].textContent,/Double Day.*Mid Month Madness.*Payday/);
+    assert.equal(sgRows.length,1);
+    assert.match(sgRows[0].textContent,/Campaign Day & Normal Day Same PriceS\$ 327\.00/);
+    assert.doesNotMatch(dom.window.document.querySelector('.package-card').textContent,/2026-10-/);
   } finally {
     await act(async()=>root.unmount());
     for(const key of keys) old[key]?Object.defineProperty(globalThis,key,old[key]):delete globalThis[key];
