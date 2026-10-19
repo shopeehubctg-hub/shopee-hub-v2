@@ -83,6 +83,52 @@ function campaignEventForDates(from:string,to:string):CampaignEvent|null {
   })??null;
 }
 
+function packageCampaignLabel(from:string,to:string|null,event?:CampaignEvent) {
+  const month=from.slice(0,7);
+  const parsed=/^\d{4}-\d{2}$/.test(month)?new Date(month+"-01T00:00:00Z"):null;
+  const monthLabel=parsed&&!Number.isNaN(parsed.getTime())?parsed.toLocaleString("en-US",{month:"short",year:"numeric",timeZone:"UTC"}):"Campaign";
+  const eventId=event??campaignEventForDates(from,to??"");
+  if (eventId) return monthLabel+" · "+recurringEventLabels[eventId];
+  const endMonth=to?.slice(0,7);
+  if (endMonth&&endMonth!==month&&/^\d{4}-\d{2}$/.test(endMonth)) {
+    const endLabel=new Date(endMonth+"-01T00:00:00Z").toLocaleString("en-US",{month:"short",year:"numeric",timeZone:"UTC"});
+    return monthLabel+"–"+endLabel+" · Campaign Day";
+  }
+  return monthLabel+" · Campaign Day";
+}
+
+function PackagePriceSummary({item}:{item:PackageItem}) {
+  const schedules=item.priceSchedules??[];
+  const markets=(["MY","SG"] as MarketName[]).filter(market=>schedules.some(line=>line.market===market));
+  return <div className="package-market-prices">{markets.map(market=>{
+    const marketSchedules=schedules.filter(line=>line.market===market);
+    const normal=marketSchedules.find(line=>line.priceType==="non_campaign");
+    const campaign=item.recurringCampaign
+      ? item.recurringCampaign.events.flatMap(event=>event.prices[market]?[{sellingPrice:event.prices[market]!.sellingPrice,label:"Every month · "+recurringEventLabels[event.id]}]:[])
+      : marketSchedules.filter(line=>line.priceType==="campaign").map(line=>({sellingPrice:line.sellingPrice,label:packageCampaignLabel(line.effectiveFrom,line.effectiveTo)}));
+    const groups=new Map<number,{price:number;normal:boolean;campaignLabels:Set<string>}>();
+    const add=(price:number,isNormal:boolean,label?:string)=>{
+      if(!Number.isFinite(price))return;
+      const key=Math.round(price*100);
+      const group=groups.get(key)??{price,normal:false,campaignLabels:new Set<string>()};
+      if(isNormal)group.normal=true;
+      if(label)group.campaignLabels.add(label);
+      groups.set(key,group);
+    };
+    if(normal)add(normal.sellingPrice,true);
+    campaign.forEach(line=>add(line.sellingPrice,false,line.label));
+    const oneSharedPrice=groups.size===1&&campaign.length>0&&Boolean(normal);
+    return <div className="package-market-column" key={market}>
+      <h4>{market} <small>{market==="MY"?"RM":"S$"}</small></h4>
+      {[...groups.values()].map(group=><div className="package-market-price-row" key={Math.round(group.price*100)}>
+        <span>{oneSharedPrice?"Campaign Day & Normal Day Same Price":group.normal?"Normal Day Price":"Campaign Day Price"}</span>
+        <strong>{money(group.price,market)}</strong>
+        {group.campaignLabels.size>0&&<small>{[...group.campaignLabels].join(" · ")}</small>}
+      </div>)}
+    </div>;
+  })}</div>;
+}
+
 export function PackageControl({ storeId, storeName, canCreate=true, prefills=[], standaloneCreate=false, draftStorageKey, onPrefillsAccepted }:Props) {
   const [items,setItems] = useState<PackageItem[]>([]);
   const [loadedStoreId,setLoadedStoreId] = useState("");
@@ -738,12 +784,12 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     <div className="package-list">{displayed.map(item=><article className="package-card" key={item.id}>
       <div className="package-card-head">
         <div>{canExportKits&&hasSelectedStore&&source==="database"&&<label className="kit-package-selector"><input type="checkbox" checked={selectedKitIds.includes(item.id)} disabled={item.sheetSyncStatus!=="synced"||Boolean(item.pendingVersion)||["draft","review"].includes(item.status)} onChange={event=>{setKitError("");setKitPreview(null);setSelectedKitIds(current=>event.target.checked?[...current,item.id]:current.filter(id=>id!==item.id));}} aria-label={`Select ${item.name} for fulfillment sheet`}/><span>Select for Fulfillment Sheet</span></label>}<span className={`package-status ${item.status}`}>{item.status}</span><span className={`sync-status ${item.pendingVersion?"pending":item.sheetSyncStatus ?? "pending"}`}>Sheet {item.pendingVersion?`v${item.pendingVersion} needs sync`:item.sheetSyncStatus==="not_sent"?"not sent":item.sheetSyncStatus ?? "preview"}</span><h3>{item.name}</h3></div>
-        <div className="package-price"><small>{item.market}{item.currentPriceLabel?` · ${item.currentPriceLabel}`:""}</small><del>{money(item.originalPrice,item.market,source==="database")}</del><strong>{money(item.sellingPrice,item.market,source==="database")}</strong></div>
+        {!item.priceSchedules?.length&&<div className="package-price"><small>{item.market}{item.currentPriceLabel?` · ${item.currentPriceLabel}`:""}</small><del>{money(item.originalPrice,item.market,source==="database")}</del><strong>{money(item.sellingPrice,item.market,source==="database")}</strong></div>}
       </div>
       {(item.recurringCampaign||item.priceSchedules?.some(line=>line.priceType==="non_campaign"&&line.effectiveTo==null))&&<span className="package-long-term-badge">{item.recurringCampaign?"Monthly Campaign · Long-term Package":"Long-term Package"}</span>}
-      {item.priceSchedules?.length?<div className="package-schedule-summary">{item.priceSchedules.filter(line=>!item.recurringCampaign||line.priceType==="non_campaign").map((line,index)=><div key={`${line.market}-${line.priceType}-${line.effectiveFrom}-${line.effectiveTo}-${index}`}><span>{line.market} · {line.priceType==="campaign"?"Campaign":"Non-Campaign"}</span><b>{Number.isFinite(line.sellingPrice)?money(line.sellingPrice,line.market):"—"}</b><small>{line.effectiveFrom} → {line.effectiveTo??"Ongoing"}</small></div>)}{item.recurringCampaign&&item.market.split(",").map(value=>value.trim()).filter((market):market is MarketName=>market==="MY"||market==="SG").map(market=><div key={`${market}-recurring-campaign`}><span>{market} · Campaign</span><b>{item.recurringCampaign!.events[0]?.prices[market]?money(item.recurringCampaign!.events[0].prices[market]!.sellingPrice,market):"—"}</b><small>{item.recurringCampaign!.events.map(event=>recurringEventLabels[event.id]).join(" · ")}</small></div>)}</div>:null}
+      {item.priceSchedules?.length?<PackagePriceSummary item={item}/>:null}
       <div className="platform-skus">{(item.platforms?.length?item.platforms:[{platform:"Shopee" as const,packageSku:item.packageSku}]).map(platform=><div key={platform.platform}><span>{platform.platform}</span><b>{platform.packageSku}</b></div>)}</div>
-      <div className="package-meta">{allStoresSelected&&<span>Store <b>{item.storeName??item.storeId}</b></span>}<span>Version <b>v{item.version}</b></span><span>Promotion <b>{item.recurringCampaign?"Monthly Campaign":item.priceSchedules?.some(line=>line.priceType==="non_campaign"&&line.effectiveTo==null)?"Long-term Package":item.promotionType==="monthly"?"Full Month":"Custom Dates"}</b></span><span>Effective <b>{item.effectiveFrom} → {item.effectiveTo || "Open Ended"}</b></span><span>Discount <b>{item.originalPrice?Math.round((1-item.sellingPrice/item.originalPrice)*100):0}%</b></span></div>
+      <div className="package-meta">{allStoresSelected&&<span>Store <b>{item.storeName??item.storeId}</b></span>}<span>Version <b>v{item.version}</b></span></div>
       <div className="component-list">{item.components.map((line,index)=><div key={`${line.inventorySku}-${index}`}><span className={`component-kind ${line.kind}`}>{line.kind}</span><b>{line.inventorySku}</b><span>{line.name}</span><strong>× {line.quantity}</strong></div>)}</div>
       {openHistory===item.id&&<div className="version-history">{(item.history?.length?item.history:[{
         version:item.version,changeNote:"Imported from Fulfillment Sheet",promotionType:item.promotionType,effectiveFrom:item.effectiveFrom,effectiveTo:item.effectiveTo,createdAt:"",createdBy:"",addedComponents:item.components,removedComponents:[],
