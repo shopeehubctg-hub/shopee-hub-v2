@@ -68,7 +68,7 @@ export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[
   const storeVoucherPreset = voucherPresetFor(storeName);
   const [voucherRates,setVoucherRates] = useState<Record<ServiceMode,NumberValue>>({nonCampaign:storeVoucherPreset.normal,campaign:storeVoucherPreset.campaign});
   const [fees,setFees] = useState<FeeDraft>({
-    serviceCap:108, preorder:2.14, isPreorder:false, isSpayLater:false, platformSupport:0.54,
+    serviceCap:108, preorder:2.16, isPreorder:false, isSpayLater:false, platformSupport:0.54,
     shopeeVoucher:0, sellerVoucher:0,
     sellerShipping:0, facebookShipping:10,
   });
@@ -260,7 +260,7 @@ export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[
       <article><span>Transaction Fee</span><strong>{pct(transactionRate)}</strong><small>{fees.isSpayLater?"SPayLater ON":"Default"}</small></article>
       <article><span>Commission Fee</span><strong>{pct(commission)}</strong><small>{selectedCategoryOption?"Product & Commission Profile":"No product data imported"}</small></article>
       <article><span>Service Fee</span><strong>5.94% / 8.10%</strong><small>Non-Campaign / Campaign · Capped at RM108</small></article>
-      <article><span>Pre-Order Service Fee</span><strong>{fees.isPreorder?pct(positive(fees.preorder)):"OFF"}</strong><small>Default 2.14%</small></article>
+      <article><span>Pre-Order Service Fee</span><strong>{fees.isPreorder?pct(positive(fees.preorder)):"OFF"}</strong><small>Default 2.16%</small></article>
       <article><span>Platform Support Fee</span><strong>RM 0.54</strong><small>Per order</small></article>
       {autoTopUpEligible?<article className="auto-top-up-card"><span>Auto Top Up</span><strong>5.00%</strong><small>Fixed · Included in Total Shopee Charges &amp; Markup</small></article>:null}
     </section>
