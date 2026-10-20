@@ -87,6 +87,18 @@ function packageMonthLabel(month:string) {
   const parsed=/^\d{4}-\d{2}$/.test(month)?new Date(month+"-01T00:00:00Z"):null;
   return parsed&&!Number.isNaN(parsed.getTime())?parsed.toLocaleString("en-US",{month:"long",year:"numeric",timeZone:"UTC"}):"Campaign";
 }
+function shortMonthLabel(month:string) {
+  const parsed=/^\d{4}-\d{2}$/.test(month)?new Date(month+"-01T00:00:00Z"):null;
+  return parsed&&!Number.isNaN(parsed.getTime())?parsed.toLocaleString("en-US",{month:"short",year:"numeric",timeZone:"UTC"}):month;
+}
+function displayDate(date:string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(date)?`${date.slice(8,10)}/${date.slice(5,7)}/${date.slice(0,4)}`:date;
+}
+function normalPeriodLabel(lines:PriceSchedule[]) {
+  const months=lines.filter(line=>line.promotionType==="monthly"&&line.effectiveFrom===monthDates(line.effectiveFrom.slice(0,7)).from&&line.effectiveTo===monthDates(line.effectiveFrom.slice(0,7)).to).map(line=>line.effectiveFrom.slice(0,7));
+  if(months.length===lines.length) return [...new Set(months)].sort().map(shortMonthLabel).join(" | ");
+  return lines.map(line=>`${displayDate(line.effectiveFrom)}–${line.effectiveTo?displayDate(line.effectiveTo):"Ongoing"}`).join(" | ");
+}
 
 function packageCampaignMonths(from:string,to:string|null) {
   const event=campaignEventForDates(from,to??"");
@@ -115,12 +127,13 @@ function PackagePriceSummary({item}:{item:PackageItem}) {
     const campaign=item.recurringCampaign
       ? item.recurringCampaign.events.flatMap(event=>event.prices[market]?[{...event.prices[market]!,months:[{month:"Every month",label:recurringEventLabels[event.id]}]}]:[])
       : marketSchedules.filter(line=>line.priceType==="campaign").map(line=>({...line,months:packageCampaignMonths(line.effectiveFrom,line.effectiveTo)}));
-    const groups=new Map<string,{originalPrice:number;sellingPrice:number;normal:boolean;campaignMonths:Map<string,Set<string>>}>();
-    const add=(originalPrice:number,sellingPrice:number,isNormal:boolean,months:{month:string;label:string}[]=[])=>{
+    const groups=new Map<string,{originalPrice:number;sellingPrice:number;normal:boolean;normalLines:PriceSchedule[];campaignMonths:Map<string,Set<string>>}>();
+    const add=(originalPrice:number,sellingPrice:number,isNormal:boolean,months:{month:string;label:string}[]=[],normalLine?:PriceSchedule)=>{
       if(!Number.isFinite(originalPrice)||!Number.isFinite(sellingPrice))return;
       const key=`${Math.round(originalPrice*100)}:${Math.round(sellingPrice*100)}`;
-      const group=groups.get(key)??{originalPrice,sellingPrice,normal:false,campaignMonths:new Map<string,Set<string>>()};
+      const group=groups.get(key)??{originalPrice,sellingPrice,normal:false,normalLines:[],campaignMonths:new Map<string,Set<string>>()};
       if(isNormal)group.normal=true;
+      if(normalLine)group.normalLines.push(normalLine);
       for(const {month,label} of months){
         const labels=group.campaignMonths.get(month)??new Set<string>();
         labels.add(label);
@@ -128,7 +141,7 @@ function PackagePriceSummary({item}:{item:PackageItem}) {
       }
       groups.set(key,group);
     };
-    marketSchedules.filter(line=>line.priceType==="non_campaign").forEach(line=>add(line.originalPrice,line.sellingPrice,true));
+    marketSchedules.filter(line=>line.priceType==="non_campaign").forEach(line=>add(line.originalPrice,line.sellingPrice,true,[],line));
     campaign.forEach(line=>add(line.originalPrice,line.sellingPrice,false,line.months));
     const oneSharedPrice=groups.size===1&&campaign.length>0&&marketSchedules.some(line=>line.priceType==="non_campaign");
     return <div className="package-market-column" key={market}>
@@ -136,7 +149,8 @@ function PackagePriceSummary({item}:{item:PackageItem}) {
       {[...groups.entries()].map(([key,group])=><div className="package-market-price-row" key={key}>
         <span>{oneSharedPrice?"Campaign Day & Normal Day Same Price":group.normal?"Normal Day Price":"Campaign Day Price"}</span>
         <div className="package-market-price-values"><small>Original Price <del>{money(group.originalPrice,market)}</del></small><strong>{money(group.sellingPrice,market)}</strong></div>
-        {group.campaignMonths.size>0&&<div className="package-campaign-months">{[...group.campaignMonths.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([month,labels])=><div className="package-campaign-month" key={month}><b>{month==="Every month"?month:packageMonthLabel(month)}</b><span>{[...labels].sort((a,b)=>["Double Day","Mid Month Madness","Payday","Campaign Day"].indexOf(a)-["Double Day","Mid Month Madness","Payday","Campaign Day"].indexOf(b)).join(" · ")}</span></div>)}</div>}
+        {group.normalLines.length>0&&<div className="package-normal-period">Period: {normalPeriodLabel(group.normalLines)}</div>}
+        {group.campaignMonths.size>0&&<div className="package-campaign-months">{[...group.campaignMonths.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([month,labels])=><div className="package-campaign-month" key={month}><b>{month==="Every month"?month:shortMonthLabel(month)}</b><span>{[...labels].sort((a,b)=>["Double Day","Mid Month Madness","Payday","Campaign Day"].indexOf(a)-["Double Day","Mid Month Madness","Payday","Campaign Day"].indexOf(b)).join(" | ")}</span></div>)}</div>}
       </div>)}
     </div>;
   })}</div>;
@@ -168,6 +182,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   const [form,setForm] = useState(blankForm());
   const [campaignPeriods,setCampaignPeriods] = useState<CampaignPeriod[]>([]);
   const [campaignMonths,setCampaignMonths] = useState<string[]>([]);
+  const [nonCampaignMonths,setNonCampaignMonths] = useState<string[]>([]);
   const [showRecurringEndDate,setShowRecurringEndDate] = useState(false);
   const [recurringEvents,setRecurringEvents] = useState<RecurringEventDraft[]>(blankRecurringEvents);
   const [components,setComponents] = useState<ComponentLine[]>([blankLine()]);
@@ -337,6 +352,8 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     originalCampaignSchedules.current=[];
     originalRecurringCampaign.current=false;
     setCampaignPeriods([]);
+    setCampaignMonths([]);
+    setNonCampaignMonths([]);
     setShowRecurringEndDate(false);
     setRecurringEvents(blankRecurringEvents());
     createRequestId.current=crypto.randomUUID();
@@ -391,6 +408,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   function updatePromotionMonth(period:"nonCampaign"|"campaign",month:string) {
     const dates = period==="campaign"?campaignDates(month,form.campaign.campaignEvents[0]??"dday"):monthDates(month);
     setForm(current=>({...current,[period]:{...current[period],promotionMonth:month,effectiveFrom:dates.from,effectiveTo:dates.to}}));
+    if(period==="nonCampaign")setNonCampaignMonths(month?[month]:[]);
   }
 
   function updateCampaignEvent(campaignEvent:CampaignEvent) {
@@ -444,19 +462,25 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   function finiteCampaignEditor() {
     const events:CampaignEvent[]=["dday","mid_month","payday"];
     const labels:Record<CampaignEvent,string>={dday:"Double Day",mid_month:"Mid Month Madness",payday:"Payday"};
+    const addSelectedMonth=(month:string)=>{
+      if(!month||campaignMonths.includes(month))return;
+      setCampaignMonths(current=>[...current,month].sort());
+      if(form.nonCampaign.promotionType==="monthly"&&!form.longTerm)setNonCampaignMonths(current=>current.includes(month)?current:[...current,month].sort());
+      else if(!form.longTerm){
+        const end=monthDates(month).to;
+        setForm(current=>current.nonCampaign.effectiveTo&&current.nonCampaign.effectiveTo<end?{...current,nonCampaign:{...current.nonCampaign,effectiveTo:end}}:current);
+      }
+    };
     const addMonth=()=>{
       const last=campaignMonths.at(-1)||form.campaign.promotionMonth||new Date().toISOString().slice(0,7);
       const [year,month]=last.split("-").map(Number);
-      let offset=0;
+      let offset=campaignMonths.length?0:-1;
       let next="";
       do {next=new Date(Date.UTC(year,month+offset++,1)).toISOString().slice(0,7);} while(campaignMonths.includes(next));
-      setCampaignMonths(current=>[...current,next]);
-      const nextEnd=monthDates(next).to;
-      setForm(current=>current.longTerm||!current.nonCampaign.effectiveTo||current.nonCampaign.effectiveTo>=nextEnd?current:{
-        ...current,nonCampaign:{...current.nonCampaign,promotionType:"custom",effectiveTo:nextEnd},
-      });
+      addSelectedMonth(next);
     };
     return <div className="campaign-date-controls campaign-month-editor">
+      <label>Add a Campaign month<input type="month" value="" onChange={event=>addSelectedMonth(event.target.value)}/></label>
       {campaignMonths.map(month=>{
         const monthPeriods=campaignPeriods.filter(period=>period.effectiveFrom.slice(0,7)===month);
         const monthName=new Date(month+"-01T00:00:00Z").toLocaleString("en-US",{month:"long",year:"numeric",timeZone:"UTC"});
@@ -470,7 +494,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         </div>;
       })}
       <button type="button" onClick={addMonth}>+ Add Campaign Month</button>
-      <small>Adding a month also extends the Non-Campaign end date through that month. Review both dates before saving.</small>
+      <small>Adding a Campaign month also covers that month with the Normal Day price.</small>
     </div>;
   }
 
@@ -478,7 +502,8 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     const schedules:PriceScheduleInput[]=[];
     form.markets.forEach(market=>{
       const nonCampaign:PriceScheduleInput={market,priceType:"non_campaign",originalPrice:form.prices[market].nonCampaignOriginal,sellingPrice:form.prices[market].nonCampaignSelling,promotionType:form.nonCampaign.promotionType,effectiveFrom:form.nonCampaign.effectiveFrom,effectiveTo:form.longTerm?null:form.nonCampaign.effectiveTo};
-      schedules.push(nonCampaign);
+      const normalLines=form.longTerm||form.nonCampaign.promotionType!=="monthly"?[nonCampaign]:nonCampaignMonths.map(month=>({...nonCampaign,promotionType:"monthly" as const,effectiveFrom:monthDates(month).from,effectiveTo:monthDates(month).to}));
+      schedules.push(...normalLines);
       const campaignOriginal=form.samePricing?nonCampaign.originalPrice:form.prices[market].campaignOriginal;
       const campaignSelling=form.samePricing?nonCampaign.sellingPrice:form.prices[market].campaignSelling;
       if (!form.samePricing&&form.campaignLongTerm) {
@@ -490,7 +515,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         if (form.samePricing) {
           if (originalRecurringCampaign.current) schedules.push({...nonCampaign,priceType:"campaign"});
           else if (retained.length) retained.forEach(line=>schedules.push({...line,originalPrice:campaignOriginal,sellingPrice:campaignSelling}));
-          else schedules.push({...nonCampaign,priceType:"campaign"});
+          else normalLines.forEach(line=>schedules.push({...line,priceType:"campaign"}));
           return;
         }
         const first=retained[0];
@@ -509,12 +534,11 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         return;
       }
       if (form.samePricing) {
-        schedules.push({...nonCampaign,priceType:"campaign"});
+        normalLines.forEach(line=>schedules.push({...line,priceType:"campaign"}));
         return;
       }
-      form.campaign.campaignEvents.forEach(campaignEvent=>{
-        const dates=campaignDates(form.campaign.promotionMonth,campaignEvent);
-        schedules.push({market,priceType:"campaign",originalPrice:campaignOriginal,sellingPrice:campaignSelling,promotionType:form.campaign.promotionType,effectiveFrom:dates.from,effectiveTo:dates.to});
+      campaignPeriods.forEach(period=>{
+        schedules.push({market,priceType:"campaign",originalPrice:campaignOriginal,sellingPrice:campaignSelling,promotionType:"custom",effectiveFrom:period.effectiveFrom,effectiveTo:period.effectiveTo});
       });
     });
     return schedules;
@@ -541,12 +565,15 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       if (period.promotionType==="custom"&&(!period.effectiveFrom||!period.effectiveTo)) addError("Pricing & Promotion",`Enter both ${label} start and end dates.`);
       if (period.effectiveFrom&&period.effectiveTo&&period.effectiveTo<period.effectiveFrom) addError("Pricing & Promotion",`${label} end date cannot be before its start date.`);
     };
-    validatePeriod("Non-Campaign",form.nonCampaign);
+    if(!form.longTerm&&form.nonCampaign.promotionType==="monthly"){
+      if(!nonCampaignMonths.length)addError("Pricing & Promotion","Select at least one Normal Day month.");
+      if(nonCampaignMonths.some(month=>!/^\d{4}-\d{2}$/.test(month)))addError("Pricing & Promotion","Choose a valid Normal Day month.");
+    } else validatePeriod("Non-Campaign",form.nonCampaign);
     {
       if (form.campaignLongTerm&&!form.samePricing) {
         try { validateRecurringCampaign(recurringRule(),form.markets); }
         catch(error) { addError("Pricing & Promotion",error instanceof Error?error.message:"Check the monthly Campaign events."); }
-      } else if (editingPackageId&&!form.samePricing) {
+      } else if (!form.samePricing) {
         if (!campaignPeriods.length) addError("Pricing & Promotion","Add at least one Campaign date range.");
         campaignMonths.forEach(month=>{if(!campaignPeriods.some(period=>period.effectiveFrom.slice(0,7)===month)) addError("Pricing & Promotion","Select an event or keep custom dates for "+month+".");});
         campaignPeriods.forEach((period,index)=>{
@@ -556,9 +583,6 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         const keys=campaignPeriods.map(period=>`${period.effectiveFrom}|${period.effectiveTo}`);
         if (new Set(keys).size!==keys.length) addError("Pricing & Promotion","Campaign date ranges must be unique.");
         if (campaignPeriods.some((period,index)=>period.originalFrom===undefined&&campaignPeriods.some((other,otherIndex)=>otherIndex!==index&&period.effectiveFrom<=other.effectiveTo&&other.effectiveFrom<=period.effectiveTo))) addError("Pricing & Promotion","New Campaign events cannot overlap saved dates. Remove saved custom dates before selecting events inside the same range.");
-      } else if (!form.samePricing) {
-        if (!form.campaign.promotionMonth) addError("Pricing & Promotion","Select the Campaign month.");
-        if (!form.campaign.campaignEvents.length) addError("Pricing & Promotion","Select at least one Campaign event.");
       }
     }
 
@@ -749,6 +773,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       }])) as RecurringEventDraft["prices"]};
     }));
     const finiteCampaignPeriods=sourceSchedules.filter(line=>line.market===markets[0]&&line.priceType==="campaign").map(line=>({effectiveFrom:line.effectiveFrom,effectiveTo:line.effectiveTo??"",originalFrom:line.effectiveFrom,originalTo:line.effectiveTo??""}));
+    setNonCampaignMonths(sourceSchedules.filter(line=>line.market===markets[0]&&line.priceType==="non_campaign"&&line.promotionType==="monthly").map(line=>line.effectiveFrom.slice(0,7)).sort());
     setCampaignPeriods(finiteCampaignPeriods);
     setCampaignMonths([...new Set(finiteCampaignPeriods.map(period=>period.effectiveFrom.slice(0,7)).filter(Boolean))].sort());
     setEditingPackageId(stored ? item.id : null);
@@ -857,7 +882,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
           if (periodKey==="campaign"&&form.samePricing) return null;
           const period=form[periodKey];
           return <div className={`scenario-editor ${periodKey}`} key={periodKey}>
-            <div className="scenario-editor-head"><div><b>{title}</b><span>{title==="Campaign"?"Campaign Day Price & Dates":"Always-On Price & Dates"}</span></div>{periodKey==="nonCampaign"&&<div className="promotion-toggle" role="group" aria-label="Non-Campaign duration"><button type="button" className={!form.longTerm&&period.promotionType==="monthly"?"active":""} aria-pressed={!form.longTerm&&period.promotionType==="monthly"} onClick={()=>setForm(current=>{const month=current.nonCampaign.promotionMonth||current.nonCampaign.effectiveFrom.slice(0,7);const dates=monthDates(month);return {...current,longTerm:false,nonCampaign:{...current.nonCampaign,promotionType:"monthly",promotionMonth:month,effectiveFrom:dates.from,effectiveTo:dates.to}}})}>Full Month</button><button type="button" className={!form.longTerm&&period.promotionType==="custom"?"active":""} aria-pressed={!form.longTerm&&period.promotionType==="custom"} onClick={()=>setForm(current=>({...current,longTerm:false,nonCampaign:{...current.nonCampaign,promotionType:"custom"}}))}>Custom Dates</button><button type="button" className={form.longTerm?"active":""} aria-pressed={form.longTerm} onClick={()=>setForm(current=>({...current,longTerm:true,nonCampaign:{...current.nonCampaign,promotionType:"custom",effectiveFrom:current.nonCampaign.effectiveFrom||monthDates(current.nonCampaign.promotionMonth).from,effectiveTo:""}}))}>Long-term Package</button></div>}</div>
+            <div className="scenario-editor-head"><div><b>{title}</b><span>{title==="Campaign"?"Campaign Day Price & Dates":"Always-On Price & Dates"}</span></div>{periodKey==="nonCampaign"&&<div className="promotion-toggle" role="group" aria-label="Non-Campaign duration"><button type="button" className={!form.longTerm&&period.promotionType==="monthly"?"active":""} aria-pressed={!form.longTerm&&period.promotionType==="monthly"} onClick={()=>{const month=form.nonCampaign.promotionMonth||form.nonCampaign.effectiveFrom.slice(0,7);if(month)setNonCampaignMonths(current=>current.length?current:[month]);setForm(current=>{const dates=monthDates(month);return {...current,longTerm:false,nonCampaign:{...current.nonCampaign,promotionType:"monthly",promotionMonth:month,effectiveFrom:dates.from,effectiveTo:dates.to}}});}}>Full Month</button><button type="button" className={!form.longTerm&&period.promotionType==="custom"?"active":""} aria-pressed={!form.longTerm&&period.promotionType==="custom"} onClick={()=>setForm(current=>({...current,longTerm:false,nonCampaign:{...current.nonCampaign,promotionType:"custom"}}))}>Custom Dates</button><button type="button" className={form.longTerm?"active":""} aria-pressed={form.longTerm} onClick={()=>setForm(current=>({...current,longTerm:true,nonCampaign:{...current.nonCampaign,promotionType:"custom",effectiveFrom:current.nonCampaign.effectiveFrom||monthDates(current.nonCampaign.promotionMonth).from,effectiveTo:""}}))}>Long-term Package</button></div>}</div>
             {periodKey==="campaign"&&<div className="promotion-toggle campaign-duration" role="group" aria-label="Campaign duration"><button type="button" className={!form.campaignLongTerm?"active":""} aria-pressed={!form.campaignLongTerm} onClick={()=>{setForm(current=>({...current,campaignLongTerm:false}));if(editingPackageId){const month=form.campaign.effectiveFrom.slice(0,7);setCampaignMonths(current=>current.length?current:month?[month]:[]);setCampaignPeriods(current=>current.length&&current[0].effectiveTo?current:[]);}}}>Campaign Dates</button><button type="button" className={form.campaignLongTerm?"active":""} aria-pressed={form.campaignLongTerm} onClick={activateRecurringCampaign}>Long-term Package</button></div>}
             {periodKey==="campaign"&&editingPackageId&&!form.campaignLongTerm&&<div className="same-pricing-note">Choose Campaign events for each month, or add a month to extend this package. Existing Campaign dates stay unchanged until you select an event; selecting one replaces the saved custom date range. New events use the Campaign price shown for each market{form.samePricing?" (matching the Non-Campaign price)":""}.</div>}
             <div className="scenario-body"><div className="market-price-grid">{form.markets.map(market=>{
@@ -867,7 +892,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
               const same=Boolean(form.prices[market][originalKey])&&Number(form.prices[market][originalKey])===Number(form.prices[market][sellingKey]);
               return <div className={`market-price-card ${same?"same-price-warning":""}`} key={market}><strong>{market} <small>{market==="MY"?"RM":"S$"}</small></strong><label>Original Price <em>*</em><input required type="number" min="0.01" step="0.01" value={form.prices[market][originalKey]} onChange={event=>updatePrice(market,originalKey,event.target.value)}/></label><label>Selling Price<input required type="number" min="0.01" step="0.01" value={form.prices[market][sellingKey]} onChange={event=>updatePrice(market,sellingKey,event.target.value)}/></label>{same&&<div className="same-price-alert">⚠️ Original Price equals Selling Price — please double-check.</div>}</div>;
             })}</div>
-            {periodKey==="campaign"?(form.campaignLongTerm?recurringCampaignEditor():editingPackageId?finiteCampaignEditor():<div className="campaign-date-controls"><label>Campaign Month<input type="month" value={period.promotionMonth} onChange={event=>updatePromotionMonth(periodKey,event.target.value)}/></label><fieldset><legend>Campaign Events · Multi-Select</legend>{([['dday','D-Day'],['mid_month','Mid Month Madness'],['payday','Payday']] as const).map(([value,label])=><label key={value} className={form.campaign.campaignEvents.includes(value)?"selected":""}><input type="checkbox" checked={form.campaign.campaignEvents.includes(value)} onChange={()=>updateCampaignEvent(value)}/><span><b>{label}</b><small>{value==="dday"?"2 Days Before To Double Day":value==="mid_month"?"14th–15th":"24th–25th"}</small></span></label>)}</fieldset><div className="campaign-date-list">{form.campaign.campaignEvents.map(event=>{const dates=campaignDates(period.promotionMonth,event);return <span key={event}><b>{event==="dday"?"D-Day":event==="mid_month"?"Mid Month":"Payday"}</b>{dates.from||"—"} → {dates.to||"—"}</span>})}</div></div>):form.longTerm?<div className="date-fields"><label>Start Date<input type="date" value={period.effectiveFrom} onChange={event=>setForm({...form,nonCampaign:{...form.nonCampaign,effectiveFrom:event.target.value}})}/></label><span>End Date: Ongoing</span></div>:period.promotionType==="monthly"?<div className="date-fields"><label>Promotion Month<input type="month" value={period.promotionMonth} onChange={event=>updatePromotionMonth(periodKey,event.target.value)}/></label><div className="date-preview"><span>Start <b>{period.effectiveFrom||"—"}</b></span><span>End <b>{period.effectiveTo||"—"}</b></span></div></div>:<div className="date-fields"><label>Start Date<input type="date" value={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveFrom:event.target.value}})}/></label><label>End Date<input type="date" value={period.effectiveTo} min={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveTo:event.target.value}})}/></label></div>}
+            {periodKey==="campaign"?(form.campaignLongTerm?recurringCampaignEditor():finiteCampaignEditor()):form.longTerm?<div className="date-fields"><label>Start Date<input type="date" value={period.effectiveFrom} onChange={event=>setForm({...form,nonCampaign:{...form.nonCampaign,effectiveFrom:event.target.value}})}/></label><span>End Date: Ongoing</span></div>:period.promotionType==="monthly"?<div className="normal-month-editor"><label>Add a Normal Day month<input type="month" value="" onChange={event=>{const month=event.target.value;if(!month||nonCampaignMonths.includes(month))return;setNonCampaignMonths(current=>[...current,month].sort());const dates=monthDates(month);setForm(current=>({...current,nonCampaign:{...current.nonCampaign,promotionMonth:month,effectiveFrom:dates.from,effectiveTo:dates.to}}));}}/></label><div className="selected-months">{nonCampaignMonths.map(month=><span key={month}>{shortMonthLabel(month)} <button type="button" onClick={()=>setNonCampaignMonths(current=>current.filter(value=>value!==month))} aria-label={`Remove ${shortMonthLabel(month)} Normal Day month`}>×</button></span>)}</div></div>:<div className="date-fields"><label>Start Date<input type="date" value={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveFrom:event.target.value}})}/></label><label>End Date<input type="date" value={period.effectiveTo} min={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveTo:event.target.value}})}/></label></div>}
             </div>
           </div>;
         })}
