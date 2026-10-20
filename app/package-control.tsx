@@ -575,6 +575,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         catch(error) { addError("Pricing & Promotion",error instanceof Error?error.message:"Check the monthly Campaign events."); }
       } else if (!form.samePricing) {
         if (!campaignPeriods.length) addError("Pricing & Promotion","Add at least one Campaign date range.");
+        if(!form.longTerm&&form.nonCampaign.promotionType==="monthly"&&campaignMonths.some(month=>!nonCampaignMonths.includes(month)))addError("Pricing & Promotion","Every Campaign month must also be selected under Normal Day.");
         campaignMonths.forEach(month=>{if(!campaignPeriods.some(period=>period.effectiveFrom.slice(0,7)===month)) addError("Pricing & Promotion","Select an event or keep custom dates for "+month+".");});
         campaignPeriods.forEach((period,index)=>{
           if (!period.effectiveFrom||!period.effectiveTo) addError("Pricing & Promotion",`Enter both dates for Campaign period ${index+1}.`);
