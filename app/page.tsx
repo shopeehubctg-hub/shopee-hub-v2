@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { PackageControl } from "./package-control";
 import { PriceCalculator } from "./price-calculator";
 import { DesignChecker } from "./design-checker";
-import { FakeSellerReport, type FakeSellerCase } from "./fake-seller-report";
+import { FakeSellerReport } from "./fake-seller-report";
 import type { PackagePrefill } from "./calculator-types";
 import { storeSnapshots } from "./store-snapshots";
 import { buildAdvertisingFunds, buildTopUpAction, formatRinggit } from "./advertising-model.js";
@@ -237,7 +237,6 @@ export default function Home() {
   const target = live.target;
   const losses = live.losses;
   const orderSummary = live.orderSummary;
-  const fakeSellerCases = Array.isArray(live.fakeSellerCases) ? live.fakeSellerCases as FakeSellerCase[] : undefined;
   const nav = useMemo(() => {
     const allowed = new Set(data?.access?.enabledModules ?? []);
     const items: (readonly [string, string])[] = PORTAL_MODULES.filter(({ id }) => allowed.has(id)).map(({ id, label }) => [id, id === "packages" ? "Packages & Pricing" : label] as const);
@@ -285,7 +284,7 @@ export default function Home() {
       {section==="packages" && <div className="page"><PackageControl storeId={storeSelectionMade?storeId:""} storeName={!storeSelectionMade?"No Store Selected":allStoresSelected?"All Accessible Stores":(store?.name ?? "Selected Store")} prefills={packagePrefills} standaloneCreate={standalonePackageCreate} draftStorageKey={packageDraftKey ? `package-draft:${packageDraftKey}` : undefined} onPrefillsAccepted={()=>setPackagePrefills([])} /></div>}
       {section==="calculator" && <div className="page" aria-label="Price Calculator"><PriceCalculator storeName={allStoresSelected?"":(store?.name??"")} productProfile={allStoresSelected?null:data?.productProfile} coFundVouchers={allStoresSelected?[]:data?.coFundVouchers} onCreatePackage={prefill=>openPackageDraft([prefill])} onCreatePackages={openPackageDraft} /></div>}
       {section==="design" && <div className="page"><DesignChecker storeId={storeId}/></div>}
-      {section==="protection" && <div className="page"><FakeSellerReport storeName={store?.name ?? "Selected store"} allStores={allStoresSelected} cases={fakeSellerCases}/></div>}
+      {section==="protection" && <div className="page"><FakeSellerReport key={storeId} storeId={storeId} storeName={store?.name ?? "Selected store"} allStores={allStoresSelected}/></div>}
       {section==="permissions" && data?.access?.canManagePermissions && <div className="page"><PermissionSettings initialEnabledModules={data.access.clientEnabledModules} onStoreChanged={()=>load(storeId && storeId!=="all" ? storeId : undefined)}/></div>}
       {section==="live_calendar" && <div className="page"><LiveCalendar initialStoreId={storeId} initialView={data.access?.role==="superadmin"?"month":"list"}/></div>}
 

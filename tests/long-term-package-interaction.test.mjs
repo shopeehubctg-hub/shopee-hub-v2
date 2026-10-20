@@ -162,7 +162,8 @@ test('package card separates MY and SG and merges repeated campaign prices', asy
     assert.match(myRows[0].textContent,/Normal Day PriceOriginal Price RM 2494\.00RM 1005\.76/);
     assert.match(myRows[1].textContent,/Campaign Day PriceOriginal Price RM 2494\.00RM 1122\.50/);
     const myMonths=[...myRows[1].querySelectorAll('.package-campaign-month')];
-    assert.deepEqual(myMonths.map(node=>node.querySelector('b').textContent),['October 2026','November 2026']);
+    assert.deepEqual(myMonths.map(node=>node.querySelector('b').textContent),['Oct 2026','Nov 2026']);
+    assert.match(myRows[0].textContent,/Period: 01\/10\/2026–31\/10\/2026/);
     assert.match(myMonths[0].textContent,/Double Day.*Mid Month Madness.*Payday/);
     assert.equal(myMonths[1].querySelector('span').textContent,'Double Day');
     assert.equal(sgRows.length,1);
@@ -171,6 +172,53 @@ test('package card separates MY and SG and merges repeated campaign prices', asy
   } finally {
     await act(async()=>root.unmount());
     for(const key of keys) old[key]?Object.defineProperty(globalThis,key,old[key]):delete globalThis[key];
+    delete globalThis.IS_REACT_ACT_ENVIRONMENT;
+    dom.window.close();
+  }
+});
+
+test('new package saves selected Normal months and Campaign events as separate periods', async () => {
+  const dom=new JSDOM('<div id="root"></div>',{url:'https://local.test/'});
+  const keys=['window','document','navigator','HTMLElement','Event','MouseEvent','fetch'];
+  const old=Object.fromEntries(keys.map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
+  for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,navigator:dom.window.navigator,HTMLElement:dom.window.HTMLElement,Event:dom.window.Event,MouseEvent:dom.window.MouseEvent})) Object.defineProperty(globalThis,key,{configurable:true,writable:true,value});
+  globalThis.IS_REACT_ACT_ENVIRONMENT=true;
+  let saved;
+  globalThis.fetch=async (_url,options={})=>options.method==='POST'?(saved=JSON.parse(options.body),{ok:true,json:async()=>({packageId:'new-1',version:1,status:'active'})}):{ok:true,json:async()=>({source:'database',packages:[]})};
+  const {createRoot}=await import('react-dom/client');
+  const root=createRoot(dom.window.document.getElementById('root'));
+  const setValue=async(input,value)=>{
+    assert.ok(input,'expected input');
+    await act(async()=>{
+      Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value').set.call(input,value);
+      input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+      input.dispatchEvent(new dom.window.Event('change',{bubbles:true}));
+    });
+  };
+  const click=async node=>{assert.ok(node,'expected button or checkbox');await act(async()=>node.dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true})));};
+  try{
+    await act(async()=>root.render(React.createElement(PackageControl,{storeId:'store-1',storeName:'Test Store'})));
+    await click([...dom.window.document.querySelectorAll('button')].find(node=>node.textContent==='+ New Package'));
+    await setValue(dom.window.document.querySelector('input[placeholder="Customer-Facing Package Name"]'),'Multi-month test');
+    await setValue(dom.window.document.querySelector('.listing-skus input'),'MULTI-MONTH-SKU');
+    const prices=[...dom.window.document.querySelectorAll('.market-price-grid input')];
+    for(const [index,value] of ['120','100','120','90'].entries())await setValue(prices[index],value);
+    for(const month of ['2026-10','2026-11','2026-12'])await setValue(dom.window.document.querySelector('.normal-month-editor input[type="month"]'),month);
+    for(const month of ['2026-10','2026-11'])await setValue(dom.window.document.querySelector('.campaign-month-editor > label input[type="month"]'),month);
+    const cards=[...dom.window.document.querySelectorAll('.campaign-month-card')];
+    assert.equal(cards.length,2);
+    await click(cards[0].querySelectorAll('input[type="checkbox"]')[1]);
+    await click(cards[0].querySelectorAll('input[type="checkbox"]')[2]);
+    await click(cards[1].querySelectorAll('input[type="checkbox"]')[0]);
+    await setValue(dom.window.document.querySelector('.component-row input[placeholder="OXM Inventory SKU"]'),'ITEM-1');
+    await setValue(dom.window.document.querySelector('.component-row input[placeholder="Item Name"]'),'Item');
+    await click([...dom.window.document.querySelectorAll('.form-actions button')].find(node=>node.textContent==='Save Draft'));
+    assert.ok(saved,'package should submit');
+    assert.deepEqual(saved.priceSchedules.filter(line=>line.priceType==='non_campaign').map(line=>line.effectiveFrom),['2026-10-01','2026-11-01','2026-12-01']);
+    assert.deepEqual(saved.priceSchedules.filter(line=>line.priceType==='campaign').map(line=>line.effectiveFrom).sort(),['2026-10-14','2026-10-24','2026-11-09']);
+  }finally{
+    await act(async()=>root.unmount());
+    for(const key of keys)old[key]?Object.defineProperty(globalThis,key,old[key]):delete globalThis[key];
     delete globalThis.IS_REACT_ACT_ENVIRONMENT;
     dom.window.close();
   }

@@ -224,7 +224,7 @@ test('adding a Campaign month preserves existing per-market prices', async () =>
     const payday = [...november.querySelectorAll('label')].find(label => label.textContent.includes('Payday'));
     await act(async () => payday.querySelector('input').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })));
     await act(async () => click('Save Changes'));
-    assert.equal(savedRequest.priceSchedules.find(line => line.market === 'MY' && line.priceType === 'non_campaign').effectiveTo, '2026-11-30');
+    assert.deepEqual(savedRequest.priceSchedules.filter(line => line.market === 'MY' && line.priceType === 'non_campaign').map(line => [line.effectiveFrom, line.effectiveTo]), [['2026-10-01','2026-10-31'],['2026-11-01','2026-11-30']]);
     assert.deepEqual(savedRequest.priceSchedules.filter(line => line.market === 'MY' && line.priceType === 'campaign').map(line => [line.effectiveFrom, line.effectiveTo, line.sellingPrice]), [
       ['2026-10-08', '2026-10-10', '460'],
       ['2026-10-24', '2026-10-25', '440'],

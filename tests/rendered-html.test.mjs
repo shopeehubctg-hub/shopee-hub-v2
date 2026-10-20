@@ -16,7 +16,7 @@ test("package control is wired into the command center", async () => {
   assert.match(component, /Edit \/ Modify Package/);
   assert.match(component, /Add Listing/);
   assert.match(component, /Multi-Select/);
-  assert.match(component, /type="checkbox" checked=\{form\.campaign\.campaignEvents\.includes/);
+  assert.match(component, /Campaign Events · Multi-Select/);
   assert.match(component, /Shopee/);
   assert.match(component, /Lazada/);
   assert.match(component, /TikTok Shop/);
@@ -24,7 +24,7 @@ test("package control is wired into the command center", async () => {
   assert.match(component, /Custom Dates/);
   assert.match(component, /Non-Campaign/);
   assert.match(component, /Campaign/);
-  assert.match(component, /D-Day/);
+  assert.match(component, /Double Day/);
   assert.match(component, /Mid Month Madness/);
   assert.match(component, /Payday/);
   assert.match(component, /campaignDates/);

@@ -58,6 +58,25 @@ export const stores = pgTable("stores", {
   displayName:text("display_name"), platform:text("platform").notNull().default("Shopee"), bigSellerName:text("bigseller_name").notNull(), createdAt:createdAt(),
 }, table=>[index("stores_tenant_id_idx").on(table.tenantId),unique("stores_tenant_id_id_key").on(table.tenantId,table.id)]);
 
+export const fakeSellerBrands = pgTable("fake_seller_brands", {
+  id:bigserial("id",{mode:"number"}).primaryKey(), tenantId:text("tenant_id").notNull().references(()=>tenants.id),
+  brandKey:text("brand_key").notNull(), brandName:text("brand_name").notNull(),
+  storeId:text("store_id").notNull().references(()=>stores.id), createdAt:createdAt(),
+},table=>[uniqueIndex("fake_seller_brand_store_idx").on(table.tenantId,table.brandKey,table.storeId)]);
+
+export const fakeSellerReportBatches = pgTable("fake_seller_report_batches", {
+  id:bigserial("id",{mode:"number"}).primaryKey(), tenantId:text("tenant_id").notNull().references(()=>tenants.id),
+  storeId:text("store_id").notNull().references(()=>stores.id), brandName:text("brand_name").notNull(),
+  sourceFileId:text("source_file_id").notNull(), reportDate:date("report_date",{mode:"string"}).notNull(),
+  uploadedAt:timestamp("uploaded_at",{withTimezone:true,mode:"string"}).notNull(), createdAt:createdAt(),
+},table=>[uniqueIndex("fake_seller_batch_file_store_idx").on(table.sourceFileId,table.storeId),index("fake_seller_batch_tenant_date_idx").on(table.tenantId,table.reportDate)]);
+
+export const fakeSellerReportLinks = pgTable("fake_seller_report_links", {
+  id:bigserial("id",{mode:"number"}).primaryKey(), tenantId:text("tenant_id").notNull().references(()=>tenants.id),
+  storeId:text("store_id").notNull().references(()=>stores.id), batchId:bigint("batch_id",{mode:"number"}).notNull().references(()=>fakeSellerReportBatches.id),
+  reportDate:date("report_date",{mode:"string"}).notNull(), url:text("url").notNull(), canonicalUrl:text("canonical_url").notNull(), createdAt:createdAt(),
+},table=>[uniqueIndex("fake_seller_link_store_date_url_idx").on(table.storeId,table.reportDate,table.canonicalUrl),index("fake_seller_link_tenant_date_idx").on(table.tenantId,table.reportDate)]);
+
 export const liveSessions = pgTable("live_sessions", {
   id:uuid("id").primaryKey().defaultRandom(),
   tenantId:text("tenant_id").notNull().references(()=>tenants.id),
