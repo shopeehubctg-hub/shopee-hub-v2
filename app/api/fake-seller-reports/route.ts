@@ -2,7 +2,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { customerUsers, fakeSellerBrands, fakeSellerReportBatches, fakeSellerReportLinks, stores, userStoreAccess } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
-import { brandKey, canonicalReportUrl, malaysiaReportDate, validFakeSellerImportSignature } from "../../fake-seller-import";
+import { brandKey, canonicalReportUrl, dedupeReportRows, malaysiaReportDate, validFakeSellerImportSignature } from "../../fake-seller-import";
 import { canAccessModule } from "../../module-access";
 
 export const dynamic="force-dynamic";
@@ -28,11 +28,12 @@ export async function GET(request:Request) {
       if (!ids.includes(requested)) return Response.json({error:"Store access denied"},{status:403});
       ids=[requested];
     }
-    const rows=ids.length?await db.select({id:fakeSellerReportLinks.id,storeId:fakeSellerReportLinks.storeId,reportDate:fakeSellerReportLinks.reportDate,url:fakeSellerReportLinks.url,brand:fakeSellerReportBatches.brandName})
+    const rows=ids.length?await db.select({id:fakeSellerReportLinks.id,storeId:fakeSellerReportLinks.storeId,reportDate:fakeSellerReportLinks.reportDate,url:fakeSellerReportLinks.url,canonicalUrl:fakeSellerReportLinks.canonicalUrl,brand:fakeSellerReportBatches.brandName})
       .from(fakeSellerReportLinks).innerJoin(fakeSellerReportBatches,eq(fakeSellerReportLinks.batchId,fakeSellerReportBatches.id))
       .where(and(eq(fakeSellerReportLinks.tenantId,member.tenantId),inArray(fakeSellerReportLinks.storeId,ids)))
-      .orderBy(desc(fakeSellerReportLinks.reportDate),desc(fakeSellerReportLinks.id)).limit(10000):[];
-    return Response.json({links:rows},{headers:{"Cache-Control":"private, no-store"}});
+      .orderBy(desc(fakeSellerReportLinks.reportDate),desc(fakeSellerReportLinks.id)):[];
+    const links=dedupeReportRows(rows).map(({canonicalUrl,...row})=>row);
+    return Response.json({links},{headers:{"Cache-Control":"private, no-store"}});
   } catch (error) {
     console.error("Fake seller report read failed",error);
     return Response.json({error:"Reports are temporarily unavailable"},{status:503});
