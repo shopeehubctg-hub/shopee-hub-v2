@@ -18,6 +18,15 @@ export function malaysiaReportDate(iso:string) {
   return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kuala_Lumpur",year:"numeric",month:"2-digit",day:"2-digit"}).format(time);
 }
 
+export function dedupeReportRows<T extends {brand:string;reportDate:string;canonicalUrl:string}>(rows:T[]) {
+  const seen=new Set<string>();
+  return rows.filter(row=>{
+    const key=`${brandKey(row.brand)}\n${row.reportDate}\n${row.canonicalUrl}`;
+    if(seen.has(key))return false;
+    seen.add(key);return true;
+  });
+}
+
 export function validFakeSellerImportSignature(body:string,timestamp:string|null,signature:string|null,secret:string|undefined,now=Date.now()) {
   if (!secret || !timestamp || !/^\d{13}$/.test(timestamp) || !signature || !/^[a-f0-9]{64}$/.test(signature)) return false;
   if (Math.abs(now-Number(timestamp))>5*60*1000) return false;

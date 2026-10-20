@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { test } from "node:test";
-import { brandKey, canonicalReportUrl, malaysiaReportDate, validFakeSellerImportSignature } from "../app/fake-seller-import.ts";
+import { brandKey, canonicalReportUrl, dedupeReportRows, malaysiaReportDate, validFakeSellerImportSignature } from "../app/fake-seller-import.ts";
 
 test("Malaysia upload date crosses midnight at UTC+8",()=>{
   assert.equal(malaysiaReportDate("2026-10-20T16:30:00Z"),"2026-10-21");
@@ -13,6 +13,12 @@ test("Shopee tracking parameters do not split the same listing into extra links"
   assert.equal(canonicalReportUrl("javascript:alert(1)"),null);
   assert.equal(canonicalReportUrl("https://not-shopee.com.my/product/1/2"),null);
   assert.equal(brandKey("  Dr Smile Whitening  "),"drsmilewhitening");
+});
+
+test("one brand/date/link counts once across MY and SG store mappings; a later date counts again",()=>{
+  const base={brand:"Dr Smile",canonicalUrl:"https://shopee.com.my/product/1/2"};
+  const rows=[{...base,storeId:"my",reportDate:"2026-10-21"},{...base,storeId:"sg",reportDate:"2026-10-21"},{...base,storeId:"my",reportDate:"2026-10-24"}];
+  assert.deepEqual(dedupeReportRows(rows).map(row=>row.reportDate),["2026-10-21","2026-10-24"]);
 });
 
 test("import signature binds the exact body and rejects stale requests",()=>{
