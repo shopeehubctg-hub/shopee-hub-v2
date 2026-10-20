@@ -25,6 +25,7 @@ export function FakeSellerReport({storeId,storeName,allStores}:{storeId:string;s
     return [...byDate].sort(([a],[b])=>b.localeCompare(a));
   },[links]);
   const latest=groups[0]?.[0]??"";
+  const hasHistoricalPreview=groups.some(([date])=>date<"2026-10-20");
   const malaysiaToday=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kuala_Lumpur",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
   const currentWeek=weekStart(malaysiaToday);
   const thisWeek=links.filter(link=>weekStart(link.reportDate)===currentWeek).length;
@@ -32,10 +33,10 @@ export function FakeSellerReport({storeId,storeName,allStores}:{storeId:string;s
     <section className="fake-seller-hero"><div><p className="kicker">BRAND PROTECTION</p><h2>Fake Seller Reports</h2><p>{allStores?"All accessible brands":storeName} · Weekly report links</p></div></section>
     <section className="metric-grid protection-metrics" aria-label="Report summary">
       <article className="metric"><span>This week&apos;s report links</span><strong>{thisWeek}</strong><em>Week of {displayDate(currentWeek)}</em></article>
-      <article className="metric"><span>Total since launch</span><strong>{links.length}</strong><em>Unique links per brand and date</em></article>
+      <article className="metric"><span>{hasHistoricalPreview?"Preview links":"Total since launch"}</span><strong>{links.length}</strong><em>Unique links per brand and date</em></article>
       <article className="metric"><span>Last updated</span><strong className="report-date-value">{latest?displayDate(latest):"—"}</strong><em>Malaysia date</em></article>
     </section>
-    <section className="card fake-seller-dates"><div className="fake-seller-dates-head"><div><p className="kicker">REPORT LOG</p><h3>Links by date</h3></div><div><p>按每周自动整理的举报清单统计</p><button type="button" onClick={()=>{setLoading(true);setError("");setRefresh(value=>value+1)}}>Refresh reports</button></div></div>
+    <section className="card fake-seller-dates"><div className="fake-seller-dates-head"><div><p className="kicker">REPORT LOG</p><h3>Links by date</h3></div><div><p>{hasHistoricalPreview?"Staging preview includes historical links from 17 Oct 2026.":"Counts are based on weekly compiled report lists, not Shopee review results."}</p><button type="button" onClick={()=>{setLoading(true);setError("");setRefresh(value=>value+1)}}>Refresh reports</button></div></div>
       {loading?<p role="status">Loading report links…</p>:error?<p role="alert">{error}</p>:groups.length?groups.map(([date,items])=><details key={date} className="fake-seller-day"><summary><strong>{displayDate(date)}</strong><span>{items.length} links</span></summary><ul>{items.map(item=><li key={item.id}><span>{allStores&&<b>{item.brand} · </b>}</span><a href={item.url} target="_blank" rel="noopener noreferrer">{item.url}</a></li>)}</ul></details>):<p className="protection-empty">No report links yet. New weekly lists will appear here after import.</p>}
     </section>
   </div>
