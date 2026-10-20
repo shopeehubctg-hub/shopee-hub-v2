@@ -379,15 +379,20 @@ async function savePackage(request: Request) {
       return !first||!current||first.originalPrice!==current.originalPrice||first.sellingPrice!==current.sellingPrice;
     }))) return packageError("Pricing & Promotion","Use one shared Campaign price for Double Day, Mid Month Madness and Payday.");
   }
-  if (!markets.length || markets.some(market=>schedules.filter(item=>item.market===market&&item.priceType==="non_campaign").length!==1||!schedules.some(item=>item.market===market&&item.priceType==="campaign"))) {
+  if (!markets.length || markets.some(market=>!schedules.some(item=>item.market===market&&item.priceType==="non_campaign")||!schedules.some(item=>item.market===market&&item.priceType==="campaign"))) {
     return packageError("Pricing & Promotion","Select at least one market and complete its Non-Campaign and Campaign pricing.");
   }
+  if(markets.some(market=>{
+    const normal=schedules.filter(item=>item.market===market&&item.priceType==="non_campaign").sort((a,b)=>a.effectiveFrom.localeCompare(b.effectiveFrom));
+    return normal.some((line,index)=>index>0&&(normal[index-1].effectiveTo===null||String(normal[index-1].effectiveTo)>=line.effectiveFrom));
+  }))return packageError("Pricing & Promotion","Normal Day periods cannot overlap. Remove a duplicate month or adjust the custom dates.");
   if (schedules.some(item=>!["MY","SG"].includes(item.market)||!["campaign","non_campaign"].includes(item.priceType)||!["monthly","custom"].includes(item.promotionType)||!item.effectiveFrom||(item.effectiveTo!==null&&!item.effectiveTo)||(item.effectiveTo===null&&!body.longTerm&&!body.campaignLongTerm)||(item.effectiveTo!==null&&item.effectiveTo<item.effectiveFrom))) {
     return packageError("Pricing & Promotion","Every price requires a valid start date and end date. The end date cannot be earlier than the start date.");
   }
   if (markets.some(market=>schedules.filter(item=>item.market===market&&item.priceType==="non_campaign").some(item=>item.effectiveTo===null)!==Boolean(body.longTerm))) {
     return packageError("Pricing & Promotion","Long-term Package must have no end date; other packages need an end date.");
   }
+  if(body.longTerm&&markets.some(market=>schedules.filter(item=>item.market===market&&item.priceType==="non_campaign").length!==1))return packageError("Pricing & Promotion","A Long-term Package needs one Normal Day start date.");
   if (markets.some(market=>body.campaignLongTerm&&schedules.filter(item=>item.market===market&&item.priceType==="campaign").length!==1)) {
     return packageError("Pricing & Promotion","Long-term Campaign pricing needs one open-ended date range per market.");
   }
@@ -396,6 +401,7 @@ async function savePackage(request: Request) {
   }
   if(recurringCampaign&&markets.some(market=>{
     const base=schedules.find(item=>item.market===market&&item.priceType==="non_campaign");
+    if(schedules.filter(item=>item.market===market&&item.priceType==="non_campaign").length!==1)return true;
     const campaign=schedules.filter(item=>item.market===market&&item.priceType==="campaign");
     const firstPrice=recurringCampaign!.events[0].prices[market as RecurringMarket];
     return !base||base.effectiveFrom>recurringCampaign!.startDate||(!body.longTerm&&(recurringCampaign!.endDate===null||base.effectiveTo===null||base.effectiveTo<recurringCampaign!.endDate))||campaign.length!==1||campaign[0].effectiveFrom!==recurringCampaign!.startDate||campaign[0].effectiveTo!==recurringCampaign!.endDate||!firstPrice||campaign[0].originalPrice!==Math.round(firstPrice.originalPrice*100)||campaign[0].sellingPrice!==Math.round(firstPrice.sellingPrice*100);
@@ -497,8 +503,9 @@ async function savePackage(request: Request) {
   const longTermLifecycle=Boolean(body.longTerm||body.campaignLongTerm||recurringCampaign||previousVersion?.calculatorSettings?._longTermLifecycle===true);
   if(previousVersion?.calculatorSettings?._longTermLifecycle===true&&oldPrices.some(item=>item.priceType==="non_campaign"&&item.effectiveTo===null)&&!body.longTerm&&!body.campaignLongTerm){
     for(const market of markets){
-      const base=schedules.find(item=>item.market===market&&item.priceType==="non_campaign")!;
-      const end=base.effectiveTo!;
+      const normal=schedules.filter(item=>item.market===market&&item.priceType==="non_campaign");
+      const base=normal[0];
+      const end=normal.reduce((latest,line)=>line.effectiveTo&&line.effectiveTo>latest?line.effectiveTo:latest,base.effectiveTo??"");
       for(let index=schedules.length-1;index>=0;index--){
         const period=schedules[index];
         if(period.market!==market||period.priceType!=="campaign")continue;
