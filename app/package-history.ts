@@ -1,4 +1,5 @@
 import type { CalculatorSnapshot } from "./calculator-types";
+import { recurringEventLabels, type RecurringCampaignRule } from "./recurring-campaign";
 
 export type PackageHistorySnapshot = {
   name?: string | null;
@@ -7,8 +8,9 @@ export type PackageHistorySnapshot = {
   components?: { inventorySku: string; name: string; quantity: number; kind: string }[];
   priceSchedules?: {
     market: string; priceType: string; originalPrice: number; sellingPrice: number;
-    promotionType: string; effectiveFrom: string; effectiveTo: string;
+    promotionType: string; effectiveFrom: string; effectiveTo: string | null;
   }[];
+  recurringCampaign?:RecurringCampaignRule|null;
 };
 
 function isCalculatorSnapshot(value: unknown): value is CalculatorSnapshot {
@@ -50,8 +52,12 @@ export function packageHistoryFields(snapshot: PackageHistorySnapshot) {
     "Platform listing SKUs": snapshot.platforms ? sortedLines(snapshot.platforms.map(line => `${line.platform}: ${line.packageSku}`)) : missing,
     "Inventory items": snapshot.components ? sortedLines(snapshot.components.map(line => `${line.inventorySku} · ${line.name} ×${line.quantity} (${line.kind})`)) : missing,
     "Prices & promotion dates": Array.isArray(snapshot.priceSchedules) ? sortedLines(snapshot.priceSchedules.map(line =>
-      `${line.market} ${line.priceType === "campaign" ? "Campaign" : "Non-Campaign"}: ${line.market === "SG" ? "S$" : "RM"} ${priceText(line.originalPrice)} → ${priceText(line.sellingPrice)} · ${line.effectiveFrom} → ${line.effectiveTo} (${line.promotionType})`,
+      `${line.market} ${line.priceType === "campaign" ? "Campaign" : "Non-Campaign"}: ${line.market === "SG" ? "S$" : "RM"} ${priceText(line.originalPrice)} → ${priceText(line.sellingPrice)} · ${line.effectiveFrom} → ${line.effectiveTo ?? "Ongoing"} (${line.promotionType})`,
     )) : missing,
+    "Monthly Campaign events": snapshot.recurringCampaign ? [
+      `${snapshot.recurringCampaign.startDate} → ${snapshot.recurringCampaign.endDate??"Ongoing"}`,
+      ...snapshot.recurringCampaign.events.map(event=>`${recurringEventLabels[event.id]}: ${event.id==="dday"?`${Math.abs(event.startOffset??0)} days before → ${event.endOffset??0} days after double date`:`day ${event.startDay} → ${event.endDay}`} · ${Object.entries(event.prices).map(([market,price])=>`${market} ${market==="SG"?"S$":"RM"} ${priceText(price?.originalPrice)} → ${priceText(price?.sellingPrice)}`).join(", ")}`),
+    ].join("\n") : "None",
   };
 }
 
