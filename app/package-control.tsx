@@ -152,7 +152,7 @@ function PackagePriceSummary({item}:{item:PackageItem}) {
           <div className="package-market-price-values"><small>Original Price <del>{money(group.originalPrice,market)}</del></small><strong>{money(group.sellingPrice,market)}</strong></div>
         </div>
         {group.normalLines.length>0&&<div className="package-normal-period">Period: {normalPeriodLabel(group.normalLines)}</div>}
-        {group.campaignMonths.size>0&&<div className="package-campaign-months">{[...group.campaignMonths.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([month,labels])=><div className="package-campaign-month" key={month}><b>{month==="Every month"?month:shortMonthLabel(month)}</b><span>{[...labels].sort((a,b)=>["Double Day","Mid Month Madness","Payday","Campaign Day"].indexOf(a)-["Double Day","Mid Month Madness","Payday","Campaign Day"].indexOf(b)).join(" | ")}</span></div>)}</div>}
+        {!oneSharedPrice&&group.campaignMonths.size>0&&<div className="package-campaign-months">{[...group.campaignMonths.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([month,labels])=><div className="package-campaign-month" key={month}><b>{month==="Every month"?month:shortMonthLabel(month)}</b><span>{[...labels].sort((a,b)=>["Double Day","Mid Month Madness","Payday","Campaign Day"].indexOf(a)-["Double Day","Mid Month Madness","Payday","Campaign Day"].indexOf(b)).join(" | ")}</span></div>)}</div>}
       </div>)}
     </div>;
   })}</div>;
