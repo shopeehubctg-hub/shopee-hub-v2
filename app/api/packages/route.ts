@@ -13,6 +13,7 @@ import {
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { canAccessModule, canAccessStore } from "../../module-access";
 import { publicCalculatorSettings } from "../../package-history";
+import { marketToday, packageLifecycleStatus } from "../../package-lifecycle";
 import { activeRecurringEvent, readRecurringCampaign, recurringEventLabels, validateRecurringCampaign, type RecurringCampaignRule, type RecurringMarket } from "../../recurring-campaign";
 import { blocksNewVersionForUnsyncedSheet } from "../../package-version-policy";
 import { emailChangeSummary } from "./email-change-summary";
@@ -156,23 +157,6 @@ function historyWebhookConfigured() {
   return Boolean(process.env.GOOGLE_SHEETS_HISTORY_WEBHOOK_URL && process.env.GOOGLE_SHEETS_HISTORY_SECRET);
 }
 
-function publishedStatus(periods:Array<{effectiveFrom:string;effectiveTo:string|null}>,today:string) {
-  if (periods.some(period=>period.effectiveFrom<=today&&(!period.effectiveTo||period.effectiveTo>=today))) return "active" as const;
-  if (periods.some(period=>period.effectiveFrom>today)) return "scheduled" as const;
-  return "expired" as const;
-}
-
-function lifecyclePrices<T extends {priceType:string;effectiveFrom:string;effectiveTo:string|null}>(prices:T[],settings:Record<string,unknown>|null|undefined) {
-  if (settings?._longTermLifecycle === true) return prices;
-  return prices.map(price=>({...price,effectiveTo:price.effectiveTo??price.effectiveFrom}));
-}
-
-function marketToday() {
-  const parts=new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Kuala_Lumpur",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
-  const value=(type:string)=>parts.find(part=>part.type===type)?.value??"";
-  return `${value("year")}-${value("month")}-${value("day")}`;
-}
-
 export async function GET(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error:"Authentication required" }, { status:401 });
@@ -257,7 +241,7 @@ export async function GET(request: Request) {
       return {
         ...row,
         status:["active","scheduled","expired"].includes(row.status)
-          ? publishedStatus(lifecyclePrices(versionPrices,version?.calculatorSettings).map(item=>({effectiveFrom:item.effectiveFrom,effectiveTo:item.effectiveTo})),marketToday())
+          ? packageLifecycleStatus(versionPrices,version?.calculatorSettings,marketToday())
           : row.status,
         storeName:storeNames.get(row.storeId) ?? "Accessible Store",
         packageSku:currentPlatforms[0]?.packageSku ?? row.packageSku,
@@ -599,7 +583,7 @@ async function savePackage(request: Request) {
       ? `Package saved as a draft because Google Sheet sync failed: ${sync.reason}. Retry Create from the draft card.`
       : `Google Sheet sync failed: ${sync.reason}. The previous published version remains visible. Retry after the Sheet connection is restored.`},{status:503});
   }
-  const status=publishedStatus(lifecyclePrices(schedules,{_longTermLifecycle:longTermLifecycle}),marketToday());
+  const status=packageLifecycleStatus(schedules,{_longTermLifecycle:longTermLifecycle},marketToday());
   await db.transaction(async tx=>{
     await tx.update(packageVersions).set({sheetSyncStatus:"synced"}).where(eq(packageVersions.id,versionId));
     await tx.update(packages).set({...metadata,status,updatedAt:new Date().toISOString()}).where(and(eq(packages.id,packageId),isNull(packages.deletedAt)));
@@ -669,7 +653,7 @@ export async function PATCH(request:Request) {
       await db.update(packageVersions).set({sheetSyncStatus:sync.status}).where(eq(packageVersions.id,version.id));
       return packageError("Saving",`Google Sheet sync failed: ${sync.reason}. The package remains a draft.`,503);
     }
-    const status=publishedStatus(lifecyclePrices(priceRows,version.calculatorSettings).map(row=>({effectiveFrom:row.effectiveFrom,effectiveTo:row.effectiveTo})),marketToday());
+    const status=packageLifecycleStatus(priceRows,version.calculatorSettings,marketToday());
     await db.transaction(async tx=>{
       await tx.update(packageVersions).set({sheetSyncStatus:"synced"}).where(eq(packageVersions.id,version.id));
       await tx.update(packages).set({...metadata,status,updatedAt:new Date().toISOString()}).where(and(eq(packages.id,item.id),isNull(packages.deletedAt)));
