@@ -233,7 +233,17 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       }
     }
   }
-  useEffect(()=>{ void load(); },[storeId]);
+  useEffect(()=>{
+    void load();
+    let loadedDay = new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kuala_Lumpur",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+    const refreshAfterDateChange = () => {
+      const today = new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kuala_Lumpur",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+      if (today !== loadedDay) { loadedDay = today; void load(); }
+    };
+    const interval = window.setInterval(refreshAfterDateChange,60_000);
+    window.addEventListener("focus",refreshAfterDateChange);
+    return () => { window.clearInterval(interval); window.removeEventListener("focus",refreshAfterDateChange); };
+  },[storeId]);
 
   async function checkedKitRows():Promise<KitExportResponse> {
     const response=await fetch("/api/packages/fulfillment-sheet",{

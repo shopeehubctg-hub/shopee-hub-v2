@@ -4,6 +4,7 @@ import { packageAuditLog, packagePlatformSkus, packagePrices, packages, packageV
 import { validSyncJobSignature } from "../sync-job-auth";
 import { versionChangeSummary } from "../version-change-summary";
 import { storedChangeSummary } from "../email-change-summary";
+import { marketToday, packageLifecycleStatus } from "../../../package-lifecycle";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -92,10 +93,7 @@ export async function POST(request: Request) {
       const meta = metadata(candidate.version.calculatorSettings);
       const prices = await tx.select().from(packagePrices).where(eq(packagePrices.versionId,id));
       if (!prices.length) throw new Error("Package version has no price periods");
-      const parts = new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Kuala_Lumpur",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
-      const value = (type:string) => parts.find(p=>p.type===type)?.value ?? "";
-      const today = `${value("year")}-${value("month")}-${value("day")}`;
-      const status = prices.some(p=>p.effectiveFrom<=today && (p.effectiveTo ?? p.effectiveFrom)>=today) ? "active" : prices.some(p=>p.effectiveFrom>today) ? "scheduled" : "expired";
+      const status = packageLifecycleStatus(prices,candidate.version.calculatorSettings,marketToday());
       await tx.update(packageVersions).set({sheetSyncStatus:"synced"}).where(and(eq(packageVersions.id,id),inArray(packageVersions.sheetSyncStatus,["pending","failed"])));
       await tx.update(packages).set({...meta,status,updatedAt:new Date().toISOString()}).where(eq(packages.id,candidate.item.id));
       await tx.insert(packageAuditLog).values({packageId:candidate.item.id,action:"sheet_sync_recovered",detail:`Version ${candidate.version.version} confirmed by Apps Script`,actor:"Apps Script Package Sync"});
