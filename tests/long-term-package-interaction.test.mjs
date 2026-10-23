@@ -95,7 +95,7 @@ test('an existing package can become long-term and then receive an end date', as
     const campaignSummary=dom.window.document.querySelectorAll('.package-market-price-row');
     assert.equal(campaignSummary.length,1,'same Normal and Campaign price appears only once');
     assert.match(campaignSummary[0].textContent,/Campaign Day & Normal Day Same Price/);
-    assert.match(campaignSummary[0].textContent,/Double Day.*Mid Month Madness.*Payday/);
+    assert.equal(campaignSummary[0].querySelectorAll('.package-campaign-month').length,0,'shared price has one period without repeated Campaign months');
     assert.doesNotMatch(campaignSummary[0].textContent,/days before|day 14|2026-/);
     await click('Edit / Modify');
     assert.equal(dom.window.document.querySelector('.campaign-duration button:last-child').getAttribute('aria-pressed'),'true');
@@ -168,6 +168,8 @@ test('package card separates MY and SG and merges repeated campaign prices', asy
     assert.equal(myMonths[1].querySelector('span').textContent,'Double Day');
     assert.equal(sgRows.length,1);
     assert.match(sgRows[0].textContent,/Campaign Day & Normal Day Same PriceOriginal Price S\$ 500\.00S\$ 327\.00/);
+    assert.match(sgRows[0].textContent,/Period: 01\/10\/2026–31\/10\/2026/);
+    assert.equal(sgRows[0].querySelectorAll('.package-campaign-month').length,0,'shared SG price does not repeat campaign dates');
     assert.doesNotMatch(dom.window.document.querySelector('.package-card').textContent,/2026-10-/);
   } finally {
     await act(async()=>root.unmount());
