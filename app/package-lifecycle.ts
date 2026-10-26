@@ -15,6 +15,9 @@ export function marketToday() {
 export function packageLifecycleStatus(
   prices: PricePeriod[], settings: Record<string, unknown> | null | undefined, today: string,
 ) {
+  // A manual stop takes effect immediately, even though its displayed end date
+  // includes today. Normal date-based expiry still runs through the end date.
+  if (settings?._packageEnded === true) return "expired" as const;
   // Normal Day defines when the package is available. A Campaign price can
   // never keep an otherwise ended package active. Older campaign-only packages
   // still use their saved price periods.
