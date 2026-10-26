@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { useMonthlyFeePreview } from './fee-plan-context';
 import type { FormEvent } from "react";
 import type { AccountFeeRule, AccountResponse, AccountStoreRow } from "./account-contract";
 
 type StoreOption = NonNullable<AccountResponse["storeOptions"]>[number];
 type Basis = AccountFeeRule["basis"];
-type RuleType = AccountFeeRule["type"];
 const bases: Array<{ value: Basis; label: string }> = [
   { value: "merchandise_subtotal", label: "Merchandise subtotal" },
   { value: "net_gmv", label: "Net GMV" },
@@ -67,51 +67,15 @@ export function StoreNameCell({ row, options, configurable, canSave, month, onSa
   </div>;
 }
 
-export function RateCell({ row, editable, available, onEdit }: { row: AccountStoreRow; editable: boolean; available: boolean; onEdit: () => void }) {
-  return <div className="account-rate-cell"><strong>{rateLabel(row.rateRule)}</strong>{row.rateRule && row.rateEffectiveMonth && <small>From {row.rateEffectiveMonth}</small>}{(available || row.rateRule || row.rateHistory?.length) && <button type="button" className="account-link-button" onClick={onEdit}>{editable ? row.rateRule ? "View / edit rate" : "Set rate" : "View rate"}</button>}</div>;
-}
-
-export function RateDialog({ row, month, today, editable, canSave, onClose, onSaved }: {
-  row: AccountStoreRow; month: string; today: string; editable: boolean; canSave: boolean; onClose: () => void; onSaved: () => void;
-}) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  const existing = row.rateRule;
-  const [type, setType] = useState<RuleType>(existing?.type || "fixed");
-  const [basis, setBasis] = useState<Basis | "">(existing?.basis === "fixed_monthly" ? "" : existing?.basis || "");
-  const [basisLabel, setBasisLabel] = useState(existing?.basisLabel || "");
-  const [fixedAmount, setFixedAmount] = useState(existing?.fixedAmount || "");
-  const [percent, setPercent] = useState(existing?.percent || "");
-  const [tiers, setTiers] = useState(existing?.tiers?.length ? existing.tiers : [{ from: "0", percent: "" }]);
-  const [minimum, setMinimum] = useState(existing?.minimum || "");
-  const [cap, setCap] = useState(existing?.cap || "");
-  const [effectiveMonth, setEffectiveMonth] = useState(month < today.slice(0, 7) ? today.slice(0, 7) : month);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const retry = useRef<{ payload: string; id: string } | null>(null);
-  useEffect(() => { const dialog = dialogRef.current; dialog?.showModal(); return () => { if (dialog?.open) dialog.close(); }; }, []);
-  async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!canSave || !row.rosterKey) return;
-    const rule: AccountFeeRule = { type, currency: row.currency, basis: type === "fixed" ? "fixed_monthly" : basis as Basis };
-    if (type === "fixed") rule.fixedAmount = fixedAmount;
-    else {
-      if (basis === "custom") rule.basisLabel = basisLabel.trim();
-      if (type === "percent") rule.percent = percent;
-      else rule.tiers = tiers;
-      if (minimum.trim()) rule.minimum = minimum.trim();
-      if (cap.trim()) rule.cap = cap.trim();
-    }
-    setSaving(true); setError("");
-    try {
-      const payload = JSON.stringify({ rosterKey: row.rosterKey, effectiveMonth, rule, expectedVersion: row.latestSettingsVersion || "0" });
-      if (retry.current?.payload !== payload) retry.current = { payload, id: crypto.randomUUID() };
-      await saveSetting("/api/admin/account/fee-rule", { rosterKey: row.rosterKey, effectiveMonth, rule, expectedVersion: row.latestSettingsVersion || "0", requestId: retry.current.id });
-      retry.current = null;
-      onSaved(); onClose();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not save."); }
-    finally { setSaving(false); }
-  }
-  return <dialog ref={dialogRef} className="account-rate-dialog" aria-labelledby="account-rate-title" onCancel={event => { event.preventDefault(); if (!saving) onClose(); }}><form onSubmit={event => void save(event)}><header><div><p className="kicker">BILLING PROJECT · {row.project}</p><h3 id="account-rate-title">{existing ? "Monthly rate" : "Set monthly rate"}</h3></div><button type="button" className="account-dialog-close" onClick={onClose} disabled={saving} aria-label="Close rate editor">×</button></header><div className="account-rate-body"><p className="account-rate-explainer">Set the rate that applies from an invoice month. Rate versions stay in the history. This does not record money received.</p><div className="account-rate-fields"><label>Effective invoice month<input type="month" value={effectiveMonth} min={today.slice(0, 7)} onChange={event => setEffectiveMonth(event.target.value)} required disabled={!editable || saving} /></label><label>Currency<input type="text" value={row.currency} readOnly /></label><label>Rate type<select value={type} onChange={event => setType(event.target.value as RuleType)} disabled={!editable || saving}><option value="fixed">Fixed monthly fee</option><option value="percent">Commission percentage</option><option value="tiers">Tiered commission</option></select></label>{type === "fixed" ? <label>Monthly fee<input type="text" inputMode="decimal" value={fixedAmount} onChange={event => setFixedAmount(event.target.value)} placeholder="0.00" pattern="[0-9]+(\.[0-9]{1,2})?" required disabled={!editable || saving} /></label> : <><label>Calculated on<select value={basis} onChange={event => setBasis(event.target.value as Basis)} required disabled={!editable || saving}><option value="">Choose amount basis</option>{bases.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>{basis === "custom" && <label className="account-field-wide">Describe amount basis<input type="text" value={basisLabel} onChange={event => setBasisLabel(event.target.value)} placeholder="e.g. net sales after returns" required disabled={!editable || saving} /></label>}{type === "percent" ? <label>Commission rate %<input type="text" inputMode="decimal" value={percent} onChange={event => setPercent(event.target.value)} placeholder="0" pattern="[0-9]+(\.[0-9]{1,6})?" required disabled={!editable || saving} /></label> : <div className="account-tier-fields account-field-wide"><span>Tier rates</span>{tiers.map((tier, index) => <div key={index}><label>From {row.currency}<input type="text" inputMode="decimal" value={tier.from} onChange={event => setTiers(current => current.map((item, i) => i === index ? { ...item, from: event.target.value } : item))} required disabled={!editable || saving} /></label><label>Rate %<input type="text" inputMode="decimal" value={tier.percent} onChange={event => setTiers(current => current.map((item, i) => i === index ? { ...item, percent: event.target.value } : item))} required disabled={!editable || saving} /></label>{editable && tiers.length > 1 && <button type="button" onClick={() => setTiers(current => current.filter((_, i) => i !== index))} aria-label={`Remove tier ${index + 1}`}>Remove</button>}</div>)}{editable && <button type="button" className="account-link-button" onClick={() => setTiers(current => [...current, { from: "", percent: "" }])}>Add tier</button>}<small>Start the first tier at 0. Each tier continues until the next threshold.</small></div>}<label>Minimum fee (optional)<input type="text" inputMode="decimal" value={minimum} onChange={event => setMinimum(event.target.value)} placeholder="No minimum" disabled={!editable || saving} /></label><label>Maximum fee (optional)<input type="text" inputMode="decimal" value={cap} onChange={event => setCap(event.target.value)} placeholder="No maximum" disabled={!editable || saving} /></label></>}</div>{row.rateHistory && row.rateHistory.length > 0 && <details className="account-rate-history"><summary>History ({row.rateHistory.length})</summary><ul>{row.rateHistory.map(item => <li key={item.version}><b>{item.effectiveMonth}</b><span>{rateLabel(item.rule)}</span></li>)}</ul></details>}{!editable && <p className="account-notice">Past invoice months are read only. Choose the current or a future month to set a new rate.</p>}{editable && !canSave && <p className="account-notice">Saving is unavailable in this preview.</p>}{error && <p className="account-inline-error" role="alert">{error}</p>}</div><footer><button type="button" onClick={onClose} disabled={saving}>Close</button>{editable && <button type="submit" className="account-save-button" disabled={!canSave || saving || !row.rosterKey}>{saving ? "Saving…" : "Save rate"}</button>}</footer></form></dialog>;
+export function RateCell({row,month,onEdit}:{row:AccountStoreRow;month:string;onEdit:()=>void}) {
+  const preview=useMonthlyFeePreview(row,month);
+  const rule=preview.plan?.rule;
+  const compact=rule?.type==='fixed'?`${rule.currency} ${rule.fixedAmount||'—'} / month`:rule?.type==='percent'?`${rule.percent||'—'}%`:rule?.tiers?.length?rule.tiers.map(t=>`${t.percent}%`).join(' / '):'Set tier rates';
+  return <div className="account-rate-cell account-rate-linked">
+    <strong>{preview.plan?preview.plan.name:rateLabel(row.rateRule)}</strong>
+    {preview.plan?<small>{preview.calculation?.rateLabel||compact} · v{preview.plan.version} <span className="account-preview-label">{preview.locked?'Locked preview':'Preview'}</span></small>:row.rateRule&&<small>Saved rate{row.rateEffectiveMonth?` · from ${row.rateEffectiveMonth}`:''}</small>}
+    <button type="button" className="account-link-button" aria-label={`Edit monthly rate for ${row.project||row.storeName}`} onClick={onEdit}>{preview.plan||row.rateRule?'Edit':'Set rate'}</button>
+  </div>;
 }
 
 export function CompanyCell({row,month,canSave,editable,onSaved}:{row:AccountStoreRow;month:string;canSave:boolean;editable:boolean;onSaved:()=>void}) {
