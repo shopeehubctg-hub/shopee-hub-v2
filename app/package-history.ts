@@ -35,9 +35,10 @@ export function publicCalculatorSettings(value: Record<string, unknown> | null) 
   const snapshots = calculatorSnapshots(value);
   if (!snapshots.length) return null;
   if (Array.isArray(value?.scenarios)) return { scenarios: snapshots };
-  const { _packageMetadata, _packageHistorySummary, ...snapshot } = snapshots[0] as CalculatorSnapshot & Record<string, unknown>;
+  const { _packageMetadata, _packageHistorySummary, _packageEnded, _endedAt, _endedDate, _endedBy, ...snapshot } = snapshots[0] as CalculatorSnapshot & Record<string, unknown>;
   void _packageMetadata;
   void _packageHistorySummary;
+  void _packageEnded; void _endedAt; void _endedDate; void _endedBy;
   return snapshot;
 }
 
