@@ -12,3 +12,14 @@ test('later versions do not change earlier month rule or erase receipts',()=>{co
 test('fixed values are exact but not recorded as billed/cash income',()=>{const checked=validateFeeRule({...rule,fixedAmount:'9999999999999999.99'},'MYR');assert.equal(checked.fixedAmount,'9999999999999999.99');const row=applyAccountSettings(account('2026-10'),[version(1,'2026-10','fee_rule',null,checked)],new Map()).stores[0];assert.equal(row.billed,null);assert.equal(row.calculatedFee,null);});
 test('missing decimal/type/custom basis label rejected, zero is valid',()=>{assert.equal(validateFeeRule({...rule,fixedAmount:'0'},'MYR').fixedAmount,'0.00');for(const input of [{...rule,fixedAmount:null},{...rule,type:undefined},{type:'percent',currency:'MYR',basis:'custom',percent:'3'},{type:'percent',currency:'MYR',basis:'net_gmv',percent:null}])assert.throws(()=>validateFeeRule(input,'MYR'));});
 test('tier bounds, currency and min/cap validation',()=>{assert.throws(()=>validateFeeRule({type:'tiers',currency:'MYR',basis:'net_gmv',tiers:[{from:'0',percent:'3'},{from:'0',percent:'2'}]},'MYR'));assert.throws(()=>validateFeeRule({...rule,currency:'SGD'},'MYR'));assert.throws(()=>validateFeeRule({...rule,minimum:'100',cap:'50'},'MYR'));});
+
+test('setup creates a store billing unit with company, mapping and rate; later company change preserves earlier months and rate',()=>{
+ const setup={...version(1,'2026-10','setup','store',rule),roster_key:'store:store',legal_entity:'Company A'};
+ const company={...version(2,'2026-11','company','store',rule),roster_key:'store:store',legal_entity:'Company B'};
+ const october=applyAccountSettings(account('2026-10'),[setup,company],new Map([['store','Store']])).stores[0];
+ assert.equal(october.entity,'Company A');assert.equal(october.storeId,'store');assert.equal(october.rateRule.fixedAmount,'100.00');
+ const november=applyAccountSettings(account('2026-11'),[setup,company],new Map([['store','Store']])).stores[0];
+ assert.equal(november.entity,'Company B');assert.equal(november.rateRule.fixedAmount,'100.00');assert.equal(november.rateHistory.length,1);
+});
+
+test('ledger-backed billing rows without market remain visible in country sections',()=>{const data=account('2026-10');data.stores.push({id:'real-term',rosterKey:'real-unit',currency:'SGD',market:undefined,expectedNetFee:'10.00',billed:'10.00',collected:'0.00',outstanding:'10.00'});const result=applyAccountSettings(data,[],new Map());assert.equal(result.stores[0].market,'SG');assert.equal(result.stores[0].billed,'10.00');});

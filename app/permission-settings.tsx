@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
+import { AccountSetupFields, accountSetupError, emptyAccountSetup, feeRuleFromDraft, malaysiaMonth, type AccountSetupDraft } from "./store-account-setup-fields";
 
 type Props = { initialEnabledModules: PortalModuleId[]; onStoreChanged?: () => void };
 type Role = "customer" | "manager" | "superadmin";
@@ -14,7 +15,7 @@ type StoreLinks = {
   adsTopUpOwner: AdsTopUpOwner | "";
 };
 type StoreDraft = StoreLinks & { name: string; market: "MY" | "SG" };
-type Store = { id: string; name: string; platform: string; bigseller_name?: string } & Partial<StoreLinks>;
+type Store = { id: string; name: string; platform: string; bigseller_name?: string; accountUnit?: { rosterKey: string; legalEntity: string; latestVersion: string } | null; accountUnitCount?: number } & Partial<StoreLinks>;
 const emptyStoreDraft = (): StoreDraft => ({ name: "", market: "MY", projectLinks: [], storeGroupLink: "", googleDriveLink: "", adsTopUpOwner: "" });
 
 function projectLinkError(link: ProjectLink) {
@@ -67,6 +68,7 @@ type UserData = {
   users: PortalUser[];
   stores: Store[];
   clientDefaults: PortalModuleId[];
+  accountSettingsAvailable: boolean;
 };
 
 export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Props) {
@@ -84,11 +86,16 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
   const [editingStore, setEditingStore] = useState<Store | null>(null);
   const [storeDraft, setStoreDraft] = useState<StoreDraft>(emptyStoreDraft);
   const [newStore, setNewStore] = useState<StoreDraft>(emptyStoreDraft);
+  const [newAccount, setNewAccount] = useState<AccountSetupDraft>(emptyAccountSetup);
+  const [editLegalEntity, setEditLegalEntity] = useState("");
+  const [editEntityMonth, setEditEntityMonth] = useState(malaysiaMonth);
+  const storeRequest = useRef<{ payload: string; id: string } | null>(null);
   const storeModalRef = useRef<HTMLDivElement>(null);
   const storeNameInputRef = useRef<HTMLInputElement>(null);
   const storeReturnFocusRef = useRef<HTMLButtonElement | null>(null);
   const updateNewStore = (patch: Partial<StoreDraft>) => { setStoreError(""); setNewStore(current => ({ ...current, ...patch })); };
   const updateStoreDraft = (patch: Partial<StoreDraft>) => { setStoreError(""); setStoreDraft(current => ({ ...current, ...patch })); };
+  const updateNewAccount = (patch: Partial<AccountSetupDraft>) => { setStoreError(""); setNewAccount(current => ({ ...current, ...patch })); };
   function closeStoreModal() {
     setAddingStore(false);
     setEditingStore(null);
@@ -184,14 +191,20 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
     }
   }
   async function addStore() {
+    if (!data?.accountSettingsAvailable) { setStoreError("Saving is not enabled in this preview."); return; }
     if (newStore.projectLinks.some(projectLinkError)) return;
+    const setupError = accountSetupError(newAccount, newStore.market);
+    if (setupError) { setStoreError(setupError); return; }
     setStoreError("");
     setSaving(true);
     try {
+      const payload = { ...newStore, adsTopUpOwner: newStore.adsTopUpOwner || null, legalEntity: newAccount.legalEntity.trim(), effectiveMonth: newAccount.effectiveMonth, feeRule: feeRuleFromDraft(newAccount, newStore.market) };
+      const payloadText = JSON.stringify(payload);
+      if (storeRequest.current?.payload !== payloadText) storeRequest.current = { payload: payloadText, id: crypto.randomUUID() };
       const response = await fetch("/api/admin/stores", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...newStore, adsTopUpOwner: newStore.adsTopUpOwner || null }),
+        body: JSON.stringify({ ...payload, requestId: storeRequest.current.id }),
       });
       const result = await response.json().catch(() => ({ error: "The server returned an invalid response" }));
       if (!response.ok) {
@@ -206,6 +219,8 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
       onStoreChanged?.();
       closeStoreModal();
       setNewStore(emptyStoreDraft());
+      setNewAccount(emptyAccountSetup());
+      storeRequest.current = null;
       setMessage("Store added. Customer access can be assigned under Users & roles.");
     } catch {
       setStoreError("Unable to add store. Please try again.");
@@ -215,14 +230,24 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
   }
   async function saveStore() {
     if (!editingStore) return;
+    if (!data?.accountSettingsAvailable) { setStoreError("Saving is not enabled in this preview."); return; }
     if (storeDraft.projectLinks.some(projectLinkError)) return;
+    const companyChanged = !!editingStore.accountUnit && editLegalEntity.trim() !== editingStore.accountUnit.legalEntity;
+    if (companyChanged && (!editLegalEntity.trim() || !/^20\d{2}-(0[1-9]|1[0-2])$/.test(editEntityMonth) || editEntityMonth < malaysiaMonth())) {
+      setStoreError("Enter a legal company name and current or future effective month.");
+      return;
+    }
     setStoreError("");
     setSaving(true);
     try {
+      const payload = { id: editingStore.id, ...storeDraft, adsTopUpOwner: storeDraft.adsTopUpOwner || null,
+        ...(companyChanged && editingStore.accountUnit ? { legalEntity: editLegalEntity.trim(), effectiveMonth: editEntityMonth, accountRosterKey: editingStore.accountUnit.rosterKey, expectedAccountVersion: editingStore.accountUnit.latestVersion } : {}) };
+      const payloadText = JSON.stringify(payload);
+      if (storeRequest.current?.payload !== payloadText) storeRequest.current = { payload: payloadText, id: crypto.randomUUID() };
       const response = await fetch("/api/admin/stores", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: editingStore.id, ...storeDraft, adsTopUpOwner: storeDraft.adsTopUpOwner || null }),
+        body: JSON.stringify({ ...payload, requestId: storeRequest.current.id }),
       });
       const result = await response.json().catch(() => ({ error: "The server returned an invalid response" }));
       if (!response.ok) {
@@ -236,6 +261,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
       await loadUsers();
       onStoreChanged?.();
       closeStoreModal();
+      storeRequest.current = null;
       setMessage("Store updated.");
     } catch {
       setStoreError("Unable to update store. Please try again.");
@@ -479,6 +505,8 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
                     googleDriveLink: store.googleDriveLink ?? "",
                     adsTopUpOwner: store.adsTopUpOwner ?? "",
                   });
+                  setEditLegalEntity(store.accountUnit?.legalEntity ?? "");
+                  setEditEntityMonth(malaysiaMonth());
                 }}>Edit store</button>
               </article>
             ))}
@@ -496,9 +524,12 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
             <div className="access-form" aria-busy={saving}>
               <label>Store name<input ref={storeNameInputRef} maxLength={120} required value={newStore.name} onChange={event => updateNewStore({ name: event.target.value })} /></label>
               <label>Market<select value={newStore.market} onChange={event => updateNewStore({ market: event.target.value as "MY" | "SG" })}><option value="MY">Malaysia (MY)</option><option value="SG">Singapore (SG)</option></select></label>
+              <AccountSetupFields draft={newAccount} market={newStore.market} update={updateNewAccount} />
+              {accountSetupError(newAccount, newStore.market) && <p className="store-field-error" role="status">{accountSetupError(newAccount, newStore.market)}</p>}
               <StoreLinkFields draft={newStore} update={updateNewStore} idPrefix="add-store" />
+              {!data?.accountSettingsAvailable && <p className="store-access-note" role="status">Saving is not enabled in this preview.</p>}
               {storeError && <p id="add-store-error" className="store-form-error" role="alert">{storeError}</p>}
-              <button className="primary" disabled={saving || !newStore.name.trim() || newStore.projectLinks.some(projectLinkError)} aria-describedby={storeError ? "add-store-error" : undefined} onClick={addStore}>{saving ? "Adding…" : "Add store"}</button>
+              <button className="primary" disabled={saving || !data?.accountSettingsAvailable || !newStore.name.trim() || !!accountSetupError(newAccount, newStore.market) || newStore.projectLinks.some(projectLinkError)} aria-describedby={storeError ? "add-store-error" : undefined} onClick={addStore}>{saving ? "Adding…" : "Add store"}</button>
             </div>
           </div>
         </div>
@@ -513,9 +544,11 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
             </div>
             <div className="access-form" aria-busy={saving}>
               <label>Store name<input ref={storeNameInputRef} maxLength={120} required value={storeDraft.name} onChange={event => updateStoreDraft({ name: event.target.value })} /></label>
+              {editingStore.accountUnit ? <fieldset><legend>Account company</legend><div className="account-rate-fields"><label className="account-field-wide">Company name<input maxLength={240} value={editLegalEntity} onChange={event => { setStoreError(""); setEditLegalEntity(event.target.value); }} required /></label><label>Effective invoice month<input type="month" min={malaysiaMonth()} value={editEntityMonth} onChange={event => { setStoreError(""); setEditEntityMonth(event.target.value); }} required /></label></div></fieldset> : <p className="store-access-note">{(editingStore.accountUnitCount ?? 0) > 1 ? "This store has multiple billing projects. Edit each company in Account." : "No Account setup is linked to this store yet. Set up its billing project in Account."}</p>}
               <StoreLinkFields draft={storeDraft} update={updateStoreDraft} idPrefix="edit-store" />
+              {!data?.accountSettingsAvailable && <p className="store-access-note" role="status">Saving is not enabled in this preview.</p>}
               {storeError && <p id="edit-store-error" className="store-form-error" role="alert">{storeError}</p>}
-              <button className="primary" disabled={saving || !storeDraft.name.trim() || storeDraft.projectLinks.some(projectLinkError)} aria-describedby={storeError ? "edit-store-error" : undefined} onClick={saveStore}>{saving ? "Saving…" : "Save store"}</button>
+              <button className="primary" disabled={saving || !data?.accountSettingsAvailable || !storeDraft.name.trim() || storeDraft.projectLinks.some(projectLinkError)} aria-describedby={storeError ? "edit-store-error" : undefined} onClick={saveStore}>{saving ? "Saving…" : "Save store"}</button>
             </div>
           </div>
         </div>

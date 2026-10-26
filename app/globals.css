@@ -389,3 +389,5 @@ body{background:var(--paper);color:var(--ink)}
 @media(max-width:680px){.account-store-pick select{max-width:none;flex-basis:100%}.account-store-pick>button:not(.account-link-button){min-height:36px}.account-rate-fields{grid-template-columns:1fr}.account-rate-dialog header,.account-rate-dialog footer{padding:15px}.account-rate-body{padding:15px}.account-rate-dialog h3{font-size:18px}}
 
 .account-settings-notice{margin:0 19px 14px}
+
+.account-market-section{margin-top:28px}.account-market-section h4{margin:0;padding:16px 20px;font-size:18px;border-top:1px solid #dce7ec;background:#f4f8fa;color:#153f50}.account-company-cell{display:grid;gap:8px}.account-company-cell input{width:100%;min-width:150px;min-height:40px;padding:8px;border:1px solid #cbdbe2;border-radius:8px;font:inherit}.account-company-cell form>div{display:flex;gap:10px;margin-top:8px}.account-company-cell form button{padding:7px 12px;border:1px solid #cbdbe2;border-radius:7px;background:white;color:#0b6681;cursor:pointer}

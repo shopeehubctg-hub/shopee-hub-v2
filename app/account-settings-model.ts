@@ -1,6 +1,6 @@
 import { cents, previousMonth } from './account-ledger';
 import type { AccountFeeRule, AccountResponse } from './account-contract';
-export type AccountSetting = {id:string;roster_key:string;roster_project:string;legal_entity:string;currency:'MYR'|'SGD';change_action:'mapping'|'fee_rule';version:string;effective_month:string;store_id:string|null;fee_rule:AccountFeeRule|null;created_at:string};
+export type AccountSetting = {id:string;roster_key:string;roster_project:string;legal_entity:string;currency:'MYR'|'SGD';change_action:'mapping'|'fee_rule'|'company'|'setup';version:string;effective_month:string;store_id:string|null;fee_rule:AccountFeeRule|null;created_at:string};
 const money=/^\d{1,16}(?:\.\d{1,2})?$/;
 export function validateFeeRule(value:unknown,currency:'MYR'|'SGD'):AccountFeeRule {
   if(!value||typeof value!=='object'||Array.isArray(value)) throw new Error('Choose a monthly fee rule');
@@ -29,13 +29,16 @@ export function applyAccountSettings(account:AccountResponse,settings:AccountSet
   for(const setting of settings.filter(s=>s.effective_month.slice(0,7)<=account.invoiceMonth).sort((a,b)=>a.effective_month.localeCompare(b.effective_month)||(BigInt(a.version)<BigInt(b.version)?-1:1)))units.set(setting.roster_key,setting);
   for(const setting of units.values())if(!represented.has(setting.roster_key)){account.stores.push({id:setting.roster_key,rosterKey:setting.roster_key,project:setting.roster_project,entity:setting.legal_entity,market:setting.currency==='MYR'?'MY':'SG',storeId:null,storeName:setting.roster_project,currency:setting.currency,statementMonth:previousMonth(account.invoiceMonth),invoiceMonth:account.invoiceMonth,servicePeriodStart:null,servicePeriodEnd:null,status:'pending_terms',expectedNetFee:null,billed:null,collected:null,outstanding:null});}
   for(const row of account.stores) {
+    row.market=row.currency==='MYR'?'MY':'SG';
     const history=settings.filter(s=>s.roster_key===row.rosterKey).sort((a,b)=>BigInt(a.version)<BigInt(b.version)?-1:1);
     const applicable=history.filter(s=>s.effective_month.slice(0,7)<=account.invoiceMonth).sort((a,b)=>a.effective_month.localeCompare(b.effective_month)||(BigInt(a.version)<BigInt(b.version)?-1:1));
-    const currentMapping=applicable.filter(s=>s.change_action==='mapping').at(-1);
-    const currentRule=applicable.filter(s=>s.change_action==='fee_rule').at(-1);
-    const current=currentRule??currentMapping;
+    const currentMapping=applicable.filter(s=>(s.change_action==='mapping'||s.change_action==='setup')).at(-1);
+    const currentRule=applicable.filter(s=>(s.change_action==='fee_rule'||s.change_action==='setup')).at(-1);
+    const currentCompany=applicable.filter(s=>s.change_action==='company'||s.change_action==='setup').at(-1);
+    if(currentCompany)row.entity=currentCompany.legal_entity;
+    const current=applicable.at(-1);
     row.latestSettingsVersion=history.at(-1)?.version??'0';row.appliedSettingsVersion=current?.version??null;row.settingsEffectiveMonth=current?.effective_month.slice(0,7)??null;
-    row.rateHistory=history.filter(s=>s.change_action==='fee_rule').map(s=>({action:'fee_rule',version:s.version,effectiveMonth:s.effective_month.slice(0,7),rule:s.fee_rule,storeId:s.store_id,changedAt:s.created_at}));
+    row.rateHistory=history.filter(s=>(s.change_action==='fee_rule'||s.change_action==='setup')).map(s=>({action:'fee_rule',version:s.version,effectiveMonth:s.effective_month.slice(0,7),rule:s.fee_rule,storeId:s.store_id,changedAt:s.created_at}));
     row.mappingEffectiveMonth=currentMapping?.effective_month.slice(0,7)??null;row.rateEffectiveMonth=currentRule?.effective_month.slice(0,7)??null;
     row.rateRule=currentRule?.fee_rule??null;row.calculatedFee=null;
     row.calculationStatus=row.rateRule?'pending_statement':'pending_rule';

@@ -5,6 +5,7 @@ import { supabaseRest } from "../../../supabase-rest";
 import { supabaseConfig } from "../../../supabase-rest";
 import { randomBytes } from "node:crypto";
 import { storeDetails, storeDirectory } from "../../../store-directory";
+import { malaysiaDate } from "../../../account-ledger";
 
 export const dynamic="force-dynamic";
 type Role="customer"|"manager"|"superadmin";
@@ -13,19 +14,46 @@ type Member={id:number;email:string;display_name:string|null;tenant_id:string;ro
 async function authSuperAdmin(){const actor=await getChatGPTUser();if(!actor)return{error:Response.json({error:"Authentication required"},{status:401})};const rows=await supabaseRest<Member[]>(`customer_users?select=*&email=eq.${encodeURIComponent(actor.email.toLowerCase())}&limit=1`);const membership=rows[0];if(!membership?.active||membership.role!=="superadmin")return{error:Response.json({error:"Super Admin access required"},{status:403})};return{membership};}
 
 async function portalUsers(tenantId:string){
-  const [users,tenantModules,tenantStoreRows,directory]=await Promise.all([
+  const [users,tenantModules,tenantStoreRows,directory,accountStatus,storeSetupAvailable]=await Promise.all([
     supabaseRest<Member[]>(`customer_users?select=*&tenant_id=eq.${encodeURIComponent(tenantId)}&order=email.asc`),
     supabaseRest<Array<{module_id:string;enabled:boolean}>>(`tenant_module_permissions?select=module_id,enabled&tenant_id=eq.${encodeURIComponent(tenantId)}`),
     supabaseRest<Array<{id:string;name:string;display_name:string|null;platform:string;bigseller_name:string}>>(`stores?select=id,name,display_name,platform,bigseller_name&tenant_id=eq.${encodeURIComponent(tenantId)}&order=name.asc`),
     storeDirectory(tenantId),
+    supabaseRest<Array<{roster_key:string;legal_entity:string;version:string;store_id:string|null;effective_month:string}>>(`account_billing_unit_versions?select=roster_key,legal_entity,version::text,store_id,effective_month&tenant_id=eq.${encodeURIComponent(tenantId)}&order=version.desc`)
+      .then(rows=>({rows,available:true}))
+      .catch(error=>{if(error instanceof Error&&/"code":"(PGRST205|42P01)"/.test(error.message))return {rows:[],available:false};throw error;}),
+    supabaseRest<boolean>("rpc/account_store_setup_available",{method:"POST"})
+      .catch(error=>{if(error instanceof Error&&/"code":"(PGRST202|PGRST205|42883)"/.test(error.message))return false;throw error;}),
   ]);
-  const tenantStores=tenantStoreRows.filter(store=>canonicalStoreId(store.id)===store.id).map(store=>({...store,name:store.display_name??store.name,...storeDetails(directory,store.id)}));
+  const accountVersions=accountStatus.rows;
+  const latestByKey=new Map<string,typeof accountVersions[number]>();
+  const currentByKey=new Map<string,typeof accountVersions[number]>();
+  const currentMonth=malaysiaDate().slice(0,7);
+  for(const version of accountVersions){
+    const latest=latestByKey.get(version.roster_key);
+    if(!latest||BigInt(version.version)>BigInt(latest.version))latestByKey.set(version.roster_key,version);
+    if(version.effective_month.slice(0,7)<=currentMonth){
+      const current=currentByKey.get(version.roster_key);
+      if(!current||version.effective_month>current.effective_month||version.effective_month===current.effective_month&&BigInt(version.version)>BigInt(current.version))currentByKey.set(version.roster_key,version);
+    }
+  }
+  const unitsByStore=new Map<string,Array<{rosterKey:string;legalEntity:string;latestVersion:string}>>();
+  for(const [key,current] of currentByKey){
+    if(!current.store_id)continue;
+    const units=unitsByStore.get(current.store_id)??[];
+    units.push({rosterKey:key,legalEntity:current.legal_entity,latestVersion:latestByKey.get(key)?.version??current.version});
+    unitsByStore.set(current.store_id,units);
+  }
+  const tenantStores=tenantStoreRows.filter(store=>canonicalStoreId(store.id)===store.id).map(store=>{
+    const units=unitsByStore.get(store.id)??[];
+    return {...store,name:store.display_name??store.name,...storeDetails(directory,store.id),accountUnit:units.length===1?units[0]:null,accountUnitCount:units.length};
+  });
   const ids=users.map(user=>user.id);const [moduleRows,storeRows]=ids.length?await Promise.all([
     supabaseRest<Array<{user_id:number;module_id:string;enabled:boolean}>>(`user_module_permissions?select=user_id,module_id,enabled&user_id=in.(${ids.join(",")})`),
     supabaseRest<Array<{user_id:number;store_id:string}>>(`user_store_access?select=user_id,store_id&user_id=in.(${ids.join(",")})`),
   ]):[[],[]];
   const clientDefaults=ALL_PORTAL_MODULE_IDS.filter(id=>id==="live_calendar"?tenantModules.find(row=>row.module_id===id)?.enabled===true:tenantModules.find(row=>row.module_id===id)?.enabled!==false);
-  return{stores:tenantStores,clientDefaults,users:users.map(user=>({id:user.id,email:user.email,displayName:user.display_name??"",role:user.role,active:user.active,moduleAccessMode:user.module_access_mode,storeAccessMode:user.store_access_mode,createdAt:user.created_at,enabledModules:user.module_access_mode==="custom"?ALL_PORTAL_MODULE_IDS.filter(id=>moduleRows.find(row=>row.user_id===user.id&&row.module_id===id)?.enabled===true):(user.role==="customer"?clientDefaults:ALL_PORTAL_MODULE_IDS.filter(id=>id!=="live_calendar"||user.role==="superadmin"||clientDefaults.includes(id))),storeIds:user.store_access_mode==="selected"?[...new Set(storeRows.filter(row=>row.user_id===user.id).map(row=>canonicalStoreId(row.store_id)))].filter(id=>tenantStores.some(store=>store.id===id)):tenantStores.map(store=>store.id)}))};
+  return{stores:tenantStores,accountSettingsAvailable:accountStatus.available&&storeSetupAvailable===true,clientDefaults,users:users.map(user=>({id:user.id,email:user.email,displayName:user.display_name??"",role:user.role,active:user.active,moduleAccessMode:user.module_access_mode,storeAccessMode:user.store_access_mode,createdAt:user.created_at,enabledModules:user.module_access_mode==="custom"?ALL_PORTAL_MODULE_IDS.filter(id=>moduleRows.find(row=>row.user_id===user.id&&row.module_id===id)?.enabled===true):(user.role==="customer"?clientDefaults:ALL_PORTAL_MODULE_IDS.filter(id=>id!=="live_calendar"||user.role==="superadmin"||clientDefaults.includes(id))),storeIds:user.store_access_mode==="selected"?[...new Set(storeRows.filter(row=>row.user_id===user.id).map(row=>canonicalStoreId(row.store_id)))].filter(id=>tenantStores.some(store=>store.id===id)):tenantStores.map(store=>store.id)}))};
 }
 
 export async function GET(){const auth=await authSuperAdmin();if("error"in auth)return auth.error;return Response.json(await portalUsers(auth.membership.tenant_id));}
