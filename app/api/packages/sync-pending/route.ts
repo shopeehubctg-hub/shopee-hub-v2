@@ -4,6 +4,8 @@ import { packageAuditLog, packagePlatformSkus, packagePrices, packages, packageV
 import { validSyncJobSignature } from "../sync-job-auth";
 import { versionChangeSummary } from "../version-change-summary";
 import { storedChangeSummary } from "../email-change-summary";
+import { marketToday, packageLifecycleStatus } from "../../../package-lifecycle";
+import { packageHistoryAction } from "../../../package-ending";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -60,16 +62,17 @@ export async function POST(request: Request) {
           db.select().from(packagePlatformSkus).where(eq(packagePlatformSkus.versionId,version.id)).orderBy(asc(packagePlatformSkus.platform),asc(packagePlatformSkus.packageSku)),
         ]);
         const meta = metadata(version.calculatorSettings);
+        const ended = version.calculatorSettings?._packageEnded === true;
         const firstMarket = (meta?.market ?? item.market).split(",")[0];
         const label = (type:string) => type === "campaign" ? "Campaign" : "Non-Campaign";
         const sku = (platform:string) => skus.filter(row=>row.platform===platform).map(row=>row.packageSku).join(" | ");
         return {versionId:version.id,payload:{
           timestamp:version.createdAt,changeId:`${item.id}-v${version.version}`,projectOwner:version.createdBy,
           store:storeName,packageName:meta?.name ?? item.name,version:version.version,
-          action:version.version===1 ? "Created" : "Version Updated",
-          promotionType:prices.map(row=>`${row.market} ${label(row.priceType)}: ${row.promotionType==="custom"?"Custom":"Monthly"}`).join(" | "),
-          startDate:prices.filter(row=>row.market===firstMarket).map(row=>`${label(row.priceType)} ${row.effectiveFrom}`).join(" | "),
-          endDate:prices.filter(row=>row.market===firstMarket).map(row=>`${label(row.priceType)} ${row.effectiveTo}`).join(" | "),
+          action:packageHistoryAction(version.calculatorSettings,version.version),
+          promotionType:ended?"Ended":prices.map(row=>`${row.market} ${label(row.priceType)}: ${row.promotionType==="custom"?"Custom":"Monthly"}`).join(" | "),
+          startDate:ended?version.effectiveFrom:prices.filter(row=>row.market===firstMarket).map(row=>`${label(row.priceType)} ${row.effectiveFrom}`).join(" | "),
+          endDate:ended?version.effectiveTo:prices.filter(row=>row.market===firstMarket).map(row=>`${label(row.priceType)} ${row.effectiveTo}`).join(" | "),
           shopeeSku:sku("Shopee"),lazadaSku:sku("Lazada"),tiktokSku:sku("TikTok Shop"),
           addedComponents:formatComponents(version.addedComponents),removedComponents:formatComponents(version.removedComponents),
           currentComponents:formatComponents(version.components),changedBy:version.createdBy,syncStatus:"Synced",
@@ -92,10 +95,7 @@ export async function POST(request: Request) {
       const meta = metadata(candidate.version.calculatorSettings);
       const prices = await tx.select().from(packagePrices).where(eq(packagePrices.versionId,id));
       if (!prices.length) throw new Error("Package version has no price periods");
-      const parts = new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Kuala_Lumpur",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
-      const value = (type:string) => parts.find(p=>p.type===type)?.value ?? "";
-      const today = `${value("year")}-${value("month")}-${value("day")}`;
-      const status = prices.some(p=>p.effectiveFrom<=today && (p.effectiveTo ?? p.effectiveFrom)>=today) ? "active" : prices.some(p=>p.effectiveFrom>today) ? "scheduled" : "expired";
+      const status = packageLifecycleStatus(prices,candidate.version.calculatorSettings,marketToday());
       await tx.update(packageVersions).set({sheetSyncStatus:"synced"}).where(and(eq(packageVersions.id,id),inArray(packageVersions.sheetSyncStatus,["pending","failed"])));
       await tx.update(packages).set({...meta,status,updatedAt:new Date().toISOString()}).where(eq(packages.id,candidate.item.id));
       await tx.insert(packageAuditLog).values({packageId:candidate.item.id,action:"sheet_sync_recovered",detail:`Version ${candidate.version.version} confirmed by Apps Script`,actor:"Apps Script Package Sync"});
