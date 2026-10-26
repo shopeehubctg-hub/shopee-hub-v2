@@ -391,3 +391,5 @@ body{background:var(--paper);color:var(--ink)}
 .account-settings-notice{margin:0 19px 14px}
 
 .account-market-section{margin-top:28px}.account-market-section h4{margin:0;padding:16px 20px;font-size:18px;border-top:1px solid #dce7ec;background:#f4f8fa;color:#153f50}.account-company-cell{display:grid;gap:8px}.account-company-cell input{width:100%;min-width:150px;min-height:40px;padding:8px;border:1px solid #cbdbe2;border-radius:8px;font:inherit}.account-company-cell form>div{display:flex;gap:10px;margin-top:8px}.account-company-cell form button{padding:7px 12px;border:1px solid #cbdbe2;border-radius:7px;background:white;color:#0b6681;cursor:pointer}
+
+.account-billing-records>summary{cursor:pointer;padding:16px 18px;border:1px solid #dce7ec;border-radius:12px;background:white;color:#153f50;font-size:15px;font-weight:700}.account-billing-records[open]>summary{margin-bottom:12px}.account-billing-records>summary:focus-visible{outline:2px solid #0b6681;outline-offset:3px}

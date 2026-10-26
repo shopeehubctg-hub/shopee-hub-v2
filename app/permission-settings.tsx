@@ -523,7 +523,12 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
             </div>
             <div className="access-form" aria-busy={saving}>
               <label>Store name<input ref={storeNameInputRef} maxLength={120} required value={newStore.name} onChange={event => updateNewStore({ name: event.target.value })} /></label>
-              <label>Market<select value={newStore.market} onChange={event => updateNewStore({ market: event.target.value as "MY" | "SG" })}><option value="MY">Malaysia (MY)</option><option value="SG">Singapore (SG)</option></select></label>
+              <label>Market<select value={newStore.market} onChange={event => {
+                const market = event.target.value as "MY" | "SG";
+                if (market === newStore.market) return;
+                updateNewStore({ market });
+                setNewAccount(current => ({ ...emptyAccountSetup(), legalEntity: current.legalEntity, effectiveMonth: current.effectiveMonth, clientType: current.clientType }));
+              }}><option value="MY">Malaysia (MY)</option><option value="SG">Singapore (SG)</option></select></label>
               <AccountSetupFields draft={newAccount} market={newStore.market} update={updateNewAccount} />
               {accountSetupError(newAccount, newStore.market) && <p className="store-field-error" role="status">{accountSetupError(newAccount, newStore.market)}</p>}
               <StoreLinkFields draft={newStore} update={updateNewStore} idPrefix="add-store" />
