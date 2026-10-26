@@ -30,7 +30,7 @@ function snapshotTime(value:string){return new Intl.DateTimeFormat('en-MY',{time
 export function FeePlansPreview({rows,month}:{rows:AccountStoreRow[];month:string}){
  const {plans,upsertPlan}=useFeePlans();
  const baseId=useId();
- const [tab,setTab]=useState<Tab>('plans');
+ const [tab,setTab]=useFeePreviewState<Tab>('fee-preview-tab','plans');
  const [editor,setEditor]=useState<Editor|null>(null);
  const [error,setError]=useState('');const [feedback,setFeedback]=useState('');
  const [planType,setPlanType]=useState<'all'|ClientType>('all');const [planCurrency,setPlanCurrency]=useState<'all'|AccountCurrency>('all');

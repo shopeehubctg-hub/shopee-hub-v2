@@ -5,6 +5,7 @@ import type { AccountCurrency, AccountCurrencySummary, AccountResponse } from ".
 import { accountMoney } from "./account-display";
 import { CompanyCell, RateCell, RateDialog, StoreNameCell } from "./account-settings-ui";
 
+import { useFeePlans } from "./fee-plan-context";
 import { FeePlansPreview } from "./fee-plans-preview";
 
 const currencies: AccountCurrency[] = ["MYR", "SGD"];
@@ -40,6 +41,7 @@ function CurrencyCard({ currency, summary, invoiceMonth, today }: {
 }
 
 export function AccountPanel() {
+  const {previewRows,mergePreviewRows}=useFeePlans();
   const [invoiceMonth, setInvoiceMonth] = useState("2026-10");
   const [query, setQuery] = useState("");
   const [market, setMarket] = useState<"all" | "MY" | "SG">("all");
@@ -58,7 +60,7 @@ export function AccountPanel() {
         const response = await fetch(`/api/admin/account?invoiceMonth=${encodeURIComponent(invoiceMonth)}`, { cache: "no-store", signal: controller.signal });
         if (!response.ok) throw new Error(response.status === 403 ? "Super Admin access is required." : "Account data is unavailable. Please try again.");
         const result = await response.json() as AccountResponse;
-        if (!controller.signal.aborted) { setData(result); setError(""); setLoading(false); }
+        if (!controller.signal.aborted) { setData(result); mergePreviewRows(result.stores); setError(""); setLoading(false); }
       } catch (cause) {
         if (!controller.signal.aborted) { setError(cause instanceof Error ? cause.message : "Account data is unavailable. Please try again."); setLoading(false); }
       } finally { inFlight = false; }
@@ -66,7 +68,7 @@ export function AccountPanel() {
     void refresh();
     const interval = window.setInterval(() => { if (document.visibilityState === "visible") void refresh(); }, 60_000);
     return () => { controller.abort(); window.clearInterval(interval); };
-  }, [invoiceMonth, refreshKey]);
+  }, [invoiceMonth, refreshKey, mergePreviewRows]);
 
   const displayMonth = data?.invoiceMonth ?? invoiceMonth;
   const updatedAt = accountUpdatedAt(data?.updatedAt ?? null);
@@ -86,7 +88,7 @@ export function AccountPanel() {
     {!loading && data && <>
       {updatedAt && <p className="account-updated">Last updated {updatedAt} MYT</p>}
       <section className="account-currencies" aria-label="Income by currency">{currencies.map(currency => <CurrencyCard key={currency} currency={currency} summary={data.summaries.find(item => item.currency === currency)} invoiceMonth={displayMonth} today={data.today} />)}</section>
-      <FeePlansPreview rows={data.stores} month={invoiceMonth} />
+      <FeePlansPreview rows={previewRows.length?previewRows:data.stores} month={invoiceMonth} />
       <details className="account-billing-records"><summary>Billing records</summary><section className="account-stores" aria-labelledby="account-stores-title"><div className="account-stores-head"><div><p className="kicker">INVOICE MONTH · {monthLabel(displayMonth)}</p><h3 id="account-stores-title">Billing records</h3></div><span>{visibleRows.length} of {data.stores.length} billing records</span></div>
         {canConfigure && !data.settingsAvailable && <div className="account-notice account-settings-notice" role="status">Store and rate saving is unavailable in this preview. You can review the options.</div>}
         {data.stores.length > 0 && <div className="account-filters"><label>Search project or store<input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Project, entity or store…" /></label><label>Market<select value={market} onChange={event => setMarket(event.target.value as "all" | "MY" | "SG")}><option value="all">All markets</option><option value="MY">Malaysia</option><option value="SG">Singapore</option></select></label></div>}
