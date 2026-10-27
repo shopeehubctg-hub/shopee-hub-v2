@@ -28,3 +28,11 @@ test('permission and transport failure is not disguised as an empty account',asy
 test('GET exposes full canonical current selector options including MY and SG, and disables saving when schema is absent',async()=>{
  globalThis.__actor={email:'admin@example.test'};globalThis.__rest=async path=>{if(path.startsWith('customer_users?'))return [{active:true,role:'superadmin',tenant_id:'tenant-a'}];if(path.startsWith('tenants?'))return [{active:true}];if(path.startsWith('stores?'))return [{id:'shopee-supu',name:'Supu',display_name:'SUPU • 食补',platform:'Shopee MY'},{id:'shopee-skindae-sg',name:'SkinDae SG',display_name:null,platform:'Shopee SG'},{id:'shopee-skindae-sg-by-ctg4u',name:'Alias',display_name:null,platform:'Shopee SG'}];throw new Error('Supabase REST 404: {"code":"PGRST205"}');};const response=await GET(request());assert.equal(response.status,200);const data=await response.json();assert.equal(data.settingsAvailable,false);assert.equal(data.storeOptions.length,2);assert.ok(data.storeOptions.some(s=>s.name==='SUPU • 食补'));assert.ok(data.storeOptions.some(s=>s.platform==='Shopee SG'));assert.ok(data.storeOptions.every(s=>s.id!=='shopee-skindae-sg-by-ctg4u'));assert.equal(data.summaries[0].collected,null);
 });
+test('source rate preview eligibility is stamped from authenticated tenant, never caller tenant or colliding roster identity',async()=>{
+ globalThis.__actor={email:'admin@example.test'};
+ try{for(const tenant of ['tenant-a','j-packaging']){
+  globalThis.__fallback=()=>({invoiceMonth:'2026-10',today:'2026-10-27',stores:[{id:'roster-2026-10-my-3',rosterKey:'roster-2026-10-my-3',project:'DRSMILE',currency:'MYR',expectedNetFee:null,previewRateDefaultsEligible:true}],summaries:[]});
+  globalThis.__rest=async path=>{if(path.startsWith('customer_users?'))return [{active:true,role:'superadmin',tenant_id:tenant}];if(path.startsWith('tenants?'))return [{active:true}];if(path.startsWith('stores?'))return [];throw new Error('Supabase REST 404: {"code":"PGRST205"}');};
+  const response=await GET(new Request('https://example.test/api/admin/account?invoiceMonth=2026-10&tenantId=j-packaging'));assert.equal(response.status,200);const data=await response.json();assert.equal(data.stores[0].previewRateDefaultsEligible,tenant==='j-packaging');
+ }}finally{delete globalThis.__fallback;}
+});

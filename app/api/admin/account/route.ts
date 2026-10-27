@@ -33,7 +33,7 @@ export async function GET(request:Request) {
     let settings:AccountSetting[]=[];let settingsAvailable=true;
     try { settings=await rows<AccountSetting>('account_billing_unit_versions','id,roster_key,roster_project,legal_entity,currency,change_action,version::text,effective_month,store_id,fee_rule,created_at',member.tenant_id); }
     catch(error){if(error instanceof Error&&/"code":"(PGRST205|42P01)"/.test(error.message))settingsAvailable=false;else throw error;}
-    const decorate=(account:AccountResponse)=>{account.settingsAvailable=settingsAvailable;account.storeOptions=stores.filter(s=>canonicalStoreId(s.id)===s.id).map(s=>({id:s.id,name:s.display_name??s.name,platform:s.platform})).sort((a,b)=>a.name.localeCompare(b.name));return applyAccountSettings(account,settings,storeNames);};
+    const decorate=(account:AccountResponse)=>{account.settingsAvailable=settingsAvailable;account.storeOptions=stores.filter(s=>canonicalStoreId(s.id)===s.id).map(s=>({id:s.id,name:s.display_name??s.name,platform:s.platform})).sort((a,b)=>a.name.localeCompare(b.name));const decorated=applyAccountSettings(account,settings,storeNames);for(const row of decorated.stores)row.previewRateDefaultsEligible=member.tenant_id==='j-packaging';return decorated;};
     try {
       const [cycles,terms,assessments,invoices,receipts,allocations]=await Promise.all([
         rows<Cycle>('account_billing_cycles','id,statement_month,invoice_month,service_period_start,service_period_end,updated_at',member.tenant_id),

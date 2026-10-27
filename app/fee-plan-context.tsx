@@ -1,5 +1,6 @@
 "use client";
 import { createContext, useContext, useState, useCallback, type ReactNode, type Dispatch, type SetStateAction } from 'react';
+import rateMappingPreview from './account-rate-mapping-preview.json';
 import type { AccountStoreRow } from './account-contract';
 import { calculateFee, planForMonth, seedFeePlans, validatePlan, type ClientType, type FeeCalculation, type FeePlan, type FeePlanDraft } from './fee-plan-model';
 export type FeePreviewChoice={clientType:''|ClientType;planId:string};
@@ -29,11 +30,21 @@ export function useFeePreviewState<T>(key:string,initial:T):[T,Dispatch<SetState
  return [value,update];
 }
 
+/** Source-derived preview only: exact project identity and MYR; no name inference or DB assignment. */
+export function sourceRateCardDefault(row:AccountStoreRow,month:string):FeePreviewAssignment|undefined{
+ if(row.previewRateDefaultsEligible!==true)return undefined;
+ const matches=rateMappingPreview.records.filter(record=>record.rosterKey===row.rosterKey&&record.project===row.project&&record.currency==='MYR'&&row.currency==='MYR'&&record.effectiveMonth<=month);
+ if(matches.length!==1)return undefined;
+ const record=matches[0];
+ if(!['Internal','External'].includes(record.clientType)||!record.planId)return undefined;
+ return {effectiveMonth:record.effectiveMonth,clientType:record.clientType as ClientType,planId:record.planId};
+}
+
 /** One read path powers Billing records and the row editor; no invoice totals are changed. */
 export function monthlyFeePreview(row:AccountStoreRow,month:string,plans:FeePlan[],memory:Record<string,unknown>){
  const key=row.rosterKey??row.id;
  const assignments=(memory['fee-preview-assignments-v2']??{}) as Record<string,FeePreviewAssignment[]>;
- const choice=(assignments[key]??[]).filter(v=>v.effectiveMonth<=month).sort((a,b)=>a.effectiveMonth.localeCompare(b.effectiveMonth)).at(-1)??{clientType:'',planId:''};
+ const choice=(assignments[key]??[]).filter(v=>v.effectiveMonth<=month).sort((a,b)=>a.effectiveMonth.localeCompare(b.effectiveMonth)).at(-1)??sourceRateCardDefault(row,month)??{clientType:'',planId:''};
  const history=(memory['fee-preview-history']??[]) as FeePreviewSnapshot[];
  const locks=(memory['fee-preview-locks']??{}) as Record<string,string>;
  const locked=history.find(snapshot=>snapshot.id===locks[`${month}:${key}`]);

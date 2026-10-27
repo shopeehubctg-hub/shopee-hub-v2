@@ -7,6 +7,7 @@ export type AccountMappingCandidate = {
 export type AccountStoreRow = {
   id: string; rosterKey?: string; storeId: string | null; storeName: string; project: string;
   currency: AccountCurrency; statementMonth: string; invoiceMonth: string;
+  previewRateDefaultsEligible?: boolean;
   entity?: string; market?: "MY" | "SG"; termsVersion?: "NEW" | "OLD";
   mappingStatus?: "resolved" | "candidate" | "ambiguous" | "missing"; mappingReason?: string;
   candidates?: AccountMappingCandidate[];
