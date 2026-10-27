@@ -53,3 +53,32 @@ test('Grid and spreadsheet List share filters, bounded rows, selection, history 
  assert.equal(writes.length,0);
  } finally {await act(async()=>root.unmount());dom.window.close();for(const [key,desc] of Object.entries(prior)){if(desc)Object.defineProperty(globalThis,key,desc);else delete globalThis[key];}}
 });
+
+test('Staging samples stay separate from real packages and expose no mutation or export actions',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{url:'https://shopee-hub-v2-260731-git-cod-e05b8d-shopeehubctg-5199s-projects.vercel.app/?section=packages&packageSamples=1'});
+ const values={window:dom.window,document:dom.window.document,navigator:dom.window.navigator,HTMLElement:dom.window.HTMLElement,Event:dom.window.Event,MouseEvent:dom.window.MouseEvent,IS_REACT_ACT_ENVIRONMENT:true};
+ const prior=Object.fromEntries([...Object.keys(values),'fetch'].map(k=>[k,Object.getOwnPropertyDescriptor(globalThis,k)]));
+ for(const [key,value] of Object.entries(values))Object.defineProperty(globalThis,key,{configurable:true,writable:true,value});
+ const requests=[];
+ globalThis.fetch=async(url,options={})=>{requests.push({url,method:options.method??'GET'});return {ok:true,json:async()=>({source:'database',canDelete:true,canExportKits:true,packages:[{id:'real',storeId:'store',name:'Real saved package',packageSku:'REAL',market:'MY',status:'active',version:1,promotionType:'monthly',originalPrice:10000,sellingPrice:8000,effectiveFrom:'2026-10-01',effectiveTo:'2026-10-31',components:[],platforms:[],sheetSyncStatus:'synced'}]})};};
+ const {createRoot}=await import('react-dom/client'),root=createRoot(dom.window.document.getElementById('root')),doc=dom.window.document;
+ const click=async(label)=>{const button=[...doc.querySelectorAll('button')].find(b=>b.textContent===label);assert.ok(button,label);await act(async()=>button.click());};
+ try{
+  await act(async()=>root.render(React.createElement(PackageControl,{storeId:'store',storeName:'Store'})));
+  assert.equal(doc.querySelectorAll('.package-card').length,8);assert.match(doc.body.textContent,/Sample data · Read only/);assert.doesNotMatch(doc.body.textContent,/Real saved package/);
+  for(const label of ['+ New Package','Create Package','Edit Draft','Edit / Modify','Migrate & Edit','End Package','Remove Package','Retry Sheet Sync'])assert.equal([...doc.querySelectorAll('button')].find(b=>b.textContent===label),undefined,label);
+  assert.equal(doc.querySelector('.kit-export-button'),null);assert.equal(doc.querySelector('.kit-package-selector'),null);
+  await click('List View');assert.match(doc.querySelector('.package-sheet').textContent,/S\$ 49.90/);assert.match(doc.querySelector('.package-sheet').textContent,/DEMO-GIFT/);
+  await click('Long Term');assert.equal(doc.querySelectorAll('.package-sheet tbody>tr').length,2);
+  await click('All types');await click('Draft');assert.equal(doc.querySelectorAll('.package-sheet tbody>tr').length,1);
+  await click('Back to real data');assert.match(doc.body.textContent,/Real saved package/);assert.doesNotMatch(doc.body.textContent,/Daily Wellness/);
+  assert.ok(requests.every(r=>r.method==='GET'));
+  // Production must ignore the sample query even for Super Admin.
+  await act(async()=>root.unmount());
+  dom.reconfigure({url:'https://shopee-hub-v2-260731.vercel.app/?packageSamples=1'});
+  const productionRoot=createRoot(doc.getElementById('root'));
+  await act(async()=>productionRoot.render(React.createElement(PackageControl,{storeId:'store',storeName:'Store'})));
+  assert.match(doc.body.textContent,/Real saved package/);assert.doesNotMatch(doc.body.textContent,/View sample data|Daily Wellness/);
+  await act(async()=>productionRoot.unmount());
+ }finally{dom.window.close();for(const [key,desc]of Object.entries(prior)){if(desc)Object.defineProperty(globalThis,key,desc);else delete globalThis[key];}}
+});

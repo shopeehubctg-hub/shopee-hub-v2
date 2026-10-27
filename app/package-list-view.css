@@ -1,4 +1,7 @@
 .package-control .package-controls{flex-wrap:wrap;align-items:center}
+.package-control .package-sample-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:18px 0;color:var(--muted);font-size:12px}
+.package-control .package-sample-toolbar button{font:inherit;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:8px;padding:9px 12px;cursor:pointer}
+.package-control .package-sample-toolbar button:focus-visible{outline:2px solid var(--red);outline-offset:3px}
 .package-control .package-filter-row,.package-control .package-filter-row>div,.package-control .package-view-controls,.package-control .package-view-controls>div{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .package-control .package-filter-divider{width:1px;height:24px;background:var(--line);margin:0 5px}
 .package-control .package-view-controls{margin-left:auto}

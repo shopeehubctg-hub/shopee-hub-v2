@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import "./package-list-view.css";
+import { packageSamples } from "./package-samples";
 import type { CalculatorSnapshot, PackagePrefill } from "./calculator-types";
 import { calculatorSnapshots, packageHistoryChanges, packageHistoryTime, type PackageHistorySnapshot } from "./package-history";
 import { defaultRecurringEvent, recurringEventIds, recurringEventLabels, validateRecurringCampaign, type RecurringCampaignEvent, type RecurringCampaignRule } from "./recurring-campaign";
@@ -28,7 +29,7 @@ type HistoryLine = PackageHistorySnapshot & {
   sheetSyncStatus?:"not_sent"|"pending"|"synced"|"failed"; createdAt:string; createdBy:string;
   calculatorSettings?:CalculatorHistorySettings|null;
 };
-type PackageItem = {
+export type PackageItem = {
   id:string; storeId:string; storeName?:string; packageSku:string; name:string; market:string; status:string; version:number;
   pendingVersion?:number|null; durationType?:"long_term"|"monthly";
   promotionType:"monthly"|"custom"; originalPrice:number; sellingPrice:number; effectiveFrom:string; effectiveTo?:string|null;
@@ -172,6 +173,8 @@ function PackagePriceSummary({item}:{item:PackageItem}) {
 
 export function PackageControl({ storeId, storeName, canCreate=true, prefills=[], standaloneCreate=false, draftStorageKey, onPrefillsAccepted }:Props) {
   const [items,setItems] = useState<PackageItem[]>([]);
+  const [sampleMode,setSampleMode] = useState(false);
+  const [canShowSamples,setCanShowSamples] = useState(false);
   const [loadedStoreId,setLoadedStoreId] = useState("");
   const [source,setSource] = useState("");
   const [canDelete,setCanDelete] = useState(false);
@@ -242,6 +245,9 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       setLoadedStoreId(storeId);
       setSource(data.source ?? "");
       setCanDelete(data.canDelete === true);
+      const allowSamples=data.canDelete===true&&window.location.hostname==="shopee-hub-v2-260731-git-cod-e05b8d-shopeehubctg-5199s-projects.vercel.app";
+      setCanShowSamples(allowSamples);
+      if(loadedStoreId!==storeId)setSampleMode(allowSamples&&new URLSearchParams(window.location.search).get("packageSamples")==="1");
       setCanExportKits(data.canExportKits === true);
       setSelectedKitIds([]);
       setKitPreview(null);
@@ -327,6 +333,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     window.localStorage.setItem(draftStorageKey,JSON.stringify(batch));
   }
   function openPrefill(group:PackagePrefill[]) {
+    setSampleMode(false);
     resetForm();
     const first=group[0];
     const stored=readStoredBatch();
@@ -370,7 +377,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     onPrefillsAccepted?.();
   },[prefills[0]?.requestId]);
 
-  const scopedItems=useMemo(()=>loadedStoreId===storeId?items:[],[items,loadedStoreId,storeId]);
+  const scopedItems=useMemo(()=>loadedStoreId===storeId?(sampleMode?packageSamples(storeId,storeName):items):[],[items,loadedStoreId,storeId,storeName,sampleMode]);
   const visible = useMemo(()=>scopedItems.filter(item =>
     (filter==="all"||item.status===filter) &&
     (durationFilter==="all"||packageDuration(item)===durationFilter) &&
@@ -843,7 +850,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     setShowCreate(true);
   }
 
-  function renderSelection(item:PackageItem) { return <>{canExportKits&&hasSelectedStore&&source==="database"&&<label className="kit-package-selector"><input type="checkbox" checked={selectedKitIds.includes(item.id)} disabled={item.sheetSyncStatus!=="synced"||Boolean(item.pendingVersion)||["draft","review"].includes(item.status)} onChange={event=>{setKitError("");setKitPreview(null);setSelectedKitIds(current=>event.target.checked?[...current,item.id]:current.filter(id=>id!==item.id));}} aria-label={`Select ${item.name} for fulfillment sheet`}/><span>Select for Fulfillment Sheet</span></label>}</>; }
+  function renderSelection(item:PackageItem) { if(sampleMode)return null; return <>{canExportKits&&hasSelectedStore&&source==="database"&&<label className="kit-package-selector"><input type="checkbox" checked={selectedKitIds.includes(item.id)} disabled={item.sheetSyncStatus!=="synced"||Boolean(item.pendingVersion)||["draft","review"].includes(item.status)} onChange={event=>{setKitError("");setKitPreview(null);setSelectedKitIds(current=>event.target.checked?[...current,item.id]:current.filter(id=>id!==item.id));}} aria-label={`Select ${item.name} for fulfillment sheet`}/><span>Select for Fulfillment Sheet</span></label>}</>; }
   function renderHistory(item:PackageItem) { return <>{openHistory===item.id&&<div className="version-history">{(item.history?.length?item.history:[{
         version:item.version,changeNote:"Imported from Fulfillment Sheet",promotionType:item.promotionType,effectiveFrom:item.effectiveFrom,effectiveTo:item.effectiveTo,createdAt:"",createdBy:"",addedComponents:item.components,removedComponents:[],
       }]).map(line=><div className="history-entry" key={line.version}>
@@ -853,7 +860,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
         <div className="history-diff"><span className="added">+ {(line.addedComponents ?? []).map(lineText).join(", ") || "No Additions"}</span><span className="removed">− {(line.removedComponents ?? []).map(lineText).join(", ") || "No Removals"}</span></div>
         {calculatorSnapshots(line.calculatorSettings).length>0&&<div className="calculator-history"><b>Calculator Snapshot</b>{calculatorSnapshots(line.calculatorSettings).map(snapshot=><div key={snapshot.serviceScenario}><strong>{snapshot.serviceScenario}</strong><span>{snapshot.category}</span>{snapshot.pricingGoal?<span>Goal · {snapshot.pricingGoal==="facebookPayout"?"Match Meta Order Income":snapshot.pricingGoal==="sameCustomerPrice"?"Match Meta Buyer Payment":`Lower Than Meta by ${snapshot.discountUnit==="rm"?money(snapshot.discountValue??0,"MY"):`${(snapshot.discountValue??0).toFixed(2)}%`}`}</span>:null}<span>Meta {money(snapshot.facebookPrice,"MY")} → Shopee {money(snapshot.suggestedShopeePrice,"MY")}</span>{snapshot.mainProductQuantity?<span>Main Product Qty {snapshot.mainProductQuantity} · Meta Price Per Unit {snapshot.facebookPricePerUnit==null?"—":money(snapshot.facebookPricePerUnit,"MY")} · Buyer Price Per Unit {snapshot.customerPricePerUnit==null?"—":money(snapshot.customerPricePerUnit,"MY")}</span>:null}<span>Commission {snapshot.commissionRate.toFixed(2)}% · Service {snapshot.serviceRate.toFixed(2)}% · Payout {money(snapshot.actualPayout,"MY")}</span></div>)}</div>}
       </div>)}</div>}</>; }
-  function renderActions(item:PackageItem) { return (<div className="package-card-foot"><span>{item.components.length} Inventory SKU Lines</span><button onClick={()=>setOpenHistory(openHistory===item.id?null:item.id)} aria-label={`${openHistory===item.id?"Hide":"View"} history for ${item.name}`}>{openHistory===item.id?"Hide History":"View History"}</button>{item.status==="draft"&&source==="database"&&<button onClick={()=>publishDraft(item)} disabled={saving} aria-label={`Create package ${item.name}`}>Create Package</button>}{item.pendingVersion&&source==="database"&&<button onClick={()=>retrySheetSync(item)} disabled={saving} aria-label={`Retry Google Sheet sync for ${item.name} version ${item.pendingVersion}`}>Retry Sheet Sync</button>}{!(item.pendingVersion&&source==="database")&&<button onClick={()=>startVersion(item)} disabled={saving} aria-label={`${item.status==="draft"?"Edit draft":source==="database"?"Edit package":"Migrate and edit"} ${item.name}`}>{item.status==="draft"&&source==="database"?"Edit Draft":source==="database"?"Edit / Modify":"Migrate & Edit"}</button>}{source==="database"&&item.status==="active"&&<button onClick={()=>endPackage(item)} disabled={saving||Boolean(item.pendingVersion)||item.sheetSyncStatus!=="synced"} className="package-end" aria-label={`End package ${item.name}`}>End Package</button>}{canDelete&&source==="database"&&<button onClick={()=>deletePackage(item)} disabled={saving} className="package-delete" aria-label={`Remove package ${item.name}`}>Remove Package</button>}</div>); }
+  function renderActions(item:PackageItem) { if(sampleMode)return <div className="package-card-foot"><button type="button" onClick={()=>setOpenHistory(openHistory===item.id?null:item.id)}>{openHistory===item.id?"Hide History":"View History"}</button></div>; return (<div className="package-card-foot"><span>{item.components.length} Inventory SKU Lines</span><button onClick={()=>setOpenHistory(openHistory===item.id?null:item.id)} aria-label={`${openHistory===item.id?"Hide":"View"} history for ${item.name}`}>{openHistory===item.id?"Hide History":"View History"}</button>{item.status==="draft"&&source==="database"&&<button onClick={()=>publishDraft(item)} disabled={saving} aria-label={`Create package ${item.name}`}>Create Package</button>}{item.pendingVersion&&source==="database"&&<button onClick={()=>retrySheetSync(item)} disabled={saving} aria-label={`Retry Google Sheet sync for ${item.name} version ${item.pendingVersion}`}>Retry Sheet Sync</button>}{!(item.pendingVersion&&source==="database")&&<button onClick={()=>startVersion(item)} disabled={saving} aria-label={`${item.status==="draft"?"Edit draft":source==="database"?"Edit package":"Migrate and edit"} ${item.name}`}>{item.status==="draft"&&source==="database"?"Edit Draft":source==="database"?"Edit / Modify":"Migrate & Edit"}</button>}{source==="database"&&item.status==="active"&&<button onClick={()=>endPackage(item)} disabled={saving||Boolean(item.pendingVersion)||item.sheetSyncStatus!=="synced"} className="package-end" aria-label={`End package ${item.name}`}>End Package</button>}{canDelete&&source==="database"&&<button onClick={()=>deletePackage(item)} disabled={saving} className="package-delete" aria-label={`Remove package ${item.name}`}>Remove Package</button>}</div>); }
   function renderListPrices(item:PackageItem,market:MarketName) {
     const schedules=item.priceSchedules?.filter(line=>line.market===market)??[];
     const hasRecurringPrice=Boolean(item.recurringCampaign?.events.some(event=>event.prices[market]));
@@ -870,14 +877,16 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       <div><p className="kicker">OXM PACKAGE CONTROL</p><h2>Packages & Pricing</h2><p>Create packages, choose platforms and set promotion dates. Every change is saved in history.</p></div>
       <div className="package-hero-actions">
         <a href={HISTORY_SHEET_URL} target="_blank" rel="noopener noreferrer">Google Sheet History</a>
-        <span>{!hasPackageScope?"Select a Store":allStoresSelected?"Accessible Stores":source==="sheet-migration-preview"?"Sheet Migration Preview":"Live Database"}</span>
-        {canExportKits&&hasSelectedStore&&loadedStoreId===storeId&&source==="database"&&<button type="button" className="kit-export-button" onClick={previewKitExport} disabled={!selectedKitIds.length||kitBusy}>Generate Fulfillment Sheet{selectedKitIds.length?` (${selectedKitIds.length})`:""}</button>}
-        {canCreate&&hasSelectedStore&&<button onClick={openNew}>+ New Package</button>}
+        <span>{sampleMode?"Sample data":!hasPackageScope?"Select a Store":allStoresSelected?"Accessible Stores":source==="sheet-migration-preview"?"Sheet Migration Preview":"Live Database"}</span>
+        {!sampleMode&&canExportKits&&hasSelectedStore&&loadedStoreId===storeId&&source==="database"&&<button type="button" className="kit-export-button" onClick={previewKitExport} disabled={!selectedKitIds.length||kitBusy}>Generate Fulfillment Sheet{selectedKitIds.length?` (${selectedKitIds.length})`:""}</button>}
+        {!sampleMode&&canCreate&&hasSelectedStore&&<button onClick={openNew}>+ New Package</button>}
       </div>
     </div>
 
+    {canShowSamples&&!standaloneCreate&&<div className="package-sample-toolbar"><span role="status">{sampleMode?"Sample data · Read only":""}</span><button type="button" disabled={saving||showCreate} aria-pressed={sampleMode} onClick={()=>{resetListScope();setFilter("all");setDurationFilter("all");setSearch("");setSampleMode(value=>!value);}}>{sampleMode?"Back to real data":"View sample data"}</button></div>}
+
     <section className="metric-grid package-metrics">
-      <article className="metric"><span>Total Packages</span><strong>{scopedItems.length}</strong><em>{storeName}</em></article>
+      <article className="metric"><span>Total Packages</span><strong>{scopedItems.length}</strong><em>{sampleMode?"Sample packages":storeName}</em></article>
       <article className="metric"><span>Active Now</span><strong>{active}</strong><em>Currently Selling</em></article>
       <article className="metric"><span>Scheduled</span><strong>{scheduled}</strong><em>Future promotions</em></article>
       <article className="metric warn"><span>Needs Review</span><strong>{drafts}</strong><em>Draft + Review</em></article>
@@ -891,7 +900,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       </div>
       <div className="package-view-controls"><div role="group" aria-label="Package view">{(["grid","list"] as const).map(value=><button type="button" key={value} aria-pressed={view===value} className={view===value?"active":""} onClick={()=>setView(value)}>{value==="grid"?"Grid View":"List View"}</button>)}</div><input aria-label="Search package or platform SKU" value={search} onChange={event=>{resetListScope();setSearch(event.target.value);}} placeholder="Search package or platform SKU" /></div>
     </div>
-    {message&&<div className={`package-message ${messageType}`} role={messageType==="error"?"alert":"status"} aria-live={messageType==="error"?"assertive":"polite"}>{message}{messageType==="warning"&&<a href={HISTORY_SHEET_URL} target="_blank" rel="noopener noreferrer">Open History Sheet</a>}</div>}
+    {!sampleMode&&message&&<div className={`package-message ${messageType}`} role={messageType==="error"?"alert":"status"} aria-live={messageType==="error"?"assertive":"polite"}>{message}{messageType==="warning"&&<a href={HISTORY_SHEET_URL} target="_blank" rel="noopener noreferrer">Open History Sheet</a>}</div>}
     {kitError&&!kitPreview&&<div className="package-message error" role="alert">{kitError}</div>}
 
     {view==="grid"?<div className="package-list">{displayed.map(item=><article className="package-card" key={item.id}>
