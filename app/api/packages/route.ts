@@ -13,10 +13,14 @@ import {
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { canAccessModule, canAccessStore } from "../../module-access";
 import { publicCalculatorSettings } from "../../package-history";
+import { marketToday, packageLifecycleStatus } from "../../package-lifecycle";
+import { activeRecurringEvent, readRecurringCampaign, recurringEventLabels, validateRecurringCampaign, type RecurringCampaignRule, type RecurringMarket } from "../../recurring-campaign";
 import { blocksNewVersionForUnsyncedSheet } from "../../package-version-policy";
 import { emailChangeSummary } from "./email-change-summary";
 import { versionChangeSummary } from "./version-change-summary";
 import { syncHistoryToGoogleSheet } from "./history-sync";
+import { endPackage } from "./end-package";
+import { packageHistoryAction } from "../../package-ending";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -40,7 +44,7 @@ type PriceScheduleInput = {
   sellingPrice: number | string;
   promotionType: "monthly" | "custom";
   effectiveFrom: string;
-  effectiveTo: string;
+  effectiveTo: string | null;
 };
 
 type PackageErrorSection = "Package Details" | "Pricing & Promotion" | "Inventory Items" | "Saving";
@@ -155,18 +159,6 @@ function historyWebhookConfigured() {
   return Boolean(process.env.GOOGLE_SHEETS_HISTORY_WEBHOOK_URL && process.env.GOOGLE_SHEETS_HISTORY_SECRET);
 }
 
-function publishedStatus(periods:Array<{effectiveFrom:string;effectiveTo:string}>,today:string) {
-  if (periods.some(period=>period.effectiveFrom<=today&&period.effectiveTo>=today)) return "active" as const;
-  if (periods.some(period=>period.effectiveFrom>today)) return "scheduled" as const;
-  return "expired" as const;
-}
-
-function marketToday() {
-  const parts=new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Kuala_Lumpur",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
-  const value=(type:string)=>parts.find(part=>part.type===type)?.value??"";
-  return `${value("year")}-${value("month")}-${value("day")}`;
-}
-
 export async function GET(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error:"Authentication required" }, { status:401 });
@@ -202,7 +194,7 @@ export async function GET(request: Request) {
     .orderBy(desc(packages.updatedAt));
   const rows=allRows.filter(row=>row.deletedAt===null);
   if (!rows.length) {
-    if(allRows.length)return Response.json({packages:[],source:"database",canCreate:storeId!=="all",canDelete:membership.role==="superadmin"},{headers:{"Cache-Control":"private, no-store"}});
+    if(allRows.length)return Response.json({packages:[],source:"database",canCreate:storeId!=="all",canDelete:membership.role==="superadmin",canExportKits:membership.role!=="customer"&&storeId!=="all"},{headers:{"Cache-Control":"private, no-store"}});
     const sample = seedPackages
       .filter(item => scopedStoreIds.includes(item.storeId))
       .map(item => ({ ...item, storeName:storeNames.get(item.storeId) ?? "Accessible Store" }));
@@ -235,16 +227,24 @@ export async function GET(request: Request) {
   versions.forEach(version => { if (version.sheetSyncStatus === "synced" && !latestPublishedVersion.has(version.packageId)) latestPublishedVersion.set(version.packageId, version); });
   return Response.json({
     packages:rows.map(row => {
-      const version = ["active","scheduled","expired"].includes(row.status)
+      const endedVersion = latestVersion.get(row.id)?.calculatorSettings?._packageEnded === true ? latestVersion.get(row.id) : undefined;
+      const version = endedVersion ?? (["active","scheduled","expired"].includes(row.status)
         ? latestPublishedVersion.get(row.id) ?? latestVersion.get(row.id)
-        : latestVersion.get(row.id);
+        : latestVersion.get(row.id));
       const versionPrices = version ? pricesByVersion.get(version.id)??[] : [];
       const price = versionPrices.find(item => item.priceType === "campaign" && (item.currency === "SGD" ? "SG" : item.market) === "MY") ?? versionPrices[0];
+      const versionMarkets=row.market.split(",").map(market=>market.trim()).filter(market=>market==="MY"||market==="SG") as RecurringMarket[];
+      const recurringCampaign=readRecurringCampaign(version?.calculatorSettings?._recurringCampaign,versionMarkets);
+      const currentEvent=recurringCampaign?activeRecurringEvent(recurringCampaign,marketToday()):null;
+      const displayMarket=versionMarkets.includes("MY")?"MY":versionMarkets[0];
+      const eventPrice=displayMarket?currentEvent?.prices[displayMarket]:null;
+      const normalPrice=versionPrices.find(item=>item.priceType==="non_campaign"&&(item.currency==="SGD"?"SG":item.market)===displayMarket);
+      const displayPrice=recurringCampaign ? eventPrice?{originalPrice:Math.round(eventPrice.originalPrice*100),sellingPrice:Math.round(eventPrice.sellingPrice*100)}:normalPrice??price : price;
       const currentPlatforms = version ? (platformsByVersion.get(version.id)??[]).map(({ platform, packageSku }) => ({ platform, packageSku })) : [];
       return {
         ...row,
         status:["active","scheduled","expired"].includes(row.status)
-          ? publishedStatus(versionPrices.map(item=>({effectiveFrom:item.effectiveFrom,effectiveTo:item.effectiveTo??item.effectiveFrom})),marketToday())
+          ? packageLifecycleStatus(versionPrices,version?.calculatorSettings,marketToday())
           : row.status,
         storeName:storeNames.get(row.storeId) ?? "Accessible Store",
         packageSku:currentPlatforms[0]?.packageSku ?? row.packageSku,
@@ -256,13 +256,16 @@ export async function GET(request: Request) {
         addedComponents:version?.addedComponents ?? [],
         removedComponents:version?.removedComponents ?? [],
         sheetSyncStatus:version?.sheetSyncStatus ?? "pending",
-        pendingVersion:["active","scheduled","expired"].includes(row.status) && latestVersion.get(row.id)?.version !== version?.version &&
+        samePricing:typeof version?.calculatorSettings?._samePricing==="boolean" ? version.calculatorSettings._samePricing : undefined,
+        recurringCampaign,
+        currentPriceLabel:recurringCampaign?(currentEvent?recurringEventLabels[currentEvent.id]:"Non-Campaign Day"):undefined,
+        pendingVersion:["active","scheduled","expired"].includes(row.status) && (Boolean(endedVersion) || latestVersion.get(row.id)?.version !== version?.version) &&
           ["pending","failed"].includes(latestVersion.get(row.id)?.sheetSyncStatus ?? "") ? latestVersion.get(row.id)?.version : null,
         calculatorSettings:publicCalculatorSettings(version?.calculatorSettings ?? null),
         effectiveFrom:version?.effectiveFrom ?? price?.effectiveFrom ?? "",
-        effectiveTo:version?.effectiveTo ?? price?.effectiveTo ?? null,
-        originalPrice:price?.originalPrice ?? 0,
-        sellingPrice:price?.sellingPrice ?? 0,
+        effectiveTo:version ? version.effectiveTo : price?.effectiveTo ?? null,
+        originalPrice:displayPrice?.originalPrice ?? 0,
+        sellingPrice:displayPrice?.sellingPrice ?? 0,
         priceSchedules:versionPrices.map(item=>({
           market:item.currency === "SGD" ? "SG" : item.market,
           priceType:item.priceType,
@@ -270,11 +273,12 @@ export async function GET(request: Request) {
           sellingPrice:item.sellingPrice / 100,
           promotionType:item.promotionType,
           effectiveFrom:item.effectiveFrom,
-          effectiveTo:item.effectiveTo ?? "",
+          effectiveTo:item.effectiveTo,
         })),
         history:(versionsByPackage.get(row.id)??[]).map(item => {
           const historyPrices=pricesByVersion.get(item.id)??[];
           const historyPrice = historyPrices[0];
+          const historyMarkets=(versionMetadata(item.calculatorSettings)?.market??row.market).split(",").map(market=>market.trim()).filter(market=>market==="MY"||market==="SG") as RecurringMarket[];
           return {
             version:item.version,
             name:versionMetadata(item.calculatorSettings)?.name ?? null,
@@ -286,7 +290,8 @@ export async function GET(request: Request) {
             effectiveTo:item.effectiveTo,
             originalPrice:historyPrice?.originalPrice,
             sellingPrice:historyPrice?.sellingPrice,
-            priceSchedules:historyPrices.map(priceItem=>({market:priceItem.currency === "SGD" ? "SG" : priceItem.market,priceType:priceItem.priceType,originalPrice:priceItem.originalPrice/100,sellingPrice:priceItem.sellingPrice/100,promotionType:priceItem.promotionType,effectiveFrom:priceItem.effectiveFrom,effectiveTo:priceItem.effectiveTo??""})),
+            priceSchedules:historyPrices.map(priceItem=>({market:priceItem.currency === "SGD" ? "SG" : priceItem.market,priceType:priceItem.priceType,originalPrice:priceItem.originalPrice/100,sellingPrice:priceItem.sellingPrice/100,promotionType:priceItem.promotionType,effectiveFrom:priceItem.effectiveFrom,effectiveTo:priceItem.effectiveTo})),
+            recurringCampaign:readRecurringCampaign(item.calculatorSettings?._recurringCampaign,historyMarkets),
             addedComponents:item.addedComponents,
             removedComponents:item.removedComponents,
             platforms:(platformsByVersion.get(item.id)??[]).map(({ platform, packageSku }) => ({ platform, packageSku })),
@@ -301,6 +306,7 @@ export async function GET(request: Request) {
     source:"database",
     canCreate:storeId !== "all",
     canDelete:membership.role === "superadmin",
+    canExportKits:membership.role !== "customer" && storeId !== "all",
   });
 }
 
@@ -331,6 +337,10 @@ async function savePackage(request: Request) {
     platforms?: PlatformLine[];
     calculatorSettings?: Record<string, unknown> | null;
     priceSchedules?: PriceScheduleInput[];
+    samePricing?: boolean;
+    longTerm?: boolean;
+    campaignLongTerm?: boolean;
+    recurringCampaign?: unknown;
   };
   const mode = body.mode ?? "draft";
   if (mode!=="draft"&&mode!=="publish") return packageError("Saving","Choose Create Package or Save Draft.");
@@ -345,11 +355,45 @@ async function savePackage(request: Request) {
   if (markets.some(market=>!["MY","SG"].includes(market)) || schedules.some(item=>!markets.includes(item.market))) {
     return packageError("Pricing & Promotion","The selected markets do not match the price cards. Select MY or SG again.");
   }
-  if (!markets.length || markets.some(market=>schedules.filter(item=>item.market===market&&item.priceType==="non_campaign").length!==1||!schedules.some(item=>item.market===market&&item.priceType==="campaign"))) {
+  let recurringCampaign:RecurringCampaignRule|null=null;
+  if(body.recurringCampaign!=null){
+    try { recurringCampaign=validateRecurringCampaign(body.recurringCampaign,markets as RecurringMarket[]); }
+    catch(error) { return packageError("Pricing & Promotion",error instanceof Error?error.message:"Check the recurring Campaign details."); }
+    if(body.samePricing) return packageError("Pricing & Promotion","Uncheck Same Pricing to set monthly Campaign event prices.");
+    if(recurringCampaign.events.some(event=>markets.some(market=>{
+      const first=recurringCampaign!.events[0].prices[market as RecurringMarket];
+      const current=event.prices[market as RecurringMarket];
+      return !first||!current||first.originalPrice!==current.originalPrice||first.sellingPrice!==current.sellingPrice;
+    }))) return packageError("Pricing & Promotion","Use one shared Campaign price for Double Day, Mid Month Madness and Payday.");
+  }
+  if (!markets.length || markets.some(market=>!schedules.some(item=>item.market===market&&item.priceType==="non_campaign")||!schedules.some(item=>item.market===market&&item.priceType==="campaign"))) {
     return packageError("Pricing & Promotion","Select at least one market and complete its Non-Campaign and Campaign pricing.");
   }
-  if (schedules.some(item=>!["MY","SG"].includes(item.market)||!["campaign","non_campaign"].includes(item.priceType)||!["monthly","custom"].includes(item.promotionType)||!item.effectiveFrom||!item.effectiveTo||item.effectiveTo<item.effectiveFrom)) {
+  if(markets.some(market=>{
+    const normal=schedules.filter(item=>item.market===market&&item.priceType==="non_campaign").sort((a,b)=>a.effectiveFrom.localeCompare(b.effectiveFrom));
+    return normal.some((line,index)=>index>0&&(normal[index-1].effectiveTo===null||String(normal[index-1].effectiveTo)>=line.effectiveFrom));
+  }))return packageError("Pricing & Promotion","Normal Day periods cannot overlap. Remove a duplicate month or adjust the custom dates.");
+  if (schedules.some(item=>!["MY","SG"].includes(item.market)||!["campaign","non_campaign"].includes(item.priceType)||!["monthly","custom"].includes(item.promotionType)||!item.effectiveFrom||(item.effectiveTo!==null&&!item.effectiveTo)||(item.effectiveTo===null&&!body.longTerm&&!body.campaignLongTerm)||(item.effectiveTo!==null&&item.effectiveTo<item.effectiveFrom))) {
     return packageError("Pricing & Promotion","Every price requires a valid start date and end date. The end date cannot be earlier than the start date.");
+  }
+  if (markets.some(market=>schedules.filter(item=>item.market===market&&item.priceType==="non_campaign").some(item=>item.effectiveTo===null)!==Boolean(body.longTerm))) {
+    return packageError("Pricing & Promotion","Long-term Package must have no end date; other packages need an end date.");
+  }
+  if(body.longTerm&&markets.some(market=>schedules.filter(item=>item.market===market&&item.priceType==="non_campaign").length!==1))return packageError("Pricing & Promotion","A Long-term Package needs one Normal Day start date.");
+  if (markets.some(market=>body.campaignLongTerm&&schedules.filter(item=>item.market===market&&item.priceType==="campaign").length!==1)) {
+    return packageError("Pricing & Promotion","Long-term Campaign pricing needs one open-ended date range per market.");
+  }
+  if (schedules.some(item=>item.priceType==="campaign"&&((body.campaignLongTerm&&item.effectiveTo!==null&&!recurringCampaign)||(item.effectiveTo===null&&!body.campaignLongTerm&&(!body.longTerm||!schedules.some(base=>base.market===item.market&&base.priceType==="non_campaign"&&base.effectiveTo===null&&base.effectiveFrom===item.effectiveFrom&&base.originalPrice===item.originalPrice&&base.sellingPrice===item.sellingPrice)))))) {
+    return packageError("Pricing & Promotion","Open-ended Campaign dates must be selected as Long-term Package or match the shared Non-Campaign pricing.");
+  }
+  if(recurringCampaign&&markets.some(market=>{
+    const base=schedules.find(item=>item.market===market&&item.priceType==="non_campaign");
+    if(schedules.filter(item=>item.market===market&&item.priceType==="non_campaign").length!==1)return true;
+    const campaign=schedules.filter(item=>item.market===market&&item.priceType==="campaign");
+    const firstPrice=recurringCampaign!.events[0].prices[market as RecurringMarket];
+    return !base||base.effectiveFrom>recurringCampaign!.startDate||(!body.longTerm&&(recurringCampaign!.endDate===null||base.effectiveTo===null||base.effectiveTo<recurringCampaign!.endDate))||campaign.length!==1||campaign[0].effectiveFrom!==recurringCampaign!.startDate||campaign[0].effectiveTo!==recurringCampaign!.endDate||!firstPrice||campaign[0].originalPrice!==Math.round(firstPrice.originalPrice*100)||campaign[0].sellingPrice!==Math.round(firstPrice.sellingPrice*100);
+  })) {
+    return packageError("Pricing & Promotion","Recurring Campaign dates and first event price must match the Campaign card. Non-Campaign pricing must cover the same period.");
   }
   const periodKeys=(market:string,priceType:"non_campaign"|"campaign")=>schedules.filter(item=>item.market===market&&item.priceType===priceType).map(item=>`${item.promotionType}|${item.effectiveFrom}|${item.effectiveTo}`).sort().join(",");
   if (markets.some(market=>periodKeys(market,"non_campaign")!==periodKeys(markets[0],"non_campaign")||periodKeys(market,"campaign")!==periodKeys(markets[0],"campaign"))) {
@@ -443,8 +487,24 @@ async function savePackage(request: Request) {
     db.select().from(packagePrices).where(eq(packagePrices.versionId,previousVersion.id)),
     db.select().from(packagePlatformSkus).where(eq(packagePlatformSkus.versionId,previousVersion.id)),
   ]) : [[], []];
+  const longTermLifecycle=Boolean(body.longTerm||body.campaignLongTerm||recurringCampaign||previousVersion?.calculatorSettings?._longTermLifecycle===true);
+  if(previousVersion?.calculatorSettings?._longTermLifecycle===true&&oldPrices.some(item=>item.priceType==="non_campaign"&&item.effectiveTo===null)&&!body.longTerm&&!body.campaignLongTerm){
+    for(const market of markets){
+      const normal=schedules.filter(item=>item.market===market&&item.priceType==="non_campaign");
+      const base=normal[0];
+      const end=normal.reduce((latest,line)=>line.effectiveTo&&line.effectiveTo>latest?line.effectiveTo:latest,base.effectiveTo??"");
+      for(let index=schedules.length-1;index>=0;index--){
+        const period=schedules[index];
+        if(period.market!==market||period.priceType!=="campaign")continue;
+        if(period.effectiveFrom>end)schedules.splice(index,1);
+        else if(!period.effectiveTo||period.effectiveTo>end)period.effectiveTo=end;
+      }
+      if(!schedules.some(item=>item.market===market&&item.priceType==="campaign"))schedules.push({...base,priceType:"campaign"});
+    }
+  }
+  const primaryPeriod=schedules.find(item=>item.effectiveTo===null)??schedules.find(item=>item.priceType==="campaign")!;
   const changeSummary = nextVersion === 1 ? "新开配套" : previousVersion
-    ? emailChangeSummary({components,calculatorSettings:{_packageMetadata:metadata}},previousVersion,schedules,oldPrices,platforms,oldSkus)
+    ? emailChangeSummary({components,calculatorSettings:{_packageMetadata:metadata,_recurringCampaign:recurringCampaign}},previousVersion,schedules,oldPrices,platforms,oldSkus)
     : "配套资料修改（历史比较资料不足）";
   await db.transaction(async tx => {
     if (!requestedPackageId) {
@@ -472,10 +532,10 @@ async function savePackage(request: Request) {
       addedComponents:diff.added,
       removedComponents:diff.removed,
       sheetSyncStatus:mode==="draft"?"not_sent":"pending",
-      calculatorSettings:{...(body.calculatorSettings ?? {}),_packageMetadata:metadata,_packageHistorySummary:{schema:1,summary:changeSummary}},
+      calculatorSettings:{...(body.calculatorSettings ?? {}),_packageEnded:false,_samePricing:body.samePricing===true,_longTermLifecycle:longTermLifecycle,_recurringCampaign:recurringCampaign,_packageMetadata:metadata,_packageHistorySummary:{schema:1,summary:changeSummary}},
       changeNote:body.changeNote?.trim() || (nextVersion === 1 ? "Initial version" : `Version ${nextVersion}`),
-      effectiveFrom:schedules.find(item=>item.priceType==="campaign")!.effectiveFrom,
-      effectiveTo:schedules.find(item=>item.priceType==="campaign")!.effectiveTo,
+      effectiveFrom:primaryPeriod.effectiveFrom,
+      effectiveTo:primaryPeriod.effectiveTo,
       createdBy:user.email,
     });
     for (const item of platforms) await tx.insert(packagePlatformSkus).values({
@@ -506,9 +566,9 @@ async function savePackage(request: Request) {
     packageName:body.name.trim(),
     version:nextVersion,
     action:nextVersion === 1 ? "Created" : "Version Updated",
-    promotionType:schedules.map(item=>`${item.market} ${item.priceType==="campaign"?"Campaign":"Non-Campaign"}: ${item.promotionType==="custom"?"Custom":"Monthly"}`).join(" | "),
+    promotionType:schedules.map(item=>`${item.market} ${item.priceType==="campaign"?"Campaign":"Non-Campaign"}: ${item.priceType==="campaign"&&recurringCampaign?`Monthly ${recurringCampaign.events.map(event=>recurringEventLabels[event.id]).join(", ")}`:!item.effectiveTo?"Long-term Package":item.promotionType==="custom"?"Custom":"Monthly"}`).join(" | "),
     startDate:schedules.filter(item=>item.market===markets[0]).map(item=>`${item.priceType==="campaign"?"Campaign":"Non-Campaign"} ${item.effectiveFrom}`).join(" | "),
-    endDate:schedules.filter(item=>item.market===markets[0]).map(item=>`${item.priceType==="campaign"?"Campaign":"Non-Campaign"} ${item.effectiveTo}`).join(" | "),
+    endDate:schedules.filter(item=>item.market===markets[0]).map(item=>`${item.priceType==="campaign"?"Campaign":"Non-Campaign"} ${item.effectiveTo??"Ongoing"}`).join(" | "),
     shopeeSku:platformMap["Shopee"] ?? "",
     lazadaSku:platformMap["Lazada"] ?? "",
     tiktokSku:platformMap["TikTok Shop"] ?? "",
@@ -526,7 +586,7 @@ async function savePackage(request: Request) {
       ? `Package saved as a draft because Google Sheet sync failed: ${sync.reason}. Retry Create from the draft card.`
       : `Google Sheet sync failed: ${sync.reason}. The previous published version remains visible. Retry after the Sheet connection is restored.`},{status:503});
   }
-  const status=publishedStatus(schedules,marketToday());
+  const status=packageLifecycleStatus(schedules,{_longTermLifecycle:longTermLifecycle},marketToday());
   await db.transaction(async tx=>{
     await tx.update(packageVersions).set({sheetSyncStatus:"synced"}).where(eq(packageVersions.id,versionId));
     await tx.update(packages).set({...metadata,status,updatedAt:new Date().toISOString()}).where(and(eq(packages.id,packageId),isNull(packages.deletedAt)));
@@ -561,11 +621,12 @@ export async function PATCH(request:Request) {
     if(!membership?.active)return packageError("Saving","Your account cannot publish packages.",403);
     const db=await getDb();
     if(!await canAccessModule(db,membership,"packages"))return packageError("Saving","Packages & Pricing is not enabled for this account.",403);
-    const body=await request.json().catch(()=>null) as {packageId?:unknown;action?:unknown}|null;
-    if(!["publish","retry"].includes(String(body?.action))||typeof body?.packageId!=="string")return packageError("Saving","Choose a package version to publish.");
-    if(!historyWebhookConfigured())return packageError("Saving","Package History Google Sheet is not connected. The draft was not published.",503);
+    const body=await request.json().catch(()=>null) as {packageId?:unknown;action?:unknown;expectedVersion?:unknown}|null;
+    if(!["publish","retry","end"].includes(String(body?.action))||typeof body?.packageId!=="string")return packageError("Saving","Choose a package action.");
     const [item]=await db.select().from(packages).where(and(eq(packages.id,body.packageId),eq(packages.tenantId,membership.tenantId),isNull(packages.deletedAt))).limit(1);
     if(!item||!await canAccessStore(db,membership,item.storeId))return packageError("Saving","Package not found or store access denied.",404);
+    if(body.action==="end")return endPackage(db,membership.tenantId,item.id,user.email,body.expectedVersion);
+    if(!historyWebhookConfigured())return packageError("Saving","Package History Google Sheet is not connected. The draft was not published.",503);
     const [version]=await db.select().from(packageVersions).where(eq(packageVersions.packageId,item.id)).orderBy(desc(packageVersions.version)).limit(1);
     if(!version)return packageError("Saving","This package has no saved version.",409);
     const unpublished=["draft","review"].includes(item.status);
@@ -580,25 +641,29 @@ export async function PATCH(request:Request) {
     const platformMap=Object.fromEntries(["Shopee","Lazada","TikTok Shop"].map(platform=>[platform,skuRows.filter(row=>row.platform===platform).map(row=>row.packageSku).join(" | ")]));
     const priceType=(value:string)=>value==="campaign"?"Campaign":"Non-Campaign";
     const metadata=versionMetadata(version.calculatorSettings);
+    const ended=version.calculatorSettings?._packageEnded===true;
     const sync=version.sheetSyncStatus==="synced" ? {status:"synced" as const} : await syncHistoryToGoogleSheet({
-      timestamp:new Date().toISOString(),changeId:`${item.id}-v${version.version}`,
-      projectOwner:user.fullName??user.email,store:storeRows[0]?.name??item.storeId,packageName:metadata?.name??item.name,version:version.version,
-      action:version.version===1?"Created":"Version Updated",
-      promotionType:priceRows.map(row=>`${row.market} ${priceType(row.priceType)}: ${row.promotionType==="custom"?"Custom":"Monthly"}`).join(" | "),
-      startDate:priceRows.filter(row=>row.market===(metadata?.market??item.market).split(",")[0]).map(row=>`${priceType(row.priceType)} ${row.effectiveFrom}`).join(" | "),
-      endDate:priceRows.filter(row=>row.market===(metadata?.market??item.market).split(",")[0]).map(row=>`${priceType(row.priceType)} ${row.effectiveTo}`).join(" | "),
+      timestamp:version.createdAt,changeId:`${item.id}-v${version.version}`,
+      projectOwner:version.createdBy,store:storeRows[0]?.name??item.storeId,packageName:metadata?.name??item.name,version:version.version,
+      action:packageHistoryAction(version.calculatorSettings,version.version),
+      promotionType:ended?"Ended":priceRows.map(row=>`${row.market} ${priceType(row.priceType)}: ${!row.effectiveTo?"Long-term Package":row.promotionType==="custom"?"Custom":"Monthly"}`).join(" | "),
+      startDate:ended?version.effectiveFrom:priceRows.filter(row=>row.market===(metadata?.market??item.market).split(",")[0]).map(row=>`${priceType(row.priceType)} ${row.effectiveFrom}`).join(" | "),
+      endDate:ended?version.effectiveTo:priceRows.filter(row=>row.market===(metadata?.market??item.market).split(",")[0]).map(row=>`${priceType(row.priceType)} ${row.effectiveTo??"Ongoing"}`).join(" | "),
       shopeeSku:platformMap.Shopee??"",lazadaSku:platformMap.Lazada??"",tiktokSku:platformMap["TikTok Shop"]??"",
       addedComponents:formatComponents(version.addedComponents),removedComponents:formatComponents(version.removedComponents),
-      currentComponents:formatComponents(version.components),changedBy:user.email,syncStatus:"Synced",
+      currentComponents:formatComponents(version.components),changedBy:version.createdBy,syncStatus:"Synced",
       changeSummary:await versionChangeSummary(db,version),
     });
     if(sync.status!=="synced"){
       await db.update(packageVersions).set({sheetSyncStatus:sync.status}).where(eq(packageVersions.id,version.id));
-      return packageError("Saving",`Google Sheet sync failed: ${sync.reason}. The package remains a draft.`,503);
+      return packageError("Saving",ended?`Package remains ended. History Sheet sync and email notification are still pending: ${sync.reason}.`:`Google Sheet sync failed: ${sync.reason}. ${unpublished?"The package remains a draft.":"The published package is unchanged."}`,503);
     }
-    const status=publishedStatus(priceRows.map(row=>({effectiveFrom:row.effectiveFrom,effectiveTo:row.effectiveTo??row.effectiveFrom})),marketToday());
+    const status=packageLifecycleStatus(priceRows,version.calculatorSettings,marketToday());
     await db.transaction(async tx=>{
+      await tx.select({id:packages.id}).from(packages).where(eq(packages.id,item.id)).for("update");
       await tx.update(packageVersions).set({sheetSyncStatus:"synced"}).where(eq(packageVersions.id,version.id));
+      const [latest]=await tx.select({id:packageVersions.id}).from(packageVersions).where(eq(packageVersions.packageId,item.id)).orderBy(desc(packageVersions.version)).limit(1);
+      if(latest?.id!==version.id)return;
       await tx.update(packages).set({...metadata,status,updatedAt:new Date().toISOString()}).where(and(eq(packages.id,item.id),isNull(packages.deletedAt)));
       await tx.insert(packageAuditLog).values({packageId:item.id,action:"published",detail:`Version ${version.version} published to Package History`,actor:user.email});
     });
