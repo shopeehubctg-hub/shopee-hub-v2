@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useFeePlans } from "./fee-plan-context";
 import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
-import { AccountSetupFields, accountSetupError, emptyAccountSetup, feeRuleFromDraft, malaysiaMonth, type AccountSetupDraft } from "./store-account-setup-fields";
+import { AccountSetupFields, accountSetupError, emptyAccountSetup, accountSetupPayload, resetAccountSetupSelection, malaysiaMonth, type AccountSetupDraft } from "./store-account-setup-fields";
 
 type Props = { initialEnabledModules: PortalModuleId[]; onStoreChanged?: () => void };
 type Role = "customer" | "manager" | "superadmin";
@@ -72,6 +73,7 @@ type UserData = {
 };
 
 export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Props) {
+  const { plans } = useFeePlans();
   const [tab, setTab] = useState<"users" | "stores" | "modules">("users");
   const [enabled, setEnabled] = useState(new Set(initialEnabledModules));
   const [saved, setSaved] = useState(new Set(initialEnabledModules));
@@ -193,12 +195,19 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
   async function addStore() {
     if (!data?.accountSettingsAvailable) { setStoreError("Saving is not enabled in this preview."); return; }
     if (newStore.projectLinks.some(projectLinkError)) return;
-    const setupError = accountSetupError(newAccount, newStore.market);
+    const visibleMonth = storeModalRef.current?.querySelector<HTMLInputElement>('[name="accountEffectiveInvoiceMonth"]')?.value;
+    if (visibleMonth !== undefined && visibleMonth !== newAccount.effectiveMonth) {
+      setNewAccount(current => ({ ...current, effectiveMonth: visibleMonth }));
+      setStoreError("Invoice month changed. Review the Rate Card before adding this store.");
+      return;
+    }
+    const setupError = accountSetupError(newAccount, newStore.market, plans);
     if (setupError) { setStoreError(setupError); return; }
     setStoreError("");
     setSaving(true);
     try {
-      const payload = { ...newStore, adsTopUpOwner: newStore.adsTopUpOwner || null, legalEntity: newAccount.legalEntity.trim(), effectiveMonth: newAccount.effectiveMonth, feeRule: feeRuleFromDraft(newAccount, newStore.market) };
+      const accountSetup = accountSetupPayload(newAccount, newStore.market, plans);
+      const payload = { ...newStore, adsTopUpOwner: newStore.adsTopUpOwner || null, accountSetup };
       const payloadText = JSON.stringify(payload);
       if (storeRequest.current?.payload !== payloadText) storeRequest.current = { payload: payloadText, id: crypto.randomUUID() };
       const response = await fetch("/api/admin/stores", {
@@ -527,14 +536,14 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
                 const market = event.target.value as "MY" | "SG";
                 if (market === newStore.market) return;
                 updateNewStore({ market });
-                setNewAccount(current => ({ ...emptyAccountSetup(), legalEntity: current.legalEntity, effectiveMonth: current.effectiveMonth, clientType: current.clientType }));
+                setNewAccount(current => resetAccountSetupSelection(current, market));
               }}><option value="MY">Malaysia (MY)</option><option value="SG">Singapore (SG)</option></select></label>
               <AccountSetupFields draft={newAccount} market={newStore.market} update={updateNewAccount} />
-              {accountSetupError(newAccount, newStore.market) && <p className="store-field-error" role="status">{accountSetupError(newAccount, newStore.market)}</p>}
+              {accountSetupError(newAccount, newStore.market, plans) && <p className="store-field-error" role="status">{accountSetupError(newAccount, newStore.market, plans)}</p>}
               <StoreLinkFields draft={newStore} update={updateNewStore} idPrefix="add-store" />
               {!data?.accountSettingsAvailable && <p className="store-access-note" role="status">Saving is not enabled in this preview.</p>}
               {storeError && <p id="add-store-error" className="store-form-error" role="alert">{storeError}</p>}
-              <button className="primary" disabled={saving || !data?.accountSettingsAvailable || !newStore.name.trim() || !!accountSetupError(newAccount, newStore.market) || newStore.projectLinks.some(projectLinkError)} aria-describedby={storeError ? "add-store-error" : undefined} onClick={addStore}>{saving ? "Adding…" : "Add store"}</button>
+              <button className="primary" disabled={saving || !data?.accountSettingsAvailable || !newStore.name.trim() || !!accountSetupError(newAccount, newStore.market, plans) || newStore.projectLinks.some(projectLinkError)} aria-describedby={storeError ? "add-store-error" : undefined} onClick={addStore}>{saving ? "Adding…" : "Add store"}</button>
             </div>
           </div>
         </div>

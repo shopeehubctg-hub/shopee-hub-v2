@@ -88,3 +88,13 @@ test("edit sends company version and directory details through one RPC", async (
   assert.equal(state.calls[0].body.p_roster_key, "store:shopee-demo");
   assert.equal(state.stores[0].display_name, "Demo New");
 });
+
+test("v2 Rate Card and SG FX setup cannot silently fall through to the legacy store RPC", async () => {
+  for (const market of ["MY", "SG"]) {
+    const response = await api.POST(request("POST", { name: "New store", market, requestId, accountSetup: { version: 2, legalEntity: "Company", effectiveMonth, clientType: "Internal", billingCurrency: "MYR", inputCurrency: market === "SG" ? "SGD" : "MYR", rateCard: { id: "internal-new", version: 1 }, fxPolicy: market === "SG" ? "fixed" : "none", fxRate: market === "SG" ? "3.2" : undefined } }));
+    assert.equal(response.status, 503);
+    assert.match((await response.json()).error, /preview-only.*No store was created/);
+  }
+  assert.equal(state.calls.length, 0);
+  assert.equal(state.stores.length, 0);
+});

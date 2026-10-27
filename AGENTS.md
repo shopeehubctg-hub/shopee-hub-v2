@@ -17,3 +17,8 @@
 - Staging, actual UI/UX PASS, then final function QC PASS, then user-authorized Production. Code tests alone are not UI acceptance.
 
 - Monthly Rate cells show the assigned Rate Card name only; rate percentages, FX, preview labels and scheduling details belong inside the editor. Deleting a Rate Card removes it from available choices while retaining existing assignments and historical versions.
+
+## Linked features
+- For store/account changes, review Add/Edit Store, current Store Selector identity, permissions, Account rate-card versions/FX, and related Package/Advertising inputs together. Use shared models rather than independent copies of fee rules or currency policy.
+- Add Store Account Setup uses the shared active Rate Cards and records their exact version/effective Invoice Month. Country/client-type changes clear incompatible card and FX selection while preserving company and month. SG sales currency remains SGD; billing/tiers/caps are MYR.
+- The v2 store/account setup payload includes card identity, MYR rule (including per-tier caps), client type and FX policy. It must not go through the legacy store RPC that cannot retain these fields. Database activation requires explicit authorization and atomic persistence support; current preview rejects v2 writes without creating a partial store.

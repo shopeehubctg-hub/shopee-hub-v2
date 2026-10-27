@@ -40,6 +40,9 @@ export async function POST(request: Request) {
   const auth = await superAdminMembership();
   if ("error" in auth) return auth.error;
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+  // The v2 card/FX contract requires an approved atomic persistence migration.
+  // Never pass it to the legacy RPC, which cannot retain its billing semantics.
+  if (body?.accountSetup !== undefined) return Response.json({ error: "This Account setup is preview-only. No store was created." }, { status: 503 });
   const name = typeof body?.name === "string" ? body.name.trim().replace(/\s+/g, " ") : "";
   const sourceName = typeof body?.sourceName === "string" ? body.sourceName.trim().replace(/\s+/g, " ") : "";
   const entity = typeof body?.legalEntity === "string" ? body.legalEntity.trim().replace(/\s+/g, " ") : "";
