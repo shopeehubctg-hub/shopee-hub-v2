@@ -22,7 +22,7 @@ test('Bonlife uses verified September BNM average 3.197 for October invoice, wit
  const unverified={...config,fxRates:config.fxRates.map(rate=>({...rate,verified:false}))};assert.equal(calculateProjectPreview(bonlife,'2026-10',plan,'1000',unverified).status,'pending_fx');
 });
 test('unknown SG External FX blocks calculations; no raw SGD can be passed off as MYR and MY ledger is unchanged',()=>{
- const record=config.records.find(record=>record.currency==='SGD'&&record.fxPolicy==='pending');const pending=rowFor(record);const before=structuredClone(pending);const plan=plans.find(plan=>plan.id===record.planId);assert.equal(calculateProjectPreview(pending,'2026-10',plan,'1000').status,'pending_fx');assert.equal(calculateProjectPreview(pending,'2026-10',plan,'1000').calculation,undefined);assert.deepEqual(pending,before);
+ const record=config.records.find(record=>record.project==='BERLANCO SG');const pending=rowFor(record);const before=structuredClone(pending);const plan=plans.find(plan=>plan.id===record.planId);const pendingSource={...config,records:config.records.map(item=>item===record?{...item,fxPolicy:'pending',fxRate:undefined}:item)};assert.equal(calculateProjectPreview(pending,'2026-10',plan,'1000',pendingSource).status,'pending_fx');assert.equal(calculateProjectPreview(pending,'2026-10',plan,'1000',pendingSource).calculation,undefined);assert.deepEqual(pending,before);
  assert.throws(()=>calculateProjectPreview({...row,rosterKey:'unknown'},'2026-10',card,'1000'));
  const my={...row,currency:'MYR'};assert.equal(projectFeeCurrency(my,'2026-10'),'MYR');assert.equal(calculateProjectPreview(my,'2026-10',card,'200000').calculation.fee,'4000.00');assert.equal(calculateProjectPreview(my,'2026-10',card,'200000').fxRate,undefined);
 });
@@ -37,4 +37,11 @@ test('verified server BNM rate is used only for the exact service month, ahead o
  const record=config.records.find(record=>record.currency==='SGD'&&record.fxPolicy==='bnm-service-average');const bonlife=rowFor(record);const plan=plans.find(plan=>plan.id===record.planId);const rate={serviceMonth:'2026-10',rate:'3.1234',policy:'bnm-service-average',verified:true,reference:'https://storage.data.gov.my/finsector/exr/monthly.csv'};
  const result=calculateProjectPreview({...bonlife,previewServiceFxRate:rate},'2026-11',plan,'1000');assert.equal(result.fxRate,'3.1234');assert.equal(result.calculation.fee,'312.34');assert.equal(result.fxReference,rate.reference);
  assert.equal(calculateProjectPreview({...bonlife,previewServiceFxRate:rate},'2026-12',plan,'1000').status,'pending_fx');
+});
+
+test('Berlanco SG and GOHERB SG use confirmed fixed 3.2 while retaining their distinct MY rate cards',()=>{
+ for(const [project,planId,expectedFee] of [['BERLANCO SG','berlanco-tier','288.00'],['GOHERB SG','external-5','160.00']]){
+  const record=config.records.find(item=>item.project===project&&item.currency==='SGD');assert.equal(record.fxPolicy,'fixed');assert.equal(record.fxRate,'3.2');assert.equal(record.planId,planId);
+  const result=calculateProjectPreview(rowFor(record),'2026-10',plans.find(plan=>plan.id===planId),'1000');assert.equal(result.convertedAmount,'3200.00');assert.equal(result.calculation.fee,expectedFee);assert.equal(result.outputCurrency,'MYR');
+ }
 });

@@ -2,12 +2,12 @@
 import { createContext, useContext, useState, useCallback, type ReactNode, type Dispatch, type SetStateAction } from 'react';
 import {sourceProjectRate,projectFeeCurrency,calculateProjectPreview,type ProjectFeePreview} from './fee-preview-currency';
 import type { AccountStoreRow } from './account-contract';
-import { planForMonth, seedFeePlans, validatePlan, type ClientType, type FeeCalculation, type FeePlan, type FeePlanDraft } from './fee-plan-model';
+import { archiveRateCard, planForMonth, seedFeePlans, validatePlan, type ClientType, type FeeCalculation, type FeePlan, type FeePlanDraft } from './fee-plan-model';
 export type FeePreviewChoice={clientType:''|ClientType;planId:string};
 export type FeePreviewAssignment=FeePreviewChoice&{effectiveMonth:string};
 export type FeePreviewSnapshot={id:string;month:string;unitKey:string;unitName:string;plan:FeePlan;amount:string;result:FeeCalculation;createdAt:string;conversion?:ProjectFeePreview};
 export type FeeWorkspaceRequest={view:'settings'|'assignment'|'bulk';month:string;unitKey?:string;unitKeys?:string[]};
-type FeePlansContextValue={feeWorkspace:FeeWorkspaceRequest|null;openFeeWorkspace:(request:FeeWorkspaceRequest)=>void;closeFeeWorkspace:()=>void;previewRows:AccountStoreRow[];mergePreviewRows:(rows:AccountStoreRow[])=>void;plans:FeePlan[];upsertPlan:(draft:FeePlanDraft)=>void;previewMemory:Record<string,unknown>;setPreviewMemory:Dispatch<SetStateAction<Record<string,unknown>>>};
+type FeePlansContextValue={feeWorkspace:FeeWorkspaceRequest|null;openFeeWorkspace:(request:FeeWorkspaceRequest)=>void;closeFeeWorkspace:()=>void;previewRows:AccountStoreRow[];mergePreviewRows:(rows:AccountStoreRow[])=>void;plans:FeePlan[];upsertPlan:(draft:FeePlanDraft)=>void;archivePlan:(id:string)=>void;previewMemory:Record<string,unknown>;setPreviewMemory:Dispatch<SetStateAction<Record<string,unknown>>>};
 const FeePlansContext=createContext<FeePlansContextValue|null>(null);
 export function FeePlansProvider({children}:{children:ReactNode}){
  const [feeWorkspace,setFeeWorkspace]=useState<FeeWorkspaceRequest|null>(null);
@@ -17,8 +17,9 @@ export function FeePlansProvider({children}:{children:ReactNode}){
  const [previewRows,setPreviewRows]=useState<AccountStoreRow[]>([]);
  const mergePreviewRows=useCallback((rows:AccountStoreRow[])=>{if(!rows.length)return;setPreviewRows(current=>[...new Map([...current,...rows].map(row=>[row.rosterKey??row.id,row])).values()]);},[]);
  const [previewMemory,setPreviewMemory]=useState<Record<string,unknown>>({});
- function upsertPlan(draft:FeePlanDraft){const checked=validatePlan(draft);const existing=plans.find(plan=>plan.id===checked.id);if(existing&&(existing.currency!==checked.currency||existing.clientType!==checked.clientType))throw Error('Copy the plan to use a different client type or currency.');setPlans(current=>[...current,{...checked,version:Math.max(0,...current.filter(p=>p.id===checked.id).map(p=>p.version))+1}]);}
- return <FeePlansContext.Provider value={{feeWorkspace,openFeeWorkspace,closeFeeWorkspace,previewRows,mergePreviewRows,plans,upsertPlan,previewMemory,setPreviewMemory}}>{children}</FeePlansContext.Provider>;
+ function upsertPlan(draft:FeePlanDraft){const checked=validatePlan(draft);const existing=plans.find(plan=>plan.id===checked.id);if(existing?.archivedAt)throw Error('This rate card was deleted. Choose another card.');if(existing&&(existing.currency!==checked.currency||existing.clientType!==checked.clientType))throw Error('Copy the plan to use a different client type or currency.');setPlans(current=>current.some(plan=>plan.id===checked.id&&plan.archivedAt)?current:[...current,{...checked,version:Math.max(0,...current.filter(p=>p.id===checked.id).map(p=>p.version))+1}]);}
+ function archivePlan(id:string){const archivedAt=new Date().toISOString();archiveRateCard(plans,id,archivedAt);setPlans(current=>current.map(plan=>plan.id===id?{...plan,archivedAt:plan.archivedAt??archivedAt}:plan));}
+ return <FeePlansContext.Provider value={{feeWorkspace,openFeeWorkspace,closeFeeWorkspace,previewRows,mergePreviewRows,plans,upsertPlan,archivePlan,previewMemory,setPreviewMemory}}>{children}</FeePlansContext.Provider>;
 }
 export function useFeePlans(){const context=useContext(FeePlansContext);if(!context)throw Error('FeePlansProvider is required');return context;}
 
@@ -71,6 +72,7 @@ export function applyRateCardPreview(memory:Record<string,unknown>,rows:AccountS
  const targets=keys.map(key=>{const row=rows.find(item=>(item.rosterKey??item.id)===key);if(!row)throw Error('A selected record is no longer available. Clear the selection and try again.');return row;});
  if(new Set(targets.map(row=>row.currency)).size!==1)throw Error('Select records with the same currency. No records were updated.');
  const plan=planForMonth(plans,command.planId,command.effectiveMonth);if(!plan||plan.version!==command.planVersion)throw Error('This rate card changed. Review the card and apply again.');
+ if(plan.archivedAt)throw Error('This rate card was deleted. Choose another card.');
  validatePlan(plan);
  if(plan.clientType!==command.clientType||targets.some(row=>plan.currency!==projectFeeCurrency(row,command.effectiveMonth)))throw Error('Choose a rate card matching the selected client type and currency.');
  const locks=(memory['fee-preview-locks']??{}) as Record<string,string>;

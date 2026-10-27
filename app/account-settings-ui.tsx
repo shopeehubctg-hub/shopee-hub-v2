@@ -70,13 +70,9 @@ export function StoreNameCell({ row, options, configurable, canSave, month, onSa
 
 export function RateCell({row,month,onEdit}:{row:AccountStoreRow;month:string;onEdit:()=>void}) {
   const preview=useMonthlyFeePreview(row,month);
-  const rule=preview.plan?.rule;
-  const compact=rule?.type==='fixed'?`${rule.currency} ${rule.fixedAmount||'—'} / month`:rule?.type==='percent'?`${rule.percent||'—'}%`:rule?.tiers?.length?rule.tiers.map(t=>`${t.percent}%`).join(' / '):'Set tier rates';
+  const name=preview.plan?.name||(row.rateRule?'Custom rate':'Set rate');
   return <button type="button" className="account-rate-field" aria-label={`Edit monthly rate for ${row.project||row.storeName}`} onClick={onEdit}>
-    <strong>{preview.plan?preview.plan.name:rateLabel(row.rateRule)}</strong>
-    {preview.plan?<small>{preview.calculation?.rateLabel||compact} · v{preview.plan.version} <span className="account-preview-label">{preview.locked?'Locked preview':'Preview'}</span></small>:row.rateRule?<small>Saved rate{row.rateEffectiveMonth?` · from ${row.rateEffectiveMonth}`:''}</small>:<small>Set rate</small>}
-    {preview.conversion?.inputCurrency!==preview.conversion?.outputCurrency&&preview.conversion&&<small>SGD → MYR{preview.conversion.fxRate?` · × ${preview.conversion.fxRate}`:' · FX pending'}</small>}
-    {preview.nextEffectiveMonth&&<small>Scheduled from {preview.nextEffectiveMonth}</small>}
+    <strong>{name}</strong>
   </button>;
 }
 

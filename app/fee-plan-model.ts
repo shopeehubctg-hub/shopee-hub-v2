@@ -2,8 +2,8 @@ import type { AccountCurrency, AccountFeeRule } from './account-contract';
 import { validateFeeRule } from './account-settings-model';
 import { cents, decimal } from './account-ledger';
 export type ClientType = 'Internal' | 'External';
-export type FeePlan = {id:string;name:string;clientType:ClientType;currency:AccountCurrency;version:number;effectiveMonth:string;rule:AccountFeeRule};
-export type FeePlanDraft = Omit<FeePlan,'version'>;
+export type FeePlan = {id:string;name:string;clientType:ClientType;currency:AccountCurrency;version:number;effectiveMonth:string;rule:AccountFeeRule;archivedAt?:string};
+export type FeePlanDraft = Omit<FeePlan,'version'|'archivedAt'>;
 export type FeeCalculation = {fee:string;rateLabel:string;tierLabel:string;basisLabel:string};
 export const PREVIEW_BASIS='Billing amount (preview)';
 const percentRule=(currency:AccountCurrency,percent:string):AccountFeeRule=>({type:'percent',currency,basis:'custom',basisLabel:PREVIEW_BASIS,percent});
@@ -50,4 +50,12 @@ export function calculateFee(rawRule:AccountFeeRule,amount:string):FeeCalculatio
  if(rule.cap&&fee>cents(rule.cap))fee=cents(rule.cap);
  if(tierCap!==undefined){if(fee>cents(tierCap))fee=cents(tierCap);tierLabel+=` · cap ${rule.currency} ${tierCap}`;}
  return {fee:decimal(fee),rateLabel:`${rate}%`,tierLabel,basisLabel:feeBasisLabel(rule)};
+}
+
+/** Session archive keeps every version available to existing assignments and locked history. */
+export function archiveRateCard(plans:FeePlan[],id:string,archivedAt:string):FeePlan[]{
+ if(!plans.some(plan=>plan.id===id))throw Error('This rate card is no longer available.');
+ if(!Number.isFinite(Date.parse(archivedAt)))throw Error('Invalid rate card deletion time.');
+ if(plans.some(plan=>plan.id===id&&plan.archivedAt))return plans;
+ return plans.map(plan=>plan.id===id?{...plan,archivedAt}:plan);
 }

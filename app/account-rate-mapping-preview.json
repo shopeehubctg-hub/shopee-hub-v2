@@ -7,7 +7,7 @@
     "tierAggregation": "per-project",
     "sst": "exclusive; SST percentage not supplied",
     "sgPolicyConfirmedOn": "2026-10-27",
-    "sgPolicy": "User confirmed same MY fee rules, convert SGD sales to MYR before selecting tiers and bill MYR. Internal fixed 3.2; Bonlife BNM service-month average. Other External FX pending."
+    "sgPolicy": "User confirmed same MY fee rules, convert SGD sales to MYR before selecting tiers and bill MYR. Internal, Berlanco SG and GOHERB SG fixed 3.2; Bonlife BNM service-month average."
   },
   "records": [
     {
@@ -423,7 +423,8 @@
       "clientType": "External",
       "planId": "berlanco-tier",
       "effectiveMonth": "2026-10",
-      "fxPolicy": "pending"
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
     },
     {
       "rosterKey": "roster-2026-10-sg-3",
@@ -454,7 +455,8 @@
       "clientType": "External",
       "planId": "external-5",
       "effectiveMonth": "2026-10",
-      "fxPolicy": "pending"
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
     },
     {
       "rosterKey": "roster-2026-10-sg-6",

@@ -60,13 +60,27 @@ test('native month input and submit guard preserve October and schedule November
   const sgSource=sourceRates.records.find(record=>record.currency==='SGD'&&record.planId==='internal-new');
   const sgRow={id:sgSource.rosterKey,rosterKey:sgSource.rosterKey,project:sgSource.project,currency:'SGD',previewRateDefaultsEligible:true};
   await act(()=>root.render(App({row:sgRow})));await click(document.querySelector('#open'));
-  assert.match(document.querySelector('.account-rate-field').textContent,/SGD → MYR.*3.2/);
+  assert.equal(document.querySelector('.account-rate-field').textContent,'Internal NEW');assert.equal(document.querySelector('.account-rate-field').children.length,1);
   assert.match(document.querySelector('.fp-calculation-input').textContent,/SGD sales/);
   await change(document.querySelector('[aria-label="Preview calculation amount"]'),'62500','input');
   assert.match(document.querySelector('.fp-calculation strong').textContent,/RM 4,000.00/);
   assert.match(document.querySelector('.fp-assignment-form').textContent,/RM 200,000.00/);
   await submit();await click([...document.querySelectorAll('button')].find(button=>button.textContent==='Lock applied preview'));
   const sgSnapshot=memory()['fee-preview-history'][0];assert.equal(sgSnapshot.amount,'62500');assert.equal(sgSnapshot.conversion.fxRate,'3.2');assert.equal(sgSnapshot.conversion.serviceMonth,'2026-09');assert.equal(sgSnapshot.conversion.convertedAmount,'200000.00');
+  // Delete confirmation is focused; Cancel is a no-op; assigned and locked rates survive deletion.
+  await click([...document.querySelectorAll('[role="tab"]')].find(el=>el.textContent==='Rate cards'));
+  const assignedCard=()=>[...document.querySelectorAll('.fp-plan')].find(card=>card.querySelector('h4').textContent==='Internal NEW');
+  await click([...assignedCard().querySelectorAll('button')].find(button=>button.textContent==='Delete'));
+  assert.equal(document.activeElement.getAttribute('aria-label'),'Confirm rate card deletion');
+  const beforeCancel=JSON.stringify(memory());await click([...document.querySelectorAll('[aria-label="Confirm rate card deletion"] button')].find(button=>button.textContent==='Cancel'));
+  assert.ok(assignedCard());assert.equal(JSON.stringify(memory()),beforeCancel);
+  await click([...assignedCard().querySelectorAll('button')].find(button=>button.textContent==='Delete'));
+  await click([...document.querySelectorAll('button')].find(button=>button.textContent==='Delete rate card'));
+  assert.equal(assignedCard(),undefined);assert.equal(document.querySelector('.account-rate-field').textContent,'Internal NEW');assert.equal(JSON.stringify(memory()),beforeCancel);
+  await click([...document.querySelectorAll('[role="tab"]')].find(el=>el.textContent==='Monthly rate'));
+  const archivedOption=document.querySelector('[aria-label="Rate card"] option:checked');assert.match(archivedOption.textContent,/Internal NEW.*deleted/);assert.equal(archivedOption.disabled,true);
+  assert.equal([...document.querySelectorAll('button')].find(button=>button.textContent==='Apply preview for 1 record').disabled,true);
+
   const bonlife=sourceRates.records.find(record=>record.currency==='SGD'&&record.fxPolicy==='bnm-service-average');
   await act(()=>root.render(App({row:{...sgRow,id:bonlife.rosterKey,rosterKey:bonlife.rosterKey,project:bonlife.project},month:'2026-11'})));await click(document.querySelector('#open'));
   await change(document.querySelector('[aria-label="Preview calculation amount"]'),'1000','input');await submit();
