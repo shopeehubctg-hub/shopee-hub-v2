@@ -16,11 +16,12 @@ export function validateFeeRule(value:unknown,currency:'MYR'|'SGD'):AccountFeeRu
   else {if(r.basis==='fixed_monthly')throw new Error('Percentage fees require a statement basis');if(r.type==='percent')rule.percent=percentage(r.percent);else{
     if(!Array.isArray(r.tiers)||!r.tiers.length||r.tiers.length>20)throw new Error('Add between 1 and 20 fee tiers');
     let previous=BigInt(-1);
-    rule.tiers=r.tiers.map((entry,index)=>{if(!entry||typeof entry!=='object')throw new Error('Invalid fee tier');const from=decimal(entry.from,'Tier start');const amount=cents(from);if(index===0&&amount!==BigInt(0)||amount<=previous)throw new Error('Tiers must start at 0 and increase');previous=amount;return {from,percent:percentage(entry.percent)};});
+    rule.tiers=r.tiers.map((entry,index)=>{if(!entry||typeof entry!=='object')throw new Error('Invalid fee tier');const from=decimal(entry.from,'Tier start');const amount=cents(from);if(index===0&&amount!==BigInt(0)||amount<=previous)throw new Error('Tiers must start at 0 and increase');previous=amount;return {from,percent:percentage(entry.percent),...(entry.cap!==undefined&&entry.cap!==''?{cap:decimal(entry.cap,'Tier fee cap')}:{})};});
   }}
   if(r.minimum!==undefined&&r.minimum!=='')rule.minimum=decimal(r.minimum,'Minimum fee');
   if(r.cap!==undefined&&r.cap!=='')rule.cap=decimal(r.cap,'Fee cap');
   if(rule.minimum&&rule.cap&&cents(rule.minimum)>cents(rule.cap))throw new Error('Minimum fee cannot exceed the cap');
+  if(rule.minimum&&rule.tiers?.some(tier=>tier.cap!==undefined&&cents(rule.minimum!)>cents(tier.cap)))throw new Error('Minimum fee cannot exceed a tier cap');
   return rule;
 }
 export function applyAccountSettings(account:AccountResponse,settings:AccountSetting[],storeNames:Map<string,string>):AccountResponse {

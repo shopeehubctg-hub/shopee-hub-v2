@@ -47,5 +47,12 @@ test('native month input and submit guard preserve October and schedule November
   await change(form.querySelector('[name="effectiveInvoiceMonth"]'),'2026-11','input');
   await act(()=>form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
   const plans=JSON.parse(document.querySelector('#plans').textContent);assert.equal(plans.length,planCount+1);assert.equal(plans.at(-1).effectiveMonth,'2026-11');
+  const internalCard=[...document.querySelectorAll('.fp-plan')].find(card=>card.querySelector('h4').textContent==='Internal NEW');
+  await click(internalCard.querySelector('.fp-secondary'));
+  const internalForm=document.querySelector('.fp-editor');assert.equal(internalForm.querySelector('[aria-label="Tier 5 fee cap"]').value,'4000');
+  assert.equal(internalForm.querySelector('[aria-label="Tier 4 fee cap"]').value,'');
+  await act(()=>internalForm.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
+  const savedInternal=JSON.parse(document.querySelector('#plans').textContent).at(-1);assert.equal(savedInternal.rule.tiers[4].cap,'4000.00');assert.equal(savedInternal.rule.tiers[3].cap,undefined);
+
  }finally{await act(()=>root.unmount());dom.window.close();for(const channel of channels){channel.port1.close();channel.port2.close();}for(const [key,value] of saved){if(value)Object.defineProperty(globalThis,key,value);else delete globalThis[key];}delete globalThis.IS_REACT_ACT_ENVIRONMENT;}
 });

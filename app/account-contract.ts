@@ -37,6 +37,6 @@ export type AccountFeeRule = {
   type: 'fixed' | 'percent' | 'tiers'; currency: AccountCurrency;
   basis: 'fixed_monthly' | 'merchandise_subtotal' | 'net_gmv' | 'statement_amount' | 'custom';
   basisLabel?: string; fixedAmount?: string; percent?: string;
-  tiers?: Array<{from:string;percent:string}>; minimum?:string; cap?:string;
+  tiers?: Array<{from:string;percent:string;cap?:string}>; minimum?:string; cap?:string;
 };
 export type AccountSettingsHistory = { action:'fee_rule'; version:string; effectiveMonth:string; rule:AccountFeeRule|null; storeId:string|null; changedAt:string };

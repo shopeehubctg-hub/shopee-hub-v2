@@ -12,6 +12,7 @@ export function seedFeePlans(month='2026-10'):FeePlan[]{
  return [
   ...['9.7','10','11'].map(rate=>make(`external-${rate}` ,`External ${rate}%`,'External',percentRule('MYR',rate))),
   make('berlanco-tier','Berlanco Tier','External',{type:'tiers',currency:'MYR',basis:'custom',basisLabel:PREVIEW_BASIS,tiers:[{from:'0',percent:'9'},{from:'150000',percent:'8'},{from:'300000',percent:'7'}]}),
+  make('internal-new','Internal NEW','Internal',{type:'tiers',currency:'MYR',basis:'custom',basisLabel:'Shopee Sales',tiers:[{from:'0',percent:'4'},{from:'10000',percent:'3.5'},{from:'100000',percent:'3'},{from:'150000',percent:'2.5'},{from:'200000',percent:'2',cap:'4000'}]}),
   make('internal-3','Internal 3%','Internal',percentRule('MYR','3')),
   make('internal-fixed','Internal Fixed','Internal',{type:'fixed',currency:'MYR',basis:'fixed_monthly',fixedAmount:''}),
   make('internal-tier','Internal Tier','Internal',{type:'tiers',currency:'MYR',basis:'custom',basisLabel:PREVIEW_BASIS,tiers:[]}),
@@ -36,16 +37,17 @@ export function feeBasisLabel(rule:AccountFeeRule):string{
 export function calculateFee(rawRule:AccountFeeRule,amount:string):FeeCalculation{
  const rule=validateFeeRule(rawRule,rawRule.currency);
  if(rule.type==='fixed'){let fee=cents(rule.fixedAmount!);if(rule.minimum&&fee<cents(rule.minimum))fee=cents(rule.minimum);if(rule.cap&&fee>cents(rule.cap))fee=cents(rule.cap);return {fee:decimal(fee),rateLabel:'Fixed',tierLabel:'Fixed monthly fee',basisLabel:feeBasisLabel(rule)};}
- const value=cents(amount);let rate=rule.percent!;let tierLabel='Flat percentage';
+ const value=cents(amount);let rate=rule.percent!;let tierLabel='Flat percentage';let tierCap:string|undefined;
  if(rule.type==='tiers'){
   const tiers=rule.tiers!;let index=0;
   for(let i=0;i<tiers.length;i++)if(value>=cents(tiers[i].from))index=i;
-  rate=tiers[index].percent;
+  rate=tiers[index].percent;tierCap=tiers[index].cap;
   tierLabel=tiers[index+1]?`${tiers[index].from} to < ${tiers[index+1].from}`:`${tiers[index].from} and above`;
  }
  const [whole,fraction='']=rate.split('.');const rateUnits=BigInt(whole)*BigInt(1000000)+BigInt(fraction.padEnd(6,'0'));
  let fee=(value*rateUnits+BigInt(50000000))/BigInt(100000000);
  if(rule.minimum&&fee<cents(rule.minimum))fee=cents(rule.minimum);
  if(rule.cap&&fee>cents(rule.cap))fee=cents(rule.cap);
+ if(tierCap!==undefined){if(fee>cents(tierCap))fee=cents(tierCap);tierLabel+=` · cap ${rule.currency} ${tierCap}`;}
  return {fee:decimal(fee),rateLabel:`${rate}%`,tierLabel,basisLabel:feeBasisLabel(rule)};
 }
