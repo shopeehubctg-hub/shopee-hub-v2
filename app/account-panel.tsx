@@ -78,9 +78,10 @@ export function AccountPanel() {
   const canSaveSettings = Boolean(data?.settingsAvailable && canConfigure);
   const visibleRows=billingRowsMatching(data?.stores??[],query);
   const selectedKeys=visibleSelection(visibleRows,selected);
+  function changeInvoiceMonth(value:string){if(value!==invoiceMonth&&/^\d{4}-(0[1-9]|1[0-2])$/.test(value)){setDetailId(null);setSelected([]);setInvoiceMonth(value);setLoading(true);}}
   function toggleGroup(keys:string[]){setSelected(current=>{const all=keys.every(key=>current.includes(key));return all?current.filter(key=>!keys.includes(key)):[...new Set([...current,...keys])];});}
   return <div className="account-panel account-refined" aria-busy={loading}>
-    <header className="page-title account-page-title" aria-label="Account controls"><div className="account-page-controls"><label>Invoice month<input aria-label="Invoice month" type="month" value={invoiceMonth} onChange={event=>{if(/^\d{4}-(0[1-9]|1[0-2])$/.test(event.target.value)){setDetailId(null);setSelected([]);setInvoiceMonth(event.target.value);setLoading(true);}}}/></label><button type="button" disabled={loading} onClick={()=>{setLoading(true);setRefreshKey(value=>value+1);}}>Refresh</button></div></header>
+    <header className="page-title account-page-title" aria-label="Account controls"><div className="account-page-controls"><label>Invoice month<input aria-label="Invoice month" type="month" value={invoiceMonth} onInput={event=>changeInvoiceMonth(event.currentTarget.value)} onChange={event=>changeInvoiceMonth(event.currentTarget.value)}/></label><button type="button" disabled={loading} onClick={()=>{setLoading(true);setRefreshKey(value=>value+1);}}>Refresh</button></div></header>
     <p className="account-invoice-remark">Invoice month is based on the previous month’s service period.</p>
     {error && <div className="account-notice error" role="alert">{error}</div>}
     {loading && <div className="account-notice" role="status">Loading Account…</div>}
