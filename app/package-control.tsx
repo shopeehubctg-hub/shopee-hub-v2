@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import "./package-list-view.css";
 import type { CalculatorSnapshot, PackagePrefill } from "./calculator-types";
 import { calculatorSnapshots, packageHistoryChanges, packageHistoryTime, type PackageHistorySnapshot } from "./package-history";
 import { defaultRecurringEvent, recurringEventIds, recurringEventLabels, validateRecurringCampaign, type RecurringCampaignEvent, type RecurringCampaignRule } from "./recurring-campaign";
@@ -29,12 +30,23 @@ type HistoryLine = PackageHistorySnapshot & {
 };
 type PackageItem = {
   id:string; storeId:string; storeName?:string; packageSku:string; name:string; market:string; status:string; version:number;
-  pendingVersion?:number|null;
+  pendingVersion?:number|null; durationType?:"long_term"|"monthly";
   promotionType:"monthly"|"custom"; originalPrice:number; sellingPrice:number; effectiveFrom:string; effectiveTo?:string|null;
   components:ComponentLine[]; platforms:PlatformLine[]; sheetSyncStatus?:"not_sent"|"pending"|"synced"|"failed"; history?:HistoryLine[]; samePricing?:boolean;
   priceSchedules?:PriceSchedule[];
   recurringCampaign?:RecurringCampaignRule|null; currentPriceLabel?:string;
 };
+// Duration follows the normal-day period. Recurring campaigns have their own dates.
+function packageDuration(item:PackageItem):"long-term"|"monthly"|"unknown" {
+  if(item.durationType) return item.durationType==="long_term"?"long-term":"monthly";
+  const normal=(item.priceSchedules??[]).filter(line=>line.priceType==="non_campaign");
+  if(normal.length) return normal.some(line=>line.effectiveTo===null)?"long-term":"monthly";
+  if(item.priceSchedules?.length) return "unknown";
+  const end=item.effectiveTo;
+  return end===null?"long-term":end?"monthly":"unknown";
+}
+const durationLabel=(item:PackageItem)=>({"long-term":"Long Term","monthly":"Monthly","unknown":"Not recorded"}[packageDuration(item)]);
+
 type KitExportPreview = { packageCount:number; rowCount:number; signature:string };
 type KitExportResponse = KitExportPreview & { rows:Array<{kitSku:string;inventorySku:string;quantity:number;price:1}> };
 type Props = { storeId:string; storeName:string; canCreate?:boolean; prefills?:PackagePrefill[]; standaloneCreate?:boolean; draftStorageKey?:string; onPrefillsAccepted?:()=>void };
@@ -170,6 +182,9 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   const [kitError,setKitError] = useState("");
   const [filter,setFilter] = useState("all");
   const [search,setSearch] = useState("");
+  const [durationFilter,setDurationFilter] = useState("all");
+  const [view,setView] = useState<"grid"|"list">("grid");
+  const [openDetails,setOpenDetails] = useState<string|null>(null);
   const [displayCount,setDisplayCount] = useState(30);
   const [showCreate,setShowCreate] = useState(false);
   const [saving,setSaving] = useState(false);
@@ -201,7 +216,12 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   const hasSelectedStore=Boolean(storeId&&storeId!=="all");
   const allStoresSelected=storeId==="all";
 
+  function resetListScope() {
+    setDisplayCount(30);setSelectedKitIds([]);setKitPreview(null);setKitError("");setOpenHistory(null);setOpenDetails(null);
+  }
+
   async function load(afterSave=false) {
+    if(loadedStoreId!==storeId) resetListScope();
     const sequence=++loadSequence.current;
     if (!hasPackageScope) {
       setItems([]);
@@ -353,8 +373,9 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
   const scopedItems=useMemo(()=>loadedStoreId===storeId?items:[],[items,loadedStoreId,storeId]);
   const visible = useMemo(()=>scopedItems.filter(item =>
     (filter==="all"||item.status===filter) &&
+    (durationFilter==="all"||packageDuration(item)===durationFilter) &&
     `${item.packageSku} ${item.name} ${item.platforms?.map(platform=>platform.packageSku).join(" ")}`.toLowerCase().includes(search.toLowerCase())
-  ),[scopedItems,filter,search]);
+  ),[scopedItems,filter,search,durationFilter]);
   const displayed = visible.slice(0,displayCount);
   const active = scopedItems.filter(item=>item.status==="active").length;
   const scheduled = scopedItems.filter(item=>item.status==="scheduled").length;
@@ -822,6 +843,28 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     setShowCreate(true);
   }
 
+  function renderSelection(item:PackageItem) { return <>{canExportKits&&hasSelectedStore&&source==="database"&&<label className="kit-package-selector"><input type="checkbox" checked={selectedKitIds.includes(item.id)} disabled={item.sheetSyncStatus!=="synced"||Boolean(item.pendingVersion)||["draft","review"].includes(item.status)} onChange={event=>{setKitError("");setKitPreview(null);setSelectedKitIds(current=>event.target.checked?[...current,item.id]:current.filter(id=>id!==item.id));}} aria-label={`Select ${item.name} for fulfillment sheet`}/><span>Select for Fulfillment Sheet</span></label>}</>; }
+  function renderHistory(item:PackageItem) { return <>{openHistory===item.id&&<div className="version-history">{(item.history?.length?item.history:[{
+        version:item.version,changeNote:"Imported from Fulfillment Sheet",promotionType:item.promotionType,effectiveFrom:item.effectiveFrom,effectiveTo:item.effectiveTo,createdAt:"",createdBy:"",addedComponents:item.components,removedComponents:[],
+      }]).map(line=><div className="history-entry" key={line.version}>
+        <div><b>v{line.version}</b><span>{line.changeNote}</span><small>{line.effectiveFrom} → {line.effectiveTo || "Open Ended"} · Sheet {line.sheetSyncStatus ?? "preview"}</small></div>
+        <p className="history-author">Changed by <strong>{line.createdBy || "Not recorded"}</strong> · <time dateTime={line.createdAt || undefined}>{packageHistoryTime(line.createdAt)}</time></p>
+        <div className="history-changes"><table><caption>{line.version===1?"Initial package details":`Changes in version ${line.version}`}</caption><thead><tr><th scope="col">Field</th><th scope="col">Previous</th><th scope="col">Updated</th></tr></thead><tbody>{packageHistoryChanges(item.history?.find(previous=>previous.version===line.version-1),line).map(change=><tr key={change.field}><th scope="row">{change.field}</th><td>{change.before}</td><td>{change.after}</td></tr>)}</tbody></table></div>
+        <div className="history-diff"><span className="added">+ {(line.addedComponents ?? []).map(lineText).join(", ") || "No Additions"}</span><span className="removed">− {(line.removedComponents ?? []).map(lineText).join(", ") || "No Removals"}</span></div>
+        {calculatorSnapshots(line.calculatorSettings).length>0&&<div className="calculator-history"><b>Calculator Snapshot</b>{calculatorSnapshots(line.calculatorSettings).map(snapshot=><div key={snapshot.serviceScenario}><strong>{snapshot.serviceScenario}</strong><span>{snapshot.category}</span>{snapshot.pricingGoal?<span>Goal · {snapshot.pricingGoal==="facebookPayout"?"Match Meta Order Income":snapshot.pricingGoal==="sameCustomerPrice"?"Match Meta Buyer Payment":`Lower Than Meta by ${snapshot.discountUnit==="rm"?money(snapshot.discountValue??0,"MY"):`${(snapshot.discountValue??0).toFixed(2)}%`}`}</span>:null}<span>Meta {money(snapshot.facebookPrice,"MY")} → Shopee {money(snapshot.suggestedShopeePrice,"MY")}</span>{snapshot.mainProductQuantity?<span>Main Product Qty {snapshot.mainProductQuantity} · Meta Price Per Unit {snapshot.facebookPricePerUnit==null?"—":money(snapshot.facebookPricePerUnit,"MY")} · Buyer Price Per Unit {snapshot.customerPricePerUnit==null?"—":money(snapshot.customerPricePerUnit,"MY")}</span>:null}<span>Commission {snapshot.commissionRate.toFixed(2)}% · Service {snapshot.serviceRate.toFixed(2)}% · Payout {money(snapshot.actualPayout,"MY")}</span></div>)}</div>}
+      </div>)}</div>}</>; }
+  function renderActions(item:PackageItem) { return (<div className="package-card-foot"><span>{item.components.length} Inventory SKU Lines</span><button onClick={()=>setOpenHistory(openHistory===item.id?null:item.id)} aria-label={`${openHistory===item.id?"Hide":"View"} history for ${item.name}`}>{openHistory===item.id?"Hide History":"View History"}</button>{item.status==="draft"&&source==="database"&&<button onClick={()=>publishDraft(item)} disabled={saving} aria-label={`Create package ${item.name}`}>Create Package</button>}{item.pendingVersion&&source==="database"&&<button onClick={()=>retrySheetSync(item)} disabled={saving} aria-label={`Retry Google Sheet sync for ${item.name} version ${item.pendingVersion}`}>Retry Sheet Sync</button>}{!(item.pendingVersion&&source==="database")&&<button onClick={()=>startVersion(item)} disabled={saving} aria-label={`${item.status==="draft"?"Edit draft":source==="database"?"Edit package":"Migrate and edit"} ${item.name}`}>{item.status==="draft"&&source==="database"?"Edit Draft":source==="database"?"Edit / Modify":"Migrate & Edit"}</button>}{source==="database"&&item.status==="active"&&<button onClick={()=>endPackage(item)} disabled={saving||Boolean(item.pendingVersion)||item.sheetSyncStatus!=="synced"} className="package-end" aria-label={`End package ${item.name}`}>End Package</button>}{canDelete&&source==="database"&&<button onClick={()=>deletePackage(item)} disabled={saving} className="package-delete" aria-label={`Remove package ${item.name}`}>Remove Package</button>}</div>); }
+  function renderListPrices(item:PackageItem,market:MarketName) {
+    const schedules=item.priceSchedules?.filter(line=>line.market===market)??[];
+    const hasRecurringPrice=Boolean(item.recurringCampaign?.events.some(event=>event.prices[market]));
+    return <>{schedules.length?schedules.map((line,index)=><div className="package-sheet-price" key={`${line.priceType}-${index}`}><span>{line.priceType==="non_campaign"?"Normal":"Campaign"}</span><strong>{money(line.sellingPrice,market)}</strong><small>Original {money(line.originalPrice,market)}</small><small>{displayDate(line.effectiveFrom)} → {line.effectiveTo?displayDate(line.effectiveTo):"Ongoing"}</small></div>):!item.priceSchedules?.length&&!hasRecurringPrice&&item.market===market?<div className="package-sheet-price"><span>{item.currentPriceLabel??"Price"}</span><strong>{money(item.sellingPrice,market,source==="database")}</strong><small>Original {money(item.originalPrice,market,source==="database")}</small></div>:hasRecurringPrice?null:"—"}
+    {item.recurringCampaign?.events.map(event=>{const price=event.prices[market];return price?<div className="package-sheet-price" key={event.id}><span>{recurringEventLabels[event.id]} · Every month</span><strong>{money(price.sellingPrice,market)}</strong><small>Original {money(price.originalPrice,market)}</small></div>:null;})}</>;
+  }
+  function renderListDates(item:PackageItem) {
+    return <>{item.priceSchedules?.length?item.priceSchedules.map((line,index)=><div key={index}><b>{line.market} {line.priceType==="non_campaign"?"Normal":"Campaign"}</b><span>{displayDate(line.effectiveFrom)} → {line.effectiveTo?displayDate(line.effectiveTo):"Ongoing"}</span></div>):<div>{displayDate(item.effectiveFrom)} → {item.effectiveTo===null?"Ongoing":item.effectiveTo?displayDate(item.effectiveTo):"Not recorded"}</div>}
+      {item.recurringCampaign&&<div><b>Monthly campaign</b><span>{displayDate(item.recurringCampaign.startDate)} → {item.recurringCampaign.endDate?displayDate(item.recurringCampaign.endDate):"Ongoing"}</span></div>}</>;
+  }
+
   return <div className={`package-control${standaloneCreate?" standalone-create":""}`}>
     <div className="package-hero">
       <div><p className="kicker">OXM PACKAGE CONTROL</p><h2>Packages & Pricing</h2><p>Create packages, choose platforms and set promotion dates. Every change is saved in history.</p></div>
@@ -841,33 +884,30 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     </section>
 
     <div className="package-controls">
-      <div>{["All","Active","Scheduled","Draft","Review","Expired"].map(label=>{const value=label.toLowerCase();return <button key={value} className={filter===value?"active":""} onClick={()=>setFilter(value)}>{label}</button>})}</div>
-      <input value={search} onChange={event=>setSearch(event.target.value)} placeholder="Search package or platform SKU" />
+      <div className="package-filter-row">
+        <div role="group" aria-label="Package status">{["All","Active","Scheduled","Draft","Review","Expired"].map(label=>{const value=label.toLowerCase();return <button key={value} className={filter===value?"active":""} aria-pressed={filter===value} onClick={()=>{resetListScope();setFilter(value);}}>{label}</button>})}</div>
+        <span className="package-filter-divider" aria-hidden="true"/>
+        <div role="group" aria-label="Package duration">{[["all","All types"],["long-term","Long Term"],["monthly","Monthly"]].map(([value,label])=><button key={value} className={durationFilter===value?"active":""} aria-pressed={durationFilter===value} onClick={()=>{resetListScope();setDurationFilter(value);}}>{label}</button>)}</div>
+      </div>
+      <div className="package-view-controls"><div role="group" aria-label="Package view">{(["grid","list"] as const).map(value=><button type="button" key={value} aria-pressed={view===value} className={view===value?"active":""} onClick={()=>setView(value)}>{value==="grid"?"Grid View":"List View"}</button>)}</div><input aria-label="Search package or platform SKU" value={search} onChange={event=>{resetListScope();setSearch(event.target.value);}} placeholder="Search package or platform SKU" /></div>
     </div>
     {message&&<div className={`package-message ${messageType}`} role={messageType==="error"?"alert":"status"} aria-live={messageType==="error"?"assertive":"polite"}>{message}{messageType==="warning"&&<a href={HISTORY_SHEET_URL} target="_blank" rel="noopener noreferrer">Open History Sheet</a>}</div>}
     {kitError&&!kitPreview&&<div className="package-message error" role="alert">{kitError}</div>}
 
-    <div className="package-list">{displayed.map(item=><article className="package-card" key={item.id}>
+    {view==="grid"?<div className="package-list">{displayed.map(item=><article className="package-card" key={item.id}>
       <div className="package-card-head">
-        <div>{canExportKits&&hasSelectedStore&&source==="database"&&<label className="kit-package-selector"><input type="checkbox" checked={selectedKitIds.includes(item.id)} disabled={item.sheetSyncStatus!=="synced"||Boolean(item.pendingVersion)||["draft","review"].includes(item.status)} onChange={event=>{setKitError("");setKitPreview(null);setSelectedKitIds(current=>event.target.checked?[...current,item.id]:current.filter(id=>id!==item.id));}} aria-label={`Select ${item.name} for fulfillment sheet`}/><span>Select for Fulfillment Sheet</span></label>}<span className={`package-status ${item.status}`}>{item.status}</span><span className={`sync-status ${item.pendingVersion?"pending":item.sheetSyncStatus ?? "pending"}`}>Sheet {item.pendingVersion?`v${item.pendingVersion} needs sync`:item.sheetSyncStatus==="not_sent"?"not sent":item.sheetSyncStatus ?? "preview"}</span><h3>{item.name}</h3></div>
+        <div>{renderSelection(item)}<span className={`package-status ${item.status}`}>{item.status}</span><span className={`sync-status ${item.pendingVersion?"pending":item.sheetSyncStatus ?? "pending"}`}>Sheet {item.pendingVersion?`v${item.pendingVersion} needs sync`:item.sheetSyncStatus==="not_sent"?"not sent":item.sheetSyncStatus ?? "preview"}</span><h3>{item.name}</h3></div>
         {!item.priceSchedules?.length&&<div className="package-price"><small>{item.market}{item.currentPriceLabel?` · ${item.currentPriceLabel}`:""}</small><del>{money(item.originalPrice,item.market,source==="database")}</del><strong>{money(item.sellingPrice,item.market,source==="database")}</strong></div>}
       </div>
-      {(item.recurringCampaign||item.priceSchedules?.some(line=>line.priceType==="non_campaign"&&line.effectiveTo==null))&&<span className="package-long-term-badge">{item.recurringCampaign?"Monthly Campaign · Long-term Package":"Long-term Package"}</span>}
+      {packageDuration(item)==="long-term"&&<span className="package-long-term-badge">Long-term Package</span>}
       {item.priceSchedules?.length?<PackagePriceSummary item={item}/>:null}
       <div className="platform-skus">{(item.platforms?.length?item.platforms:[{platform:"Shopee" as const,packageSku:item.packageSku}]).map(platform=><div key={platform.platform}><span>{platform.platform}</span><b>{platform.packageSku}</b></div>)}</div>
       <div className="package-meta">{allStoresSelected&&<span>Store <b>{item.storeName??item.storeId}</b></span>}<span>Version <b>v{item.version}</b></span></div>
       <div className="component-list">{item.components.map((line,index)=><div key={`${line.inventorySku}-${index}`}><span className={`component-kind ${line.kind}`}>{line.kind}</span><b>{line.inventorySku}</b><span>{line.name}</span><strong>× {line.quantity}</strong></div>)}</div>
-      {openHistory===item.id&&<div className="version-history">{(item.history?.length?item.history:[{
-        version:item.version,changeNote:"Imported from Fulfillment Sheet",promotionType:item.promotionType,effectiveFrom:item.effectiveFrom,effectiveTo:item.effectiveTo,createdAt:"",createdBy:"",addedComponents:item.components,removedComponents:[],
-      }]).map(line=><div className="history-entry" key={line.version}>
-        <div><b>v{line.version}</b><span>{line.changeNote}</span><small>{line.effectiveFrom} → {line.effectiveTo || "Open Ended"} · Sheet {line.sheetSyncStatus ?? "preview"}</small></div>
-        <p className="history-author">Changed by <strong>{line.createdBy || "Not recorded"}</strong> · <time dateTime={line.createdAt || undefined}>{packageHistoryTime(line.createdAt)}</time></p>
-        <div className="history-changes"><table><caption>{line.version===1?"Initial package details":`Changes in version ${line.version}`}</caption><thead><tr><th scope="col">Field</th><th scope="col">Previous</th><th scope="col">Updated</th></tr></thead><tbody>{packageHistoryChanges(item.history?.find(previous=>previous.version===line.version-1),line).map(change=><tr key={change.field}><th scope="row">{change.field}</th><td>{change.before}</td><td>{change.after}</td></tr>)}</tbody></table></div>
-        <div className="history-diff"><span className="added">+ {(line.addedComponents ?? []).map(lineText).join(", ") || "No Additions"}</span><span className="removed">− {(line.removedComponents ?? []).map(lineText).join(", ") || "No Removals"}</span></div>
-        {calculatorSnapshots(line.calculatorSettings).length>0&&<div className="calculator-history"><b>Calculator Snapshot</b>{calculatorSnapshots(line.calculatorSettings).map(snapshot=><div key={snapshot.serviceScenario}><strong>{snapshot.serviceScenario}</strong><span>{snapshot.category}</span>{snapshot.pricingGoal?<span>Goal · {snapshot.pricingGoal==="facebookPayout"?"Match Meta Order Income":snapshot.pricingGoal==="sameCustomerPrice"?"Match Meta Buyer Payment":`Lower Than Meta by ${snapshot.discountUnit==="rm"?money(snapshot.discountValue??0,"MY"):`${(snapshot.discountValue??0).toFixed(2)}%`}`}</span>:null}<span>Meta {money(snapshot.facebookPrice,"MY")} → Shopee {money(snapshot.suggestedShopeePrice,"MY")}</span>{snapshot.mainProductQuantity?<span>Main Product Qty {snapshot.mainProductQuantity} · Meta Price Per Unit {snapshot.facebookPricePerUnit==null?"—":money(snapshot.facebookPricePerUnit,"MY")} · Buyer Price Per Unit {snapshot.customerPricePerUnit==null?"—":money(snapshot.customerPricePerUnit,"MY")}</span>:null}<span>Commission {snapshot.commissionRate.toFixed(2)}% · Service {snapshot.serviceRate.toFixed(2)}% · Payout {money(snapshot.actualPayout,"MY")}</span></div>)}</div>}
-      </div>)}</div>}
-      <div className="package-card-foot"><span>{item.components.length} Inventory SKU Lines</span><button onClick={()=>setOpenHistory(openHistory===item.id?null:item.id)} aria-label={`${openHistory===item.id?"Hide":"View"} history for ${item.name}`}>{openHistory===item.id?"Hide History":"View History"}</button>{item.status==="draft"&&source==="database"&&<button onClick={()=>publishDraft(item)} disabled={saving} aria-label={`Create package ${item.name}`}>Create Package</button>}{item.pendingVersion&&source==="database"&&<button onClick={()=>retrySheetSync(item)} disabled={saving} aria-label={`Retry Google Sheet sync for ${item.name} version ${item.pendingVersion}`}>Retry Sheet Sync</button>}{!(item.pendingVersion&&source==="database")&&<button onClick={()=>startVersion(item)} disabled={saving} aria-label={`${item.status==="draft"?"Edit draft":source==="database"?"Edit package":"Migrate and edit"} ${item.name}`}>{item.status==="draft"&&source==="database"?"Edit Draft":source==="database"?"Edit / Modify":"Migrate & Edit"}</button>}{source==="database"&&item.status==="active"&&<button onClick={()=>endPackage(item)} disabled={saving||Boolean(item.pendingVersion)||item.sheetSyncStatus!=="synced"} className="package-end" aria-label={`End package ${item.name}`}>End Package</button>}{canDelete&&source==="database"&&<button onClick={()=>deletePackage(item)} disabled={saving} className="package-delete" aria-label={`Remove package ${item.name}`}>Remove Package</button>}</div>
-    </article>)}</div>
+      {renderHistory(item)}
+      {renderActions(item)}
+    </article>)}</div>:<div className="package-sheet-scroll" tabIndex={0} role="region" aria-label="Package list spreadsheet"><table className="package-sheet"><caption>Packages & Pricing · {visible.length} package{visible.length===1?"":"s"} · Showing {displayed.length}</caption><thead><tr><th scope="col" className="package-sheet-name">Package</th>{allStoresSelected&&<th scope="col">Store</th>}<th scope="col">Type</th><th scope="col">Status / Sheet</th><th scope="col">MY · RM prices</th><th scope="col">SG · S$ prices</th><th scope="col">Effective dates</th><th scope="col">Platform SKU</th><th scope="col">Inventory SKU / Quantity</th><th scope="col">Version</th><th scope="col">Actions</th></tr></thead><tbody>{displayed.map(item=><Fragment key={item.id}><tr><th scope="row" className="package-sheet-name"><strong>{item.name}</strong>{renderSelection(item)}<button type="button" aria-expanded={openDetails===item.id} onClick={()=>setOpenDetails(openDetails===item.id?null:item.id)} aria-label={`View details for ${item.name}`}>{openDetails===item.id?"Hide details":"View details"}</button></th>{allStoresSelected&&<td>{item.storeName??item.storeId}</td>}<td>{durationLabel(item)}</td><td><span className={`package-status ${item.status}`}>{item.status}</span><span className={`sync-status ${item.pendingVersion?"pending":item.sheetSyncStatus??"pending"}`}>Sheet {item.pendingVersion?`v${item.pendingVersion} needs sync`:item.sheetSyncStatus==="not_sent"?"not sent":item.sheetSyncStatus??"preview"}</span></td><td>{renderListPrices(item,"MY")}</td><td>{renderListPrices(item,"SG")}</td><td className="package-sheet-dates">{renderListDates(item)}</td><td>{(item.platforms?.length?item.platforms:[{platform:"Shopee",packageSku:item.packageSku}]).map(line=><div key={line.platform}><small>{line.platform}</small><div>{line.packageSku}</div></div>)}</td><td>{item.components.map((line,index)=><div key={index} title={`${line.kind} · ${line.name}`}>{line.inventorySku} × {line.quantity}</div>)}</td><td>v{item.version}</td><td>{renderActions(item)}</td></tr>{(openDetails===item.id||openHistory===item.id)&&<tr className="package-sheet-detail"><td colSpan={allStoresSelected?11:10}>{openDetails===item.id&&<div><h3>{item.name}</h3>{item.priceSchedules?.length?<PackagePriceSummary item={item}/>:null}<div className="component-list">{item.components.map((line,index)=><div key={index}><span className={`component-kind ${line.kind}`}>{line.kind}</span><b>{line.inventorySku}</b><span>{line.name}</span><strong>× {line.quantity}</strong></div>)}</div></div>}{renderHistory(item)}</td></tr>}</Fragment>)}</tbody></table></div>}
+
     {visible.length>displayCount&&<button type="button" className="package-load-more" onClick={()=>setDisplayCount(count=>count+30)}>Show more packages ({visible.length-displayCount} remaining)</button>}
     {!visible.length&&<div className="package-empty"><strong>{!hasPackageScope?"Select a Store":allStoresSelected?"No Packages In Accessible Stores":"No Packages In This View"}</strong><span>{!hasPackageScope?"Package information will appear after you choose a store.":allStoresSelected?"Only packages from stores you have permission to access appear here.":"Choose another filter or create the first package."}</span></div>}
 
