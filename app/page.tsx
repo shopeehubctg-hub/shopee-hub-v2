@@ -106,6 +106,7 @@ function managementActionToClientAction(action: ManagementAction, client: string
 
 export default function Home() {
   const [requestedSection, setSection] = useState("overview");
+  const [stagingPreview,setStagingPreview] = useState(false);
   const [sidebarCollapsed,setSidebarCollapsed] = useState(false);
   const [data, setData] = useState<(DashboardResponse & { user: { email:string } }) | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -145,6 +146,7 @@ export default function Home() {
     } finally { if (sequence === loadSequence.current) setLoading(false); }
   }
   useEffect(() => {
+    setStagingPreview(window.location.hostname==="shopee-hub-v2-260731-git-cod-e05b8d-shopeehubctg-5199s-projects.vercel.app");
     const params = new URLSearchParams(window.location.search);
     if (params.get("section") === "permissions") setSection("permissions");
     if (params.get("section") === "account") setSection("account");
@@ -289,7 +291,7 @@ export default function Home() {
       {section==="calculator" && <div className="page" aria-label="Price Calculator"><PriceCalculator storeName={allStoresSelected?"":(store?.name??"")} productProfile={allStoresSelected?null:data?.productProfile} coFundVouchers={allStoresSelected?[]:data?.coFundVouchers} onCreatePackage={prefill=>openPackageDraft([prefill])} onCreatePackages={openPackageDraft} /></div>}
       {section==="design" && <div className="page"><DesignChecker storeId={storeId}/></div>}
       {section==="protection" && <div className="page"><FakeSellerReport storeName={store?.name ?? "Selected store"} allStores={allStoresSelected} cases={fakeSellerCases}/></div>}
-      {section==="permissions" && data?.access?.canManagePermissions && <div className="page"><PermissionSettings initialEnabledModules={data.access.clientEnabledModules} onStoreChanged={()=>load(storeId && storeId!=="all" ? storeId : undefined)}/></div>}
+      {section==="permissions" && data?.access?.canManagePermissions && <div className="page"><PermissionSettings accountSetupPreview={stagingPreview} initialEnabledModules={data.access.clientEnabledModules} onStoreChanged={()=>load(storeId && storeId!=="all" ? storeId : undefined)}/></div>}
       {section==="account" && data?.access?.role==="superadmin" && <div className="page"><AccountPanel /></div>}
       {section==="live_calendar" && <div className="page"><LiveCalendar initialStoreId={storeId} initialView={data.access?.role==="superadmin"?"month":"list"}/></div>}
 

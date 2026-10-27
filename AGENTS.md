@@ -25,3 +25,4 @@
 - Packages Grid/List use the same filtered data, actions, permissions and Fulfillment selection. Status and duration filters combine; changing filters clears export selection, while changing only the view retains it. Bound rendered rows in both views.
 - Package duration follows Normal Day pricing, not an open Campaign range. Manual End changes status to Expired while retaining the preceding version's duration classification.
 - Package samples are presentation-only, Super Admin-only on the fixed Staging hostname. Keep them separate from loaded records; hide mutation/Fulfillment actions, label the mode, and never seed them into Supabase or Google Sheets.
+- Until Account persistence is explicitly activated, Production Add/Edit Store retains the released store-only form and API path. Fixed Staging may show the Account setup preview. Account-bearing payloads must never fall through to store-only persistence or create partial records.

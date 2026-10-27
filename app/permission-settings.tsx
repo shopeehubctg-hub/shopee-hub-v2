@@ -5,7 +5,7 @@ import { useFeePlans } from "./fee-plan-context";
 import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
 import { AccountSetupFields, accountSetupError, emptyAccountSetup, accountSetupPayload, resetAccountSetupSelection, malaysiaMonth, type AccountSetupDraft } from "./store-account-setup-fields";
 
-type Props = { initialEnabledModules: PortalModuleId[]; onStoreChanged?: () => void };
+type Props = { accountSetupPreview?:boolean; initialEnabledModules: PortalModuleId[]; onStoreChanged?: () => void };
 type Role = "customer" | "manager" | "superadmin";
 type AdsTopUpOwner = "Client" | "Client Approval" | "Shopee Hub";
 type ProjectLink = { project: string; href: string; driveLink?: string };
@@ -72,7 +72,7 @@ type UserData = {
   accountSettingsAvailable: boolean;
 };
 
-export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Props) {
+export function PermissionSettings({ initialEnabledModules, onStoreChanged, accountSetupPreview=false }: Props) {
   const { plans } = useFeePlans();
   const [tab, setTab] = useState<"users" | "stores" | "modules">("users");
   const [enabled, setEnabled] = useState(new Set(initialEnabledModules));
@@ -193,7 +193,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
     }
   }
   async function addStore() {
-    if (!data?.accountSettingsAvailable) { setStoreError("Saving is not enabled in this preview."); return; }
+    if (accountSetupPreview && !data?.accountSettingsAvailable) { setStoreError("Saving is not enabled in this preview."); return; }
     if (newStore.projectLinks.some(projectLinkError)) return;
     const visibleMonth = storeModalRef.current?.querySelector<HTMLInputElement>('[name="accountEffectiveInvoiceMonth"]')?.value;
     if (visibleMonth !== undefined && visibleMonth !== newAccount.effectiveMonth) {
@@ -201,12 +201,12 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
       setStoreError("Invoice month changed. Review the Rate Card before adding this store.");
       return;
     }
-    const setupError = accountSetupError(newAccount, newStore.market, plans);
+    const setupError = accountSetupPreview ? accountSetupError(newAccount, newStore.market, plans) : null;
     if (setupError) { setStoreError(setupError); return; }
     setStoreError("");
     setSaving(true);
     try {
-      const accountSetup = accountSetupPayload(newAccount, newStore.market, plans);
+      const accountSetup = accountSetupPreview ? accountSetupPayload(newAccount, newStore.market, plans) : undefined;
       const payload = { ...newStore, adsTopUpOwner: newStore.adsTopUpOwner || null, accountSetup };
       const payloadText = JSON.stringify(payload);
       if (storeRequest.current?.payload !== payloadText) storeRequest.current = { payload: payloadText, id: crypto.randomUUID() };
@@ -239,9 +239,9 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
   }
   async function saveStore() {
     if (!editingStore) return;
-    if (!data?.accountSettingsAvailable) { setStoreError("Saving is not enabled in this preview."); return; }
+    if (accountSetupPreview && !data?.accountSettingsAvailable) { setStoreError("Saving is not enabled in this preview."); return; }
     if (storeDraft.projectLinks.some(projectLinkError)) return;
-    const companyChanged = !!editingStore.accountUnit && editLegalEntity.trim() !== editingStore.accountUnit.legalEntity;
+    const companyChanged = accountSetupPreview && !!editingStore.accountUnit && editLegalEntity.trim() !== editingStore.accountUnit.legalEntity;
     if (companyChanged && (!editLegalEntity.trim() || !/^20\d{2}-(0[1-9]|1[0-2])$/.test(editEntityMonth) || editEntityMonth < malaysiaMonth())) {
       setStoreError("Enter a legal company name and current or future effective month.");
       return;
@@ -538,12 +538,12 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
                 updateNewStore({ market });
                 setNewAccount(current => resetAccountSetupSelection(current, market));
               }}><option value="MY">Malaysia (MY)</option><option value="SG">Singapore (SG)</option></select></label>
-              <AccountSetupFields draft={newAccount} market={newStore.market} update={updateNewAccount} />
-              {accountSetupError(newAccount, newStore.market, plans) && <p className="store-field-error" role="status">{accountSetupError(newAccount, newStore.market, plans)}</p>}
+              {accountSetupPreview && <AccountSetupFields draft={newAccount} market={newStore.market} update={updateNewAccount} />}
+              {accountSetupPreview && accountSetupError(newAccount, newStore.market, plans) && <p className="store-field-error" role="status">{accountSetupError(newAccount, newStore.market, plans)}</p>}
               <StoreLinkFields draft={newStore} update={updateNewStore} idPrefix="add-store" />
-              {!data?.accountSettingsAvailable && <p className="store-access-note" role="status">Saving is not enabled in this preview.</p>}
+              {accountSetupPreview && !data?.accountSettingsAvailable && <p className="store-access-note" role="status">Saving is not enabled in this preview.</p>}
               {storeError && <p id="add-store-error" className="store-form-error" role="alert">{storeError}</p>}
-              <button className="primary" disabled={saving || !data?.accountSettingsAvailable || !newStore.name.trim() || !!accountSetupError(newAccount, newStore.market, plans) || newStore.projectLinks.some(projectLinkError)} aria-describedby={storeError ? "add-store-error" : undefined} onClick={addStore}>{saving ? "Adding…" : "Add store"}</button>
+              <button className="primary" disabled={saving || (accountSetupPreview && !data?.accountSettingsAvailable) || !newStore.name.trim() || (accountSetupPreview && !!accountSetupError(newAccount, newStore.market, plans)) || newStore.projectLinks.some(projectLinkError)} aria-describedby={storeError ? "add-store-error" : undefined} onClick={addStore}>{saving ? "Adding…" : "Add store"}</button>
             </div>
           </div>
         </div>
@@ -558,11 +558,11 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged }: Pr
             </div>
             <div className="access-form" aria-busy={saving}>
               <label>Store name<input ref={storeNameInputRef} maxLength={120} required value={storeDraft.name} onChange={event => updateStoreDraft({ name: event.target.value })} /></label>
-              {editingStore.accountUnit ? <fieldset><legend>Account company</legend><div className="account-rate-fields"><label className="account-field-wide">Company name<input maxLength={240} value={editLegalEntity} onChange={event => { setStoreError(""); setEditLegalEntity(event.target.value); }} required /></label><label>Effective invoice month<input type="month" min={malaysiaMonth()} value={editEntityMonth} onChange={event => { setStoreError(""); setEditEntityMonth(event.target.value); }} required /></label></div></fieldset> : <p className="store-access-note">{(editingStore.accountUnitCount ?? 0) > 1 ? "This store has multiple billing projects. Edit each company in Account." : "No Account setup is linked to this store yet. Set up its billing project in Account."}</p>}
+              {accountSetupPreview && (editingStore.accountUnit ? <fieldset><legend>Account company</legend><div className="account-rate-fields"><label className="account-field-wide">Company name<input maxLength={240} value={editLegalEntity} onChange={event => { setStoreError(""); setEditLegalEntity(event.target.value); }} required /></label><label>Effective invoice month<input type="month" min={malaysiaMonth()} value={editEntityMonth} onChange={event => { setStoreError(""); setEditEntityMonth(event.target.value); }} required /></label></div></fieldset> : <p className="store-access-note">{(editingStore.accountUnitCount ?? 0) > 1 ? "This store has multiple billing projects. Edit each company in Account." : "No Account setup is linked to this store yet. Set up its billing project in Account."}</p>)}
               <StoreLinkFields draft={storeDraft} update={updateStoreDraft} idPrefix="edit-store" />
-              {!data?.accountSettingsAvailable && <p className="store-access-note" role="status">Saving is not enabled in this preview.</p>}
+              {accountSetupPreview && !data?.accountSettingsAvailable && <p className="store-access-note" role="status">Saving is not enabled in this preview.</p>}
               {storeError && <p id="edit-store-error" className="store-form-error" role="alert">{storeError}</p>}
-              <button className="primary" disabled={saving || !data?.accountSettingsAvailable || !storeDraft.name.trim() || storeDraft.projectLinks.some(projectLinkError)} aria-describedby={storeError ? "edit-store-error" : undefined} onClick={saveStore}>{saving ? "Saving…" : "Save store"}</button>
+              <button className="primary" disabled={saving || (accountSetupPreview && !data?.accountSettingsAvailable) || !storeDraft.name.trim() || storeDraft.projectLinks.some(projectLinkError)} aria-describedby={storeError ? "edit-store-error" : undefined} onClick={saveStore}>{saving ? "Saving…" : "Save store"}</button>
             </div>
           </div>
         </div>

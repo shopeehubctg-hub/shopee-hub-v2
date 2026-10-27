@@ -109,6 +109,8 @@ async function completeCurrentForm(dom, index) {
     input(dom, '.component-row input', `QA-ITEM-${index}`);
     input(dom, '.component-row input:nth-of-type(2)', "Test item");
   });
+  // A month alone does not select a Campaign event. Choose Double Day explicitly.
+  await act(async()=>dom.window.document.querySelector('.campaign-month-card input[type="checkbox"]').click());
 }
 
 test("same pricing hides the Campaign card and copies Non-Campaign dates even after a Campaign month was entered", async () => {
@@ -128,10 +130,14 @@ test("same pricing hides the Campaign card and copies Non-Campaign dates even af
     assert.match(harness.dom.window.document.querySelector('.pricing-section').textContent, /Campaign dates will follow Non-Campaign dates/);
     await act(async () => click(harness.dom, "Save Draft"));
     assert.equal(harness.posts.length, 1);
-    assert.deepEqual(harness.posts[0].priceSchedules.map(line => [line.priceType, line.originalPrice, line.sellingPrice, line.effectiveFrom, line.effectiveTo]), [
-      ["non_campaign", "1000", "80.00", "2026-10-01", "2026-10-31"],
-      ["campaign", "1000", "80.00", "2026-10-01", "2026-10-31"],
+    const schedules=harness.posts[0].priceSchedules;
+    const normal=schedules.filter(line=>line.priceType==='non_campaign');
+    const campaign=schedules.filter(line=>line.priceType==='campaign');
+    assert.deepEqual(normal.map(line=>[line.originalPrice,line.sellingPrice,line.effectiveFrom,line.effectiveTo]),[
+      ['1000','80.00','2026-10-01','2026-10-31'],
+      ['1000','80.00','2026-11-01','2026-11-30'],
     ]);
+    assert.deepEqual(campaign.map(line=>({...line,priceType:"non_campaign"})),normal);
   } finally { await harness.cleanup(); }
 });
 

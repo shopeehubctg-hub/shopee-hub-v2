@@ -1,3 +1,4 @@
+import { POST as legacyCreateStore, PATCH as legacyUpdateStore } from "./legacy";
 import { getChatGPTUser } from "../../../chatgpt-auth";
 import { supabaseRest } from "../../../supabase-rest";
 import { proposedStoreId, storeNameConflict } from "../../../store-registration";
@@ -37,6 +38,8 @@ function validMonth(value: unknown) {
 }
 
 export async function POST(request: Request) {
+  const candidate=await request.clone().json().catch(()=>null);
+  if(candidate&&typeof candidate==="object"&&!Array.isArray(candidate)&&!["accountSetup","legalEntity","feeRule","effectiveMonth","accountRosterKey","expectedAccountVersion"].some(key=>key in candidate))return legacyCreateStore(request);
   const auth = await superAdminMembership();
   if ("error" in auth) return auth.error;
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
@@ -73,8 +76,11 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const candidate=await request.clone().json().catch(()=>null);
+  if(candidate&&typeof candidate==="object"&&!Array.isArray(candidate)&&!["accountSetup","legalEntity","feeRule","effectiveMonth","accountRosterKey","expectedAccountVersion"].some(key=>key in candidate))return legacyUpdateStore(request);
   const auth = await superAdminMembership();
   if ("error" in auth) return auth.error;
+  if(candidate?.accountSetup!==undefined)return Response.json({error:"This Account setup is preview-only. No store was changed."},{status:503});
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   const id = typeof body?.id === "string" ? body.id.trim() : "";
   const name = typeof body?.name === "string" ? body.name.trim().replace(/\s+/g, " ") : "";
