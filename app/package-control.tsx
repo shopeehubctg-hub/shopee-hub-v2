@@ -50,7 +50,7 @@ const durationLabel=(item:PackageItem)=>({"long-term":"Long Term","monthly":"Mon
 
 type KitExportPreview = { packageCount:number; rowCount:number; signature:string };
 type KitExportResponse = KitExportPreview & { rows:Array<{kitSku:string;inventorySku:string;quantity:number;price:1}> };
-type Props = { storeId:string; storeName:string; canCreate?:boolean; prefills?:PackagePrefill[]; standaloneCreate?:boolean; draftStorageKey?:string; onPrefillsAccepted?:()=>void };
+type Props = { storeId:string; storeName:string; canCreate?:boolean; allowSamplePreview?:boolean; prefills?:PackagePrefill[]; standaloneCreate?:boolean; draftStorageKey?:string; onPrefillsAccepted?:()=>void };
 type StoredBatch = { prefills:PackagePrefill[]; storeId?:string; requestIds?:Record<string,string> };
 
 const PLATFORM_NAMES:PlatformName[] = ["Shopee","Lazada","TikTok Shop"];
@@ -171,7 +171,7 @@ function PackagePriceSummary({item}:{item:PackageItem}) {
   })}</div>;
 }
 
-export function PackageControl({ storeId, storeName, canCreate=true, prefills=[], standaloneCreate=false, draftStorageKey, onPrefillsAccepted }:Props) {
+export function PackageControl({ storeId, storeName, canCreate=true, allowSamplePreview=false, prefills=[], standaloneCreate=false, draftStorageKey, onPrefillsAccepted }:Props) {
   const [items,setItems] = useState<PackageItem[]>([]);
   const [sampleMode,setSampleMode] = useState(false);
   const [canShowSamples,setCanShowSamples] = useState(false);
@@ -225,6 +225,9 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
 
   async function load(afterSave=false) {
     if(loadedStoreId!==storeId) resetListScope();
+    const allowSamples=allowSamplePreview&&window.location.hostname==="shopee-hub-v2-260731-git-cod-e05b8d-shopeehubctg-5199s-projects.vercel.app";
+    setCanShowSamples(allowSamples);
+    if(!allowSamples||loadedStoreId!==storeId||!storeId)setSampleMode(allowSamples&&!standaloneCreate&&new URLSearchParams(window.location.search).get("packageSamples")==="1");
     const sequence=++loadSequence.current;
     if (!hasPackageScope) {
       setItems([]);
@@ -245,9 +248,6 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
       setLoadedStoreId(storeId);
       setSource(data.source ?? "");
       setCanDelete(data.canDelete === true);
-      const allowSamples=data.canDelete===true&&window.location.hostname==="shopee-hub-v2-260731-git-cod-e05b8d-shopeehubctg-5199s-projects.vercel.app";
-      setCanShowSamples(allowSamples);
-      if(loadedStoreId!==storeId)setSampleMode(allowSamples&&new URLSearchParams(window.location.search).get("packageSamples")==="1");
       setCanExportKits(data.canExportKits === true);
       setSelectedKitIds([]);
       setKitPreview(null);
@@ -269,7 +269,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     const interval = window.setInterval(refreshAfterDateChange,60_000);
     window.addEventListener("focus",refreshAfterDateChange);
     return () => { window.clearInterval(interval); window.removeEventListener("focus",refreshAfterDateChange); };
-  },[storeId]);
+  },[storeId,allowSamplePreview,standaloneCreate]);
 
   async function checkedKitRows():Promise<KitExportResponse> {
     const response=await fetch("/api/packages/fulfillment-sheet",{
@@ -377,7 +377,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, prefills=[]
     onPrefillsAccepted?.();
   },[prefills[0]?.requestId]);
 
-  const scopedItems=useMemo(()=>loadedStoreId===storeId?(sampleMode?packageSamples(storeId,storeName):items):[],[items,loadedStoreId,storeId,storeName,sampleMode]);
+  const scopedItems=useMemo(()=>sampleMode?packageSamples(storeId||"all",storeName):(loadedStoreId===storeId?items:[]),[items,loadedStoreId,storeId,storeName,sampleMode]);
   const visible = useMemo(()=>scopedItems.filter(item =>
     (filter==="all"||item.status===filter) &&
     (durationFilter==="all"||packageDuration(item)===durationFilter) &&
