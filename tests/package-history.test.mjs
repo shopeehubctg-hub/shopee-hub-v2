@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calculatorSnapshots, packageHistoryChanges, packageHistoryFields, packageHistoryTime, publicCalculatorSettings } from '../app/package-history.ts';
+import {build} from 'esbuild';
+const bundle=await build({entryPoints:['app/package-history.ts'],bundle:true,write:false,platform:'node',format:'esm'});
+const {calculatorSnapshots,packageHistoryChanges,packageHistoryFields,packageHistoryTime,publicCalculatorSettings}=await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
 
 const initial = {
   name: 'Package A', market: 'MY,SG',
@@ -55,7 +57,8 @@ test('incomplete legacy price rows do not crash View History', () => {
 });
 
 test('initial version and removals retain complete snapshots', () => {
-  assert.equal(packageHistoryChanges(undefined,initial).length,5);
+  assert.deepEqual(packageHistoryChanges(undefined,initial).map(row=>row.field).sort(),['Package name','Selling markets','Platform listing SKUs','Inventory items','Prices & promotion dates','Monthly Campaign events'].sort());
+  assert.equal(packageHistoryChanges(undefined,initial).find(row=>row.field==='Monthly Campaign events').after,'None');
   const removed = {...initial,components:[],platforms:[]};
   const changes = packageHistoryChanges(initial,removed);
   assert.equal(changes.find(row=>row.field==='Inventory items').after,'None');

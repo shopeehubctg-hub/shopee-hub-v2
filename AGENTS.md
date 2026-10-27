@@ -1,0 +1,28 @@
+# BD Dashboard project rules
+
+## Typography
+- Noto Sans is the exclusive UI typeface. Keep root next/font and --font-noto-sans.
+
+## Dashboard design consistency
+- All modules must use the Dashboard's shared typography, colour tokens, heading scale, buttons, forms and spacing. Scope module styling; do not introduce a separate visual brand for Account.
+- Account follows the Xero reference's information hierarchy: concise financial overview, compact billing list, then record details. Keep infrequent fee-plan configuration in secondary settings and use the same monthly-rate state in the list and editor.
+- Account billing policy confirmed by the user: Invoice Month is based on the preceding month's Service Period. Show this once above billing records, and hide individual Service Period fields. Statement month remains the fee-base report reference; a reference month does not prove a report has been imported. Do not backfill stored dates as part of UI-only work.
+- User-confirmed MY billing PDF defaults begin with Invoice Month 2026-10. Internal NEW tiers use each billing project's own monthly Shopee Sales; never aggregate projects by Entity. Only the >=RM200,000 tier has the RM4,000 cap. Keep source assignments as UI preview defaults until database activation is authorized.
+- SG billing preview uses SGD source sales converted to MYR before tier selection and bills fees in MYR. Internal FX is fixed MYR3.2 per SGD1. Bonlife uses BNM monthly average for the preceding Service Period, never the Invoice Month or a live spot rate. Berlanco SG and GOHERB SG also use fixed MYR3.2 per SGD1, confirmed by the user. Preserve exchange-rate evidence in locked previews; never relabel existing ledger currency or manufacture MYR income.
+- Rate Card updates must record the effective Invoice Month, preserve earlier month assignments and locked history, and use the same assignment logic for individual and bulk edits. Bulk selection must have a clear scope and never silently update hidden rows or partially apply an invalid batch.
+
+## Staging
+- The user-facing Staging entry stays https://shopee-hub-v2-260731-git-cod-e05b8d-shopeehubctg-5199s-projects.vercel.app/ . Keep section query parameters as needed.
+- Update the existing codex/account-income-module preview branch for this entry. Never send a new per-deployment URL as the review entry.
+- Staging, actual UI/UX PASS, then final function QC PASS, then user-authorized Production. Code tests alone are not UI acceptance.
+
+- Monthly Rate cells show the assigned Rate Card name only; rate percentages, FX, preview labels and scheduling details belong inside the editor. Deleting a Rate Card removes it from available choices while retaining existing assignments and historical versions.
+
+## Linked features
+- For store/account changes, review Add/Edit Store, current Store Selector identity, permissions, Account rate-card versions/FX, and related Package/Advertising inputs together. Use shared models rather than independent copies of fee rules or currency policy.
+- Add Store Account Setup uses the shared active Rate Cards and records their exact version/effective Invoice Month. Country/client-type changes clear incompatible card and FX selection while preserving company and month. SG sales currency remains SGD; billing/tiers/caps are MYR.
+- The v2 store/account setup payload includes card identity, MYR rule (including per-tier caps), client type and FX policy. It must not go through the legacy store RPC that cannot retain these fields. Database activation requires explicit authorization and atomic persistence support; current preview rejects v2 writes without creating a partial store.
+- Packages Grid/List use the same filtered data, actions, permissions and Fulfillment selection. Status and duration filters combine; changing filters clears export selection, while changing only the view retains it. Bound rendered rows in both views.
+- Package duration follows Normal Day pricing, not an open Campaign range. Manual End changes status to Expired while retaining the preceding version's duration classification.
+- Package samples are presentation-only, Super Admin-only on the fixed Staging hostname. Keep them separate from loaded records; hide mutation/Fulfillment actions, label the mode, and never seed them into Supabase or Google Sheets.
+- Until Account persistence is explicitly activated, Production Add/Edit Store retains the released store-only form and API path. Fixed Staging may show the Account setup preview. Account-bearing payloads must never fall through to store-only persistence or create partial records.

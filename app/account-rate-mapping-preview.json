@@ -1,0 +1,584 @@
+{
+  "source": {
+    "document": "WISDOM FACTORY DEPARTMENT BILLING - SHOPEE MY (JOLIN YONG).pdf",
+    "sha256": "c72e0f249ee0a67da59beb66a1ce61b8be1d711ae3303fa21c773b834ed4760c",
+    "confirmedOn": "2026-10-27",
+    "scope": "UI-only preview defaults; no database writes",
+    "tierAggregation": "per-project",
+    "sst": "exclusive; SST percentage not supplied",
+    "sgPolicyConfirmedOn": "2026-10-27",
+    "sgPolicy": "User confirmed same MY fee rules, convert SGD sales to MYR before selecting tiers and bill MYR. Internal, Berlanco SG and GOHERB SG fixed 3.2; Bonlife BNM service-month average."
+  },
+  "records": [
+    {
+      "rosterKey": "roster-2026-10-my-2",
+      "project": "NOMOQ",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-3",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-3",
+      "project": "DRSMILE",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-4",
+      "project": "ECOPLUS",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-3",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-5",
+      "project": "FUNFFY",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-6",
+      "project": "ILADY",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-3",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-7",
+      "project": "JEEROUL",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-8",
+      "project": "M PLUS",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-9",
+      "project": "KATA MARINE",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-10",
+      "project": "MIZINO CHOCOLATE",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-11",
+      "project": "SCALE STORY",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-12",
+      "project": "SCALEGEM",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-13",
+      "project": "TGC",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-14",
+      "project": "MASTERNEV",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-15",
+      "project": "KIDSAIE",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-3",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-16",
+      "project": "BEYOUTE",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-17",
+      "project": "MCS",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-3",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-18",
+      "project": "MIZINO PLACENTA",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-19",
+      "project": "CTG4U MALAYSIA",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-3",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-20",
+      "project": "ZEERO SKINCARE",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-21",
+      "project": "SUPU",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-22",
+      "project": "AGEPROS",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-23",
+      "project": "URO 360",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-24",
+      "project": "LIVACT",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-25",
+      "project": "JOURISH",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-3",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-26",
+      "project": "BUGUCARE",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-3",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-27",
+      "project": "ISOKAE",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-28",
+      "project": "HUMEAL",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-29",
+      "project": "MOESIE",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-30",
+      "project": "NINOKO",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-31",
+      "project": "RECOVIT",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-32",
+      "project": "MFORMULA",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-3",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-33",
+      "project": "SKINDAE",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-34",
+      "project": "YCT",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-35",
+      "project": "GOHERB",
+      "currency": "MYR",
+      "clientType": "External",
+      "planId": "external-5",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-36",
+      "project": "Berlanco Beauty Official",
+      "currency": "MYR",
+      "clientType": "External",
+      "planId": "berlanco-tier",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-37",
+      "project": "Bonlife Official Store",
+      "currency": "MYR",
+      "clientType": "External",
+      "planId": "external-10",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-38",
+      "project": "Daionica Official Store",
+      "currency": "MYR",
+      "clientType": "External",
+      "planId": "external-5",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-39",
+      "project": "Dancoly Paris HQ",
+      "currency": "MYR",
+      "clientType": "External",
+      "planId": "external-10",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-40",
+      "project": "MIX ENZYME",
+      "currency": "MYR",
+      "clientType": "Internal",
+      "planId": "internal-3",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-41",
+      "project": "PAW PAWs Official",
+      "currency": "MYR",
+      "clientType": "External",
+      "planId": "external-10",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-42",
+      "project": "Petavit",
+      "currency": "MYR",
+      "clientType": "External",
+      "planId": "external-10",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-43",
+      "project": "Winsense",
+      "currency": "MYR",
+      "clientType": "External",
+      "planId": "external-9.7",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-44",
+      "project": "Hair Factory Official",
+      "currency": "MYR",
+      "clientType": "External",
+      "planId": "external-11",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-45",
+      "project": "J Packaging",
+      "currency": "MYR",
+      "clientType": "External",
+      "planId": "external-9.7",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-my-46",
+      "project": "Jen Mommy Essential Oil",
+      "currency": "MYR",
+      "clientType": "External",
+      "planId": "external-10",
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-2",
+      "project": "BERLANCO SG",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "External",
+      "planId": "berlanco-tier",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-3",
+      "project": "BONLIFE SG",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "External",
+      "planId": "external-10",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "bnm-service-average"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-4",
+      "project": "DRSMILE SG",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-5",
+      "project": "GOHERB SG",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "External",
+      "planId": "external-5",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-6",
+      "project": "ILADY SG",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "Internal",
+      "planId": "internal-3",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-7",
+      "project": "KATA MARINE",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-8",
+      "project": "MCS SG",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "Internal",
+      "planId": "internal-3",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-9",
+      "project": "MFORMULA SG",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "Internal",
+      "planId": "internal-3",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-10",
+      "project": "MOESIE SG",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-11",
+      "project": "NINOKO SG",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-12",
+      "project": "SCALE STORY SG",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-13",
+      "project": "SKINDAE SG",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-14",
+      "project": "ZEERO SKINCARE",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
+    }
+  ],
+  "pending": [
+    {
+      "entity": "DATUK DISCOUNT",
+      "project": "(AFFILIATE)",
+      "reason": "No fee supplied; no exact billing roster key"
+    }
+  ],
+  "fxRates": [
+    {
+      "serviceMonth": "2026-09",
+      "rate": "3.197",
+      "policy": "bnm-service-average",
+      "verified": true,
+      "reference": "https://storage.data.gov.my/finsector/exr/monthly.csv",
+      "metadataReference": "https://data.gov.my/data-catalogue/exchangerates",
+      "indicator": "avg",
+      "session": "1200",
+      "quote": "MYR per 1 SGD",
+      "dataSource": "Bank Negara Malaysia",
+      "verifiedOn": "2026-10-27",
+      "snapshotSha256": "7f7bc4f306ad710282523f45f907890a584f18ab285695e9c9fc2cd6610dbd63"
+    }
+  ]
+}

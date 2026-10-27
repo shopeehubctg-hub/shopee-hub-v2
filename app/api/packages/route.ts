@@ -1,3 +1,4 @@
+import { packageDurationType } from '../../package-duration';
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { getDb } from "../../../db";
 import {
@@ -258,6 +259,7 @@ export async function GET(request: Request) {
         sheetSyncStatus:version?.sheetSyncStatus ?? "pending",
         samePricing:typeof version?.calculatorSettings?._samePricing==="boolean" ? version.calculatorSettings._samePricing : undefined,
         recurringCampaign,
+        durationType:packageDurationType(version,versionsByPackage.get(row.id)??[],pricesByVersion),
         currentPriceLabel:recurringCampaign?(currentEvent?recurringEventLabels[currentEvent.id]:"Non-Campaign Day"):undefined,
         pendingVersion:["active","scheduled","expired"].includes(row.status) && (Boolean(endedVersion) || latestVersion.get(row.id)?.version !== version?.version) &&
           ["pending","failed"].includes(latestVersion.get(row.id)?.sheetSyncStatus ?? "") ? latestVersion.get(row.id)?.version : null,
