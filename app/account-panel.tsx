@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AccountCurrency, AccountCurrencySummary, AccountResponse } from "./account-contract";
 import { accountMoney } from "./account-display";
 import { RateCell, RecordDetails } from "./account-settings-ui";
 
-import { useFeePlans, useFeePreviewState } from "./fee-plan-context";
+import { billingRowsMatching, visibleSelection, useFeePlans, useFeePreviewState } from "./fee-plan-context";
 import { FeePlansPreview } from "./fee-plans-preview";
 
 const currencies: AccountCurrency[] = ["MYR", "SGD"];
@@ -36,10 +36,17 @@ function CurrencyCard({currency,summary,invoiceMonth,today}:{currency:AccountCur
   </section>;
 }
 
+function SelectionCheckbox({checked,indeterminate,label,onChange}:{checked:boolean;indeterminate?:boolean;label:string;onChange:()=>void}){
+ const ref=useRef<HTMLInputElement>(null);
+ useEffect(()=>{if(ref.current)ref.current.indeterminate=Boolean(indeterminate);},[indeterminate]);
+ return <input ref={ref} type="checkbox" aria-label={label} aria-checked={indeterminate?'mixed':checked} checked={checked} onChange={onChange}/>;
+}
+
 export function AccountPanel() {
   const {previewRows,mergePreviewRows,openFeeWorkspace}=useFeePlans();
   const [invoiceMonth, setInvoiceMonth] = useFeePreviewState<string>("account-invoice-month","2026-10");
   const [query, setQuery] = useState("");
+  const [selected,setSelected]=useState<string[]>([]);
   const [detailId,setDetailId]=useState<string|null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [data, setData] = useState<AccountResponse | null>(null);
@@ -69,12 +76,12 @@ export function AccountPanel() {
   const updatedAt = accountUpdatedAt(data?.updatedAt ?? null);
   const canConfigure = invoiceMonth >= (data?.today || "").slice(0, 7);
   const canSaveSettings = Boolean(data?.settingsAvailable && canConfigure);
-  const visibleRows = (data?.stores ?? []).filter(row => {
-    const searchText = [row.project, row.storeName, row.entity, ...(row.candidates ?? []).flatMap(candidate => [candidate.username, candidate.storeName])].join(" ").toLocaleLowerCase();
-    return searchText.includes(query.trim().toLocaleLowerCase());
-  });
+  const visibleRows=billingRowsMatching(data?.stores??[],query);
+  const selectedKeys=visibleSelection(visibleRows,selected);
+  function toggleGroup(keys:string[]){setSelected(current=>{const all=keys.every(key=>current.includes(key));return all?current.filter(key=>!keys.includes(key)):[...new Set([...current,...keys])];});}
   return <div className="account-panel account-refined" aria-busy={loading}>
-    <header className="page-title account-page-title" aria-label="Account controls"><div className="account-page-controls"><label>Invoice month<input aria-label="Invoice month" type="month" value={invoiceMonth} onChange={event=>{if(/^\d{4}-(0[1-9]|1[0-2])$/.test(event.target.value)){setDetailId(null);setInvoiceMonth(event.target.value);setLoading(true);}}}/></label><button type="button" disabled={loading} onClick={()=>{setLoading(true);setRefreshKey(value=>value+1);}}>Refresh</button></div></header>
+    <header className="page-title account-page-title" aria-label="Account controls"><div className="account-page-controls"><label>Invoice month<input aria-label="Invoice month" type="month" value={invoiceMonth} onChange={event=>{if(/^\d{4}-(0[1-9]|1[0-2])$/.test(event.target.value)){setDetailId(null);setSelected([]);setInvoiceMonth(event.target.value);setLoading(true);}}}/></label><button type="button" disabled={loading} onClick={()=>{setLoading(true);setRefreshKey(value=>value+1);}}>Refresh</button></div></header>
+    <p className="account-invoice-remark">Invoice month is based on the previous month’s service period.</p>
     {error && <div className="account-notice error" role="alert">{error}</div>}
     {loading && <div className="account-notice" role="status">Loading Account…</div>}
     {!loading && data?.status === "not_configured" && <div className="account-notice" role="status">No income records yet.</div>}
@@ -83,8 +90,9 @@ export function AccountPanel() {
       <section className="account-finance-overview" aria-label="Income by currency">{currencies.map(currency => <CurrencyCard key={currency} currency={currency} summary={data.summaries.find(item => item.currency === currency)} invoiceMonth={displayMonth} today={data.today} />)}</section>
       <section className="account-stores" aria-labelledby="account-stores-title">
         <div className="account-stores-head"><div><h3 id="account-stores-title">Billing records</h3><span className="account-record-count">{visibleRows.length} records · {monthLabel(displayMonth)}</span>{!data.settingsAvailable&&<p className="account-preview-note">Rate previews reset on refresh.</p>}</div><button type="button" className="account-fee-settings-button" onClick={()=>openFeeWorkspace({view:'settings',month:invoiceMonth})}>Fee settings</button></div>
-        {data.stores.length>0&&<div className="account-record-search"><label className="sr-only" htmlFor="account-record-search">Search billing records</label><input id="account-record-search" type="search" placeholder="Search client or store" value={query} onChange={event=>setQuery(event.target.value)}/></div>}
-        {visibleRows.length?(['MY','SG'] as const).filter(group=>visibleRows.some(row=>row.market===group)).map(group=><section className="account-market-section" key={group} aria-labelledby={`account-market-${group}`}><h4 id={`account-market-${group}`}>{group==='MY'?'Malaysia':'Singapore'} <span>{group==='MY'?'MYR':'SGD'}</span></h4><div className="account-table-scroll"><table className="account-daily-table"><thead><tr><th scope="col">Client</th><th scope="col">Monthly rate</th><th scope="col">Invoiced</th><th scope="col">Received</th><th scope="col">Outstanding</th></tr></thead><tbody>{visibleRows.filter(row=>row.market===group).map(row=><tr key={row.id}><th scope="row" data-label="Client"><button type="button" className="account-record-name" aria-label={`View details for ${row.project||row.storeName}`} onClick={()=>setDetailId(row.id)}><span>{row.project||row.storeName}</span><span aria-hidden="true">›</span></button></th><td data-label="Monthly rate"><RateCell row={row} month={invoiceMonth} onEdit={()=>openFeeWorkspace({view:'assignment',month:invoiceMonth,unitKey:row.rosterKey??row.id})}/></td><td data-label="Invoiced">{accountMoney(row.billed,row.currency)}</td><td data-label="Received">{accountMoney(row.collected,row.currency)}</td><td data-label="Outstanding">{accountMoney(row.outstanding,row.currency)}</td></tr>)}</tbody></table></div></section>):<div className="account-empty">{data.stores.length?'No matching records.':`No billing records for ${monthLabel(displayMonth)}.`}</div>}
+        {data.stores.length>0&&<div className="account-record-search"><label className="sr-only" htmlFor="account-record-search">Search entity, client or store</label><input id="account-record-search" type="search" placeholder="Search entity, client or store" value={query} onChange={event=>{setSelected([]);setQuery(event.target.value);}}/></div>}
+        {selectedKeys.length>0&&<div className="account-selection-bar" role="region" aria-label="Selected billing records"><strong>{selectedKeys.length} selected</strong><button type="button" onClick={()=>setSelected([])}>Clear</button><button type="button" className="account-bulk-rate" onClick={()=>openFeeWorkspace({view:'bulk',month:invoiceMonth,unitKeys:[...selectedKeys]})}>Update rate card</button></div>}
+        {visibleRows.length?(['MY','SG'] as const).filter(group=>visibleRows.some(row=>row.market===group)).map(group=><section className="account-market-section" key={group} aria-labelledby={`account-market-${group}`}><h4 id={`account-market-${group}`}>{group==='MY'?'Malaysia':'Singapore'} <span>{group==='MY'?'MYR':'SGD'}</span></h4><div className="account-table-scroll"><table className="account-daily-table"><thead><tr><th scope="col" className="account-selection-col"><SelectionCheckbox label={`Select all visible ${group==='MY'?'Malaysia':'Singapore'} records`} checked={visibleRows.filter(row=>row.market===group).every(row=>selectedKeys.includes(row.rosterKey??row.id))} indeterminate={visibleRows.filter(row=>row.market===group).some(row=>selectedKeys.includes(row.rosterKey??row.id))&&!visibleRows.filter(row=>row.market===group).every(row=>selectedKeys.includes(row.rosterKey??row.id))} onChange={()=>toggleGroup(visibleRows.filter(row=>row.market===group).map(row=>row.rosterKey??row.id))}/></th><th scope="col">Client</th><th scope="col">Monthly rate</th><th scope="col">Invoiced</th><th scope="col">Received</th><th scope="col">Outstanding</th></tr></thead><tbody>{visibleRows.filter(row=>row.market===group).map(row=><tr key={row.id}><td className="account-selection-col" data-label="Select"><SelectionCheckbox checked={selectedKeys.includes(row.rosterKey??row.id)} label={`Select ${row.project||row.storeName}`} onChange={()=>setSelected(current=>current.includes(row.rosterKey??row.id)?current.filter(key=>key!==(row.rosterKey??row.id)):[...current,row.rosterKey??row.id])}/></td><th scope="row" data-label="Client"><button type="button" className="account-record-name" aria-label={`View details for ${row.project||row.storeName}`} onClick={()=>setDetailId(row.id)}><span>{row.project||row.storeName}</span><span aria-hidden="true">›</span></button></th><td data-label="Monthly rate"><RateCell row={row} month={invoiceMonth} onEdit={()=>openFeeWorkspace({view:'assignment',month:invoiceMonth,unitKey:row.rosterKey??row.id})}/></td><td data-label="Invoiced">{accountMoney(row.billed,row.currency)}</td><td data-label="Received">{accountMoney(row.collected,row.currency)}</td><td data-label="Outstanding">{accountMoney(row.outstanding,row.currency)}</td></tr>)}</tbody></table></div></section>):<div className="account-empty">{data.stores.length?'No matching records.':`No billing records for ${monthLabel(displayMonth)}.`}</div>}
       </section>
     </>}
     {data&&detailId&&data.stores.find(row=>row.id===detailId)&&<RecordDetails key={`${detailId}:${invoiceMonth}`} row={data.stores.find(row=>row.id===detailId)!} month={invoiceMonth} canConfigure={canConfigure} canSave={canSaveSettings} options={data.storeOptions??[]} onClose={()=>setDetailId(null)} onSaved={()=>{setDetailId(null);setLoading(true);setRefreshKey(value=>value+1);}}/>}

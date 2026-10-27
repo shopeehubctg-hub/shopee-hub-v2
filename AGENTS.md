@@ -6,7 +6,8 @@
 ## Dashboard design consistency
 - All modules must use the Dashboard's shared typography, colour tokens, heading scale, buttons, forms and spacing. Scope module styling; do not introduce a separate visual brand for Account.
 - Account follows the Xero reference's information hierarchy: concise financial overview, compact billing list, then record details. Keep infrequent fee-plan configuration in secondary settings and use the same monthly-rate state in the list and editor.
-- Statement month is the fee-base reporting month; service period is the actual service date range. Do not infer service dates from statement or invoice months, or imply a reference month proves a report has been imported.
+- Account billing policy confirmed by the user: Invoice Month is based on the preceding month's Service Period. Show this once above billing records, and hide individual Service Period fields. Statement month remains the fee-base report reference; a reference month does not prove a report has been imported. Do not backfill stored dates as part of UI-only work.
+- Rate Card updates must record the effective Invoice Month, preserve earlier month assignments and locked history, and use the same assignment logic for individual and bulk edits. Bulk selection must have a clear scope and never silently update hidden rows or partially apply an invalid batch.
 
 ## Staging
 - The user-facing Staging entry stays https://shopee-hub-v2-260731-git-cod-e05b8d-shopeehubctg-5199s-projects.vercel.app/ . Keep section query parameters as needed.

@@ -75,6 +75,7 @@ export function RateCell({row,month,onEdit}:{row:AccountStoreRow;month:string;on
   return <button type="button" className="account-rate-field" aria-label={`Edit monthly rate for ${row.project||row.storeName}`} onClick={onEdit}>
     <strong>{preview.plan?preview.plan.name:rateLabel(row.rateRule)}</strong>
     {preview.plan?<small>{preview.calculation?.rateLabel||compact} · v{preview.plan.version} <span className="account-preview-label">{preview.locked?'Locked preview':'Preview'}</span></small>:row.rateRule?<small>Saved rate{row.rateEffectiveMonth?` · from ${row.rateEffectiveMonth}`:''}</small>:<small>Set rate</small>}
+    {preview.nextEffectiveMonth&&<small>Scheduled from {preview.nextEffectiveMonth}</small>}
   </button>;
 }
 
@@ -109,7 +110,7 @@ export function RecordDetails({row,month,canConfigure,canSave,options,onClose,on
       <div><dt>Store</dt><dd><StoreNameCell row={row} options={options} month={month} canSave={canSave} configurable={canConfigure} onSaved={onSaved}/></dd></div>
       <div><dt>Invoice month</dt><dd>{row.invoiceMonth||'Not set'}</dd></div>
       <div><dt>Report month</dt><dd>{row.statementMonth||'Not set'}<small>Fee calculation reference</small></dd></div>
-      <div><dt>Service period</dt><dd>{row.servicePeriodStart&&row.servicePeriodEnd?`${row.servicePeriodStart} – ${row.servicePeriodEnd}`:row.servicePeriodStart?`From ${row.servicePeriodStart} · end not set`:row.servicePeriodEnd?`Until ${row.servicePeriodEnd} · start not set`:'Not set'}</dd></div>
+
       <div><dt>Expected net fee</dt><dd>{accountMoney(row.expectedNetFee,row.currency)}</dd></div>
     </dl>{!canSave&&canConfigure&&<p className="account-detail-note">Company and store changes cannot be saved in this preview.</p>}</div>
     <footer><button type="button" onClick={onClose}>Close</button></footer>
