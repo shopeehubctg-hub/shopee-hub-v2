@@ -1,3 +1,4 @@
+import { bnmServiceRate } from '../../../account-fx-source';
 import { canonicalStoreId } from '../../../live-calendar-model';
 import { getChatGPTUser } from '../../../chatgpt-auth';
 import { supabaseRest } from '../../../supabase-rest';
@@ -33,7 +34,7 @@ export async function GET(request:Request) {
     let settings:AccountSetting[]=[];let settingsAvailable=true;
     try { settings=await rows<AccountSetting>('account_billing_unit_versions','id,roster_key,roster_project,legal_entity,currency,change_action,version::text,effective_month,store_id,fee_rule,created_at',member.tenant_id); }
     catch(error){if(error instanceof Error&&/"code":"(PGRST205|42P01)"/.test(error.message))settingsAvailable=false;else throw error;}
-    const decorate=(account:AccountResponse)=>{account.settingsAvailable=settingsAvailable;account.storeOptions=stores.filter(s=>canonicalStoreId(s.id)===s.id).map(s=>({id:s.id,name:s.display_name??s.name,platform:s.platform})).sort((a,b)=>a.name.localeCompare(b.name));const decorated=applyAccountSettings(account,settings,storeNames);for(const row of decorated.stores)row.previewRateDefaultsEligible=member.tenant_id==='j-packaging';return decorated;};
+    const decorate=async(account:AccountResponse)=>{account.settingsAvailable=settingsAvailable;account.storeOptions=stores.filter(s=>canonicalStoreId(s.id)===s.id).map(s=>({id:s.id,name:s.display_name??s.name,platform:s.platform})).sort((a,b)=>a.name.localeCompare(b.name));const decorated=applyAccountSettings(account,settings,storeNames);for(const row of decorated.stores){row.previewRateDefaultsEligible=member.tenant_id==='j-packaging';delete row.previewServiceFxRate;}if(member.tenant_id==='j-packaging'){const bonlife=decorated.stores.filter(row=>row.currency==='SGD'&&row.rosterKey==='roster-2026-10-sg-3'&&row.project==='BONLIFE SG');if(bonlife.length){const rate=await bnmServiceRate(invoiceMonth);if(rate)for(const row of bonlife)row.previewServiceFxRate=rate;}}return decorated;};
     try {
       const [cycles,terms,assessments,invoices,receipts,allocations]=await Promise.all([
         rows<Cycle>('account_billing_cycles','id,statement_month,invoice_month,service_period_start,service_period_end,updated_at',member.tenant_id),
@@ -44,10 +45,10 @@ export async function GET(request:Request) {
         rows<Allocation>('account_receipt_allocations','id,invoice_id,receipt_id,amount::text,updated_at',member.tenant_id),
       ]);
       const account=buildAccount({cycles,terms,assessments,invoices,receipts,allocations,storeNames},invoiceMonth,today);
-      return Response.json(decorate(mergeAccountRoster(account,accountRosterFallback(member.tenant_id,invoiceMonth,today,storeNames))));
+      return Response.json(await decorate(mergeAccountRoster(account,accountRosterFallback(member.tenant_id,invoiceMonth,today,storeNames))));
     } catch(error) {
       // Missing migration is an explicit setup state; permission/network/data errors are failures.
-      if(error instanceof Error&&(/"code":"(PGRST205|42P01)"/.test(error.message))) return Response.json(decorate(accountRosterFallback(member.tenant_id,invoiceMonth,today,storeNames)??emptyAccount(invoiceMonth,today,'not_configured')));
+      if(error instanceof Error&&(/"code":"(PGRST205|42P01)"/.test(error.message))) return Response.json(await decorate(accountRosterFallback(member.tenant_id,invoiceMonth,today,storeNames)??emptyAccount(invoiceMonth,today,'not_configured')));
       throw error;
     }
   } catch {

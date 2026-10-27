@@ -5,7 +5,9 @@
     "confirmedOn": "2026-10-27",
     "scope": "UI-only preview defaults; no database writes",
     "tierAggregation": "per-project",
-    "sst": "exclusive; SST percentage not supplied"
+    "sst": "exclusive; SST percentage not supplied",
+    "sgPolicyConfirmedOn": "2026-10-27",
+    "sgPolicy": "User confirmed same MY fee rules, convert SGD sales to MYR before selecting tiers and bill MYR. Internal fixed 3.2; Bonlife BNM service-month average. Other External FX pending."
   },
   "records": [
     {
@@ -14,7 +16,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-3",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-3",
@@ -22,7 +25,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-4",
@@ -30,7 +34,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-3",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-5",
@@ -38,7 +43,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-6",
@@ -46,7 +52,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-3",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-7",
@@ -54,7 +61,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-8",
@@ -62,7 +70,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-9",
@@ -70,7 +79,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-10",
@@ -78,7 +88,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-11",
@@ -86,7 +97,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-12",
@@ -94,7 +106,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-13",
@@ -102,7 +115,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-14",
@@ -110,7 +124,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-15",
@@ -118,7 +133,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-3",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-16",
@@ -126,7 +142,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-17",
@@ -134,7 +151,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-3",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-18",
@@ -142,7 +160,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-19",
@@ -150,7 +169,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-3",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-20",
@@ -158,7 +178,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-21",
@@ -166,7 +187,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-22",
@@ -174,7 +196,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-23",
@@ -182,7 +205,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-24",
@@ -190,7 +214,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-25",
@@ -198,7 +223,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-3",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-26",
@@ -206,7 +232,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-3",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-27",
@@ -214,7 +241,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-28",
@@ -222,7 +250,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-29",
@@ -230,7 +259,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-30",
@@ -238,7 +268,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-31",
@@ -246,7 +277,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-32",
@@ -254,7 +286,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-3",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-33",
@@ -262,7 +295,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-34",
@@ -270,7 +304,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-new",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-35",
@@ -278,7 +313,8 @@
       "currency": "MYR",
       "clientType": "External",
       "planId": "external-5",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-36",
@@ -286,7 +322,8 @@
       "currency": "MYR",
       "clientType": "External",
       "planId": "berlanco-tier",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-37",
@@ -294,7 +331,8 @@
       "currency": "MYR",
       "clientType": "External",
       "planId": "external-10",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-38",
@@ -302,7 +340,8 @@
       "currency": "MYR",
       "clientType": "External",
       "planId": "external-5",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-39",
@@ -310,7 +349,8 @@
       "currency": "MYR",
       "clientType": "External",
       "planId": "external-10",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-40",
@@ -318,7 +358,8 @@
       "currency": "MYR",
       "clientType": "Internal",
       "planId": "internal-3",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-41",
@@ -326,7 +367,8 @@
       "currency": "MYR",
       "clientType": "External",
       "planId": "external-10",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-42",
@@ -334,7 +376,8 @@
       "currency": "MYR",
       "clientType": "External",
       "planId": "external-10",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-43",
@@ -342,7 +385,8 @@
       "currency": "MYR",
       "clientType": "External",
       "planId": "external-9.7",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-44",
@@ -350,7 +394,8 @@
       "currency": "MYR",
       "clientType": "External",
       "planId": "external-11",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-45",
@@ -358,7 +403,8 @@
       "currency": "MYR",
       "clientType": "External",
       "planId": "external-9.7",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
     },
     {
       "rosterKey": "roster-2026-10-my-46",
@@ -366,7 +412,148 @@
       "currency": "MYR",
       "clientType": "External",
       "planId": "external-10",
-      "effectiveMonth": "2026-10"
+      "effectiveMonth": "2026-10",
+      "market": "MY"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-2",
+      "project": "BERLANCO SG",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "External",
+      "planId": "berlanco-tier",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "pending"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-3",
+      "project": "BONLIFE SG",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "External",
+      "planId": "external-10",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "bnm-service-average"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-4",
+      "project": "DRSMILE SG",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-5",
+      "project": "GOHERB SG",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "External",
+      "planId": "external-5",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "pending"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-6",
+      "project": "ILADY SG",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "Internal",
+      "planId": "internal-3",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-7",
+      "project": "KATA MARINE",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-8",
+      "project": "MCS SG",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "Internal",
+      "planId": "internal-3",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-9",
+      "project": "MFORMULA SG",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "Internal",
+      "planId": "internal-3",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-10",
+      "project": "MOESIE SG",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-11",
+      "project": "NINOKO SG",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-12",
+      "project": "SCALE STORY SG",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-13",
+      "project": "SKINDAE SG",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
+    },
+    {
+      "rosterKey": "roster-2026-10-sg-14",
+      "project": "ZEERO SKINCARE",
+      "market": "SG",
+      "currency": "SGD",
+      "clientType": "Internal",
+      "planId": "internal-new",
+      "effectiveMonth": "2026-10",
+      "fxPolicy": "fixed",
+      "fxRate": "3.2"
     }
   ],
   "pending": [
@@ -374,6 +561,22 @@
       "entity": "DATUK DISCOUNT",
       "project": "(AFFILIATE)",
       "reason": "No fee supplied; no exact billing roster key"
+    }
+  ],
+  "fxRates": [
+    {
+      "serviceMonth": "2026-09",
+      "rate": "3.197",
+      "policy": "bnm-service-average",
+      "verified": true,
+      "reference": "https://storage.data.gov.my/finsector/exr/monthly.csv",
+      "metadataReference": "https://data.gov.my/data-catalogue/exchangerates",
+      "indicator": "avg",
+      "session": "1200",
+      "quote": "MYR per 1 SGD",
+      "dataSource": "Bank Negara Malaysia",
+      "verifiedOn": "2026-10-27",
+      "snapshotSha256": "7f7bc4f306ad710282523f45f907890a584f18ab285695e9c9fc2cd6610dbd63"
     }
   ]
 }

@@ -1,15 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 const {JSDOM}=await import(process.env.BD_DOM_TEST_JSDOM??'jsdom');
+const sourceRates=JSON.parse(readFileSync('app/account-rate-mapping-preview.json','utf8'));
 const compiled=execFileSync('node_modules/.bin/esbuild',['--bundle','--format=esm','--platform=node','--target=node20','--loader=tsx','--loader:.css=empty','--jsx=automatic'],{maxBuffer:10*1024*1024,input:`
 import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {FeePlansProvider,useFeePlans,monthlyFeePreview} from './app/fee-plan-context';
 import {FeePlansPreview} from './app/fee-plans-preview';
-const row={id:'unit',rosterKey:'unit',project:'Test company',currency:'MYR'};
-function Harness(){const c=useFeePlans();return <><button id="open" onClick={()=>c.openFeeWorkspace({view:'assignment',month:'2026-10',unitKey:'unit'})}>Open</button><output id="memory">{JSON.stringify(c.previewMemory)}</output><output id="plans">{JSON.stringify(c.plans)}</output><output id="oct">{monthlyFeePreview(row,'2026-10',c.plans,c.previewMemory).plan?.name??'Unassigned'}</output><output id="nov">{monthlyFeePreview(row,'2026-11',c.plans,c.previewMemory).plan?.name??'Unassigned'}</output><output id="scheduled">{monthlyFeePreview(row,'2026-10',c.plans,c.previewMemory).nextEffectiveMonth}</output><FeePlansPreview rows={[row]} month="2026-10"/></>}
-export {act,createRoot};export const App=()=> <FeePlansProvider><Harness/></FeePlansProvider>;
+import {RateCell} from './app/account-settings-ui';
+const defaultRow={id:'unit',rosterKey:'unit',project:'Test company',currency:'MYR'};
+function Harness({row:record=defaultRow,month='2026-10'}){const row=record;const c=useFeePlans();return <><button id="open" onClick={()=>c.openFeeWorkspace({view:'assignment',month,unitKey:row.rosterKey})}>Open</button><RateCell row={row} month={month} onEdit={()=>c.openFeeWorkspace({view:'assignment',month,unitKey:row.rosterKey})}/><output id="memory">{JSON.stringify(c.previewMemory)}</output><output id="plans">{JSON.stringify(c.plans)}</output><output id="oct">{monthlyFeePreview(row,'2026-10',c.plans,c.previewMemory).plan?.name??'Unassigned'}</output><output id="nov">{monthlyFeePreview(row,'2026-11',c.plans,c.previewMemory).plan?.name??'Unassigned'}</output><output id="scheduled">{monthlyFeePreview(row,'2026-10',c.plans,c.previewMemory).nextEffectiveMonth}</output><FeePlansPreview rows={[row]} month={month}/></>}
+export {act,createRoot};export const App=(props={})=> <FeePlansProvider key={props.row?.rosterKey??'unit'}><Harness {...props}/></FeePlansProvider>;
 `});
 
 test('native month input and submit guard preserve October and schedule November; editor also honors input-only month',async()=>{
@@ -53,6 +56,25 @@ test('native month input and submit guard preserve October and schedule November
   assert.equal(internalForm.querySelector('[aria-label="Tier 4 fee cap"]').value,'');
   await act(()=>internalForm.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
   const savedInternal=JSON.parse(document.querySelector('#plans').textContent).at(-1);assert.equal(savedInternal.rule.tiers[4].cap,'4000.00');assert.equal(savedInternal.rule.tiers[3].cap,undefined);
+  // SG source defaults use MYR cards, but show SGD input and MYR fee explicitly.
+  const sgSource=sourceRates.records.find(record=>record.currency==='SGD'&&record.planId==='internal-new');
+  const sgRow={id:sgSource.rosterKey,rosterKey:sgSource.rosterKey,project:sgSource.project,currency:'SGD',previewRateDefaultsEligible:true};
+  await act(()=>root.render(App({row:sgRow})));await click(document.querySelector('#open'));
+  assert.match(document.querySelector('.account-rate-field').textContent,/SGD → MYR.*3.2/);
+  assert.match(document.querySelector('.fp-calculation-input').textContent,/SGD sales/);
+  await change(document.querySelector('[aria-label="Preview calculation amount"]'),'62500','input');
+  assert.match(document.querySelector('.fp-calculation strong').textContent,/RM 4,000.00/);
+  assert.match(document.querySelector('.fp-assignment-form').textContent,/RM 200,000.00/);
+  await submit();await click([...document.querySelectorAll('button')].find(button=>button.textContent==='Lock applied preview'));
+  const sgSnapshot=memory()['fee-preview-history'][0];assert.equal(sgSnapshot.amount,'62500');assert.equal(sgSnapshot.conversion.fxRate,'3.2');assert.equal(sgSnapshot.conversion.serviceMonth,'2026-09');assert.equal(sgSnapshot.conversion.convertedAmount,'200000.00');
+  const bonlife=sourceRates.records.find(record=>record.currency==='SGD'&&record.fxPolicy==='bnm-service-average');
+  await act(()=>root.render(App({row:{...sgRow,id:bonlife.rosterKey,rosterKey:bonlife.rosterKey,project:bonlife.project},month:'2026-11'})));await click(document.querySelector('#open'));
+  await change(document.querySelector('[aria-label="Preview calculation amount"]'),'1000','input');await submit();
+  assert.match(document.querySelector('.fp-assignment-form').textContent,/Exchange rate pending.*2026-10/);
+  assert.equal(document.querySelector('.fp-calculation strong').textContent,'—');
+  assert.equal([...document.querySelectorAll('button')].find(button=>button.textContent==='Lock applied preview').disabled,true);
+  assert.equal(memory()['fee-preview-history'],undefined);
+
 
  }finally{await act(()=>root.unmount());dom.window.close();for(const channel of channels){channel.port1.close();channel.port2.close();}for(const [key,value] of saved){if(value)Object.defineProperty(globalThis,key,value);else delete globalThis[key];}delete globalThis.IS_REACT_ACT_ENVIRONMENT;}
 });

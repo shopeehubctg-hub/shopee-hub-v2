@@ -1,11 +1,11 @@
 "use client";
 import { createContext, useContext, useState, useCallback, type ReactNode, type Dispatch, type SetStateAction } from 'react';
-import rateMappingPreview from './account-rate-mapping-preview.json';
+import {sourceProjectRate,projectFeeCurrency,calculateProjectPreview,type ProjectFeePreview} from './fee-preview-currency';
 import type { AccountStoreRow } from './account-contract';
-import { calculateFee, planForMonth, seedFeePlans, validatePlan, type ClientType, type FeeCalculation, type FeePlan, type FeePlanDraft } from './fee-plan-model';
+import { planForMonth, seedFeePlans, validatePlan, type ClientType, type FeeCalculation, type FeePlan, type FeePlanDraft } from './fee-plan-model';
 export type FeePreviewChoice={clientType:''|ClientType;planId:string};
 export type FeePreviewAssignment=FeePreviewChoice&{effectiveMonth:string};
-export type FeePreviewSnapshot={id:string;month:string;unitKey:string;unitName:string;plan:FeePlan;amount:string;result:FeeCalculation;createdAt:string};
+export type FeePreviewSnapshot={id:string;month:string;unitKey:string;unitName:string;plan:FeePlan;amount:string;result:FeeCalculation;createdAt:string;conversion?:ProjectFeePreview};
 export type FeeWorkspaceRequest={view:'settings'|'assignment'|'bulk';month:string;unitKey?:string;unitKeys?:string[]};
 type FeePlansContextValue={feeWorkspace:FeeWorkspaceRequest|null;openFeeWorkspace:(request:FeeWorkspaceRequest)=>void;closeFeeWorkspace:()=>void;previewRows:AccountStoreRow[];mergePreviewRows:(rows:AccountStoreRow[])=>void;plans:FeePlan[];upsertPlan:(draft:FeePlanDraft)=>void;previewMemory:Record<string,unknown>;setPreviewMemory:Dispatch<SetStateAction<Record<string,unknown>>>};
 const FeePlansContext=createContext<FeePlansContextValue|null>(null);
@@ -30,12 +30,9 @@ export function useFeePreviewState<T>(key:string,initial:T):[T,Dispatch<SetState
  return [value,update];
 }
 
-/** Source-derived preview only: exact project identity and MYR; no name inference or DB assignment. */
+/** Source-derived preview only: exact project identity and source currency; no name inference or DB assignment. */
 export function sourceRateCardDefault(row:AccountStoreRow,month:string):FeePreviewAssignment|undefined{
- if(row.previewRateDefaultsEligible!==true)return undefined;
- const matches=rateMappingPreview.records.filter(record=>record.rosterKey===row.rosterKey&&record.project===row.project&&record.currency==='MYR'&&row.currency==='MYR'&&record.effectiveMonth<=month);
- if(matches.length!==1)return undefined;
- const record=matches[0];
+ const record=sourceProjectRate(row,month);if(!record)return undefined;
  if(!['Internal','External'].includes(record.clientType)||!record.planId)return undefined;
  return {effectiveMonth:record.effectiveMonth,clientType:record.clientType as ClientType,planId:record.planId};
 }
@@ -49,13 +46,14 @@ export function monthlyFeePreview(row:AccountStoreRow,month:string,plans:FeePlan
  const locks=(memory['fee-preview-locks']??{}) as Record<string,string>;
  const locked=history.find(snapshot=>snapshot.id===locks[`${month}:${key}`]);
  const selected=choice.planId?planForMonth(plans,choice.planId,month):undefined;
- const plan=locked?.plan??(selected?.currency===row.currency&&selected.clientType===choice.clientType?selected:undefined);
+ const plan=locked?.plan??(selected?.currency===projectFeeCurrency(row,month)&&selected.clientType===choice.clientType?selected:undefined);
  const amounts=(memory['fee-preview-amounts']??{}) as Record<string,string>;
  const amount=locked?.amount??amounts[`${month}:${key}`]??'';
- let calculation=locked?.result;
- if(!locked&&plan&&(amount!==''||plan.rule.type==='fixed')){try{calculation=calculateFee(plan.rule,amount||'0');}catch{calculation=undefined;}}
+ let conversion=locked?.conversion;
+ if(!locked&&plan){try{conversion=calculateProjectPreview(row,month,plan,amount);}catch{conversion=undefined;}}
+ const calculation=locked?.result??conversion?.calculation;
  const nextEffectiveMonth=(assignments[key]??[]).filter(v=>v.effectiveMonth>month).sort((a,b)=>a.effectiveMonth.localeCompare(b.effectiveMonth)).at(0)?.effectiveMonth;
- return {choice,plan,amount,calculation,locked,nextEffectiveMonth};
+ return {choice,plan,amount,calculation,conversion,locked,nextEffectiveMonth};
 }
 export function useMonthlyFeePreview(row:AccountStoreRow,month:string){const {plans,previewMemory}=useFeePlans();return monthlyFeePreview(row,month,plans,previewMemory);}
 
@@ -74,10 +72,10 @@ export function applyRateCardPreview(memory:Record<string,unknown>,rows:AccountS
  if(new Set(targets.map(row=>row.currency)).size!==1)throw Error('Select records with the same currency. No records were updated.');
  const plan=planForMonth(plans,command.planId,command.effectiveMonth);if(!plan||plan.version!==command.planVersion)throw Error('This rate card changed. Review the card and apply again.');
  validatePlan(plan);
- if(plan.clientType!==command.clientType||plan.currency!==targets[0].currency)throw Error('Choose a rate card matching the selected client type and currency.');
+ if(plan.clientType!==command.clientType||targets.some(row=>plan.currency!==projectFeeCurrency(row,command.effectiveMonth)))throw Error('Choose a rate card matching the selected client type and currency.');
  const locks=(memory['fee-preview-locks']??{}) as Record<string,string>;
  const auditTargets=targets.map(row=>{const unitKey=row.rosterKey??row.id;const before=monthlyFeePreview(row,command.effectiveMonth,plans,memory);if(locks[`${command.effectiveMonth}:${unitKey}`])throw Error(`${row.project||row.storeName} is locked for ${command.effectiveMonth}. No records were updated.`);if(before.choice.clientType&&before.choice.clientType!==command.clientType)throw Error(`${row.project||row.storeName} has a different client type. No records were updated.`);return {unitKey,unitName:row.project||row.storeName,priorPlan:before.plan?{id:before.plan.id,name:before.plan.name,version:before.plan.version}:null};});
- if(command.previewAmount!==undefined){if(keys.length!==1)throw Error('Calculation amounts can only be entered for one record.');if(command.previewAmount!==''||plan.rule.type==='fixed')calculateFee(plan.rule,command.previewAmount);}
+ if(command.previewAmount!==undefined){if(keys.length!==1)throw Error('Calculation amounts can only be entered for one record.');if(command.previewAmount!==''||plan.rule.type==='fixed')calculateProjectPreview(targets[0],command.effectiveMonth,plan,command.previewAmount);}
  const assignments=(memory['fee-preview-assignments-v2']??{}) as Record<string,FeePreviewAssignment[]>;
  const nextAssignments={...assignments};for(const key of keys)nextAssignments[key]=[...(assignments[key]??[]).filter(value=>value.effectiveMonth!==command.effectiveMonth),{effectiveMonth:command.effectiveMonth,clientType:command.clientType,planId:plan.id}];
  const audit:RateCardApplyAudit={fingerprint,requestId:command.requestId,batchId:command.requestId,effectiveMonth:command.effectiveMonth,clientType:command.clientType,plan:structuredClone(plan),changedAt:command.changedAt,targets:auditTargets};

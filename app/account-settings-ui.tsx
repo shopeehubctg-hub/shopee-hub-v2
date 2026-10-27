@@ -75,6 +75,7 @@ export function RateCell({row,month,onEdit}:{row:AccountStoreRow;month:string;on
   return <button type="button" className="account-rate-field" aria-label={`Edit monthly rate for ${row.project||row.storeName}`} onClick={onEdit}>
     <strong>{preview.plan?preview.plan.name:rateLabel(row.rateRule)}</strong>
     {preview.plan?<small>{preview.calculation?.rateLabel||compact} · v{preview.plan.version} <span className="account-preview-label">{preview.locked?'Locked preview':'Preview'}</span></small>:row.rateRule?<small>Saved rate{row.rateEffectiveMonth?` · from ${row.rateEffectiveMonth}`:''}</small>:<small>Set rate</small>}
+    {preview.conversion?.inputCurrency!==preview.conversion?.outputCurrency&&preview.conversion&&<small>SGD → MYR{preview.conversion.fxRate?` · × ${preview.conversion.fxRate}`:' · FX pending'}</small>}
     {preview.nextEffectiveMonth&&<small>Scheduled from {preview.nextEffectiveMonth}</small>}
   </button>;
 }

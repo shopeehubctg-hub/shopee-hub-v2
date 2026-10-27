@@ -11,11 +11,11 @@ const {seedFeePlans}=await import(`data:text/javascript;base64,${model.toString(
 const plans=seedFeePlans();
 const rowFor=record=>({id:record.rosterKey,rosterKey:record.rosterKey,project:record.project,currency:record.currency,previewRateDefaultsEligible:true,entity:'Shared entity',expectedNetFee:null,billed:null,collected:null,outstanding:null});
 test('verified MY source defaults map exact 24 NEW, 10 OLD and 11 External projects from October only',()=>{
- assert.equal(config.records.length,45);const counts={};for(const record of config.records){assert.ok(roster.rows.some(row=>row.id===record.rosterKey&&row.project===record.project));const row=rowFor(record);const preview=monthlyFeePreview(row,'2026-10',plans,{});assert.equal(preview.plan.id,record.planId);assert.equal(preview.choice.clientType,record.clientType);assert.equal(preview.calculation,undefined);assert.equal(monthlyFeePreview(row,'2026-09',plans,{}).plan,undefined);counts[record.planId]=(counts[record.planId]??0)+1;}
- assert.equal(counts['internal-new'],24);assert.equal(counts['internal-3'],10);assert.equal(config.records.filter(record=>record.clientType==='External').length,11);
- assert.equal(config.records.filter(record=>record.planId==='external-5').length,2);assert.equal(config.records.filter(record=>record.planId==='berlanco-tier').length,1);
+ assert.equal(config.records.filter(record=>record.currency==='MYR').length,45);const counts={};for(const record of config.records.filter(record=>record.currency==='MYR')){assert.ok(roster.rows.some(row=>row.id===record.rosterKey&&row.project===record.project));const row=rowFor(record);const preview=monthlyFeePreview(row,'2026-10',plans,{});assert.equal(preview.plan.id,record.planId);assert.equal(preview.choice.clientType,record.clientType);assert.equal(preview.calculation,undefined);assert.equal(monthlyFeePreview(row,'2026-09',plans,{}).plan,undefined);counts[record.planId]=(counts[record.planId]??0)+1;}
+ assert.equal(counts['internal-new'],24);assert.equal(counts['internal-3'],10);assert.equal(config.records.filter(record=>record.currency==='MYR'&&record.clientType==='External').length,11);
+ assert.equal(config.records.filter(record=>record.currency==='MYR'&&record.planId==='external-5').length,2);assert.equal(config.records.filter(record=>record.currency==='MYR'&&record.planId==='berlanco-tier').length,1);
 });
-test('defaults require tenant eligibility, exact roster key, project and MYR; DATUK and SG remain unassigned',()=>{
+test('defaults require tenant eligibility, exact roster key, project and source currency; DATUK and mismatched SG remain unassigned',()=>{
  const row=rowFor(config.records[0]);for(const change of [{previewRateDefaultsEligible:false},{previewRateDefaultsEligible:undefined},{rosterKey:'other'},{project:row.project+' '},{currency:'SGD'}])assert.equal(monthlyFeePreview({...row,...change},'2026-10',plans,{}).plan,undefined);
  assert.equal(monthlyFeePreview({...row,id:'DATUK',rosterKey:'DATUK',project:'DATUK DISCOUNT'},'2026-10',plans,{}).plan,undefined);
 });

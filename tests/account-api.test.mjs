@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 let source=readFileSync('app/api/admin/account/route.ts','utf8');
-source=source.replace(/import \{ getChatGPTUser \}[^;]+;/,"const getChatGPTUser=async()=>globalThis.__actor;")
+source=source.replace(/import \{ bnmServiceRate \}[^;]+;/,"const bnmServiceRate=async(month)=>globalThis.__bnm?.(month);")
+.replace(/import \{ getChatGPTUser \}[^;]+;/,"const getChatGPTUser=async()=>globalThis.__actor;")
 .replace(/import \{ supabaseRest \}[^;]+;/,"async function supabaseRest<T>(path:string):Promise<T> { return globalThis.__rest(path); }")
 .replace(/import \{ accountRosterFallback, mergeAccountRoster \}[^;]+;/,"const accountRosterFallback=(...args)=>globalThis.__fallback?.(...args)??null; const mergeAccountRoster=(account,roster)=>account;")
 .replaceAll("'../../../live-calendar-model'",`'${process.cwd()}/app/live-calendar-model.ts'`).replaceAll("'../../../account-settings-model'",`'${process.cwd()}/app/account-settings-model.ts'`).replaceAll("'../../../account-ledger'",`'${process.cwd()}/app/account-ledger.ts'`);
@@ -35,4 +36,14 @@ test('source rate preview eligibility is stamped from authenticated tenant, neve
   globalThis.__rest=async path=>{if(path.startsWith('customer_users?'))return [{active:true,role:'superadmin',tenant_id:tenant}];if(path.startsWith('tenants?'))return [{active:true}];if(path.startsWith('stores?'))return [];throw new Error('Supabase REST 404: {"code":"PGRST205"}');};
   const response=await GET(new Request('https://example.test/api/admin/account?invoiceMonth=2026-10&tenantId=j-packaging'));assert.equal(response.status,200);const data=await response.json();assert.equal(data.stores[0].previewRateDefaultsEligible,tenant==='j-packaging');
  }}finally{delete globalThis.__fallback;}
+});
+test('only authorized exact Bonlife SG receives previous-service-month BNM evidence; caller fields cannot inject it',async()=>{
+ globalThis.__actor={email:'admin@example.test'};
+ let calls=0;
+ try{for(const tenant of ['tenant-a','j-packaging']){
+  globalThis.__fallback=()=>({invoiceMonth:'2026-10',today:'2026-10-27',stores:[{id:'bonlife',rosterKey:'roster-2026-10-sg-3',project:'BONLIFE SG',currency:'SGD',previewServiceFxRate:{rate:'999'}},{id:'other',rosterKey:'other',project:'OTHER SG',currency:'SGD',previewServiceFxRate:{rate:'999'}}],summaries:[]});
+  globalThis.__bnm=async month=>{calls++;assert.equal(month,'2026-10');return {serviceMonth:'2026-09',rate:'3.197',policy:'bnm-service-average',verified:true,reference:'https://storage.data.gov.my/finsector/exr/monthly.csv'};};
+  globalThis.__rest=async path=>{if(path.startsWith('customer_users?'))return [{active:true,role:'superadmin',tenant_id:tenant}];if(path.startsWith('tenants?'))return [{active:true}];if(path.startsWith('stores?'))return [];throw Error('Supabase REST 404: {"code":"PGRST205"}');};
+  const response=await GET(request());assert.equal(response.status,200);const data=await response.json();assert.equal(data.stores[0].previewServiceFxRate?.rate,tenant==='j-packaging'?'3.197':undefined);assert.equal(data.stores[1].previewServiceFxRate,undefined);
+ }assert.equal(calls,1);}finally{delete globalThis.__fallback;delete globalThis.__bnm;}
 });
