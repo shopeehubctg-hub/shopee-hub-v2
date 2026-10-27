@@ -1,4 +1,5 @@
 "use client";
+import { accountMappingDisplay } from './account-mapping-display';
 
 import { useEffect, useRef, useState } from "react";
 import { accountMoney } from './account-display';
@@ -42,9 +43,10 @@ export function StoreNameCell({ row, options, configurable, canSave, month, onSa
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const retry = useRef<{ payload: string; id: string } | null>(null);
-  const candidates = [...new Map((row.candidates ?? []).filter(item => item.storeId).map(item => [item.storeId, item])).values()];
-  const currentNames = row.storeId ? [row.storeName] : candidates.map(item => item.storeName);
-  const needsChoice = currentNames.length !== 1;
+  const mapping = accountMappingDisplay(row);
+  const candidates = mapping.candidates;
+  const currentNames = mapping.names;
+  const needsChoice = mapping.needsReview;
   const showEditor = configurable && (needsChoice || changing);
   async function save() {
     if (!canSave || !selectedId || !row.rosterKey) return;
