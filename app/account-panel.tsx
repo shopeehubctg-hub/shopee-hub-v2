@@ -74,7 +74,7 @@ export function AccountPanel() {
     return searchText.includes(query.trim().toLocaleLowerCase());
   });
   return <div className="account-panel account-refined" aria-busy={loading}>
-    <header className="page-title account-page-title"><h2>Account</h2><div className="account-page-controls"><label>Invoice month<input aria-label="Invoice month" type="month" value={invoiceMonth} onChange={event=>{if(/^\d{4}-(0[1-9]|1[0-2])$/.test(event.target.value)){setDetailId(null);setInvoiceMonth(event.target.value);setLoading(true);}}}/></label><button type="button" disabled={loading} onClick={()=>{setLoading(true);setRefreshKey(value=>value+1);}}>Refresh</button></div></header>
+    <header className="page-title account-page-title" aria-label="Account controls"><div className="account-page-controls"><label>Invoice month<input aria-label="Invoice month" type="month" value={invoiceMonth} onChange={event=>{if(/^\d{4}-(0[1-9]|1[0-2])$/.test(event.target.value)){setDetailId(null);setInvoiceMonth(event.target.value);setLoading(true);}}}/></label><button type="button" disabled={loading} onClick={()=>{setLoading(true);setRefreshKey(value=>value+1);}}>Refresh</button></div></header>
     {error && <div className="account-notice error" role="alert">{error}</div>}
     {loading && <div className="account-notice" role="status">Loading Account…</div>}
     {!loading && data?.status === "not_configured" && <div className="account-notice" role="status">No income records yet.</div>}
