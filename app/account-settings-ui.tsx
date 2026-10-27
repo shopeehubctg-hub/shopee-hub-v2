@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { accountMoney } from './account-display';
 import { useMonthlyFeePreview } from './fee-plan-context';
 import type { FormEvent } from "react";
 import type { AccountFeeRule, AccountResponse, AccountStoreRow } from "./account-contract";
@@ -71,11 +72,10 @@ export function RateCell({row,month,onEdit}:{row:AccountStoreRow;month:string;on
   const preview=useMonthlyFeePreview(row,month);
   const rule=preview.plan?.rule;
   const compact=rule?.type==='fixed'?`${rule.currency} ${rule.fixedAmount||'—'} / month`:rule?.type==='percent'?`${rule.percent||'—'}%`:rule?.tiers?.length?rule.tiers.map(t=>`${t.percent}%`).join(' / '):'Set tier rates';
-  return <div className="account-rate-cell account-rate-linked">
+  return <button type="button" className="account-rate-field" aria-label={`Edit monthly rate for ${row.project||row.storeName}`} onClick={onEdit}>
     <strong>{preview.plan?preview.plan.name:rateLabel(row.rateRule)}</strong>
-    {preview.plan?<small>{preview.calculation?.rateLabel||compact} · v{preview.plan.version} <span className="account-preview-label">{preview.locked?'Locked preview':'Preview'}</span></small>:row.rateRule&&<small>Saved rate{row.rateEffectiveMonth?` · from ${row.rateEffectiveMonth}`:''}</small>}
-    <button type="button" className="account-link-button" aria-label={`Edit monthly rate for ${row.project||row.storeName}`} onClick={onEdit}>{preview.plan||row.rateRule?'Edit':'Set rate'}</button>
-  </div>;
+    {preview.plan?<small>{preview.calculation?.rateLabel||compact} · v{preview.plan.version} <span className="account-preview-label">{preview.locked?'Locked preview':'Preview'}</span></small>:row.rateRule?<small>Saved rate{row.rateEffectiveMonth?` · from ${row.rateEffectiveMonth}`:''}</small>:<small>Set rate</small>}
+  </button>;
 }
 
 export function CompanyCell({row,month,canSave,editable,onSaved}:{row:AccountStoreRow;month:string;canSave:boolean;editable:boolean;onSaved:()=>void}) {
@@ -97,4 +97,21 @@ export function CompanyCell({row,month,canSave,editable,onSaved}:{row:AccountSto
     finally{setSaving(false);}
   }
   return <div className="account-company-cell">{editing?<form onSubmit={event=>void save(event)}><label className="sr-only" htmlFor={`company-${row.id}`}>Company name for {row.project}</label><input id={`company-${row.id}`} value={entity} onChange={event=>setEntity(event.target.value)} maxLength={240} required disabled={saving}/><div><button type="submit" disabled={!canSave||saving}>{saving?'Saving…':'Save'}</button><button type="button" disabled={saving} onClick={()=>{setEditing(false);setError('');}}>Cancel</button></div></form>:<><strong>{row.entity||'—'}</strong>{editable&&<button type="button" className="account-link-button" onClick={()=>{setEntity(row.entity||'');setEditing(true);}}>Edit company</button>}</>}{error&&<small role="alert" className="account-inline-error">{error}</small>}</div>;
+}
+
+export function RecordDetails({row,month,canConfigure,canSave,options,onClose,onSaved}:{row:AccountStoreRow;month:string;canConfigure:boolean;canSave:boolean;options:StoreOption[];onClose:()=>void;onSaved:()=>void}) {
+  const dialogRef=useRef<HTMLDialogElement>(null);
+  useEffect(()=>{const dialog=dialogRef.current;dialog?.showModal();return ()=>{if(dialog?.open)dialog.close();};},[]);
+  return <dialog className="account-record-dialog" ref={dialogRef} aria-labelledby="account-record-title" onCancel={event=>{event.preventDefault();onClose();}}>
+    <header><div><h3 id="account-record-title">{row.project||row.storeName}</h3><p>{row.market==='SG'?'Singapore':'Malaysia'} · {row.currency}</p></div><button type="button" className="account-record-close" aria-label="Close billing record" onClick={onClose}>×</button></header>
+    <div className="account-record-body"><dl className="account-record-fields">
+      <div><dt>Company</dt><dd><CompanyCell row={row} month={month} canSave={canSave} editable={canConfigure} onSaved={onSaved}/></dd></div>
+      <div><dt>Store</dt><dd><StoreNameCell row={row} options={options} month={month} canSave={canSave} configurable={canConfigure} onSaved={onSaved}/></dd></div>
+      <div><dt>Invoice month</dt><dd>{row.invoiceMonth||'Not set'}</dd></div>
+      <div><dt>Report month</dt><dd>{row.statementMonth||'Not set'}<small>Fee calculation reference</small></dd></div>
+      <div><dt>Service period</dt><dd>{row.servicePeriodStart&&row.servicePeriodEnd?`${row.servicePeriodStart} – ${row.servicePeriodEnd}`:row.servicePeriodStart?`From ${row.servicePeriodStart} · end not set`:row.servicePeriodEnd?`Until ${row.servicePeriodEnd} · start not set`:'Not set'}</dd></div>
+      <div><dt>Expected net fee</dt><dd>{accountMoney(row.expectedNetFee,row.currency)}</dd></div>
+    </dl>{!canSave&&canConfigure&&<p className="account-detail-note">Company and store changes cannot be saved in this preview.</p>}</div>
+    <footer><button type="button" onClick={onClose}>Close</button></footer>
+  </dialog>;
 }
