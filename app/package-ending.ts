@@ -1,3 +1,4 @@
+import {MARKET_CONFIG,type MarketCode} from './markets';
 type Period = { effectiveFrom: string; effectiveTo: string | null; promotionType: "monthly" | "custom" };
 
 // Preserve elapsed periods, truncate open/current ones, and cancel future ones.
@@ -10,7 +11,7 @@ export function endedPackagePeriods<T extends Period>(prices: T[], today: string
   );
 }
 
-export function endedPackageSettings(settings: Record<string, unknown> | null, now: string, today: string, actor: string) {
+export function endedPackageSettings(settings: Record<string, unknown> | null, now: string, today: string, actor: string, market:MarketCode='MY') {
   return {
     ...settings,
     _packageEnded: true,
@@ -19,7 +20,7 @@ export function endedPackageSettings(settings: Record<string, unknown> | null, n
     _endedBy: actor,
     _longTermLifecycle: false,
     _recurringCampaign: null,
-    _packageHistorySummary: { schema: 1, summary: `Package ended immediately by ${actor}. End date: ${today} (Malaysia). Future promotions cancelled.` },
+    _packageHistorySummary: { schema: 1, summary: `Package ended immediately by ${actor}. End date: ${today} (${MARKET_CONFIG[market].name}). Future promotions cancelled.` },
   };
 }
 

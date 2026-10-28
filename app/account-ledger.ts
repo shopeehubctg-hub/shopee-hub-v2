@@ -19,10 +19,11 @@ export function previousMonth(month:string) { const [year,m]=month.split('-').ma
 function moneySum(values:string[]) { return values.length?decimal(values.reduce((sum,value)=>sum+cents(value),BigInt(0))):null; }
 export function emptyAccount(invoiceMonth:string,today:string,status:AccountResponse['status']='ready'):AccountResponse {
   return {invoiceMonth,statementMonth:previousMonth(invoiceMonth),today,timezone:'Asia/Kuala_Lumpur',status,updatedAt:null,
-    summaries:(['MYR','SGD'] as const).map(currency=>({currency,expectedNetFee:null,billed:null,collected:null,outstanding:null,overpaid:null,todayCollected:null,monthCollected:null,pendingStores:0})),stores:[]};
+    summaries:(['MYR','SGD','THB','PHP'] as const).map(currency=>({currency,expectedNetFee:null,billed:null,collected:null,outstanding:null,overpaid:null,todayCollected:null,monthCollected:null,pendingStores:0})),stores:[]};
 }
 export function buildAccount(ledger:Ledger,invoiceMonth:string,today:string):AccountResponse {
   const result=emptyAccount(invoiceMonth,today);
+  if([...ledger.terms,...ledger.receipts].some(row=>!['MYR','SGD','THB','PHP'].includes(row.currency)))throw Error('Unsupported Account currency');
   const cycles=new Map(ledger.cycles.map(c=>[c.id,c])); const terms=new Map(ledger.terms.map(t=>[t.id,t]));
   const assessments=new Map(ledger.assessments.map(a=>[a.id,a]));
   const invoices=new Map(ledger.invoices.filter(i=>i.status==='issued').map(i=>[i.id,i]));

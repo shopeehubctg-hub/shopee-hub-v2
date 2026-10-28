@@ -1,5 +1,6 @@
 "use client";
 import {useState} from 'react';
+import {MARKET_CONFIG} from './markets';
 import type {AccountFeeRule} from './account-contract';
 import {useFeePlans} from './fee-plan-context';
 import {accountPlanFields,accountRateSummary,availableAccountRateCards,changeAccountSetupMonth,feeRuleFromDraft,malaysiaMonth,resetAccountSetupSelection,selectAccountRateCard,type AccountSetupDraft,type StoreMarket} from './store-account-setup-model';
@@ -7,7 +8,7 @@ export {accountSetupError,accountSetupPayload,emptyAccountSetup,feeRuleFromDraft
 export type {AccountSetupDraft,AccountSetupPayload} from './store-account-setup-model';
 
 export function AccountSetupFields({draft,market,update}:{draft:AccountSetupDraft;market:StoreMarket;update:(patch:Partial<AccountSetupDraft>)=>void}){
- const {plans}=useFeePlans();const [customOpen,setCustomOpen]=useState(false);
+ const {plans,persistent,catalogStatus,catalogError,refreshPlans}=useFeePlans();const [customOpen,setCustomOpen]=useState(false);
  const cards=availableAccountRateCards(plans,draft);const selected=cards.find(card=>card.id===draft.planId&&card.version===draft.planVersion);
  const updateCustom=(patch:Partial<AccountSetupDraft>)=>update({...patch,planId:'custom',planVersion:null});
  const monthChanged=(month:string)=>{if(month!==draft.effectiveMonth)update(changeAccountSetupMonth(draft,month,plans));};
@@ -18,8 +19,9 @@ export function AccountSetupFields({draft,market,update}:{draft:AccountSetupDraf
   <label>Effective Invoice Month<input aria-label="Account Effective Invoice Month" name="accountEffectiveInvoiceMonth" type="month" min={malaysiaMonth()} required value={draft.effectiveMonth} onInput={event=>monthChanged(event.currentTarget.value)} onChange={event=>monthChanged(event.currentTarget.value)}/></label>
   <label>Client type<select aria-label="Account client type" value={draft.clientType} onChange={event=>{setCustomOpen(false);update(resetAccountSetupSelection(draft,market,event.currentTarget.value as AccountSetupDraft['clientType']));}} required><option value="">Choose client type</option><option>Internal</option><option>External</option></select></label>
   <label className="account-field-wide">Rate card<select aria-label="Account rate card" value={draft.planId==='custom'?'custom':selected?.id??''} disabled={!draft.clientType} onChange={event=>{setCustomOpen(false);update(selectAccountRateCard(draft,event.currentTarget.value,plans));}} required><option value="">Choose rate card</option>{draft.planId==='custom'&&<option value="custom">Custom rate</option>}{cards.map(card=><option value={card.id} key={card.id}>{card.name} · v{card.version}</option>)}</select></label>
+  {persistent&&catalogStatus!=='ready'&&<p className="store-access-note account-field-wide" role="status">{catalogStatus==='loading'?'Loading rate cards…':catalogError}<button type="button" onClick={()=>void refreshPlans().catch(()=>{})}>Retry</button></p>}
   {selected&&<p className="store-access-note account-field-wide" aria-label="Selected rate card summary">{accountRateSummary(selected.rule)} · excl. SST</p>}
-  <p className="store-access-note account-field-wide">Sales currency: {market==='SG'?'SGD':'MYR'} · Fee currency: MYR</p>
+  <p className="store-access-note account-field-wide">Sales currency: {MARKET_CONFIG[market].currency} · Fee currency: MYR</p>
   {market==='SG'&&(draft.clientType==='Internal'?<p className="store-access-note account-field-wide">SGD 1 = MYR 3.2 · fixed</p>:draft.clientType==='External'?<label className="account-field-wide">SGD to MYR<select aria-label="Account SGD exchange rate policy" value={draft.fxPolicy} onChange={event=>update({fxPolicy:event.currentTarget.value as AccountSetupDraft['fxPolicy']})} required><option value="">Choose exchange rate policy</option><option value="fixed">Fixed · SGD 1 = MYR 3.2</option><option value="bnm-service-average">BNM average · previous service month</option></select></label>:null)}
   <details className="account-field-wide store-account-custom" open={customOpen||draft.planId==='custom'} onToggle={event=>setCustomOpen(event.currentTarget.open)}><summary>Custom rate</summary>
    {draft.planId!=='custom'?<button type="button" disabled={!draft.clientType} onClick={()=>{update({...accountPlanFields(selected?.rule??customRule),planId:'custom',planVersion:null});setCustomOpen(true);}}>Use custom rule</button>:<div className="account-rate-fields">

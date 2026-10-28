@@ -1,6 +1,6 @@
 import type { AccountCurrency, AccountMoney } from "./account-contract";
 
-const currencySymbols: Record<AccountCurrency, string> = { MYR: "RM", SGD: "S$" };
+const currencySymbols: Record<AccountCurrency, string> = { MYR: "RM", SGD: "S$", THB: "฿", PHP: "₱" };
 
 /** Keep ledger decimals as strings so display cannot round received money. */
 export function accountMoney(value: AccountMoney | null | undefined, currency: AccountCurrency) {

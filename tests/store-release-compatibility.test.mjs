@@ -25,7 +25,7 @@ const bundled = await build({
   } }],
 });
 const api = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`);
-const req = (method, body) => new Request('https://portal.test/api/admin/stores', { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+const req = (method, body) => new Request('https://portal.test/api/admin/stores', { method, headers: { 'content-type': 'application/json', origin: 'https://portal.test' }, body: JSON.stringify(body) });
 const uuid = '11111111-1111-4111-8111-111111111111';
 let state;
 beforeEach(() => {
@@ -38,6 +38,7 @@ beforeEach(() => {
     const body = init.body ? JSON.parse(init.body) : null;
     state.calls.push({ table, method: init.method ?? 'GET', body });
     if (table === 'customer_users') return [{ tenant_id: state.tenant, role: state.role, active: true }];
+    if (table === 'tenants') return [{ active: true }];
     if (table.startsWith('rpc/')) throw new Error('Account RPC must not be called for legacy Store actions');
     if (table !== 'stores') throw new Error(`Unexpected table ${table}`);
     if (init.method === 'POST') { state.stores.push(body); return [{ ...body, display_name: null }]; }
@@ -81,26 +82,27 @@ test('legacy Store writes keep Super Admin and tenant ownership guards', async (
   assert.equal(state.stores[0].display_name, null);
 });
 
-test('v2 Account payloads fail closed with no Store or directory writes', async () => {
+test('malformed v2 Account payloads fail closed with no Store or directory writes', async () => {
   for (const method of ['POST', 'PATCH']) {
     const body = method === 'POST'
       ? { name: 'New', market: 'MY', accountSetup: { version: 2, rateCard: { id: 'plan' } } }
       : { id: 'store', name: 'Changed', accountSetup: { version: 2 } };
     const response = await api[method](req(method, body));
-    assert.equal(response.status, 503);
+    assert.equal(response.status, 400);
   }
   assert.equal(state.stores.length, 0);
   assert.equal(globalThis.__compatDetails.length, 0);
   assert.ok(state.calls.every(call => call.table !== 'stores' && !call.table.startsWith('rpc/')));
 });
 
-test('Production Store UI omits Account setup and sends store-only Add/Edit payloads', async () => {
+for(const scenario of [{market:'MY',preview:false},{market:'TH',preview:false},{market:'PH',preview:false},{market:'TH',preview:true},{market:'PH',preview:true}])test(`Store UI ${scenario.market} ${scenario.preview?'Rate Card preview':'store-only'} preserves the persistence boundary`, async () => {
+  const {market,preview:accountPreview}=scenario;
   const { JSDOM } = await import(process.env.BD_DOM_TEST_JSDOM ?? 'jsdom');
-  const compiled = execFileSync('node_modules/.bin/esbuild', ['--bundle', '--format=esm', '--platform=node', '--target=node20', '--loader=tsx', '--jsx=automatic'], {
+  const compiled = execFileSync('node_modules/.bin/esbuild', ['--bundle', '--format=esm', '--platform=node', '--target=node20', '--loader=tsx', '--loader:.css=empty', '--jsx=automatic'], {
     maxBuffer: 10 * 1024 * 1024,
     input: `import React,{act} from 'react';import {createRoot} from 'react-dom/client';
       import {FeePlansProvider} from './app/fee-plan-context';import {PermissionSettings} from './app/permission-settings';
-      export {act,createRoot};export const App=()=> <FeePlansProvider><PermissionSettings initialEnabledModules={[]} accountSetupPreview={false}/></FeePlansProvider>;`,
+      export {act,createRoot};export const App=()=> <FeePlansProvider><PermissionSettings initialEnabledModules={[]} accountSetupPreview={${accountPreview}}/></FeePlansProvider>;`,
   });
   const dom = new JSDOM('<!doctype html><div id="root"></div>', { url: 'https://portal.test/' });
   const saved = new Map();
@@ -115,13 +117,14 @@ test('Production Store UI omits Account setup and sends store-only Add/Edit payl
   const payloads = [];
   globalThis.fetch = async (url, init = {}) => {
     if (url === '/api/admin/users') return Response.json({
-      stores: [{ id: 'shopee-existing', name: 'Existing', platform: 'Shopee MY' }],
+      stores: [{ id: 'shopee-existing', name: 'Existing', platform: `Shopee ${market}` }],
       users: [], clientDefaults: [], accountSettingsAvailable: false,
     });
+    if (url.startsWith('/api/admin/store-exchange-rate?')) {const params=new URL(url,'https://portal.test').searchParams;return Response.json({status:'available',market:params.get('market'),currency:params.get('market')==='TH'?'THB':'PHP',invoiceMonth:params.get('invoiceMonth'),serviceMonth:(()=>{const [year,month]=params.get('invoiceMonth').split('-').map(Number);return `${month===1?year-1:year}-${String(month===1?12:month-1).padStart(2,'0')}`;})(),policy:'bnm-service-average',rate:params.get('market')==='TH'?'0.1225':'0.065',quotationUnit:1,reference:'https://storage.data.gov.my/finsector/exr/monthly.csv'});}
     if (url === '/api/admin/stores') {
       const body = JSON.parse(init.body);
       payloads.push({ method: init.method, body });
-      return Response.json({ store: { id: body.id ?? 'shopee-release', name: body.name, platform: 'Shopee MY' } }, { status: init.method === 'POST' ? 201 : 200 });
+      return Response.json({ store: { id: body.id ?? 'shopee-release', name: body.name, platform: `Shopee ${market}` } }, { status: init.method === 'POST' ? 201 : 200 });
     }
     throw new Error(`Unexpected fetch ${url}`);
   };
@@ -135,14 +138,35 @@ test('Production Store UI omits Account setup and sends store-only Add/Edit payl
     await act(async () => {});
     await click(namedButton('Stores'));
     await click(namedButton('+ Add store'));
+    assert.equal([...document.querySelectorAll('label')].some(label=>label.textContent.includes('Source name')),false);
+    if(market!=='MY')await act(()=>{const select=document.querySelector('[aria-label="Add store"] select');select.value=market;select.dispatchEvent(new Event('change',{bubbles:true}));});
+    if(accountPreview){
+      const dialog=document.querySelector('[aria-label="Add store"]');
+      assert.match(dialog.textContent,/Account setup/);assert.ok(dialog.querySelector('[aria-label="Account rate card"]'));
+      const company=[...dialog.querySelectorAll('label')].find(label=>label.textContent.startsWith('Company name')).querySelector('input');
+      await act(()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value').set.call(company,'New Overseas Company');company.dispatchEvent(new Event('input',{bubbles:true}));});
+      await act(()=>{const select=dialog.querySelector('[aria-label="Account client type"]');select.value='Internal';select.dispatchEvent(new Event('change',{bubbles:true}));});
+      await act(()=>{const select=dialog.querySelector('[aria-label="Account rate card"]');select.value='internal-new';select.dispatchEvent(new Event('change',{bubbles:true}));});
+      assert.equal(dialog.querySelector('[aria-label="Account rate card"]').value,'internal-new');
+      assert.match(dialog.textContent,new RegExp(`Sales currency: ${market==='TH'?'THB':'PHP'} · Fee currency: MYR`));
+      assert.match(dialog.textContent,/cap MYR 4000/);assert.doesNotMatch(dialog.textContent,/3.2/);
+      assert.equal(dialog.querySelectorAll('input[type="month"]').length,1);
+      assert.match(dialog.querySelector('output').textContent,market==='TH'?/1 THB = MYR 0.1225/:/1 PHP = MYR 0.065/);
+      assert.equal(namedButton('Add store').disabled,true);
+      await click(namedButton('Add store'));assert.equal(payloads.length,0);
+      assert.match(dialog.textContent,/Store saving is temporarily unavailable/);
+      return;
+    }
     assert.equal(document.querySelector('[aria-label="Add store"] fieldset')?.textContent.includes('Account setup') ?? false, false);
     const addDialog = document.querySelector('[aria-label="Add store"]');
+    if(market!=='MY'){assert.match(addDialog.textContent,/Currency Exchange Rate/);assert.match(addDialog.textContent,/Bank Negara monthly average/);assert.match(addDialog.querySelector('output').textContent,market==='TH'?/1 THB = MYR 0.1225/:/1 PHP = MYR 0.065/);}
     const addName = [...addDialog.querySelectorAll('label')].find(label => label.textContent.includes('Store name')).querySelector('input');
     await act(() => { Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(addName, 'Release UI'); addName.dispatchEvent(new Event('input', { bubbles: true })); });
     assert.equal(namedButton('Add store').disabled, false);
     await click(namedButton('Add store'));
     await act(async () => {});
     assert.equal(payloads[0]?.method, 'POST');
+    assert.equal(payloads[0].body.market,market);
     for (const field of ['accountSetup','legalEntity','feeRule','effectiveMonth','accountRosterKey','expectedAccountVersion']) assert.equal(field in payloads[0].body, false);
     await click(namedButton('Edit store'));
     assert.equal(document.querySelector('[aria-label="Edit store"] fieldset')?.textContent.includes('Account company') ?? false, false);
@@ -158,4 +182,19 @@ test('Production Store UI omits Account setup and sends store-only Add/Edit payl
     for (const [key, descriptor] of saved) if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key];
     delete globalThis.IS_REACT_ACT_ENVIRONMENT;
   }
+});
+
+test('TH and PH Store registration preserves markets and rejects unsupported countries',async()=>{
+  for(const market of ['TH','PH']){
+    const response=await api.POST(req('POST',{name:`Test ${market} Store`,market}));
+    assert.equal(response.status,201);
+    const store=(await response.json()).store;
+    assert.equal(store.platform,`Shopee ${market}`);
+    assert.equal(state.stores.at(-1).platform,`Shopee ${market}`);
+    assert.equal((await api.POST(req('POST',{name:`Test ${market} Store`,market}))).status,409);
+    const edit=await api.PATCH(req('PATCH',{id:store.id,name:`Renamed ${market}`}));
+    assert.equal(edit.status,200);assert.equal((await edit.json()).store.platform,`Shopee ${market}`);
+  }
+  assert.equal((await api.POST(req('POST',{name:'Unknown',market:'XX'}))).status,400);
+  assert.ok(state.calls.every(call=>!call.table.startsWith('rpc/')));
 });

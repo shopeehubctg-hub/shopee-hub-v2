@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { endedPackagePeriods, endedPackageSettings, packageHistoryAction } from '../app/package-ending.ts';
-import { packageLifecycleStatus } from '../app/package-lifecycle.ts';
+import {execFileSync} from 'node:child_process';
+const load=async file=>import(`data:text/javascript;base64,${execFileSync('node_modules/.bin/esbuild',[file,'--bundle','--format=esm','--platform=node']).toString('base64')}`);
+const {endedPackagePeriods,endedPackageSettings,packageHistoryAction}=await load('app/package-ending.ts');
+const {packageLifecycleStatus}=await load('app/package-lifecycle.ts');
 
 test('manual ending expires today immediately, while ordinary end dates remain inclusive',()=>{
   const prices=[{effectiveFrom:'2026-10-01',effectiveTo:'2026-10-26',priceType:'non_campaign'}];

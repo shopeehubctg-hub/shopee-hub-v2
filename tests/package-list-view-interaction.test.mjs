@@ -65,16 +65,16 @@ test('Staging samples stay separate from real packages and expose no mutation or
  const click=async(label)=>{const button=[...doc.querySelectorAll('button')].find(b=>b.textContent===label);assert.ok(button,label);await act(async()=>button.click());};
  try{
   await act(async()=>root.render(React.createElement(PackageControl,{storeId:'store',storeName:'Store',allowSamplePreview:true})));
-  assert.equal(doc.querySelectorAll('.package-card').length,8);assert.match(doc.body.textContent,/Sample data · Read only/);assert.doesNotMatch(doc.body.textContent,/Real saved package/);
+  assert.equal(doc.querySelectorAll('.package-card').length,10);assert.match(doc.body.textContent,/Sample data · Read only/);assert.doesNotMatch(doc.body.textContent,/Real saved package/);
   for(const label of ['+ New Package','Create Package','Edit Draft','Edit / Modify','Migrate & Edit','End Package','Remove Package','Retry Sheet Sync'])assert.equal([...doc.querySelectorAll('button')].find(b=>b.textContent===label),undefined,label);
   assert.equal(doc.querySelector('.kit-export-button'),null);assert.equal(doc.querySelector('.kit-package-selector'),null);
   await click('List View');assert.match(doc.querySelector('.package-sheet').textContent,/S\$ 49.90/);assert.match(doc.querySelector('.package-sheet').textContent,/DEMO-GIFT/);
-  await click('Long Term');assert.equal(doc.querySelectorAll('.package-sheet tbody>tr').length,2);
+  await click('Long Term');assert.equal(doc.querySelectorAll('.package-sheet tbody>tr').length,3);
   await click('All types');await click('Draft');assert.equal(doc.querySelectorAll('.package-sheet tbody>tr').length,1);
   await click('Back to real data');assert.match(doc.body.textContent,/Real saved package/);assert.doesNotMatch(doc.body.textContent,/Daily Wellness/);
   assert.ok(requests.every(r=>r.method==='GET'));
   await act(async()=>root.render(React.createElement(PackageControl,{storeId:'',storeName:'No Store Selected',allowSamplePreview:true})));
-  assert.equal(doc.querySelectorAll('.package-sheet tbody>tr:not(.package-sheet-detail)').length,8);
+  assert.equal(doc.querySelectorAll('.package-sheet tbody>tr:not(.package-sheet-detail)').length,10);
   // Production must ignore the sample query even for Super Admin.
   await act(async()=>root.unmount());
   dom.reconfigure({url:'https://shopee-hub-v2-260731.vercel.app/?packageSamples=1'});

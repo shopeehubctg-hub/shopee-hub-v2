@@ -101,3 +101,8 @@ test('complete normal and campaign calculator snapshots remain available in hist
   assert.deepEqual(calculatorSnapshots({ scenarios: [{ serviceScenario: 'Campaign Day' }, campaign] }), [campaign]);
   assert.deepEqual(calculatorSnapshots({ scenarios: [{ ...campaign, discountValue: 'invalid' }, campaign] }), [campaign]);
 });
+
+test('TH/PH price and recurring history use baht and peso without MYR fallback',()=>{
+ const fields=packageHistoryFields({market:'TH,PH',priceSchedules:[{market:'TH',priceType:'campaign',originalPrice:123,sellingPrice:100,promotionType:'custom',effectiveFrom:'2026-10-01',effectiveTo:null},{market:'PH',priceType:'non_campaign',originalPrice:456,sellingPrice:400,promotionType:'custom',effectiveFrom:'2026-10-01',effectiveTo:null}],recurringCampaign:{schema:1,startDate:'2026-10-01',endDate:null,events:[{id:'dday',startOffset:-1,endOffset:1,prices:{TH:{originalPrice:123,sellingPrice:100},PH:{originalPrice:456,sellingPrice:400}}}]}});
+ assert.match(fields['Prices & promotion dates'],/TH Campaign: ฿ 123.00/);assert.match(fields['Prices & promotion dates'],/PH Non-Campaign: ₱ 456.00/);assert.match(fields['Monthly Campaign events'],/TH ฿ 123.00/);assert.match(fields['Monthly Campaign events'],/PH ₱ 456.00/);assert.doesNotMatch(fields['Prices & promotion dates'],/RM/);
+});

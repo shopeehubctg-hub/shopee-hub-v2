@@ -1,10 +1,11 @@
+import type {MarketCode} from './markets';
 import { canonicalStoreId } from './live-calendar-model';
 import type { AccountMappingCandidate } from './account-contract';
 /** Reviewed historical MAP identity -> current selector ID, presentation only.
  * This does not confirm invoice allocation, fee applicability or financial store linkage.
  * SG identities are deliberately independent from MY identities.
  */
-const selectorIdByMapping:Record<string,{market:'MY'|'SG';id:string}>={
+const selectorIdByMapping:Record<string,{market:MarketCode;id:string}>={
   MAP0026:{market:'MY',id:'shopee-nomoq-by-ctg4u'},
   MAP0009:{market:'MY',id:'shopee-dr-smile-whitening-by-ctg4u'},
   MAP0010:{market:'MY',id:'shopee-naturelish-eco-plus-by-ctg4u'},
@@ -48,7 +49,7 @@ const selectorIdByMapping:Record<string,{market:'MY'|'SG';id:string}>={
   MAP0073:{market:'MY',id:'shopee-jen-mommy-essential-oil'},
   MAP0042:{market:'SG',id:'shopee-skindae-sg'},
 };
-export function accountSelectorCandidates(candidates:AccountMappingCandidate[],market:'MY'|'SG',storeNames:Map<string,string>):AccountMappingCandidate[] {
+export function accountSelectorCandidates(candidates:AccountMappingCandidate[],market:MarketCode,storeNames:Map<string,string>):AccountMappingCandidate[] {
   return candidates.map(candidate=>{
     const audited=selectorIdByMapping[candidate.mappingId];
     // Direct IDs were explicitly reviewed in the snapshot. Financial confirmation is separate.

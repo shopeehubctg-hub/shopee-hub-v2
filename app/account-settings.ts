@@ -25,13 +25,14 @@ export async function saveAccountSetting(request:Request,action:'mapping'|'fee_r
       if(canonicalStoreId(id)===id) {
         const found=await supabaseRest<Array<{id:string;name:string;display_name:string|null;platform:string}>>(`stores?select=id,name,display_name,platform&tenant_id=eq.${encodeURIComponent(member.tenant_id)}&id=eq.${encodeURIComponent(id)}&limit=1`);
         const store=found[0];
-        if(store && ['Shopee MY','Shopee SG'].includes(store.platform)) unit={id:body.rosterKey,project:store.display_name??store.name,entity:'',market:store.platform==='Shopee SG'?'SG':'MY'};
+        if(store && ['Shopee MY','Shopee SG','Shopee TH','Shopee PH'].includes(store.platform)) unit={id:body.rosterKey,project:store.display_name??store.name,entity:'',market:store.platform.slice(-2)};
       }
     }
     if(!unit)return Response.json({error:'Choose a valid billing project'},{status:400});
     if(typeof body.effectiveMonth!=='string'||!/^20\d{2}-(0[1-9]|1[0-2])$/.test(body.effectiveMonth)||body.effectiveMonth<malaysiaDate().slice(0,7))return Response.json({error:'Choose the current or a future invoice month'},{status:400});
     if(typeof body.expectedVersion!=='string'||!/^\d{1,18}$/.test(body.expectedVersion))return Response.json({error:'Refresh the Account before saving'},{status:400});
     if(typeof body.requestId!=='string'||! /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.requestId))return Response.json({error:'A unique save ID is required'},{status:400});
+    const currency=unit.id.startsWith('store:')?'MYR':unit.market==='SG'?'SGD':'MYR';
     let storeId:string|null=null;let rule=null;let entity=unit.entity;
     if(action==='mapping') {
       if(typeof body.storeId!=='string'||canonicalStoreId(body.storeId)!==body.storeId)return Response.json({error:'Choose a store from the Store Selector'},{status:400});
@@ -41,11 +42,11 @@ export async function saveAccountSetting(request:Request,action:'mapping'|'fee_r
       if(typeof body.entity!=='string'||!body.entity.trim()||body.entity.trim().length>240)return Response.json({error:'Enter a company name (up to 240 characters)'},{status:400});
       entity=body.entity.trim();
     } else {
-      try{rule=validateFeeRule(body.rule,unit.market==='MY'?'MYR':'SGD');}catch(error){return Response.json({error:error instanceof Error?error.message:'Invalid fee rule'},{status:400});}
+      try{rule=validateFeeRule(body.rule,currency);}catch(error){return Response.json({error:error instanceof Error?error.message:'Invalid fee rule'},{status:400});}
     }
     const result=await supabaseRest<{version:string}>('rpc/account_save_billing_unit_version',{method:'POST',body:JSON.stringify({
       p_tenant:member.tenant_id,p_actor:actor.email.toLowerCase(),p_roster_key:unit.id,p_roster_project:unit.project,p_entity:entity||unit.project,
-      p_currency:unit.market==='MY'?'MYR':'SGD',p_effective_month:`${body.effectiveMonth}-01`,p_action:action,p_store_id:storeId,p_rule:rule,
+      p_currency:currency,p_effective_month:`${body.effectiveMonth}-01`,p_action:action,p_store_id:storeId,p_rule:rule,
       p_expected_version:body.expectedVersion,p_request_id:body.requestId,
     })});
     return Response.json({saved:true,version:result.version});

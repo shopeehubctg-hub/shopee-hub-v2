@@ -1,3 +1,4 @@
+import {MARKET_CONFIG,isMarket,priceMarket,marketFromPlatform,type MarketCode} from '../../markets';
 import { packageDurationType } from '../../package-duration';
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { getDb } from "../../../db";
@@ -40,7 +41,7 @@ type PlatformLine = {
 };
 
 type PriceScheduleInput = {
-  market: "MY" | "SG";
+  market: MarketCode;
   priceType: "non_campaign" | "campaign";
   originalPrice: number | string;
   sellingPrice: number | string;
@@ -172,7 +173,7 @@ export async function GET(request: Request) {
   if (!storeId) {
     return Response.json({ packages:[], source:"store-selection-required", canCreate:false, canDelete:false }, { headers:{ "Cache-Control":"private, no-store" } });
   }
-  const tenantStores = await db.select({ id:stores.id, name:stores.name, displayName:stores.displayName }).from(stores)
+  const tenantStores = await db.select({ id:stores.id, name:stores.name, displayName:stores.displayName,platform:stores.platform }).from(stores)
     .where(eq(stores.tenantId, membership.tenantId));
   const assignedStoreRows = membership.role === "superadmin" || membership.storeAccessMode === "all"
     ? []
@@ -191,6 +192,7 @@ export async function GET(request: Request) {
   }
   const scopedStoreIds = scopedStores.map(store => store.id);
   const storeNames = new Map(scopedStores.map(store => [store.id, store.displayName ?? store.name]));
+  const storeMarkets=new Map(scopedStores.map(store=>[store.id,marketFromPlatform(store.platform)]));
   const allRows = await db.select().from(packages)
     .where(and(eq(packages.tenantId, membership.tenantId), inArray(packages.storeId, scopedStoreIds)))
     .orderBy(desc(packages.updatedAt));
@@ -233,20 +235,21 @@ export async function GET(request: Request) {
       const version = endedVersion ?? (["active","scheduled","expired"].includes(row.status)
         ? latestPublishedVersion.get(row.id) ?? latestVersion.get(row.id)
         : latestVersion.get(row.id));
+      const today=marketToday(storeMarkets.get(row.storeId)??'MY');
       const versionPrices = version ? pricesByVersion.get(version.id)??[] : [];
-      const price = versionPrices.find(item => item.priceType === "campaign" && (item.currency === "SGD" ? "SG" : item.market) === "MY") ?? versionPrices[0];
-      const versionMarkets=row.market.split(",").map(market=>market.trim()).filter(market=>market==="MY"||market==="SG") as RecurringMarket[];
-      const recurringCampaign=readRecurringCampaign(version?.calculatorSettings?._recurringCampaign,versionMarkets);
-      const currentEvent=recurringCampaign?activeRecurringEvent(recurringCampaign,marketToday()):null;
+      const versionMarkets=row.market.split(",").map(market=>market.trim()).filter(isMarket) as RecurringMarket[];
       const displayMarket=versionMarkets.includes("MY")?"MY":versionMarkets[0];
+      const price = versionPrices.find(item => item.priceType === "campaign" && priceMarket(item.market,item.currency) === displayMarket) ?? versionPrices[0];
+      const recurringCampaign=readRecurringCampaign(version?.calculatorSettings?._recurringCampaign,versionMarkets);
+      const currentEvent=recurringCampaign?activeRecurringEvent(recurringCampaign,today):null;
       const eventPrice=displayMarket?currentEvent?.prices[displayMarket]:null;
-      const normalPrice=versionPrices.find(item=>item.priceType==="non_campaign"&&(item.currency==="SGD"?"SG":item.market)===displayMarket);
+      const normalPrice=versionPrices.find(item=>item.priceType==="non_campaign"&&priceMarket(item.market,item.currency)===displayMarket);
       const displayPrice=recurringCampaign ? eventPrice?{originalPrice:Math.round(eventPrice.originalPrice*100),sellingPrice:Math.round(eventPrice.sellingPrice*100)}:normalPrice??price : price;
       const currentPlatforms = version ? (platformsByVersion.get(version.id)??[]).map(({ platform, packageSku }) => ({ platform, packageSku })) : [];
       return {
         ...row,
         status:["active","scheduled","expired"].includes(row.status)
-          ? packageLifecycleStatus(versionPrices,version?.calculatorSettings,marketToday())
+          ? packageLifecycleStatus(versionPrices,version?.calculatorSettings,today)
           : row.status,
         storeName:storeNames.get(row.storeId) ?? "Accessible Store",
         packageSku:currentPlatforms[0]?.packageSku ?? row.packageSku,
@@ -270,7 +273,7 @@ export async function GET(request: Request) {
         originalPrice:displayPrice?.originalPrice ?? 0,
         sellingPrice:displayPrice?.sellingPrice ?? 0,
         priceSchedules:versionPrices.map(item=>({
-          market:item.currency === "SGD" ? "SG" : item.market,
+          market:priceMarket(item.market,item.currency),
           priceType:item.priceType,
           originalPrice:item.originalPrice / 100,
           sellingPrice:item.sellingPrice / 100,
@@ -281,7 +284,7 @@ export async function GET(request: Request) {
         history:(versionsByPackage.get(row.id)??[]).map(item => {
           const historyPrices=pricesByVersion.get(item.id)??[];
           const historyPrice = historyPrices[0];
-          const historyMarkets=(versionMetadata(item.calculatorSettings)?.market??row.market).split(",").map(market=>market.trim()).filter(market=>market==="MY"||market==="SG") as RecurringMarket[];
+          const historyMarkets=(versionMetadata(item.calculatorSettings)?.market??row.market).split(",").map(market=>market.trim()).filter(isMarket) as RecurringMarket[];
           return {
             version:item.version,
             name:versionMetadata(item.calculatorSettings)?.name ?? null,
@@ -293,7 +296,7 @@ export async function GET(request: Request) {
             effectiveTo:item.effectiveTo,
             originalPrice:historyPrice?.originalPrice,
             sellingPrice:historyPrice?.sellingPrice,
-            priceSchedules:historyPrices.map(priceItem=>({market:priceItem.currency === "SGD" ? "SG" : priceItem.market,priceType:priceItem.priceType,originalPrice:priceItem.originalPrice/100,sellingPrice:priceItem.sellingPrice/100,promotionType:priceItem.promotionType,effectiveFrom:priceItem.effectiveFrom,effectiveTo:priceItem.effectiveTo})),
+            priceSchedules:historyPrices.map(priceItem=>({market:priceMarket(priceItem.market,priceItem.currency),priceType:priceItem.priceType,originalPrice:priceItem.originalPrice/100,sellingPrice:priceItem.sellingPrice/100,promotionType:priceItem.promotionType,effectiveFrom:priceItem.effectiveFrom,effectiveTo:priceItem.effectiveTo})),
             recurringCampaign:readRecurringCampaign(item.calculatorSettings?._recurringCampaign,historyMarkets),
             addedComponents:item.addedComponents,
             removedComponents:item.removedComponents,
@@ -328,7 +331,7 @@ async function savePackage(request: Request) {
     storeId?: string;
     storeName?: string;
     name?: string;
-    markets?: Array<"MY" | "SG">;
+    markets?: MarketCode[];
     status?: "draft" | "review" | "approved" | "scheduled" | "active" | "expired";
     promotionType?: "monthly" | "custom";
     effectiveFrom?: string;
@@ -353,10 +356,13 @@ async function savePackage(request: Request) {
     return packageError("Package Details","Complete the store, package name and at least one sales platform before saving.");
   }
   if (!await canAccessStore(accessDb,membership,body.storeId)) return packageError("Package Details","You do not have permission to create packages for this store.",403);
+  const [storeInfo]=await accessDb.select({platform:stores.platform}).from(stores).where(and(eq(stores.id,body.storeId),eq(stores.tenantId,membership.tenantId))).limit(1);
+  if(!storeInfo)return packageError('Package Details','Store access denied.',403);
+  const storeMarket=marketFromPlatform(storeInfo.platform);
   const schedules=(body.priceSchedules??[]).map(item=>({...item,originalPrice:Math.round(Number(item.originalPrice)*100),sellingPrice:Math.round(Number(item.sellingPrice)*100)}));
   const markets=[...new Set(body.markets??[])];
-  if (markets.some(market=>!["MY","SG"].includes(market)) || schedules.some(item=>!markets.includes(item.market))) {
-    return packageError("Pricing & Promotion","The selected markets do not match the price cards. Select MY or SG again.");
+  if (markets.some(market=>!isMarket(market)) || schedules.some(item=>!markets.includes(item.market))) {
+    return packageError("Pricing & Promotion","The selected markets do not match the price cards. Select MY, SG, TH or PH again.");
   }
   let recurringCampaign:RecurringCampaignRule|null=null;
   if(body.recurringCampaign!=null){
@@ -376,7 +382,7 @@ async function savePackage(request: Request) {
     const normal=schedules.filter(item=>item.market===market&&item.priceType==="non_campaign").sort((a,b)=>a.effectiveFrom.localeCompare(b.effectiveFrom));
     return normal.some((line,index)=>index>0&&(normal[index-1].effectiveTo===null||String(normal[index-1].effectiveTo)>=line.effectiveFrom));
   }))return packageError("Pricing & Promotion","Normal Day periods cannot overlap. Remove a duplicate month or adjust the custom dates.");
-  if (schedules.some(item=>!["MY","SG"].includes(item.market)||!["campaign","non_campaign"].includes(item.priceType)||!["monthly","custom"].includes(item.promotionType)||!item.effectiveFrom||(item.effectiveTo!==null&&!item.effectiveTo)||(item.effectiveTo===null&&!body.longTerm&&!body.campaignLongTerm)||(item.effectiveTo!==null&&item.effectiveTo<item.effectiveFrom))) {
+  if (schedules.some(item=>!isMarket(item.market)||!["campaign","non_campaign"].includes(item.priceType)||!["monthly","custom"].includes(item.promotionType)||!item.effectiveFrom||(item.effectiveTo!==null&&!item.effectiveTo)||(item.effectiveTo===null&&!body.longTerm&&!body.campaignLongTerm)||(item.effectiveTo!==null&&item.effectiveTo<item.effectiveFrom))) {
     return packageError("Pricing & Promotion","Every price requires a valid start date and end date. The end date cannot be earlier than the start date.");
   }
   if (markets.some(market=>schedules.filter(item=>item.market===market&&item.priceType==="non_campaign").some(item=>item.effectiveTo===null)!==Boolean(body.longTerm))) {
@@ -400,7 +406,7 @@ async function savePackage(request: Request) {
   }
   const periodKeys=(market:string,priceType:"non_campaign"|"campaign")=>schedules.filter(item=>item.market===market&&item.priceType===priceType).map(item=>`${item.promotionType}|${item.effectiveFrom}|${item.effectiveTo}`).sort().join(",");
   if (markets.some(market=>periodKeys(market,"non_campaign")!==periodKeys(markets[0],"non_campaign")||periodKeys(market,"campaign")!==periodKeys(markets[0],"campaign"))) {
-    return packageError("Pricing & Promotion","MY and SG must use the same promotion dates for each pricing type.");
+    return packageError("Pricing & Promotion","All selected markets must use the same promotion dates for each pricing type.");
   }
   if (platforms.some(item => !["Shopee","Lazada","TikTok Shop"].includes(item.platform) || !item.packageSku)) {
     return packageError("Package Details","Every selected sales platform needs its own listing SKU.");
@@ -536,7 +542,7 @@ async function savePackage(request: Request) {
     });
     for (const item of schedules) await tx.insert(packagePrices).values({
       id:crypto.randomUUID(),packageId,versionId,market:item.market,priceType:item.priceType,promotionType:item.promotionType,
-      currency:item.market === "SG" ? "SGD" : "MYR",originalPrice:item.originalPrice,sellingPrice:item.sellingPrice,
+      currency:MARKET_CONFIG[item.market].currency,originalPrice:item.originalPrice,sellingPrice:item.sellingPrice,
       effectiveFrom:item.effectiveFrom,effectiveTo:item.effectiveTo,createdBy:user.email,
     });
     await tx.insert(packageAuditLog).values({
@@ -579,7 +585,7 @@ async function savePackage(request: Request) {
       ? `Package saved as a draft because Google Sheet sync failed: ${sync.reason}. Retry Create from the draft card.`
       : `Google Sheet sync failed: ${sync.reason}. The previous published version remains visible. Retry after the Sheet connection is restored.`},{status:503});
   }
-  const status=packageLifecycleStatus(schedules,{_longTermLifecycle:longTermLifecycle},marketToday());
+  const status=packageLifecycleStatus(schedules,{_longTermLifecycle:longTermLifecycle},marketToday(storeMarket));
   await db.transaction(async tx=>{
     await tx.update(packageVersions).set({sheetSyncStatus:"synced"}).where(eq(packageVersions.id,versionId));
     await tx.update(packages).set({...metadata,status,updatedAt:new Date().toISOString()}).where(and(eq(packages.id,packageId),isNull(packages.deletedAt)));
@@ -629,7 +635,7 @@ export async function PATCH(request:Request) {
     const [priceRows,skuRows,storeRows]=await Promise.all([
       db.select().from(packagePrices).where(eq(packagePrices.versionId,version.id)),
       db.select().from(packagePlatformSkus).where(eq(packagePlatformSkus.versionId,version.id)),
-      db.select({name:stores.name}).from(stores).where(eq(stores.id,item.storeId)).limit(1),
+      db.select({name:stores.name,platform:stores.platform}).from(stores).where(eq(stores.id,item.storeId)).limit(1),
     ]);
     const platformMap=Object.fromEntries(["Shopee","Lazada","TikTok Shop"].map(platform=>[platform,skuRows.filter(row=>row.platform===platform).map(row=>row.packageSku).join(" | ")]));
     const priceType=(value:string)=>value==="campaign"?"Campaign":"Non-Campaign";
@@ -639,9 +645,9 @@ export async function PATCH(request:Request) {
       timestamp:version.createdAt,changeId:`${item.id}-v${version.version}`,
       projectOwner:version.createdBy,store:storeRows[0]?.name??item.storeId,packageName:metadata?.name??item.name,version:version.version,
       action:packageHistoryAction(version.calculatorSettings,version.version),
-      promotionType:ended?"Ended":priceRows.map(row=>`${row.market} ${priceType(row.priceType)}: ${!row.effectiveTo?"Long-term Package":row.promotionType==="custom"?"Custom":"Monthly"}`).join(" | "),
-      startDate:ended?version.effectiveFrom:priceRows.filter(row=>row.market===(metadata?.market??item.market).split(",")[0]).map(row=>`${priceType(row.priceType)} ${row.effectiveFrom}`).join(" | "),
-      endDate:ended?version.effectiveTo:priceRows.filter(row=>row.market===(metadata?.market??item.market).split(",")[0]).map(row=>`${priceType(row.priceType)} ${row.effectiveTo??"Ongoing"}`).join(" | "),
+      promotionType:ended?"Ended":priceRows.map(row=>`${priceMarket(row.market,row.currency)} ${priceType(row.priceType)}: ${!row.effectiveTo?"Long-term Package":row.promotionType==="custom"?"Custom":"Monthly"}`).join(" | "),
+      startDate:ended?version.effectiveFrom:priceRows.filter(row=>priceMarket(row.market,row.currency)===(metadata?.market??item.market).split(",")[0]).map(row=>`${priceType(row.priceType)} ${row.effectiveFrom}`).join(" | "),
+      endDate:ended?version.effectiveTo:priceRows.filter(row=>priceMarket(row.market,row.currency)===(metadata?.market??item.market).split(",")[0]).map(row=>`${priceType(row.priceType)} ${row.effectiveTo??"Ongoing"}`).join(" | "),
       shopeeSku:platformMap.Shopee??"",lazadaSku:platformMap.Lazada??"",tiktokSku:platformMap["TikTok Shop"]??"",
       addedComponents:formatComponents(version.addedComponents),removedComponents:formatComponents(version.removedComponents),
       currentComponents:formatComponents(version.components),changedBy:version.createdBy,syncStatus:"Synced",
@@ -651,7 +657,7 @@ export async function PATCH(request:Request) {
       await db.update(packageVersions).set({sheetSyncStatus:sync.status}).where(eq(packageVersions.id,version.id));
       return packageError("Saving",ended?`Package remains ended. History Sheet sync and email notification are still pending: ${sync.reason}.`:`Google Sheet sync failed: ${sync.reason}. ${unpublished?"The package remains a draft.":"The published package is unchanged."}`,503);
     }
-    const status=packageLifecycleStatus(priceRows,version.calculatorSettings,marketToday());
+    const status=packageLifecycleStatus(priceRows,version.calculatorSettings,marketToday(marketFromPlatform(storeRows[0]?.platform)));
     await db.transaction(async tx=>{
       await tx.select({id:packages.id}).from(packages).where(eq(packages.id,item.id)).for("update");
       await tx.update(packageVersions).set({sheetSyncStatus:"synced"}).where(eq(packageVersions.id,version.id));
