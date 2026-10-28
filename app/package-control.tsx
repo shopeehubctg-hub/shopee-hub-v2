@@ -316,7 +316,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
         setListState({storeId,status:"error",error:afterSave?"Package saved, but the list could not be refreshed.":"Packages could not be loaded."});
       }
     } finally {
-      if(new URLSearchParams(window.location.search).get("debugLoad")==="1")console.debug("[package-load]",{durationMs:Math.round(performance.now()-loadStarted),success:loadSucceeded&&!controller.signal.aborted&&sequence===loadSequence.current,aborted:controller.signal.aborted||sequence!==loadSequence.current});
+      if(new URLSearchParams(window.location.search).get("debugLoad")==="1")console.debug("[package-load]",JSON.stringify({durationMs:Math.round(performance.now()-loadStarted),success:loadSucceeded&&!controller.signal.aborted&&sequence===loadSequence.current,aborted:controller.signal.aborted||sequence!==loadSequence.current}));
     }
   }
   useEffect(()=>{
