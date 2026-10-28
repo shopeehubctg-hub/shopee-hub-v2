@@ -1,5 +1,6 @@
 "use client";
 
+import { MARKET_CODES, MARKET_CONFIG, isMarket, marketMoney, marketFromPlatform, marketDate, type MarketCode } from "./markets";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import "./package-list-view.css";
 import { packageSamples } from "./package-samples";
@@ -10,7 +11,7 @@ import { defaultRecurringEvent, recurringEventIds, recurringEventLabels, validat
 type ComponentLine = { inventorySku:string; name:string; quantity:number; kind:"product"|"gift" };
 type PlatformName = "Shopee"|"Lazada"|"TikTok Shop";
 type PlatformLine = { platform:PlatformName; packageSku:string };
-type MarketName = "MY"|"SG";
+type MarketName = MarketCode;
 type PriceType = "non_campaign"|"campaign";
 type CampaignEvent = "dday"|"mid_month"|"payday";
 type FormSection = "Package Details"|"Pricing & Promotion"|"Inventory Items"|"Saving";
@@ -50,27 +51,26 @@ const durationLabel=(item:PackageItem)=>({"long-term":"Long Term","monthly":"Mon
 
 type KitExportPreview = { packageCount:number; rowCount:number; signature:string };
 type KitExportResponse = KitExportPreview & { rows:Array<{kitSku:string;inventorySku:string;quantity:number;price:1}> };
-type Props = { storeId:string; storeName:string; canCreate?:boolean; allowSamplePreview?:boolean; prefills?:PackagePrefill[]; standaloneCreate?:boolean; draftStorageKey?:string; onPrefillsAccepted?:()=>void };
+type Props = { storeId:string; storeName:string; storePlatform?:string; canCreate?:boolean; allowSamplePreview?:boolean; prefills?:PackagePrefill[]; standaloneCreate?:boolean; draftStorageKey?:string; onPrefillsAccepted?:()=>void };
 type StoredBatch = { prefills:PackagePrefill[]; storeId?:string; requestIds?:Record<string,string> };
 
 const PLATFORM_NAMES:PlatformName[] = ["Shopee","Lazada","TikTok Shop"];
 const HISTORY_SHEET_URL = "https://docs.google.com/spreadsheets/d/1mpB7KVCGzP_9IXYVbhJZsLsndM4ladU3cJre5cfALAA/edit#gid=2129880014";
 const blankLine = ():ComponentLine => ({ inventorySku:"", name:"", quantity:1, kind:"product" });
-const blankRecurringEvents = ():RecurringEventDraft[] => recurringEventIds.map(id=>({...defaultRecurringEvent(id),prices:{MY:{originalPrice:"",sellingPrice:""},SG:{originalPrice:"",sellingPrice:""}}}));
+const blankRecurringEvents = ():RecurringEventDraft[] => recurringEventIds.map(id=>({...defaultRecurringEvent(id),prices:Object.fromEntries(MARKET_CODES.map(market=>[market,{originalPrice:"",sellingPrice:""}]))}));
 const blankPeriod = () => ({ promotionType:"monthly" as "monthly"|"custom", promotionMonth:"", effectiveFrom:"", effectiveTo:"" });
-const blankForm = () => ({
-  name:"", markets:["MY"] as MarketName[],
+type MarketPrices = {nonCampaignOriginal:string;nonCampaignSelling:string;campaignOriginal:string;campaignSelling:string};
+const blankMarketPrices = ():Record<MarketName,MarketPrices> => Object.fromEntries(MARKET_CODES.map(market=>[market,{nonCampaignOriginal:"",nonCampaignSelling:"",campaignOriginal:"",campaignSelling:""}])) as Record<MarketName,MarketPrices>;
+const blankForm = (market:MarketName="MY") => ({
+  name:"", markets:[market] as MarketName[],
   samePricing:false,
   longTerm:false,
   campaignLongTerm:false,
   nonCampaign:blankPeriod(), campaign:{...blankPeriod(),promotionType:"custom" as const,campaignEvents:["dday"] as CampaignEvent[]},
-  prices:{
-    MY:{ nonCampaignOriginal:"", nonCampaignSelling:"", campaignOriginal:"", campaignSelling:"" },
-    SG:{ nonCampaignOriginal:"", nonCampaignSelling:"", campaignOriginal:"", campaignSelling:"" },
-  },
+  prices:blankMarketPrices(),
   changeNote:"Initial version",
 });
-const money = (value:number, market:string, stored=false) => `${market === "SG" ? "S$" : "RM"} ${(stored ? value / 100 : value).toFixed(2)}`;
+const money = marketMoney;
 const lineText = (line:ComponentLine) => `${line.inventorySku} ×${line.quantity}`;
 
 function monthDates(month:string) {
@@ -134,7 +134,7 @@ function packageCampaignMonths(from:string,to:string|null) {
 
 function PackagePriceSummary({item}:{item:PackageItem}) {
   const schedules=item.priceSchedules??[];
-  const markets=(["MY","SG"] as MarketName[]).filter(market=>schedules.some(line=>line.market===market));
+  const markets=MARKET_CODES.filter(market=>schedules.some(line=>line.market===market)||item.recurringCampaign?.events.some(event=>event.prices[market]));
   return <div className="package-market-prices">{markets.map(market=>{
     const marketSchedules=schedules.filter(line=>line.market===market);
     const campaign=item.recurringCampaign
@@ -158,7 +158,7 @@ function PackagePriceSummary({item}:{item:PackageItem}) {
     campaign.forEach(line=>add(line.originalPrice,line.sellingPrice,false,line.months));
     const oneSharedPrice=groups.size===1&&campaign.length>0&&marketSchedules.some(line=>line.priceType==="non_campaign");
     return <div className="package-market-column" key={market}>
-      <h4>{market} <small>{market==="MY"?"RM":"S$"}</small></h4>
+      <h4>{market} <small>{MARKET_CONFIG[market].symbol}</small></h4>
       {[...groups.entries()].map(([key,group])=><div className="package-market-price-row" key={key}>
         <div className="package-market-price-head">
           <span>{oneSharedPrice?"Campaign Day & Normal Day Same Price":group.normal?"Normal Day Price":"Campaign Day Price"}</span>
@@ -171,7 +171,7 @@ function PackagePriceSummary({item}:{item:PackageItem}) {
   })}</div>;
 }
 
-export function PackageControl({ storeId, storeName, canCreate=true, allowSamplePreview=false, prefills=[], standaloneCreate=false, draftStorageKey, onPrefillsAccepted }:Props) {
+export function PackageControl({ storeId, storeName, storePlatform, canCreate=true, allowSamplePreview=false, prefills=[], standaloneCreate=false, draftStorageKey, onPrefillsAccepted }:Props) {
   const [items,setItems] = useState<PackageItem[]>([]);
   const [sampleMode,setSampleMode] = useState(false);
   const [canShowSamples,setCanShowSamples] = useState(false);
@@ -199,7 +199,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, allowSample
   const [editingVersion,setEditingVersion] = useState<number|null>(null);
   const [editingStore,setEditingStore] = useState<{id:string;name:string}|null>(null);
   const [openHistory,setOpenHistory] = useState<string|null>(null);
-  const [form,setForm] = useState(blankForm());
+  const [form,setForm] = useState(()=>blankForm(marketFromPlatform(storePlatform)));
   const [campaignPeriods,setCampaignPeriods] = useState<CampaignPeriod[]>([]);
   const [campaignMonths,setCampaignMonths] = useState<string[]>([]);
   const [nonCampaignMonths,setNonCampaignMonths] = useState<string[]>([]);
@@ -261,9 +261,9 @@ export function PackageControl({ storeId, storeName, canCreate=true, allowSample
   }
   useEffect(()=>{
     void load();
-    let loadedDay = new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kuala_Lumpur",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+    let loadedDay = marketDate(marketFromPlatform(storePlatform));
     const refreshAfterDateChange = () => {
-      const today = new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kuala_Lumpur",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+      const today = marketDate(marketFromPlatform(storePlatform));
       if (today !== loadedDay) { loadedDay = today; void load(); }
     };
     const interval = window.setInterval(refreshAfterDateChange,60_000);
@@ -352,7 +352,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, allowSample
     const campaign=group.find(item=>item.calculatorSettings.serviceScenario==="Campaign Day")??first;
     const nonCampaignPrice=nonCampaign.sellingPrice.toFixed(2);
     const campaignPrice=campaign.sellingPrice.toFixed(2);
-    setForm(current=>({...current,name:first.name,prices:{...current.prices,MY:{
+    setForm(current=>({...current,name:first.name,markets:["MY"],prices:{...current.prices,MY:{
       nonCampaignOriginal:"",nonCampaignSelling:nonCampaignPrice,
       campaignOriginal:"",campaignSelling:campaignPrice,
     }},changeNote:"Created from Shopee Pricing Calculator"}));
@@ -384,6 +384,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, allowSample
     `${item.packageSku} ${item.name} ${item.platforms?.map(platform=>platform.packageSku).join(" ")}`.toLowerCase().includes(search.toLowerCase())
   ),[scopedItems,filter,search,durationFilter]);
   const displayed = visible.slice(0,displayCount);
+  const listMarkets=MARKET_CODES.filter(market=>visible.some(item=>item.priceSchedules?.some(line=>line.market===market)||item.recurringCampaign?.events.some(event=>event.prices[market])||(!item.priceSchedules?.length&&item.market.split(",").map(value=>value.trim()).includes(market))));
   const active = scopedItems.filter(item=>item.status==="active").length;
   const scheduled = scopedItems.filter(item=>item.status==="scheduled").length;
   const drafts = scopedItems.filter(item=>item.status==="draft"||item.status==="review").length;
@@ -401,7 +402,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, allowSample
     setEditingDraft(false);
     setEditingVersion(null);
     setEditingStore(null);
-    setForm(blankForm());
+    setForm(blankForm(marketFromPlatform(storePlatform)));
     setComponents([blankLine()]);
     setPlatforms([{platform:"Shopee",packageSku:""}]);
     setCalculatorSettings(null);
@@ -767,14 +768,14 @@ export function PackageControl({ storeId, storeName, canCreate=true, allowSample
   }
 
   async function endPackage(item:PackageItem) {
-    if(!window.confirm(`End ${item.name} now? It will move to Expired immediately, its end date will be today (Malaysia), and an email notification will be queued through Package History.`))return;
+    if(!window.confirm(`End ${item.name} now? It will move to Expired immediately, its end date will be today (store local time), and an email notification will be queued through Package History.`))return;
     setSaving(true);setMessage("");
     try {
       const response=await fetch("/api/packages",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({packageId:item.id,action:"end",expectedVersion:item.version})});
       const data=await response.json();
       if(!response.ok){setMessageType("error");setMessage(data.error??"Could not end the package. Refresh the list and try again.");return;}
       setMessageType(data.warning?"warning":"success");
-      setMessage(data.warning??`${item.name} ended · Moved to Expired · End date: ${data.endedDate??"today (Malaysia)"} · Notification recorded in Package History`);
+      setMessage(data.warning??`${item.name} ended · Moved to Expired · End date: ${data.endedDate??"today (store local time)"} · Notification recorded in Package History`);
       setFilter("expired");
       await load(true);
     }catch{setMessageType("error");setMessage("Could not confirm the result. Refresh the list before trying again.");}
@@ -799,10 +800,10 @@ export function PackageControl({ storeId, storeName, canCreate=true, allowSample
     setPrefillBatch([]);
     const stored = source === "database";
     const storedSchedules=item.priceSchedules??[];
-    const legacyMarket=(item.market==="SG"?"SG":"MY") as MarketName;
+    const legacyMarket=isMarket(item.market)?item.market:"MY";
     const fallbackSchedule=(priceType:PriceType):PriceSchedule=>({market:legacyMarket,priceType,originalPrice:stored?item.originalPrice/100:item.originalPrice,sellingPrice:stored?item.sellingPrice/100:item.sellingPrice,promotionType:item.promotionType,effectiveFrom:item.effectiveFrom,effectiveTo:item.effectiveTo??null});
     const sourceSchedules=storedSchedules.length?storedSchedules:[fallbackSchedule("non_campaign"),fallbackSchedule("campaign")];
-    const sourceMarkets=[...new Set(sourceSchedules.map(line=>line.market))] as MarketName[];
+    const sourceMarkets=MARKET_CODES.filter(market=>sourceSchedules.some(line=>line.market===market)||item.recurringCampaign?.events.some(event=>event.prices[market]));
     const schedules=sourceMarkets.flatMap(market=>{
       const available=sourceSchedules.filter(line=>line.market===market);
       const base=available[0]??fallbackSchedule("campaign");
@@ -839,7 +840,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, allowSample
       name:item.name,markets,samePricing,longTerm:sourceSchedules.some(line=>line.priceType==="non_campaign"&&line.effectiveTo==null),campaignLongTerm:Boolean(item.recurringCampaign)||sourceSchedules.some(line=>line.priceType==="campaign"&&line.effectiveTo==null),
       nonCampaign:{promotionType:nc.promotionType,promotionMonth:nc.promotionType==="monthly"?nc.effectiveFrom.slice(0,7):"",effectiveFrom:nc.effectiveFrom,effectiveTo:nc.effectiveTo??""},
       campaign:{promotionType:"custom",promotionMonth:campaign.effectiveFrom.slice(0,7),campaignEvents:item.recurringCampaign?.events.map(event=>event.id)??[...new Set(sourceSchedules.filter(line=>line.priceType==="campaign").map(line=>campaignEventForDates(line.effectiveFrom,line.effectiveTo??"")).filter((event):event is CampaignEvent=>event!==null))],effectiveFrom:item.recurringCampaign?.startDate??campaign.effectiveFrom,effectiveTo:item.recurringCampaign?.endDate??campaign.effectiveTo??""},
-      prices:{MY:{nonCampaignOriginal:String(priceFor("MY","non_campaign")?.originalPrice??""),nonCampaignSelling:String(priceFor("MY","non_campaign")?.sellingPrice??""),campaignOriginal:String(priceFor("MY","campaign")?.originalPrice??""),campaignSelling:String(priceFor("MY","campaign")?.sellingPrice??"")},SG:{nonCampaignOriginal:String(priceFor("SG","non_campaign")?.originalPrice??""),nonCampaignSelling:String(priceFor("SG","non_campaign")?.sellingPrice??""),campaignOriginal:String(priceFor("SG","campaign")?.originalPrice??""),campaignSelling:String(priceFor("SG","campaign")?.sellingPrice??"")}},
+      prices:Object.fromEntries(MARKET_CODES.map(market=>{const normal=priceFor(market,"non_campaign");const campaign=item.recurringCampaign?.events.find(event=>event.prices[market])?.prices[market]??priceFor(market,"campaign");return [market,{nonCampaignOriginal:String(normal?.originalPrice??""),nonCampaignSelling:String(normal?.sellingPrice??""),campaignOriginal:String(campaign?.originalPrice??""),campaignSelling:String(campaign?.sellingPrice??"")}];})) as Record<MarketName,MarketPrices>,
       changeNote:stored ? `Changes from Version ${item.version}` : "Migrated from Fulfillment Sheet",
     });
     setComponents(item.components.map(line=>({...line})));
@@ -915,7 +916,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, allowSample
       <div className="component-list">{item.components.map((line,index)=><div key={`${line.inventorySku}-${index}`}><span className={`component-kind ${line.kind}`}>{line.kind}</span><b>{line.inventorySku}</b><span>{line.name}</span><strong>× {line.quantity}</strong></div>)}</div>
       {renderHistory(item)}
       {renderActions(item)}
-    </article>)}</div>:<div className="package-sheet-scroll" tabIndex={0} role="region" aria-label="Package list spreadsheet"><table className="package-sheet"><caption>Packages & Pricing · {visible.length} package{visible.length===1?"":"s"} · Showing {displayed.length}</caption><thead><tr><th scope="col" className="package-sheet-name">Package</th>{allStoresSelected&&<th scope="col">Store</th>}<th scope="col">Type</th><th scope="col">Status / Sheet</th><th scope="col">MY · RM prices</th><th scope="col">SG · S$ prices</th><th scope="col">Effective dates</th><th scope="col">Platform SKU</th><th scope="col">Inventory SKU / Quantity</th><th scope="col">Version</th><th scope="col">Actions</th></tr></thead><tbody>{displayed.map(item=><Fragment key={item.id}><tr><th scope="row" className="package-sheet-name"><strong>{item.name}</strong>{renderSelection(item)}<button type="button" aria-expanded={openDetails===item.id} onClick={()=>setOpenDetails(openDetails===item.id?null:item.id)} aria-label={`View details for ${item.name}`}>{openDetails===item.id?"Hide details":"View details"}</button></th>{allStoresSelected&&<td>{item.storeName??item.storeId}</td>}<td>{durationLabel(item)}</td><td><span className={`package-status ${item.status}`}>{item.status}</span><span className={`sync-status ${item.pendingVersion?"pending":item.sheetSyncStatus??"pending"}`}>Sheet {item.pendingVersion?`v${item.pendingVersion} needs sync`:item.sheetSyncStatus==="not_sent"?"not sent":item.sheetSyncStatus??"preview"}</span></td><td>{renderListPrices(item,"MY")}</td><td>{renderListPrices(item,"SG")}</td><td className="package-sheet-dates">{renderListDates(item)}</td><td>{(item.platforms?.length?item.platforms:[{platform:"Shopee",packageSku:item.packageSku}]).map(line=><div key={line.platform}><small>{line.platform}</small><div>{line.packageSku}</div></div>)}</td><td>{item.components.map((line,index)=><div key={index} title={`${line.kind} · ${line.name}`}>{line.inventorySku} × {line.quantity}</div>)}</td><td>v{item.version}</td><td>{renderActions(item)}</td></tr>{(openDetails===item.id||openHistory===item.id)&&<tr className="package-sheet-detail"><td colSpan={allStoresSelected?11:10}>{openDetails===item.id&&<div><h3>{item.name}</h3>{item.priceSchedules?.length?<PackagePriceSummary item={item}/>:null}<div className="component-list">{item.components.map((line,index)=><div key={index}><span className={`component-kind ${line.kind}`}>{line.kind}</span><b>{line.inventorySku}</b><span>{line.name}</span><strong>× {line.quantity}</strong></div>)}</div></div>}{renderHistory(item)}</td></tr>}</Fragment>)}</tbody></table></div>}
+    </article>)}</div>:<div className="package-sheet-scroll" tabIndex={0} role="region" aria-label="Package list spreadsheet"><table className="package-sheet"><caption>Packages & Pricing · {visible.length} package{visible.length===1?"":"s"} · Showing {displayed.length}</caption><thead><tr><th scope="col" className="package-sheet-name">Package</th>{allStoresSelected&&<th scope="col">Store</th>}<th scope="col">Type</th><th scope="col">Status / Sheet</th>{listMarkets.map(market=><th scope="col" key={market}>{market} · {MARKET_CONFIG[market].symbol} prices</th>)}<th scope="col">Effective dates</th><th scope="col">Platform SKU</th><th scope="col">Inventory SKU / Quantity</th><th scope="col">Version</th><th scope="col">Actions</th></tr></thead><tbody>{displayed.map(item=><Fragment key={item.id}><tr><th scope="row" className="package-sheet-name"><strong>{item.name}</strong>{renderSelection(item)}<button type="button" aria-expanded={openDetails===item.id} onClick={()=>setOpenDetails(openDetails===item.id?null:item.id)} aria-label={`View details for ${item.name}`}>{openDetails===item.id?"Hide details":"View details"}</button></th>{allStoresSelected&&<td>{item.storeName??item.storeId}</td>}<td>{durationLabel(item)}</td><td><span className={`package-status ${item.status}`}>{item.status}</span><span className={`sync-status ${item.pendingVersion?"pending":item.sheetSyncStatus??"pending"}`}>Sheet {item.pendingVersion?`v${item.pendingVersion} needs sync`:item.sheetSyncStatus==="not_sent"?"not sent":item.sheetSyncStatus??"preview"}</span></td>{listMarkets.map(market=><td key={market}>{renderListPrices(item,market)}</td>)}<td className="package-sheet-dates">{renderListDates(item)}</td><td>{(item.platforms?.length?item.platforms:[{platform:"Shopee",packageSku:item.packageSku}]).map(line=><div key={line.platform}><small>{line.platform}</small><div>{line.packageSku}</div></div>)}</td><td>{item.components.map((line,index)=><div key={index} title={`${line.kind} · ${line.name}`}>{line.inventorySku} × {line.quantity}</div>)}</td><td>v{item.version}</td><td>{renderActions(item)}</td></tr>{(openDetails===item.id||openHistory===item.id)&&<tr className="package-sheet-detail"><td colSpan={8+listMarkets.length+(allStoresSelected?1:0)}>{openDetails===item.id&&<div><h3>{item.name}</h3>{item.priceSchedules?.length?<PackagePriceSummary item={item}/>:null}<div className="component-list">{item.components.map((line,index)=><div key={index}><span className={`component-kind ${line.kind}`}>{line.kind}</span><b>{line.inventorySku}</b><span>{line.name}</span><strong>× {line.quantity}</strong></div>)}</div></div>}{renderHistory(item)}</td></tr>}</Fragment>)}</tbody></table></div>}
 
     {visible.length>displayCount&&<button type="button" className="package-load-more" onClick={()=>setDisplayCount(count=>count+30)}>Show more packages ({visible.length-displayCount} remaining)</button>}
     {!visible.length&&<div className="package-empty"><strong>{!hasPackageScope?"Select a Store":allStoresSelected?"No Packages In Accessible Stores":"No Packages In This View"}</strong><span>{!hasPackageScope?"Package information will appear after you choose a store.":allStoresSelected?"Only packages from stores you have permission to access appear here.":"Choose another filter or create the first package."}</span></div>}
@@ -934,7 +935,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, allowSample
       <section className="form-section"><div className="form-section-title"><span>1</span><div><h4>Package Details</h4><p>Name, markets and shared promotion dates</p></div></div>
         <div className="form-grid package-detail-grid">
           <label>Package Name<input value={form.name} onChange={event=>setForm({...form,name:event.target.value})} placeholder="Customer-Facing Package Name"/></label>
-          <fieldset className="market-selector"><legend>Selling Markets</legend>{(["MY","SG"] as MarketName[]).map(market=><label key={market}><input type="checkbox" checked={form.markets.includes(market)} onChange={()=>toggleMarket(market)}/><b>{market}</b><small>{market==="MY"?"RM":"S$"}</small></label>)}</fieldset>
+          <fieldset className="market-selector"><legend>Selling Markets</legend>{MARKET_CODES.map(market=><label key={market}><input type="checkbox" checked={form.markets.includes(market)} onChange={()=>toggleMarket(market)}/><b>{market}</b><small>{MARKET_CONFIG[market].symbol}</small></label>)}</fieldset>
         </div>
         <div className="inline-platforms">{PLATFORM_NAMES.map(platform=>{
           const selected=platforms.some(item=>item.platform===platform);
@@ -967,7 +968,7 @@ export function PackageControl({ storeId, storeName, canCreate=true, allowSample
               const originalKey=`${prefix}Original` as keyof typeof form.prices.MY;
               const sellingKey=`${prefix}Selling` as keyof typeof form.prices.MY;
               const same=Boolean(form.prices[market][originalKey])&&Number(form.prices[market][originalKey])===Number(form.prices[market][sellingKey]);
-              return <div className={`market-price-card ${same?"same-price-warning":""}`} key={market}><strong>{market} <small>{market==="MY"?"RM":"S$"}</small></strong><label>Original Price <em>*</em><input required type="number" min="0.01" step="0.01" value={form.prices[market][originalKey]} onChange={event=>updatePrice(market,originalKey,event.target.value)}/></label><label>Selling Price<input required type="number" min="0.01" step="0.01" value={form.prices[market][sellingKey]} onChange={event=>updatePrice(market,sellingKey,event.target.value)}/></label>{same&&<div className="same-price-alert">⚠️ Original Price equals Selling Price — please double-check.</div>}</div>;
+              return <div className={`market-price-card ${same?"same-price-warning":""}`} key={market}><strong>{market} <small>{MARKET_CONFIG[market].symbol}</small></strong><label>Original Price <em>*</em><input required type="number" min="0.01" step="0.01" value={form.prices[market][originalKey]} onChange={event=>updatePrice(market,originalKey,event.target.value)}/></label><label>Selling Price<input required type="number" min="0.01" step="0.01" value={form.prices[market][sellingKey]} onChange={event=>updatePrice(market,sellingKey,event.target.value)}/></label>{same&&<div className="same-price-alert">⚠️ Original Price equals Selling Price — please double-check.</div>}</div>;
             })}</div>
             {periodKey==="campaign"?(form.campaignLongTerm?recurringCampaignEditor():finiteCampaignEditor()):form.longTerm?<div className="date-fields"><label>Start Date<input type="date" value={period.effectiveFrom} onChange={event=>setForm({...form,nonCampaign:{...form.nonCampaign,effectiveFrom:event.target.value}})}/></label><span>End Date: Ongoing</span></div>:period.promotionType==="monthly"?<div className="normal-month-editor"><label>Add a Normal Day month<input type="month" value="" onChange={event=>{const month=event.target.value;if(!month||nonCampaignMonths.includes(month))return;setNonCampaignMonths(current=>[...current,month].sort());const dates=monthDates(month);setForm(current=>({...current,nonCampaign:{...current.nonCampaign,promotionMonth:month,effectiveFrom:dates.from,effectiveTo:dates.to}}));}}/></label><div className="selected-months">{nonCampaignMonths.map(month=><span key={month}>{shortMonthLabel(month)} <button type="button" onClick={()=>setNonCampaignMonths(current=>current.filter(value=>value!==month))} aria-label={`Remove ${shortMonthLabel(month)} Normal Day month`}>×</button></span>)}</div></div>:<div className="date-fields"><label>Start Date<input type="date" value={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveFrom:event.target.value}})}/></label><label>End Date<input type="date" value={period.effectiveTo} min={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveTo:event.target.value}})}/></label></div>}
             </div>

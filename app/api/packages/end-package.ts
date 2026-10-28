@@ -1,3 +1,4 @@
+import {MARKET_CONFIG,marketFromPlatform} from '../../markets';
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { packages, packageVersions, packagePrices, packagePlatformSkus, packageAuditLog, stores } from "../../../db/schema";
@@ -13,7 +14,6 @@ class EndPackageError extends Error {
 export async function endPackage(db: Awaited<ReturnType<typeof getDb>>, tenantId: string, packageId: string, actor: string, expectedVersion: unknown) {
   if (!Number.isInteger(expectedVersion) || Number(expectedVersion) < 1) return Response.json({error:"Refresh the package list before ending this package."},{status:400});
   const now = new Date().toISOString();
-  const today = marketToday();
   let saved;
   try {
     saved = await db.transaction(async tx => {
@@ -28,17 +28,19 @@ export async function endPackage(db: Awaited<ReturnType<typeof getDb>>, tenantId
       const [prices,skus,storeRows] = await Promise.all([
         tx.select().from(packagePrices).where(eq(packagePrices.versionId,previous.id)),
         tx.select().from(packagePlatformSkus).where(eq(packagePlatformSkus.versionId,previous.id)),
-        tx.select({name:stores.name}).from(stores).where(eq(stores.id,item.storeId)).limit(1),
+        tx.select({name:stores.name,platform:stores.platform}).from(stores).where(eq(stores.id,item.storeId)).limit(1),
       ]);
+      const market=marketFromPlatform(storeRows[0]?.platform);
+      const today=marketToday(market);
       if (packageLifecycleStatus(prices,previous.calculatorSettings,today) !== "active") throw new EndPackageError("Only an active package can be ended. Refresh the list to see its current status.",409);
       const endedPrices = endedPackagePeriods(prices,today);
       const versionId = crypto.randomUUID();
-      const settings = endedPackageSettings(previous.calculatorSettings,now,today,actor);
+      const settings = endedPackageSettings(previous.calculatorSettings,now,today,actor,market);
       const effectiveFrom = endedPrices.reduce((first,price)=>price.effectiveFrom<first?price.effectiveFrom:first,today);
       const [version] = await tx.insert(packageVersions).values({
         id:versionId,packageId,version:previous.version+1,components:previous.components,
         promotionType:"custom",addedComponents:[],removedComponents:[],sheetSyncStatus:"pending",
-        calculatorSettings:settings,changeNote:`Package ended by ${actor} on ${today} (Malaysia)`,
+        calculatorSettings:settings,changeNote:`Package ended by ${actor} on ${today} (${MARKET_CONFIG[market].name})`,
         effectiveFrom,effectiveTo:today,createdBy:actor,createdAt:now,
       }).returning();
       for (const price of endedPrices) await tx.insert(packagePrices).values({
@@ -49,13 +51,14 @@ export async function endPackage(db: Awaited<ReturnType<typeof getDb>>, tenantId
       for (const sku of skus) await tx.insert(packagePlatformSkus).values({id:crypto.randomUUID(),packageId,versionId,storeId:item.storeId,platform:sku.platform,packageSku:sku.packageSku});
       await tx.update(packages).set({status:"expired",updatedAt:now}).where(eq(packages.id,packageId));
       await tx.insert(packageAuditLog).values({packageId,action:"ended",detail:settings._packageHistorySummary.summary,actor});
-      return {duplicate:false as const,version,item,prices:endedPrices,skus,storeName:storeRows[0]?.name??item.storeId};
+      return {duplicate:false as const,today,version,item,prices:endedPrices,skus,storeName:storeRows[0]?.name??item.storeId};
     });
   } catch (error) {
     if (error instanceof EndPackageError) return Response.json({error:error.message},{status:error.status});
     throw error;
   }
   if (saved.duplicate) return Response.json({ok:true,packageId,version:saved.version.version,status:"expired",sheetSyncStatus:saved.version.sheetSyncStatus,duplicate:true});
+  const today=saved.today;
   const sku = (platform:string)=>saved.skus.filter(row=>row.platform===platform).map(row=>row.packageSku).join(" | ");
   const components = saved.version.components.map(line=>`${line.inventorySku} ${line.name} ×${line.quantity} (${line.kind})`).join(" | ");
   // Ending is already committed. A Sheet/email outage cannot reactivate it;

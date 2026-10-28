@@ -1,3 +1,4 @@
+import { isMarket } from "../../../markets";
 // Preserves the released store-only contract until Account persistence is activated.
 import { getChatGPTUser } from "../../../chatgpt-auth";
 import { supabaseRest } from "../../../supabase-rest";
@@ -26,7 +27,7 @@ export async function POST(request: Request) {
   const name = typeof body?.name === "string" ? body.name.trim().replace(/\s+/g, " ") : "";
   const sourceName = typeof body?.sourceName === "string" ? body.sourceName.trim().replace(/\s+/g, " ") : "";
   if (!name || name.length > 120) return Response.json({ error: "Store name is required (up to 120 characters)" }, { status: 400 });
-  if (body?.market !== "MY" && body?.market !== "SG") return Response.json({ error: "Select MY or SG market" }, { status: 400 });
+  if (!isMarket(body?.market)) return Response.json({ error: "Select MY, SG, TH or PH market" }, { status: 400 });
   if (sourceName.length > 120) return Response.json({ error: "Source name must be 120 characters or fewer" }, { status: 400 });
   const details = parseStoreDetails(body ?? {});
   if ("error" in details) return Response.json({ error: details.error }, { status: 400 });

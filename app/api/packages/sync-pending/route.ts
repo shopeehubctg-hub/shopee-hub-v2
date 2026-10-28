@@ -1,3 +1,4 @@
+import {marketFromPlatform,priceMarket} from '../../../markets';
 import { and, asc, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { packageAuditLog, packagePlatformSkus, packagePrices, packages, packageVersions, stores } from "../../../../db/schema";
@@ -70,9 +71,9 @@ export async function POST(request: Request) {
           timestamp:version.createdAt,changeId:`${item.id}-v${version.version}`,projectOwner:version.createdBy,
           store:storeName,packageName:meta?.name ?? item.name,version:version.version,
           action:packageHistoryAction(version.calculatorSettings,version.version),
-          promotionType:ended?"Ended":prices.map(row=>`${row.market} ${label(row.priceType)}: ${row.promotionType==="custom"?"Custom":"Monthly"}`).join(" | "),
-          startDate:ended?version.effectiveFrom:prices.filter(row=>row.market===firstMarket).map(row=>`${label(row.priceType)} ${row.effectiveFrom}`).join(" | "),
-          endDate:ended?version.effectiveTo:prices.filter(row=>row.market===firstMarket).map(row=>`${label(row.priceType)} ${row.effectiveTo}`).join(" | "),
+          promotionType:ended?"Ended":prices.map(row=>`${priceMarket(row.market,row.currency)} ${label(row.priceType)}: ${row.promotionType==="custom"?"Custom":"Monthly"}`).join(" | "),
+          startDate:ended?version.effectiveFrom:prices.filter(row=>priceMarket(row.market,row.currency)===firstMarket).map(row=>`${label(row.priceType)} ${row.effectiveFrom}`).join(" | "),
+          endDate:ended?version.effectiveTo:prices.filter(row=>priceMarket(row.market,row.currency)===firstMarket).map(row=>`${label(row.priceType)} ${row.effectiveTo}`).join(" | "),
           shopeeSku:sku("Shopee"),lazadaSku:sku("Lazada"),tiktokSku:sku("TikTok Shop"),
           addedComponents:formatComponents(version.addedComponents),removedComponents:formatComponents(version.removedComponents),
           currentComponents:formatComponents(version.components),changedBy:version.createdBy,syncStatus:"Synced",
@@ -86,8 +87,8 @@ export async function POST(request: Request) {
     // Revalidate eligibility under a package row lock to avoid reverting a
     // newer version, restoring a deleted package, or publishing a draft.
     for (const id of [...new Set(body.versionIds)]) await db.transaction(async tx => {
-      const [candidate] = await tx.select({item:packages,version:packageVersions}).from(packageVersions)
-        .innerJoin(packages,eq(packages.id,packageVersions.packageId))
+      const [candidate] = await tx.select({item:packages,version:packageVersions,storePlatform:stores.platform}).from(packageVersions)
+        .innerJoin(packages,eq(packages.id,packageVersions.packageId)).innerJoin(stores,eq(stores.id,packages.storeId))
         .where(and(eq(packageVersions.id,id),eligibleVersion())).for("update",{of:packages});
       if (!candidate) return;
       const [latest] = await tx.select().from(packageVersions).where(eq(packageVersions.packageId,candidate.item.id)).orderBy(desc(packageVersions.version)).limit(1);
@@ -95,7 +96,7 @@ export async function POST(request: Request) {
       const meta = metadata(candidate.version.calculatorSettings);
       const prices = await tx.select().from(packagePrices).where(eq(packagePrices.versionId,id));
       if (!prices.length) throw new Error("Package version has no price periods");
-      const status = packageLifecycleStatus(prices,candidate.version.calculatorSettings,marketToday());
+      const status = packageLifecycleStatus(prices,candidate.version.calculatorSettings,marketToday(marketFromPlatform(candidate.storePlatform)));
       await tx.update(packageVersions).set({sheetSyncStatus:"synced"}).where(and(eq(packageVersions.id,id),inArray(packageVersions.sheetSyncStatus,["pending","failed"])));
       await tx.update(packages).set({...meta,status,updatedAt:new Date().toISOString()}).where(eq(packages.id,candidate.item.id));
       await tx.insert(packageAuditLog).values({packageId:candidate.item.id,action:"sheet_sync_recovered",detail:`Version ${candidate.version.version} confirmed by Apps Script`,actor:"Apps Script Package Sync"});

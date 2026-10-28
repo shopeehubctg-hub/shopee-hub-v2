@@ -94,13 +94,14 @@ test('v2 Account payloads fail closed with no Store or directory writes', async 
   assert.ok(state.calls.every(call => call.table !== 'stores' && !call.table.startsWith('rpc/')));
 });
 
-test('Production Store UI omits Account setup and sends store-only Add/Edit payloads', async () => {
+for(const market of ['MY','TH','PH'])test(`Store UI ${market} sends store-only Add/Edit without unconfigured Account rates`, async () => {
+  const accountPreview=market!=='MY';
   const { JSDOM } = await import(process.env.BD_DOM_TEST_JSDOM ?? 'jsdom');
   const compiled = execFileSync('node_modules/.bin/esbuild', ['--bundle', '--format=esm', '--platform=node', '--target=node20', '--loader=tsx', '--jsx=automatic'], {
     maxBuffer: 10 * 1024 * 1024,
     input: `import React,{act} from 'react';import {createRoot} from 'react-dom/client';
       import {FeePlansProvider} from './app/fee-plan-context';import {PermissionSettings} from './app/permission-settings';
-      export {act,createRoot};export const App=()=> <FeePlansProvider><PermissionSettings initialEnabledModules={[]} accountSetupPreview={false}/></FeePlansProvider>;`,
+      export {act,createRoot};export const App=()=> <FeePlansProvider><PermissionSettings initialEnabledModules={[]} accountSetupPreview={${accountPreview}}/></FeePlansProvider>;`,
   });
   const dom = new JSDOM('<!doctype html><div id="root"></div>', { url: 'https://portal.test/' });
   const saved = new Map();
@@ -115,13 +116,13 @@ test('Production Store UI omits Account setup and sends store-only Add/Edit payl
   const payloads = [];
   globalThis.fetch = async (url, init = {}) => {
     if (url === '/api/admin/users') return Response.json({
-      stores: [{ id: 'shopee-existing', name: 'Existing', platform: 'Shopee MY' }],
+      stores: [{ id: 'shopee-existing', name: 'Existing', platform: `Shopee ${market}` }],
       users: [], clientDefaults: [], accountSettingsAvailable: false,
     });
     if (url === '/api/admin/stores') {
       const body = JSON.parse(init.body);
       payloads.push({ method: init.method, body });
-      return Response.json({ store: { id: body.id ?? 'shopee-release', name: body.name, platform: 'Shopee MY' } }, { status: init.method === 'POST' ? 201 : 200 });
+      return Response.json({ store: { id: body.id ?? 'shopee-release', name: body.name, platform: `Shopee ${market}` } }, { status: init.method === 'POST' ? 201 : 200 });
     }
     throw new Error(`Unexpected fetch ${url}`);
   };
@@ -135,6 +136,7 @@ test('Production Store UI omits Account setup and sends store-only Add/Edit payl
     await act(async () => {});
     await click(namedButton('Stores'));
     await click(namedButton('+ Add store'));
+    if(market!=='MY')await act(()=>{const select=document.querySelector('[aria-label="Add store"] select');select.value=market;select.dispatchEvent(new Event('change',{bubbles:true}));});
     assert.equal(document.querySelector('[aria-label="Add store"] fieldset')?.textContent.includes('Account setup') ?? false, false);
     const addDialog = document.querySelector('[aria-label="Add store"]');
     const addName = [...addDialog.querySelectorAll('label')].find(label => label.textContent.includes('Store name')).querySelector('input');
@@ -143,6 +145,7 @@ test('Production Store UI omits Account setup and sends store-only Add/Edit payl
     await click(namedButton('Add store'));
     await act(async () => {});
     assert.equal(payloads[0]?.method, 'POST');
+    assert.equal(payloads[0].body.market,market);
     for (const field of ['accountSetup','legalEntity','feeRule','effectiveMonth','accountRosterKey','expectedAccountVersion']) assert.equal(field in payloads[0].body, false);
     await click(namedButton('Edit store'));
     assert.equal(document.querySelector('[aria-label="Edit store"] fieldset')?.textContent.includes('Account company') ?? false, false);
@@ -158,4 +161,19 @@ test('Production Store UI omits Account setup and sends store-only Add/Edit payl
     for (const [key, descriptor] of saved) if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key];
     delete globalThis.IS_REACT_ACT_ENVIRONMENT;
   }
+});
+
+test('TH and PH Store registration preserves markets and rejects unsupported countries',async()=>{
+  for(const market of ['TH','PH']){
+    const response=await api.POST(req('POST',{name:`Test ${market} Store`,market}));
+    assert.equal(response.status,201);
+    const store=(await response.json()).store;
+    assert.equal(store.platform,`Shopee ${market}`);
+    assert.equal(state.stores.at(-1).platform,`Shopee ${market}`);
+    assert.equal((await api.POST(req('POST',{name:`Test ${market} Store`,market}))).status,409);
+    const edit=await api.PATCH(req('PATCH',{id:store.id,name:`Renamed ${market}`}));
+    assert.equal(edit.status,200);assert.equal((await edit.json()).store.platform,`Shopee ${market}`);
+  }
+  assert.equal((await api.POST(req('POST',{name:'Unknown',market:'XX'}))).status,400);
+  assert.ok(state.calls.every(call=>!call.table.startsWith('rpc/')));
 });

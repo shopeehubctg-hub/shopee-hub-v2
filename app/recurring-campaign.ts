@@ -1,5 +1,6 @@
 export type RecurringEventId = "dday" | "mid_month" | "payday";
-export type RecurringMarket = "MY" | "SG";
+import {isMarket,type MarketCode} from './markets';
+export type RecurringMarket = MarketCode;
 export type RecurringEventPrice = { originalPrice:number; sellingPrice:number };
 export type RecurringCampaignEvent = {
   id:RecurringEventId;
@@ -49,6 +50,7 @@ export function recurringEventWindow(month:string,event:Pick<RecurringCampaignEv
 }
 
 export function validateRecurringCampaign(input:unknown,markets:RecurringMarket[]):RecurringCampaignRule {
+  if(!markets.length||markets.some(market=>!isMarket(market)))throw new Error('Choose valid campaign markets.');
   if (!input||typeof input!=="object") throw new Error("Choose at least one monthly Campaign event.");
   const value=input as Record<string,unknown>;
   if (value.schema!==1||!validDate(value.startDate)||!(value.endDate===null||validDate(value.endDate))||(value.endDate!==null&&value.endDate<value.startDate)) {

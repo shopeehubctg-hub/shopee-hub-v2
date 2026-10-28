@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import { MARKET_CODES } from "../app/markets";
 import {
   bigint,
   bigserial,
@@ -141,7 +142,7 @@ export const packagePlatformSkus = pgTable("package_platform_skus", {
 
 export const packagePrices = pgTable("package_prices", {
   id:text("id").primaryKey(), packageId:text("package_id").notNull().references(()=>packages.id), versionId:text("version_id").notNull().references(()=>packageVersions.id),
-  currency:text("currency").notNull().default("MYR"), market:text("market", { enum:["MY","SG"] }).notNull().default("MY"), priceType:text("price_type", { enum:["non_campaign","campaign"] }).notNull().default("campaign"),
+  currency:text("currency").notNull().default("MYR"), market:text("market", { enum:MARKET_CODES }).notNull().default("MY"), priceType:text("price_type", { enum:["non_campaign","campaign"] }).notNull().default("campaign"),
   promotionType:text("promotion_type", { enum:["monthly","custom"] }).notNull().default("custom"), originalPrice:bigint("original_price", { mode:"number" }).notNull(), sellingPrice:bigint("selling_price", { mode:"number" }).notNull(),
   effectiveFrom:date("effective_from", { mode:"string" }).notNull(), effectiveTo:date("effective_to", { mode:"string" }), createdBy:text("created_by").notNull(), createdAt:createdAt(),
 }, table=>[uniqueIndex("package_price_version_market_type_period_idx").on(table.versionId,table.market,table.priceType,table.effectiveFrom,table.effectiveTo),index("package_prices_package_id_idx").on(table.packageId)]);

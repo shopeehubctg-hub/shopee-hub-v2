@@ -33,3 +33,10 @@ test('every chosen market must have valid event prices',()=>{
   assert.throws(()=>validateRecurringCampaign(rule(),['MY','SG']),/SG original and selling prices/);
   assert.throws(()=>validateRecurringCampaign({...rule(),events:[event('dday',101)]},['MY']),/MY original and selling prices/);
 });
+
+test('MY SG TH PH events retain independent prices across recurring windows and reject missing/invalid markets',()=>{
+ const markets=['MY','SG','TH','PH'];const prices=Object.fromEntries(markets.map((market,index)=>[market,{originalPrice:100+index,sellingPrice:80.25+index}]));const input={schema:1,startDate:'2026-10-01',endDate:null,events:[{...defaultRecurringEvent('dday'),prices}]};const validated=validateRecurringCampaign(input,markets);
+ for(const [index,market] of markets.entries()){assert.equal(activeRecurringEvent(validated,'2026-11-10').prices[market].sellingPrice,80.25+index);assert.equal(validated.events[0].prices[market].originalPrice,100+index);}
+ for(const market of ['TH','PH']){const incomplete=structuredClone(input);delete incomplete.events[0].prices[market];assert.throws(()=>validateRecurringCampaign(incomplete,markets),new RegExp(market+' original and selling prices'));}
+ assert.throws(()=>validateRecurringCampaign(input,['VN']),/valid campaign markets/);
+});
