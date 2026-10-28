@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { StoreExchangeRateField } from "./store-exchange-rate-field";
 import { MARKET_CODES, MARKET_CONFIG, marketFromPlatform, type MarketCode } from "./markets";
 import { useFeePlans } from "./fee-plan-context";
 import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
@@ -542,6 +543,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                 updateNewStore({ market });
                 setNewAccount(current => resetAccountSetupSelection(current, market === "SG" ? "SG" : "MY"));
               }}>{MARKET_CODES.map(market=><option key={market} value={market}>{MARKET_CONFIG[market].name} ({market})</option>)}</select></label>
+              <StoreExchangeRateField market={newStore.market} invoiceMonth={newAccount.effectiveMonth} onInvoiceMonthChange={month=>setNewAccount(current=>({...current,effectiveMonth:month}))} showInvoiceMonth />
               {newAccountPreview && <AccountSetupFields draft={newAccount} market={accountMarket} update={updateNewAccount} />}
               {newAccountPreview && accountSetupError(newAccount, accountMarket, plans) && <p className="store-field-error" role="status">{accountSetupError(newAccount, accountMarket, plans)}</p>}
               <StoreLinkFields draft={newStore} update={updateNewStore} idPrefix="add-store" />
@@ -562,6 +564,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
             </div>
             <div className="access-form" aria-busy={saving}>
               <label>Store name<input ref={storeNameInputRef} maxLength={120} required value={storeDraft.name} onChange={event => updateStoreDraft({ name: event.target.value })} /></label>
+              <StoreExchangeRateField market={marketFromPlatform(editingStore.platform)} invoiceMonth={editEntityMonth} onInvoiceMonthChange={setEditEntityMonth} showInvoiceMonth />
               {editAccountPreview && (editingStore.accountUnit ? <fieldset><legend>Account company</legend><div className="account-rate-fields"><label className="account-field-wide">Company name<input maxLength={240} value={editLegalEntity} onChange={event => { setStoreError(""); setEditLegalEntity(event.target.value); }} required /></label><label>Effective invoice month<input type="month" min={malaysiaMonth()} value={editEntityMonth} onChange={event => { setStoreError(""); setEditEntityMonth(event.target.value); }} required /></label></div></fieldset> : <p className="store-access-note">{(editingStore.accountUnitCount ?? 0) > 1 ? "This store has multiple billing projects. Edit each company in Account." : "No Account setup is linked to this store yet. Set up its billing project in Account."}</p>)}
               <StoreLinkFields draft={storeDraft} update={updateStoreDraft} idPrefix="edit-store" />
               {editAccountPreview && !data?.accountSettingsAvailable && <p className="store-access-note" role="status">Saving is not enabled in this preview.</p>}

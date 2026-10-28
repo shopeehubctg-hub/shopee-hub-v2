@@ -97,7 +97,7 @@ test('v2 Account payloads fail closed with no Store or directory writes', async 
 for(const market of ['MY','TH','PH'])test(`Store UI ${market} sends store-only Add/Edit without unconfigured Account rates`, async () => {
   const accountPreview=market!=='MY';
   const { JSDOM } = await import(process.env.BD_DOM_TEST_JSDOM ?? 'jsdom');
-  const compiled = execFileSync('node_modules/.bin/esbuild', ['--bundle', '--format=esm', '--platform=node', '--target=node20', '--loader=tsx', '--jsx=automatic'], {
+  const compiled = execFileSync('node_modules/.bin/esbuild', ['--bundle', '--format=esm', '--platform=node', '--target=node20', '--loader=tsx', '--loader:.css=empty', '--jsx=automatic'], {
     maxBuffer: 10 * 1024 * 1024,
     input: `import React,{act} from 'react';import {createRoot} from 'react-dom/client';
       import {FeePlansProvider} from './app/fee-plan-context';import {PermissionSettings} from './app/permission-settings';
@@ -119,6 +119,7 @@ for(const market of ['MY','TH','PH'])test(`Store UI ${market} sends store-only A
       stores: [{ id: 'shopee-existing', name: 'Existing', platform: `Shopee ${market}` }],
       users: [], clientDefaults: [], accountSettingsAvailable: false,
     });
+    if (url.startsWith('/api/admin/store-exchange-rate?')) {const params=new URL(url,'https://portal.test').searchParams;return Response.json({status:'available',market:params.get('market'),currency:params.get('market')==='TH'?'THB':'PHP',invoiceMonth:params.get('invoiceMonth'),serviceMonth:(()=>{const [year,month]=params.get('invoiceMonth').split('-').map(Number);return `${month===1?year-1:year}-${String(month===1?12:month-1).padStart(2,'0')}`;})(),policy:'bnm-service-average',rate:params.get('market')==='TH'?'0.1225':'0.065',quotationUnit:1,reference:'https://storage.data.gov.my/finsector/exr/monthly.csv'});}
     if (url === '/api/admin/stores') {
       const body = JSON.parse(init.body);
       payloads.push({ method: init.method, body });
@@ -139,6 +140,7 @@ for(const market of ['MY','TH','PH'])test(`Store UI ${market} sends store-only A
     if(market!=='MY')await act(()=>{const select=document.querySelector('[aria-label="Add store"] select');select.value=market;select.dispatchEvent(new Event('change',{bubbles:true}));});
     assert.equal(document.querySelector('[aria-label="Add store"] fieldset')?.textContent.includes('Account setup') ?? false, false);
     const addDialog = document.querySelector('[aria-label="Add store"]');
+    if(market!=='MY'){assert.match(addDialog.textContent,/Currency Exchange Rate/);assert.match(addDialog.textContent,/Bank Negara monthly average/);assert.match(addDialog.querySelector('output').textContent,market==='TH'?/1 THB = MYR 0.1225/:/1 PHP = MYR 0.065/);}
     const addName = [...addDialog.querySelectorAll('label')].find(label => label.textContent.includes('Store name')).querySelector('input');
     await act(() => { Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(addName, 'Release UI'); addName.dispatchEvent(new Event('input', { bubbles: true })); });
     assert.equal(namedButton('Add store').disabled, false);

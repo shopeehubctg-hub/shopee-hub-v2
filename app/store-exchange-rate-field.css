@@ -1,0 +1,12 @@
+.store-exchange-rate{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px 18px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--card,#fff);font-family:var(--font-noto-sans),"Noto Sans",sans-serif;color:var(--ink)}
+.store-exchange-rate-heading{display:grid;gap:4px;align-content:start}
+.store-exchange-rate-heading strong{font-size:12px}
+.store-exchange-rate-heading span,.store-exchange-rate-result,.store-exchange-rate-result small{font-size:11px}
+.store-exchange-rate-heading span,.store-exchange-rate-result small{color:var(--muted)}
+.store-exchange-rate-month{display:grid!important;gap:5px!important;font-size:11px!important;color:var(--muted)}
+.store-exchange-rate-month input{width:160px;min-height:34px!important;border:1px solid var(--line);border-radius:7px;padding:6px 8px!important;background:#fff;color:var(--ink);font:inherit}
+.store-exchange-rate-result{grid-column:1/-1;display:flex;align-items:center;flex-wrap:wrap;gap:7px 14px}
+.store-exchange-rate-result output{font-weight:800;font-variant-numeric:tabular-nums}
+.store-exchange-rate-result button{border:1px solid var(--line);border-radius:7px;padding:5px 8px;background:#fff;color:var(--red);font:inherit;cursor:pointer}
+.store-exchange-rate input:focus-visible,.store-exchange-rate button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+@media(max-width:520px){.store-exchange-rate{grid-template-columns:1fr}.store-exchange-rate-month input{width:100%}}
