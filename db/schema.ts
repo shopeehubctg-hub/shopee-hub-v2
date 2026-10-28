@@ -32,6 +32,8 @@ export const customerUsers = pgTable("customer_users", {
   role:text("role", { enum:["customer","manager","superadmin"] }).notNull().default("customer"),
   moduleAccessMode:text("module_access_mode", { enum:["role_default","custom"] }).notNull().default("role_default"),
   storeAccessMode:text("store_access_mode", { enum:["all","selected"] }).notNull().default("all"),
+  canManagePermissions:boolean("can_manage_permissions").notNull().default(false),
+  permissionsVersion:bigint("permissions_version", { mode:"number" }).notNull().default(0),
   createdAt:createdAt(),
 }, table=>[uniqueIndex("customer_user_email_idx").on(sql`lower(${table.email})`),index("customer_users_tenant_id_idx").on(table.tenantId)]);
 
@@ -88,8 +90,26 @@ export const userStoreAccess = pgTable("user_store_access", {
   id:bigserial("id", { mode:"number" }).primaryKey(),
   userId:bigint("user_id", { mode:"number" }).notNull().references(()=>customerUsers.id,{onDelete:"cascade"}),
   storeId:text("store_id").notNull().references(()=>stores.id,{onDelete:"cascade"}),
+  enabled:boolean("enabled").notNull().default(true),
   createdAt:createdAt(),
 }, table=>[uniqueIndex("user_store_access_idx").on(table.userId,table.storeId),index("user_store_access_user_idx").on(table.userId)]);
+
+// Permission lifecycle and exact request replay; commercial Account audit is separate.
+export const userAccessAuditLog = pgTable("user_access_audit_log", {
+  id:uuid("id").primaryKey().defaultRandom(),
+  tenantId:text("tenant_id").notNull().references(()=>tenants.id),
+  actorUserId:bigint("actor_user_id",{mode:"number"}).notNull().references(()=>customerUsers.id),
+  targetUserId:bigint("target_user_id",{mode:"number"}).notNull().references(()=>customerUsers.id),
+  actorEmail:text("actor_email").notNull(),requestId:uuid("request_id").notNull(),
+  requestPayload:jsonb("request_payload").$type<Record<string,unknown>>().notNull(),
+  beforeValue:jsonb("before_value").$type<Record<string,unknown>>().notNull(),
+  afterValue:jsonb("after_value").$type<Record<string,unknown>>().notNull(),
+  result:jsonb("result").$type<Record<string,unknown>>().notNull(),createdAt:createdAt(),
+},table=>[
+  unique("user_access_audit_log_tenant_id_request_id_key").on(table.tenantId,table.requestId),
+  index("user_access_audit_target_idx").on(table.targetUserId,table.tenantId,table.createdAt.desc()),
+  index("user_access_audit_actor_idx").on(table.actorUserId),
+]);
 
 export const dashboardSnapshots = pgTable("dashboard_snapshots", {
   id:bigserial("id", { mode:"number" }).primaryKey(), tenantId:text("tenant_id").notNull().references(()=>tenants.id),
