@@ -1,11 +1,12 @@
 import { timingSafeEqual } from "node:crypto";
 import { supabaseConfig, supabaseRest } from "../../../supabase-rest";
+import { deploymentTarget, stagingRecipientAllowed } from "../../../deployment-isolation";
 
 export const dynamic = "force-dynamic";
 type AuthUser = { id: string; email?: string };
 
 function matchesTemporaryPassword(value: string) {
-  const expected = process.env.PORTAL_TEMPORARY_PASSWORD;
+  const expected = deploymentTarget() === "staging" ? process.env.STAGING_PORTAL_TEMPORARY_PASSWORD : process.env.PORTAL_TEMPORARY_PASSWORD;
   if (!expected) return false;
   const entered = Buffer.from(value);
   const reference = Buffer.from(expected);
@@ -17,6 +18,8 @@ export async function POST(request: Request) {
   const email = body?.email?.trim().toLowerCase() ?? "";
   const password = body?.password ?? "";
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 8) return Response.json({error:"Enter a valid email and a new password of at least 8 characters"},{status:400});
+  try { if (!stagingRecipientAllowed(email)) return Response.json({error:"Password reset is unavailable for this account in Staging"},{status:503}); }
+  catch { return Response.json({error:"Staging authentication configuration is unavailable"},{status:503}); }
 
   if (!body?.temporaryPassword || !matchesTemporaryPassword(body.temporaryPassword)) return Response.json({error:"The temporary password is incorrect"},{status:401});
 

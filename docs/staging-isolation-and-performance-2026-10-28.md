@@ -1,0 +1,37 @@
+# Independent Staging and loading performance
+
+28 October 2026, Malaysia time. Production project `zwnmonnbmqncwoytdigd` was a read-only source. The only database destination was the existing isolated Staging project `ubjfuveoqbvouryldqfu`. No paid project/branch, reverse replication, scheduled data sync, Delete, archive or Production schema change was made.
+
+## Snapshot and isolation evidence
+
+The user explicitly approved copying the whole Shopee Hub business workspace with contacts and real external links redacted. The historical internal tenant ID `j-packaging` owns all 45 stores, not only the J Packaging store. Sensitive values were replaced in source SELECT expressions before export. Auth passwords/sessions/keys, 109 customer accounts/access grants, raw Account request records and Account audit were excluded. Numeric and business fields were preserved; actor emails and real URLs became test placeholders. Existing source removal states were copied as new historical rows only; no existing Stage row was removed or archived.
+
+The consistent source snapshot was read at 05:57:34 UTC. It contains 45 stores, 156 packages, 332 versions, 1,081 prices, 466 listing SKU rows, 377 Package history rows, 5,099 advertising daily rows, 1,391 balance rows, 134 CoFund rows, 34 voucher presets, 330 live sessions and 330 live audit rows, 7 Rate Card versions and 3 billing setup versions. Catalog matching copied 290 of 295 global product rows using the tenant's store/directory/project names; the five unmatched rows were excluded. The latest commission report associated with the MY store scope supplied one import, 811 rate records and 13 notes.
+
+The service's request-size limit prevented the first single large insert request from executing. The approved snapshot was then imported in bounded, ordered Stage-only transactions with table-count preconditions and before/after hashes proving existing rows unchanged. Numeric IDs were mapped above Stage maxima and commission child FKs remapped. Text/UUID collisions were checked before insertion. The original 38 `test-staging` packages and their related data remained. All inserts and generated numeric identities completed; required audit triggers were installed only after imported history to avoid duplicate audit records. Missing canonical commission/voucher tables were added only to Stage.
+
+Verified totals agree with the source snapshot: advertising spend **35,188,834 cents**, advertising sales **674,011,869 cents**, balance **127,929,471 cents**. Package version, price and live audit FK orphan counts are zero. A real Stage update changed the J Packaging display name to an isolation canary inside a rolled-back transaction. Production retained `display_name=null` and the same row hash `291a2c2b43687506a5cb82739c3f3138` before and after. Stage then restored its prior value. This verifies an independent database destination without a Production test write.
+
+The source project has active users, so later Production package counts can legitimately differ from the snapshot. Do not treat changes in separate live counts as evidence of this test modifying Production. The redacted snapshot and numeric-ID manifest are retained in the shared workspace outputs, outside the application repository.
+
+## Deployment boundary
+
+The existing Preview-only `SUPABASE_URL`, `SUPABASE_SECRET_KEY` and `DATABASE_URL` bindings from the old isolated candidate branch were retargeted to `codex/account-income-module`. Secret values were not revealed or copied. Production variable rows were not edited. These settings affect a new Preview deployment; they do not alter already deployed historical URLs. The fixed review URL remains the same.
+
+Runtime guards reject Preview→Production URL, wrong/ref-less/anon JWT, mismatched opaque-key fingerprint, mixed pooler credentials and environment overrides. All REST, Postgres, Auth/session and Design Storage paths are covered. Stage Package publishing uses a local test receipt and never calls the live Sheet, even when an inherited real webhook is configured. Signed Apps Script and import automation are blocked. Manual administrator imports target only the verified Stage database. Recovery is opt-in to Stage recipients with a separate temporary password. Package History's real external link is hidden in Stage. Missing Stage data never falls back to static Production snapshots, sample orders or real Drive links.
+
+The user chose a separate Stage Auth password for `shopeehub.ctg@gmail.com`. Its Stage portal membership is configured; the user deferred creating the Auth login. No Production password was copied or reset. Browser use was later disabled in Work settings. This does not block code/API checks, but actual signed-in Stage UI and save-flow acceptance remain pending and must not be called PASS.
+
+## Loading changes and measurement limits
+
+- Bootstrap returns authenticated stores/navigation without advertising history, Sheets, catalog, snapshots or CoFund. Current-section requests load only that section's required data. Authorization and tenant/store gates are checked on every request.
+- Seven heavy modules use separate dynamic chunks. The persistent Rate Card catalog loads only when an authorized consumer needs it, and concurrent consumers share an in-flight request.
+- Store/module transitions abort superseded requests and reject stale/store/environment-mismatched responses. A failed module does not replace the whole Dashboard with an unavailable screen.
+- Advertising balances come from the current canonical database first. Stage never reads Production Sheet fallbacks. Product profiles use the canonical database before the Production-only Sheet fallback.
+- Advertising facts have a bounded 30-second, 16-entry in-process cache keyed by environment/project/tenant/authorized store IDs. User identities, permission decisions and final responses are not cached. Manual update sends `refresh=1`. Historical page requests are fetched in bounded batches rather than an entirely serial chain.
+- Package lists request compact responses; complete history is fetched only when a user opens one authorized package. Current version selection, pending state, lifecycle/duration, editing and default legacy API responses stay intact. History requests are fresh-authorized and scoped to tenant/store/package, with error retry and stale-response guards.
+- `Server-Timing` measures Dashboard readiness. Optional `debugLoad=1` logs request durations without financial values, emails, tokens or names. Normal UI has no diagnostic logging.
+
+Comparable Vite output: the main page chunk changed from **356,213 bytes / gzip 74,094** to **50,936 bytes / gzip 15,328** after dynamic splitting (before final tiny edits; refresh final measurements on release). This is a build artifact measurement, not a claim about actual network latency or browser paint. The isolated esbuild dependency-graph comparison is in `dashboard-front-end-loading-performance.md`.
+
+Ninety-four focused Dashboard, permission, Store, Account, Calendar, Package, Auth and isolation regressions passed. A subsequent 21 affected tests passed after the Stage-only local receipt change. TypeScript, targeted changed-backend lint, diff checks and Vite build passed. A direct Next Turbopack build hit the local shared-node_modules symlink restriction; its documented webpack alternative is used for verification. Final cloud deployment, readiness URL and signed-in performance measurements must be recorded separately; local tests do not prove these gates.

@@ -1,6 +1,7 @@
 import { getDb } from "../../../../db";
 import { customerUsers, dashboardSnapshots, managementActions, stores, tenants } from "../../../../db/schema";
 import { getChatGPTUser } from "../../../chatgpt-auth";
+import { assertDeploymentIsolation, deploymentTarget } from "../../../deployment-isolation";
 
 const ADMIN_EMAIL = "shopeehub.ctg@gmail.com";
 
@@ -13,6 +14,11 @@ type ImportPayload = {
 };
 
 export async function POST(request: Request) {
+  if (deploymentTarget() === "staging") {
+    try { assertDeploymentIsolation(); }
+    catch { return Response.json({ error: "Staging database configuration is unavailable" }, { status: 503 }); }
+    if (request.headers.has("x-import-secret")) return Response.json({ error: "Automated imports are disabled in Staging" }, { status: 503 });
+  }
   const user = await getChatGPTUser();
   const suppliedSecret = request.headers.get("x-import-secret");
   const secretAuthorized = Boolean(process.env.BIGSELLER_IMPORT_SECRET) && suppliedSecret === process.env.BIGSELLER_IMPORT_SECRET;

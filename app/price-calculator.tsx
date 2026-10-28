@@ -46,8 +46,8 @@ export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[
   const [packages,setPackages] = useState(INITIAL_PACKAGES);
   const [pendingConfirmation,setPendingConfirmation] = useState<PendingConfirmation|null>(null);
   const [pricingGoals,setPricingGoals] = useState<Record<ServiceMode,GoalSetting>>({
-    nonCampaign:{goal:"facebookPayout",discountUnit:"rm",discountValue:""},
-    campaign:{goal:"facebookPayout",discountUnit:"rm",discountValue:""},
+    nonCampaign:{goal:"sameCustomerPrice",discountUnit:"rm",discountValue:""},
+    campaign:{goal:"sameCustomerPrice",discountUnit:"rm",discountValue:""},
   });
   const mainProducts = productProfile?.mainProducts ?? [];
   const categoryOptions = useMemo(()=>{
@@ -252,7 +252,6 @@ export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[
           <label>Meta Shipping Fee (RM)<input type="number" min="0" step=".01" value={fees.facebookShipping} onChange={event=>updateFee("facebookShipping",event.target.value)}/></label>
           <label>CoFund Voucher (RM)<div className="auto-profile-value">{cofundVoucher.toFixed(2)}</div></label>
         </div>
-        <p className="formula-note">Voucher guide: {storeVoucherPreset.available?`${storeVoucherPreset.store} · Normal ${pct(positive(voucherRates.nonCampaign))} / Campaign ${pct(positive(voucherRates.campaign))}`:"No voucher preset · Both start at 0%"}. Source: {VOUCHER_PRESET_SOURCE.month} · {VOUCHER_PRESET_SOURCE.metric}.</p>
       </div>
     </section>
 

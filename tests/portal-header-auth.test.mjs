@@ -9,7 +9,7 @@ function fixture(vercel,cookie){
   const exports={};
   const environment={env:{VERCEL:vercel,SUPABASE_SECRET_KEY:'test-only-session-secret'}};
   const headers=new Headers({'oai-authenticated-user-email':'forged-admin@example.test'});
-  const mockedRequire=name=>name==='next/headers'?{headers:async()=>headers,cookies:async()=>({get:()=>cookie?{value:cookie}:undefined})}:name==='next/navigation'?{redirect:()=>{throw Error('redirect')}}:require(name);
+  const mockedRequire=name=>name==='next/headers'?{headers:async()=>headers,cookies:async()=>({get:()=>cookie?{value:cookie}:undefined})}:name==='next/navigation'?{redirect:()=>{throw Error('redirect')}}:name==='./deployment-isolation'?{assertDeploymentIsolation:()=>{}}:require(name);
   new Function('require','exports','process',source)(mockedRequire,exports,environment);
   return exports;
 }

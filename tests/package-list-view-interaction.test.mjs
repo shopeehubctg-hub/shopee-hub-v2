@@ -84,3 +84,25 @@ test('Staging samples stay separate from real packages and expose no mutation or
   await act(async()=>productionRoot.unmount());
  }finally{dom.window.close();for(const [key,desc]of Object.entries(prior)){if(desc)Object.defineProperty(globalThis,key,desc);else delete globalThis[key];}}
 });
+
+test('compact packages load real history only on demand, retry errors locally and discard late histories after a store switch',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{url:'https://local.test/'});
+ const values={window:dom.window,document:dom.window.document,navigator:dom.window.navigator,HTMLElement:dom.window.HTMLElement,Event:dom.window.Event,MouseEvent:dom.window.MouseEvent,IS_REACT_ACT_ENVIRONMENT:true};
+ const prior=Object.fromEntries([...Object.keys(values),'fetch'].map(k=>[k,Object.getOwnPropertyDescriptor(globalThis,k)]));for(const [key,value] of Object.entries(values))Object.defineProperty(globalThis,key,{configurable:true,writable:true,value});
+ const item=store=>({id:`package-${store}`,name:`Package ${store}`,storeId:store,packageSku:`SKU-${store}`,market:'MY',status:'active',version:2,promotionType:'custom',originalPrice:10000,sellingPrice:9000,effectiveFrom:'2026-10-01',effectiveTo:'2026-10-31',components:[],platforms:[],sheetSyncStatus:'synced',historyLoaded:false});
+ const calls=[];let firstFailure=true,lateResolve,lateSignal;
+ globalThis.fetch=async(url,options={})=>{calls.push({url,options});const parsed=new URL(url,'https://local.test');const store=parsed.searchParams.get('storeId');if(parsed.searchParams.get('history')!=='1')return Response.json({environment:'local',source:'database',packages:[item(store)]});
+ if(store==='a'&&firstFailure){firstFailure=false;return Response.json({error:'temporary history error'},{status:503});}
+ if(store==='a'){lateSignal=options.signal;return new Promise(resolve=>lateResolve=resolve);}
+ return Response.json({environment:'local',storeId:'b',packageId:'package-b',history:[{version:2,components:[],changeNote:'Real B history',effectiveFrom:'2026-10-01',effectiveTo:'2026-10-31'}]});};
+ const {createRoot}=await import('react-dom/client');const root=createRoot(dom.window.document.getElementById('root')),doc=dom.window.document;
+ const named=label=>doc.querySelector(`[aria-label="${label}"]`);const clickText=async text=>act(async()=>[...doc.querySelectorAll('button')].find(b=>b.textContent===text).click());
+ try{
+  await act(async()=>root.render(React.createElement(PackageControl,{storeId:'a',storeName:'A'})));assert.equal(calls.length,1);assert.match(calls[0].url,/compact=1/);assert.equal(doc.querySelector('.version-history'),null);
+  await act(async()=>named('View history for Package a').click());assert.match(doc.body.textContent,/History could not be loaded/);assert.match(doc.body.textContent,/Package a/);assert.equal(calls.length,2);
+  await clickText('Retry history');assert.match(doc.body.textContent,/Loading history/);
+  await act(async()=>root.render(React.createElement(PackageControl,{storeId:'b',storeName:'B'})));assert.equal(lateSignal.aborted,true);assert.match(doc.body.textContent,/Package b/);
+  await act(async()=>lateResolve(Response.json({environment:'local',storeId:'a',packageId:'package-a',history:[{version:9,changeNote:'STALE A HISTORY',components:[]}]})));assert.doesNotMatch(doc.body.textContent,/STALE A HISTORY/);
+  await act(async()=>named('View history for Package b').click());assert.match(doc.body.textContent,/Real B history/);assert.doesNotMatch(doc.body.textContent,/STALE A HISTORY/);
+ }finally{await act(async()=>root.unmount());dom.window.close();for(const [key,desc] of Object.entries(prior)){if(desc)Object.defineProperty(globalThis,key,desc);else delete globalThis[key];}}
+});

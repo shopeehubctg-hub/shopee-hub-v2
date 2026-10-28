@@ -1,6 +1,7 @@
 import {marketFromPlatform,priceMarket} from '../../../markets';
 import { and, asc, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { getDb } from "../../../../db";
+import { deploymentTarget } from "../../../deployment-isolation";
 import { packageAuditLog, packagePlatformSkus, packagePrices, packages, packageVersions, stores } from "../../../../db/schema";
 import { validSyncJobSignature } from "../sync-job-auth";
 import { versionChangeSummary } from "../version-change-summary";
@@ -34,6 +35,7 @@ function formatComponents(lines: typeof packageVersions.$inferSelect.components)
 }
 
 export async function POST(request: Request) {
+  if (deploymentTarget() === "staging") return Response.json({ok:false,error:"Staging Apps Script sync is disabled"},{status:503});
   const bodyText = await request.text();
   if (bodyText.length > 4096 || !validSyncJobSignature(bodyText, request.headers.get("x-package-sync-time"), request.headers.get("x-package-sync-signature"), process.env.GOOGLE_SHEETS_HISTORY_SECRET)) {
     return Response.json({ok:false,error:"Authentication required"}, {status:401});
