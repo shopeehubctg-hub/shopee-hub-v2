@@ -269,6 +269,8 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
   }
 
   async function load(afterSave=false,historyId?:string) {
+    const loadStarted=performance.now();
+    let loadSucceeded=false;
     listController.current?.abort();
     const controller=new AbortController();listController.current=controller;
     invalidateHistory();
@@ -302,6 +304,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
       if(selectedHistory){const item=(data.packages??[]).find((item:PackageItem)=>item.id===selectedHistory);if(item){setHistoryOpen(selectedHistory);void requestPackageHistory(item,data.source??"",environment);}else setHistoryOpen(null);}
       setLoadedStoreId(storeId);
       setListState({storeId,status:"ready"});
+      loadSucceeded=true;
       setSource(data.source ?? "");
       setCanDelete(data.canDelete === true);
       setCanExportKits(data.canExportKits === true);
@@ -312,6 +315,8 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
       if (sequence===loadSequence.current&&!controller.signal.aborted) {
         setListState({storeId,status:"error",error:afterSave?"Package saved, but the list could not be refreshed.":"Packages could not be loaded."});
       }
+    } finally {
+      if(new URLSearchParams(window.location.search).get("debugLoad")==="1")console.debug("[package-load]",{durationMs:Math.round(performance.now()-loadStarted),success:loadSucceeded&&!controller.signal.aborted&&sequence===loadSequence.current,aborted:controller.signal.aborted||sequence!==loadSequence.current});
     }
   }
   useEffect(()=>{
