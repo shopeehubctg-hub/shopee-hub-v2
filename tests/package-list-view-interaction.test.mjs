@@ -106,3 +106,26 @@ test('compact packages load real history only on demand, retry errors locally an
   await act(async()=>named('View history for Package b').click());assert.match(doc.body.textContent,/Real B history/);assert.doesNotMatch(doc.body.textContent,/STALE A HISTORY/);
  }finally{await act(async()=>root.unmount());dom.window.close();for(const [key,desc] of Object.entries(prior)){if(desc)Object.defineProperty(globalThis,key,desc);else delete globalThis[key];}}
 });
+
+test('pending, failed and stale store requests never appear as an empty package list',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{url:'https://local.test/'});
+ const values={window:dom.window,document:dom.window.document,navigator:dom.window.navigator,HTMLElement:dom.window.HTMLElement,Event:dom.window.Event,MouseEvent:dom.window.MouseEvent,IS_REACT_ACT_ENVIRONMENT:true};
+ const prior=Object.fromEntries([...Object.keys(values),'fetch'].map(k=>[k,Object.getOwnPropertyDescriptor(globalThis,k)]));
+ for(const [key,value] of Object.entries(values))Object.defineProperty(globalThis,key,{configurable:true,writable:true,value});
+ const requests=[];
+ globalThis.fetch=()=>new Promise((resolve,reject)=>requests.push({resolve,reject}));
+ const {createRoot}=await import('react-dom/client');const root=createRoot(dom.window.document.getElementById('root')),doc=dom.window.document;
+ const render=async storeId=>act(async()=>root.render(React.createElement(PackageControl,{storeId,storeName:storeId})));
+ const assertPending=()=>{assert.match(doc.body.textContent,/Loading packages/);assert.doesNotMatch(doc.body.textContent,/No Packages|0 matching/);assert.deepEqual([...doc.querySelectorAll('.package-metrics strong')].map(n=>n.textContent),['—','—','—','—']);};
+ try{
+  await render('first');assertPending();
+  await render('second');assertPending();
+  await act(async()=>requests[0].resolve(Response.json({packages:[]})));assertPending();
+  await act(async()=>requests[1].reject(new Error('offline')));
+  assert.match(doc.body.textContent,/Packages could not be loaded/);assert.doesNotMatch(doc.body.textContent,/No Packages|Loading packages/);
+  await act(async()=>[...doc.querySelectorAll('button')].find(n=>n.textContent==='Retry').click());assertPending();
+  await act(async()=>requests[2].resolve(Response.json({source:'database',packages:[]})));
+  assert.match(doc.body.textContent,/No Packages In This View/);assert.equal(doc.querySelector('.package-metrics strong').textContent,'0');
+  await render('third');assertPending();
+ }finally{await act(async()=>root.unmount());dom.window.close();for(const [key,desc]of Object.entries(prior)){if(desc)Object.defineProperty(globalThis,key,desc);else Reflect.deleteProperty(globalThis,key);}}
+});
