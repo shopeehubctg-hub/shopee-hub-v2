@@ -1,3 +1,4 @@
+import {deploymentTarget} from "../../deployment-isolation";
 import {MARKET_CONFIG,isMarket,priceMarket,marketFromPlatform,type MarketCode} from '../../markets';
 import { packageDurationType } from '../../package-duration';
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
@@ -24,6 +25,7 @@ import { syncHistoryToGoogleSheet } from "./history-sync";
 import { endPackage } from "./end-package";
 import { packageHistoryAction } from "../../package-ending";
 import { boundCampaignPeriods } from "../../package-period-bounds";
+import { readCompactPackageRows } from "./compact-read";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -159,6 +161,7 @@ function versionMetadata(settings:Record<string,unknown>|null):PackageMetadata|n
     ? record as PackageMetadata : null;
 }
 function historyWebhookConfigured() {
+  if(deploymentTarget()==="staging")return true;
   return Boolean(process.env.GOOGLE_SHEETS_HISTORY_WEBHOOK_URL && process.env.GOOGLE_SHEETS_HISTORY_SECRET);
 }
 
@@ -167,7 +170,13 @@ export async function GET(request: Request) {
   if (!user) return Response.json({ error:"Authentication required" }, { status:401 });
   const membership = await membershipFor(user.email);
   if (!membership) return Response.json({ error:"No workspace assigned" }, { status:403 });
-  const storeId = new URL(request.url).searchParams.get("storeId");
+  const params=new URL(request.url).searchParams;
+  const storeId=params.get("storeId");
+  const packageId=params.get("packageId");
+  const historyOnly=params.get("history")==="1";
+  const compact=params.get("compact")==="1"&&!historyOnly;
+  if(historyOnly&&!packageId)return Response.json({error:"Package ID required"},{status:400});
+  if(packageId&&!storeId)return Response.json({error:"Store ID required"},{status:400});
   const db = await getDb();
   if (!await canAccessModule(db, membership, "packages")) return Response.json({ error:"Packages & Pricing is not enabled for this account" }, { status:403 });
   if (!storeId) {
@@ -188,16 +197,20 @@ export async function GET(request: Request) {
     : accessibleStores.filter(store => store.id === storeId);
   if (storeId !== "all" && !scopedStores.length) return Response.json({ error:"Store access denied" }, { status:403 });
   if (!scopedStores.length) {
+    if(packageId)return Response.json({error:"Package not found"},{status:404});
     return Response.json({ packages:[], source:"database", canCreate:false, canDelete:false }, { headers:{ "Cache-Control":"private, no-store" } });
   }
   const scopedStoreIds = scopedStores.map(store => store.id);
   const storeNames = new Map(scopedStores.map(store => [store.id, store.displayName ?? store.name]));
   const storeMarkets=new Map(scopedStores.map(store=>[store.id,marketFromPlatform(store.platform)]));
+  const packageScope=and(eq(packages.tenantId,membership.tenantId),inArray(packages.storeId,scopedStoreIds));
   const allRows = await db.select().from(packages)
-    .where(and(eq(packages.tenantId, membership.tenantId), inArray(packages.storeId, scopedStoreIds)))
+    .where(packageId?and(packageScope,eq(packages.id,packageId),isNull(packages.deletedAt)):packageScope)
     .orderBy(desc(packages.updatedAt));
   const rows=allRows.filter(row=>row.deletedAt===null);
   if (!rows.length) {
+    if(packageId)return Response.json({error:"Package not found"},{status:404,headers:{"Cache-Control":"private, no-store"}});
+    if(deploymentTarget()==="staging")return Response.json({packages:[],source:"database",environment:"staging",canCreate:storeId!=="all",canDelete:membership.role==="superadmin",canExportKits:membership.role!=="customer"&&storeId!=="all"},{headers:{"Cache-Control":"private, no-store"}});
     if(allRows.length)return Response.json({packages:[],source:"database",canCreate:storeId!=="all",canDelete:membership.role==="superadmin",canExportKits:membership.role!=="customer"&&storeId!=="all"},{headers:{"Cache-Control":"private, no-store"}});
     const sample = seedPackages
       .filter(item => scopedStoreIds.includes(item.storeId))
@@ -205,7 +218,7 @@ export async function GET(request: Request) {
     return Response.json({ packages:sample, source:"sheet-migration-preview", canCreate:storeId !== "all", canDelete:false }, { headers:{ "Cache-Control":"private, no-store" } });
   }
   const ids = rows.map(row => row.id);
-  const [versions,prices,platformRows] = await Promise.all([
+  const [versions,prices,platformRows] = compact ? await readCompactPackageRows(db, ids) : await Promise.all([
     db.select().from(packageVersions).where(inArray(packageVersions.packageId, ids)).orderBy(desc(packageVersions.version)),
     db.select().from(packagePrices).where(inArray(packagePrices.packageId, ids)).orderBy(desc(packagePrices.createdAt)),
     db.select().from(packagePlatformSkus).where(inArray(packagePlatformSkus.packageId, ids)),
@@ -229,8 +242,7 @@ export async function GET(request: Request) {
   const latestPublishedVersion = new Map<string, typeof versions[number]>();
   versions.forEach(version => { if (!latestVersion.has(version.packageId)) latestVersion.set(version.packageId, version); });
   versions.forEach(version => { if (version.sheetSyncStatus === "synced" && !latestPublishedVersion.has(version.packageId)) latestPublishedVersion.set(version.packageId, version); });
-  return Response.json({
-    packages:rows.map(row => {
+  const result=rows.map(row => {
       const endedVersion = latestVersion.get(row.id)?.calculatorSettings?._packageEnded === true ? latestVersion.get(row.id) : undefined;
       const version = endedVersion ?? (["active","scheduled","expired"].includes(row.status)
         ? latestPublishedVersion.get(row.id) ?? latestVersion.get(row.id)
@@ -281,7 +293,8 @@ export async function GET(request: Request) {
           effectiveFrom:item.effectiveFrom,
           effectiveTo:item.effectiveTo,
         })),
-        history:(versionsByPackage.get(row.id)??[]).map(item => {
+        historyLoaded:!compact,
+        ...(!compact?{history:(versionsByPackage.get(row.id)??[]).map(item => {
           const historyPrices=pricesByVersion.get(item.id)??[];
           const historyPrice = historyPrices[0];
           const historyMarkets=(versionMetadata(item.calculatorSettings)?.market??row.market).split(",").map(market=>market.trim()).filter(isMarket) as RecurringMarket[];
@@ -306,9 +319,13 @@ export async function GET(request: Request) {
             createdAt:item.createdAt,
             createdBy:item.createdBy,
           };
-        }),
+        })}:{}),
       };
-    }),
+    });
+  if(historyOnly)return Response.json({environment:deploymentTarget(),packageId:rows[0].id,storeId:rows[0].storeId,history:result[0].history??[]},{headers:{"Cache-Control":"private, no-store"}});
+  return Response.json({
+    packages:result,
+    environment:deploymentTarget(),
     source:"database",
     canCreate:storeId !== "all",
     canDelete:membership.role === "superadmin",

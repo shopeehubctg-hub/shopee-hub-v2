@@ -1,3 +1,5 @@
+import { assertDeploymentIsolation, deploymentTarget } from "../../deployment-isolation";
+
 export type HistorySyncResult =
   | { status: "synced" }
   | { status: "pending" | "failed"; reason: string };
@@ -7,18 +9,16 @@ export type HistorySyncResult =
 export async function syncHistoryToGoogleSheet(payload: Record<string, unknown>): Promise<HistorySyncResult> {
   const webhookUrl = process.env.GOOGLE_SHEETS_HISTORY_WEBHOOK_URL;
   const secret = process.env.GOOGLE_SHEETS_HISTORY_SECRET;
-  if (!webhookUrl || !secret) return { status: "pending", reason: "Google Sheets webhook is not configured" };
-
-  // Isolated package QC uses a local receipt so synthetic TEST packages never
-  // reach the real customer history Sheet. Production cannot enable this path.
-  if (webhookUrl === "staging://package-history-receipt") {
-    const isolatedPreview = process.env.VERCEL_ENV === "preview"
-      && process.env.VERCEL_GIT_COMMIT_REF === "codex/package-batch-history-staging-candidate"
-      && process.env.SUPABASE_URL === "https://ubjfuveoqbvouryldqfu.supabase.co";
-    return isolatedPreview
-      ? { status: "synced" }
-      : { status: "failed", reason: "Staging receipt is unavailable outside isolated Preview" };
+  const target = deploymentTarget();
+  if (target === "staging") {
+    assertDeploymentIsolation();
+    // A test publish completes its database lifecycle with a local receipt.
+    // Neither inherited Production webhook URLs nor their credentials are used.
+    return { status: "synced" };
   }
+  if (target === "production") assertDeploymentIsolation();
+  if (!webhookUrl || !secret) return { status: "pending", reason: "Google Sheets webhook is not configured" };
+  if (webhookUrl === "staging://package-history-receipt") return { status: "failed", reason: "Staging receipt is unavailable outside Staging" };
 
   let reason = "Google Sheets webhook failed";
   for (let attempt = 0; attempt < 2; attempt++) {
