@@ -46,8 +46,8 @@ export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[
   const [packages,setPackages] = useState(INITIAL_PACKAGES);
   const [pendingConfirmation,setPendingConfirmation] = useState<PendingConfirmation|null>(null);
   const [pricingGoals,setPricingGoals] = useState<Record<ServiceMode,GoalSetting>>({
-    nonCampaign:{goal:"facebookPayout",discountUnit:"rm",discountValue:""},
-    campaign:{goal:"facebookPayout",discountUnit:"rm",discountValue:""},
+    nonCampaign:{goal:"sameCustomerPrice",discountUnit:"rm",discountValue:""},
+    campaign:{goal:"sameCustomerPrice",discountUnit:"rm",discountValue:""},
   });
   const mainProducts = productProfile?.mainProducts ?? [];
   const categoryOptions = useMemo(()=>{
