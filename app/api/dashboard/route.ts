@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { coFundVouchers, customerUsers, dashboardSnapshots, linkDirectoryProjects, linkDirectoryStores, managementActions, projectProductCatalog, stores, tenantModulePermissions, tenants, userModulePermissions, userStoreAccess } from "../../../db/schema";
+import { coFundVouchers, customerUsers, dashboardSnapshots, linkDirectoryProjects, linkDirectoryStores, projectProductCatalog, stores, tenantModulePermissions, tenants, userModulePermissions, userStoreAccess } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { ALL_PORTAL_MODULE_IDS } from "../../module-permissions";
 import { storeDirectory } from "../../store-directory";
@@ -12,6 +12,9 @@ import { withoutAdCampaigns } from "../../dashboard-snapshot.js";
 import { shouldShowAllStoresTopUps, summarizeAllStoresTopUps } from "../../ad-topup-overview.js";
 import { balanceCsvColumns, isCurrentBalanceDate, parseAdBalance } from "../../ad-balance-validation.js";
 import { canonicalStoreId, type RegistryStore } from "../../live-calendar-model";
+import { deploymentTarget } from "../../deployment-isolation";
+import { dashboardQueryPlan, dashboardSectionAllowed } from "../../dashboard-query-plan";
+import { dashboardReadCache } from "../../dashboard-read-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -119,15 +122,10 @@ async function readCoFundVouchers(storeId:string, tenantId?:string) {
       .where(tenantId?and(eq(coFundVouchers.tenantId,tenantId),eq(coFundVouchers.storeId,storeId)):eq(coFundVouchers.storeId,storeId))
       .orderBy(desc(coFundVouchers.campaignDate),desc(coFundVouchers.id));
   } catch {
-    const projectUrl=process.env.SUPABASE_URL;
-    const secretKey=process.env.SUPABASE_SECRET_KEY;
-    if(!projectUrl||!secretKey)return [];
     try {
       const query=new URLSearchParams({select:"id,campaign_name,campaign_date,campaign_start_at,campaign_end_at,voucher_name,discount_amount,currency,quantity",store_id:`eq.${storeId}`,order:"campaign_start_at.desc,id.desc"});
       if(tenantId)query.set("tenant_id",`eq.${tenantId}`);
-      const response=await fetch(`${projectUrl}/rest/v1/co_fund_vouchers?${query}`,{headers:{apikey:secretKey},cache:"no-store"});
-      if(!response.ok)return [];
-      const rows=await response.json() as Array<{id:number;campaign_name:string;campaign_date:string|null;campaign_start_at:string|null;campaign_end_at:string|null;voucher_name:string;discount_amount:string|number;currency:string;quantity:number}>;
+      const rows=await supabaseRest<Array<{id:number;campaign_name:string;campaign_date:string|null;campaign_start_at:string|null;campaign_end_at:string|null;voucher_name:string;discount_amount:string|number;currency:string;quantity:number}>>(`co_fund_vouchers?${query}`);
       return rows.map(row=>({id:row.id,campaignName:row.campaign_name,campaignDate:row.campaign_date,campaignStartAt:row.campaign_start_at,campaignEndAt:row.campaign_end_at,voucherName:row.voucher_name,discountAmount:String(row.discount_amount),currency:row.currency,quantity:row.quantity}));
     } catch {
       return [];
@@ -140,23 +138,23 @@ type AdPerformanceRow = {
   views:string|number; clicks:string|number; conversions:string|number; sold:string|number; synced_at:string|null;
 };
 
-async function readAdPerformance(storeIds:string[], tenantId:string, allStores:boolean) {
+async function readAdPerformance(storeIds:string[], tenantId:string, allStores:boolean, refresh=false) {
   if (!storeIds.length) return {daily:[],updatedAt:null,rows:[] as AdPerformanceRow[]};
   try {
+    return await dashboardReadCache(`${deploymentTarget()}:${process.env.SUPABASE_URL ?? "local"}:ad:${tenantId}:${[...storeIds].sort().join(",")}:${allStores}`,async()=>{
     const rows:AdPerformanceRow[]=[];
     const pageSize=1000;
-    for (let offset=0; ; offset+=pageSize) {
-      const query=new URLSearchParams({
-        select:"store_id,performance_date,spend,sales,views,clicks,conversions,sold,synced_at",
-        tenant_id:`eq.${tenantId}`,
-        store_id:`in.(${storeIds.join(",")})`,
-        order:"performance_date.asc,store_id.asc",
-        limit:String(pageSize),
-        offset:String(offset),
-      });
-      const page=await supabaseRest<AdPerformanceRow[]>(`ad_performance_daily?${query}`);
-      rows.push(...page);
-      if (page.length<pageSize) break;
+    async function page(offset:number){
+      const query=new URLSearchParams({select:"store_id,performance_date,spend,sales,views,clicks,conversions,sold,synced_at",tenant_id:`eq.${tenantId}`,store_id:`in.(${storeIds.join(",")})`,order:"performance_date.asc,store_id.asc",limit:String(pageSize),offset:String(offset)});
+      return supabaseRest<AdPerformanceRow[]>(`ad_performance_daily?${query}`);
+    }
+    const first=await page(0);rows.push(...first);
+    if(first.length===pageSize){
+      for(let offset=pageSize;;offset+=3*pageSize){
+        const batch=await Promise.all([page(offset),page(offset+pageSize),page(offset+2*pageSize)]);
+        rows.push(...batch.flat());
+        if(batch.some(chunk=>chunk.length<pageSize))break;
+      }
     }
     const updatedAt=latestAdSyncTime(rows);
     if (allStores) return {daily:aggregateAdPerformanceByDate(rows),updatedAt,rows};
@@ -168,13 +166,65 @@ async function readAdPerformance(storeIds:string[], tenantId:string, allStores:b
       conversion:Number(row.conversions),sold:Number(row.sold),
       acos:Number(row.sales)>0?Number(row.spend)/Number(row.sales):0,
     })),updatedAt,rows};
+    },refresh);
   } catch (error) {
     console.error("[advertising] FullAd read failed",error);
     return {daily:[],updatedAt:null,rows:[] as AdPerformanceRow[]};
   }
 }
 
+type BalanceStore={id:string;name:string;sourceName?:string;bigsellerName?:string;storedName?:string;directoryName?:string;bigSellerName?:string};
+async function readBalances(visibleStores:BalanceStore[],tenantId:string) {
+  const result=new Map<string,SheetBalance>();
+  if(!visibleStores.length)return result;
+  const today=new Date(Date.now()+8*60*60*1000).toISOString().slice(0,10);
+  const minimum=new Date(Date.parse(`${today}T00:00:00Z`)-3*86400000).toISOString().slice(0,10);
+  try {
+    const query=new URLSearchParams({select:"store_id,source_store_name,balance_cents,balance_date,imported_at",tenant_id:`eq.${tenantId}`,store_id:`in.(${visibleStores.map(store=>store.id).join(",")})`,balance_date:`gte.${minimum}`,and:`(balance_date.lte.${today})`,order:"balance_date.desc,imported_at.desc",limit:"1000"});
+    const rows=await supabaseRest<Array<{store_id:string;source_store_name:string;balance_cents:string|number;balance_date:string;imported_at:string}>>(`ad_balances?${query}`);
+    const allowed=new Set(visibleStores.map(store=>store.id));
+    for(const row of rows){
+      const cents=Number(row.balance_cents);
+      if(!allowed.has(row.store_id)||result.has(row.store_id)||!Number.isSafeInteger(cents)||cents<0||!isCurrentBalanceDate(row.balance_date))continue;
+      result.set(row.store_id,{balance:cents/100,balanceDate:row.balance_date,sourceStoreName:row.source_store_name,sourceUpdatedAt:null,syncStatus:"current"});
+    }
+  } catch(error){console.error("[dashboard] Balance database read failed",error);}
+  if(deploymentTarget()==="staging"||visibleStores.every(store=>result.has(store.id)))return result;
+  const source=await readSheetBalances();
+  for(const store of visibleStores){
+    if(result.has(store.id))continue;
+    const value=balanceForStore(source,store.name,store.sourceName??"",store.bigsellerName??"",store.storedName??"",store.directoryName??"",store.bigSellerName??"");
+    if(value)result.set(store.id,value);
+  }
+  return result;
+}
+
+async function readCatalog(storeName:string) {
+  const sourceName=sourceShopNameFor(storeName);
+  const query=new URLSearchParams({select:"item_id,product_name,product_category,commission_fee_rate_bps,main_product,synced_at",source_shop_name:`eq.${sourceName}`,order:"main_product.desc,product_name.asc",limit:"1000"});
+  const rows=await supabaseRest<Array<{item_id:string;product_name:string;product_category:string;commission_fee_rate_bps:number;main_product:boolean;synced_at:string}>>(`project_product_catalog?${query}`);
+  if(rows.length){
+    const products=rows.map(row=>({itemId:row.item_id,productName:row.product_name,productCategory:row.product_category,commissionFeeRate:row.commission_fee_rate_bps/100,mainProduct:row.main_product}));
+    return {shopName:sourceName,products,mainProducts:products.filter(row=>row.mainProduct),syncedAt:rows[0].synced_at};
+  }
+  return deploymentTarget()==="staging"?null:readProductCatalogSheet(storeName);
+}
+
+async function readActions(storeIds:string[],tenantId:string){
+  if(!storeIds.length)return [];
+  const query=new URLSearchParams({select:"action_date,category,title,detail",tenant_id:`eq.${tenantId}`,store_id:`in.(${storeIds.join(",")})`,order:"action_date.desc,id.desc",limit:"20"});
+  const rows=await supabaseRest<Array<{action_date:string;category:string;title:string;detail:string}>>(`management_actions?${query}`);
+  return rows.map(row=>({actionDate:row.action_date,category:row.category,title:row.title,detail:row.detail}));
+}
+
+function dashboardResponse(payload:Record<string,unknown>,started:number){
+  return Response.json({...payload,environment:deploymentTarget()},{headers:{"Cache-Control":"private, no-store","Server-Timing":`dashboard;dur=${(performance.now()-started).toFixed(1)}`}});
+}
+
 export async function GET(request: Request) {
+  const started=performance.now();
+  const plan=dashboardQueryPlan(request);
+  if(!plan.valid)return Response.json({error:"Unknown dashboard module"},{status:400});
   // Vercel serves the portable dashboard data, while identity and permissions
   // are read securely from the staging Supabase project.
   if (process.env.VERCEL === "1") {
@@ -183,15 +233,18 @@ export async function GET(request: Request) {
     const memberships = await supabaseRest<Array<{id:number;tenant_id:string;role:"customer"|"manager"|"superadmin";active:boolean;module_access_mode:"role_default"|"custom";store_access_mode:"all"|"selected"}>>(`customer_users?select=id,tenant_id,role,active,module_access_mode,store_access_mode&email=eq.${encodeURIComponent(user.email.toLowerCase())}&limit=1`);
     const membership=memberships[0];
     if(!membership?.active)return Response.json({error:"Portal access is disabled"},{status:403});
-    const [tenantModules,userModules,userStores]=await Promise.all([
+    const [tenantModules,userModules,userStores,tenantStatus]=await Promise.all([
       supabaseRest<Array<{module_id:string;enabled:boolean}>>(`tenant_module_permissions?select=module_id,enabled&tenant_id=eq.${encodeURIComponent(membership.tenant_id)}`),
-      membership.module_access_mode==="custom"?supabaseRest<Array<{module_id:string;enabled:boolean}>>(`user_module_permissions?select=module_id,enabled&user_id=eq.${membership.id}`):Promise.resolve([]),
+      supabaseRest<Array<{module_id:string;enabled:boolean}>>(`user_module_permissions?select=module_id,enabled&user_id=eq.${membership.id}`),
       membership.store_access_mode==="selected"?supabaseRest<Array<{store_id:string}>>(`user_store_access?select=store_id&user_id=eq.${membership.id}`):Promise.resolve([]),
+      supabaseRest<Array<{active:boolean}>>(`tenants?select=active&id=eq.${encodeURIComponent(membership.tenant_id)}&limit=1`),
     ]);
+    if(!tenantStatus[0]?.active)return Response.json({error:"Tenant access is disabled"},{status:403});
     const tenantEnabled=new Map(tenantModules.map(row=>[row.module_id,row.enabled]));
     const customEnabled=new Set(userModules.filter(row=>row.enabled).map(row=>row.module_id));
     const clientEnabledModules=ALL_PORTAL_MODULE_IDS.filter(id=>id==="live_calendar"?tenantEnabled.get(id)===true:tenantEnabled.get(id)!==false);
     const enabledModules=membership.role==="superadmin"?ALL_PORTAL_MODULE_IDS:membership.module_access_mode==="custom"?ALL_PORTAL_MODULE_IDS.filter(id=>customEnabled.has(id)&&(id==="live_calendar"?tenantEnabled.get(id)===true:tenantEnabled.get(id)!==false)):ALL_PORTAL_MODULE_IDS.filter(id=>id==="live_calendar"?tenantEnabled.get(id)===true:tenantEnabled.get(id)!==false);
+    if(!dashboardSectionAllowed(plan.section,enabledModules,membership.role,membership.role==="superadmin"))return Response.json({error:"Module access denied"},{status:403});
     const assignedStoreIds=new Set(userStores.map(row=>canonicalStoreId(row.store_id)));
     const [registry,directory]=await Promise.all([
       supabaseRest<RegistryStore[]>(`stores?select=id,name,display_name,platform,bigseller_name&tenant_id=eq.${encodeURIComponent(membership.tenant_id)}&order=name.asc`),
@@ -210,22 +263,27 @@ export async function GET(request: Request) {
       return Response.json({ error: "Store access denied" }, { status: 403 });
     }
     const selectedDirectory = selectedStore ? directory.byId.get(selectedStore.id) : undefined;
-    const snapshotPayload = selectedStore ? storeSnapshots[selectedStore.sourceName] ?? storeSnapshots[selectedStore.bigsellerName] ?? null : null;
-    const canViewAdvertising=enabledModules.includes("advertising");
+    const snapshotRowsPromise=selectedStore&&plan.snapshot?supabaseRest<Array<{payload:Record<string,unknown>;imported_at:string}>>(`dashboard_snapshots?select=payload,imported_at&tenant_id=eq.${encodeURIComponent(membership.tenant_id)}&store_id=eq.${encodeURIComponent(selectedStore.id)}&order=imported_at.desc,id.desc&limit=1`):[];
+    const canViewAdvertising=plan.advertising&&enabledModules.includes("advertising");
     const showTopUps=shouldShowAllStoresTopUps(allStoresRequested,membership.role,visibleStores.length,canViewAdvertising);
-    const [sheetBalances,productProfile,selectedCoFundVouchers,adPerformance] = await Promise.all([
-      canViewAdvertising&&(selectedStore||showTopUps)?readSheetBalances():Promise.resolve(new Map<string,SheetBalance>()),
-      selectedStore?readProductCatalogSheet(selectedStore.sourceName):Promise.resolve(null),
-      selectedStore?readCoFundVouchers(selectedStore.id):Promise.resolve([]),
-      readAdPerformance(authorizedAdStoreIds(visibleStores,selectedStore,canViewAdvertising),membership.tenant_id,allStoresRequested),
+    const [sheetBalances,productProfile,selectedCoFundVouchers,adPerformance,snapshotRows,actions] = await Promise.all([
+      canViewAdvertising&&(selectedStore||showTopUps)?readBalances(selectedStore?[selectedStore]:visibleStores,membership.tenant_id):Promise.resolve(new Map<string,SheetBalance>()),
+      selectedStore&&plan.catalog?readCatalog(selectedStore.sourceName):Promise.resolve(null),
+      selectedStore&&plan.vouchers?readCoFundVouchers(selectedStore.id,membership.tenant_id):Promise.resolve([]),
+      readAdPerformance(authorizedAdStoreIds(visibleStores,selectedStore,canViewAdvertising),membership.tenant_id,allStoresRequested,plan.refresh),
+      snapshotRowsPromise,
+      plan.actions?readActions(selectedStore?[selectedStore.id]:visibleStores.map(store=>store.id),membership.tenant_id):Promise.resolve([]),
     ]);
-    const sheetBalance=selectedStore?balanceForStore(sheetBalances,selectedStore.name,selectedStore.sourceName,selectedStore.bigsellerName):null;
+    const staticPayload=deploymentTarget()==="staging"?null:selectedStore?(storeSnapshots[selectedStore.sourceName]??storeSnapshots[selectedStore.bigsellerName]??null):null;
+    const snapshotPayload=plan.snapshot?(snapshotRows[0]?.payload??staticPayload):null;
+
+    const sheetBalance=selectedStore?balanceForStore(sheetBalances,selectedStore.id):null;
     const adTopUpOverview=showTopUps?summarizeAllStoresTopUps(
       visibleStores.map(store=>({...store,topUpOwner:normalizeTopUpOwner(directory.byId.get(store.id)?.ads_top_up_owner)})),
       adPerformance.rows,
-      new Map(visibleStores.map(store=>[store.id,balanceForStore(sheetBalances,store.name,store.sourceName,store.bigsellerName)])),
+      new Map(visibleStores.map(store=>[store.id,balanceForStore(sheetBalances,store.id)])),
     ):null;
-    return Response.json({
+    return dashboardResponse({
       customer: { id: "shopee-hub", name: "Shopee Hub" },
       stores: visibleStores.map((store) => {
         const profile = directory.byId.get(store.id);
@@ -237,12 +295,12 @@ export async function GET(request: Request) {
         };
       }),
       selectedStoreId: allStoresRequested ? "all" : selectedStore?.id ?? null,
-      snapshot: snapshotPayload ? withoutAdCampaigns({ payload: snapshotPayload, importedAt: snapshotPayload.sourceUpdated ?? new Date().toISOString() }, canViewAdvertising) : null,
+      snapshot: snapshotPayload ? withoutAdCampaigns({ payload: snapshotPayload, importedAt: snapshotRows[0]?.imported_at ?? snapshotPayload.sourceUpdated ?? new Date().toISOString() }, canViewAdvertising) : null,
       adBalance: canViewAdvertising && sheetBalance ? { ...sheetBalance, topUpOwner: normalizeTopUpOwner(selectedDirectory?.ads_top_up_owner) } : null,
       adPerformance:adPerformance.daily,
       adPerformanceUpdatedAt:adPerformance.updatedAt,
       adTopUpOverview,
-      actions: [],
+      actions,
       productProfile,
       coFundVouchers:selectedCoFundVouchers,
       user: { email: user.email },
@@ -252,7 +310,7 @@ export async function GET(request: Request) {
         advertisingBalance: "Daily advertising balance",
         performance: snapshotPayload ? "Portable snapshot exported from the ChatGPT Sites dashboard" : "Advertising exports and bundled dashboard data",
       },
-    }, { headers: { "Cache-Control":"private, no-store" } });
+    },started);
   }
 
   const user = await getChatGPTUser();
@@ -276,10 +334,11 @@ export async function GET(request: Request) {
   const modulePermissionRows = await db.select().from(tenantModulePermissions).where(eq(tenantModulePermissions.tenantId, tenant.id));
   const configuredModules = new Map(modulePermissionRows.map((row) => [row.moduleId, row.enabled]));
   const clientEnabledModules = ALL_PORTAL_MODULE_IDS.filter((moduleId) => moduleId === "live_calendar" ? configuredModules.get(moduleId) === true : configuredModules.get(moduleId) !== false);
-  const userModuleRows = membership.moduleAccessMode === "custom" ? await db.select().from(userModulePermissions).where(eq(userModulePermissions.userId,membership.id)) : [];
+  const userModuleRows = await db.select().from(userModulePermissions).where(eq(userModulePermissions.userId,membership.id));
   const enabledModules = membership.role === "superadmin" ? ALL_PORTAL_MODULE_IDS : membership.moduleAccessMode === "custom"
-    ? ALL_PORTAL_MODULE_IDS.filter(moduleId=>userModuleRows.find(row=>row.moduleId===moduleId)?.enabled===true && (moduleId!=="live_calendar" || configuredModules.get(moduleId)===true))
-    : membership.role === "customer" ? clientEnabledModules : ALL_PORTAL_MODULE_IDS.filter(moduleId=>moduleId!=="live_calendar" || configuredModules.get(moduleId)===true);
+    ? ALL_PORTAL_MODULE_IDS.filter(moduleId=>userModuleRows.find(row=>row.moduleId===moduleId)?.enabled===true && (moduleId==="live_calendar" ? configuredModules.get(moduleId)===true : configuredModules.get(moduleId)!==false))
+    : clientEnabledModules;
+  if(!dashboardSectionAllowed(plan.section,enabledModules,membership.role,membership.role==="superadmin"))return Response.json({error:"Module access denied"},{status:403});
   const [profiles,projects]=await Promise.all([
     db.select().from(linkDirectoryStores).where(eq(linkDirectoryStores.tenantId,tenant.id)),
     db.select().from(linkDirectoryProjects).orderBy(linkDirectoryProjects.id),
@@ -309,32 +368,27 @@ export async function GET(request: Request) {
     ? visibleStores.find((store) => store.id === requestedStoreId)
     : (allStoresRequested ? undefined : visibleStores[0]);
   if (requestedStoreId && !allStoresRequested && !selectedStore) return Response.json({ error: "Store access denied" }, { status: 403 });
-  const canViewAdvertising=enabledModules.includes("advertising");
+  const canViewAdvertising=plan.advertising&&enabledModules.includes("advertising");
   const showTopUps=shouldShowAllStoresTopUps(allStoresRequested,membership.role,visibleStores.length,canViewAdvertising);
-  const sheetBalancesPromise=canViewAdvertising&&(selectedStore||showTopUps)?readSheetBalances():Promise.resolve(new Map<string,SheetBalance>());
-  const latest = allStoresRequested ? [] : await db.select().from(dashboardSnapshots)
+  const sheetBalancesPromise=canViewAdvertising&&(selectedStore||showTopUps)?readBalances(selectedStore?[selectedStore]:visibleStores,tenant.id):Promise.resolve(new Map<string,SheetBalance>());
+  const latest = !plan.snapshot||allStoresRequested ? [] : await db.select().from(dashboardSnapshots)
     .where(selectedStore
       ? and(eq(dashboardSnapshots.tenantId, tenant.id), eq(dashboardSnapshots.storeId, selectedStore.id))
       : eq(dashboardSnapshots.tenantId, tenant.id))
     .orderBy(desc(dashboardSnapshots.importedAt), desc(dashboardSnapshots.id))
     .limit(1);
   const sheetBalances=await sheetBalancesPromise;
-  const sheetBalance = selectedStore ? balanceForStore(sheetBalances,selectedStore.name,selectedStore.storedName,selectedStore.directoryName,selectedStore.bigSellerName) : null;
+  const sheetBalance = selectedStore ? balanceForStore(sheetBalances,selectedStore.id) : null;
   const topUpOwner = selectedStore
     ? normalizeTopUpOwner(directoryById.get(selectedStore.id)?.adsTopUpOwner)
     : null;
-  const actions = await db.select().from(managementActions)
-    .where(selectedStore
-      ? and(eq(managementActions.tenantId, tenant.id), eq(managementActions.storeId, selectedStore.id))
-      : eq(managementActions.tenantId, tenant.id))
-    .orderBy(desc(managementActions.actionDate), desc(managementActions.id))
-    .limit(20);
-  const selectedCoFundVouchers = selectedStore ? await readCoFundVouchers(selectedStore.id,tenant.id) : [];
-  const sourceShopName=selectedStore?sourceShopNameFor(selectedStore.directoryName):null;
+  const actions = plan.actions?await readActions(selectedStore?[selectedStore.id]:visibleStores.map(store=>store.id),tenant.id):[];
+  const selectedCoFundVouchers = selectedStore&&plan.vouchers ? await readCoFundVouchers(selectedStore.id,tenant.id) : [];
+  const sourceShopName=selectedStore&&plan.catalog?sourceShopNameFor(selectedStore.directoryName):null;
   const storedProducts=!sourceShopName?[]:await db.select().from(projectProductCatalog)
     .where(eq(projectProductCatalog.sourceShopName,sourceShopName))
     .orderBy(desc(projectProductCatalog.mainProduct),projectProductCatalog.productName);
-  const sheetProductProfile=selectedStore&&!storedProducts.length?await readProductCatalogSheet(selectedStore.directoryName):null;
+  const sheetProductProfile=selectedStore&&plan.catalog&&!storedProducts.length&&deploymentTarget()!=="staging"?await readProductCatalogSheet(selectedStore.directoryName):null;
   const productProfile=storedProducts.length?{
     shopName:sourceShopName!,
     products:storedProducts.map(product=>({
@@ -354,13 +408,13 @@ export async function GET(request: Request) {
     syncedAt:storedProducts[0].syncedAt,
   }:sheetProductProfile;
 
-  const adPerformance=await readAdPerformance(authorizedAdStoreIds(visibleStores,selectedStore,canViewAdvertising),tenant.id,allStoresRequested);
+  const adPerformance=await readAdPerformance(authorizedAdStoreIds(visibleStores,selectedStore,canViewAdvertising),tenant.id,allStoresRequested,plan.refresh);
   const adTopUpOverview=showTopUps?summarizeAllStoresTopUps(
     visibleStores.map(store=>({...store,topUpOwner:normalizeTopUpOwner(directoryById.get(store.id)?.adsTopUpOwner)})),
     adPerformance.rows,
-    new Map(visibleStores.map(store=>[store.id,balanceForStore(sheetBalances,store.name,store.storedName,store.directoryName,store.bigSellerName)])),
+    new Map(visibleStores.map(store=>[store.id,balanceForStore(sheetBalances,store.id)])),
   ):null;
-  return Response.json({
+  return dashboardResponse({
     customer: { id: tenant.id, name: tenant.name },
     stores: visibleStores.map(({ id, name, platform, directoryName }) => {
       const directory = directoryById.get(id);
@@ -385,5 +439,5 @@ export async function GET(request: Request) {
     coFundVouchers:selectedCoFundVouchers,
     user: { email: user.email },
     access: { role: membership.role, enabledModules, clientEnabledModules, canManagePermissions: membership.role === "superadmin" },
-  }, { headers: { "Cache-Control": "private, no-store" } });
+  },started);
 }

@@ -1,6 +1,8 @@
 import "server-only";
+import { assertDeploymentIsolation } from "./deployment-isolation";
 
 export function supabaseConfig() {
+  assertDeploymentIsolation();
   const url = process.env.SUPABASE_URL?.replace(/\/$/, "");
   const secret = process.env.SUPABASE_SECRET_KEY;
   if (!url || !secret) throw new Error("Supabase server configuration is unavailable");
