@@ -29,3 +29,30 @@ test('a future template version does not relabel the previous invoice month',()=
  const state=memory([{effectiveMonth:'2026-10',clientType:'External',planId:'tier'}]);const revised={...tiers,version:2,effectiveMonth:'2026-11',rule:{...tiers.rule,tiers:[{from:'0',percent:'6'}]}};
  assert.equal(monthlyFeePreview(row,'2026-10',[tiers,revised],state).plan.version,1);assert.equal(monthlyFeePreview(row,'2026-11',[tiers,revised],state).plan.version,2);
 });
+test('persisted Rate Card snapshot keeps its exact version and rule after catalog revisions',()=>{
+ const saved={...row,clientType:'External',rateCard:{id:'tier',version:1,name:'Shared tier'},rateEffectiveMonth:'2026-10',rateRule:structuredClone(tiers.rule)};
+ const sameMonth={...tiers,version:2,rule:{...tiers.rule,tiers:[{from:'0',percent:'6'}]}};
+ const nextMonth={...sameMonth,effectiveMonth:'2026-11'};
+ for(const [month,cards] of [['2026-10',[tiers,sameMonth]],['2026-11',[tiers,nextMonth]]]){
+  const resolved=monthlyFeePreview(saved,month,cards,memory([]));
+  assert.equal(resolved.plan.version,1);
+  assert.equal(resolved.plan.rule.tiers[1].percent,'8');
+  assert.equal(resolved.calculation.fee,month==='2026-10'?'12000.00':'16000.00');
+ }
+});
+test('a later explicit preview assignment can use a new card without changing a saved earlier month or lock',()=>{
+ const saved={...row,clientType:'External',rateCard:{id:'tier',version:1,name:'Shared tier'},rateEffectiveMonth:'2026-10',rateRule:structuredClone(tiers.rule)};
+ const revised={...tiers,version:2,effectiveMonth:'2026-11',rule:{...tiers.rule,tiers:[{from:'0',percent:'6'}]}};
+ const state=memory([{effectiveMonth:'2026-11',clientType:'External',planId:'tier'}]);
+ state['fee-preview-application-history']=[{effectiveMonth:'2026-11',plan:structuredClone(revised),targets:[{unitKey:'unit'}]}];
+ assert.equal(monthlyFeePreview(saved,'2026-10',[tiers,revised],state).plan.version,1);
+ const november=monthlyFeePreview(saved,'2026-11',[tiers,revised],state);
+ assert.equal(november.plan.version,2);
+ assert.equal(november.calculation.fee,'12000.00');
+ const newer={...revised,version:3,rule:{...revised.rule,tiers:[{from:'0',percent:'5'}]}};
+ assert.equal(monthlyFeePreview(saved,'2026-11',[tiers,revised,newer],state).plan.version,2);
+ state['fee-preview-history']=[{id:'locked',plan:structuredClone(revised),result:structuredClone(november.calculation),amount:november.amount}];
+ state['fee-preview-locks']={'2026-11:unit':'locked'};
+ assert.equal(monthlyFeePreview(saved,'2026-11',[tiers,revised,newer],state).plan.version,2);
+ assert.equal(monthlyFeePreview(saved,'2026-11',[tiers,revised,newer],state).calculation.fee,'12000.00');
+});

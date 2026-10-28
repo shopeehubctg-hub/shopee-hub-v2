@@ -61,13 +61,20 @@ export function monthlyFeePreview(row:AccountStoreRow,month:string,plans:FeePlan
  const key=row.rosterKey??row.id;
  const assignments=(memory['fee-preview-assignments-v2']??{}) as Record<string,FeePreviewAssignment[]>;
  const persisted=row.rateCard&&row.clientType&&row.rateEffectiveMonth&&row.rateEffectiveMonth<=month?{clientType:row.clientType,planId:row.rateCard.id,effectiveMonth:row.rateEffectiveMonth}:undefined;
- const choice=(assignments[key]??[]).filter(v=>v.effectiveMonth<=month).sort((a,b)=>a.effectiveMonth.localeCompare(b.effectiveMonth)).at(-1)??persisted??sourceRateCardDefault(row,month)??{clientType:'',planId:''};
+ const memoryChoice=(assignments[key]??[]).filter(v=>v.effectiveMonth<=month).sort((a,b)=>a.effectiveMonth.localeCompare(b.effectiveMonth)).at(-1);
+ // The database snapshot wins for its month. An explicit later-month choice may
+ // preview a new card, but catalog revisions alone never rewrite an assignment.
+ const sessionChoice=memoryChoice&&(!persisted||memoryChoice.effectiveMonth>persisted.effectiveMonth)?memoryChoice:undefined;
+ const choice=sessionChoice??persisted??sourceRateCardDefault(row,month)??{clientType:'',planId:''};
  const history=(memory['fee-preview-history']??[]) as FeePreviewSnapshot[];
  const locks=(memory['fee-preview-locks']??{}) as Record<string,string>;
  const locked=history.find(snapshot=>snapshot.id===locks[`${month}:${key}`]);
  const selected=choice.planId?planForMonth(plans,choice.planId,month):undefined;
  const savedRule=row.rateRule&&row.rateEffectiveMonth&&row.rateEffectiveMonth<=month&&row.clientType?{id:row.rateCard?.id??`custom:${key}`,name:row.rateCard?.name??'Custom rate',version:row.rateCard?.version??Number(row.appliedSettingsVersion??1),clientType:row.clientType,currency:row.rateRule.currency,effectiveMonth:row.rateEffectiveMonth,rule:row.rateRule}:undefined;
- const plan=locked?.plan??(selected?.currency===projectFeeCurrency(row,month)&&selected.clientType===choice.clientType?selected:savedRule);
+ const sessionAudit=sessionChoice?((memory['fee-preview-application-history']??[]) as RateCardApplyAudit[]).find(entry=>entry.effectiveMonth===sessionChoice.effectiveMonth&&entry.plan.id===sessionChoice.planId&&entry.targets.some(target=>target.unitKey===key)):undefined;
+ const candidate=sessionAudit?.plan??selected;
+ const compatible=candidate?.currency===projectFeeCurrency(row,month)&&candidate.clientType===choice.clientType?candidate:undefined;
+ const plan=locked?.plan??(sessionChoice?compatible:savedRule??compatible);
  const amounts=(memory['fee-preview-amounts']??{}) as Record<string,string>;
  const amount=locked?.amount??amounts[`${month}:${key}`]??'';
  let conversion=locked?.conversion;

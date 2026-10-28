@@ -1,4 +1,4 @@
-import {accountAdmin,accountJson,accountSaveError} from '../../../../account-rate-cards';
+import {accountAdmin,accountJson,accountSaveError,loadRateCards} from '../../../../account-rate-cards';
 import {supabaseRest} from '../../../../supabase-rest';
 import {malaysiaDate} from '../../../../account-ledger';
 import {sourceProjectRate,projectFeeCurrency,projectSalesCurrency} from '../../../../fee-preview-currency';
@@ -17,10 +17,17 @@ export async function PUT(request:Request){try{
  if(!snapshot.ok)return snapshot;
  const account=await snapshot.json() as AccountResponse;
  if(!account.settingsAvailable)throw Error('Supabase REST: {"code":"PGRST205"}');
+ const catalog=await loadRateCards(auth.tenantId);
+ // Historical versions remain readable for idempotent retries after archive/revision.
+ // The RPC checks active/month-effective state only after its request replay lookup.
+ const card=catalog.find(item=>item.id===body.planId&&item.version===body.planVersion);
+ if(!card)throw Error('ACCOUNT_INVALID');
  const units=body.unitKeys.map(key=>{
   const row=account.stores.find(item=>(item.rosterKey??item.id)===key);
   if(!row||typeof expected[key]!=='string'||!/^\d{1,18}$/.test(expected[key] as string))throw Error('ACCOUNT_INVALID');
   const source=sourceProjectRate(row,body.effectiveMonth as string);
+  const clientType=row.clientType??source?.clientType;
+  if(clientType&&clientType!==card.clientType||card.currency!==projectFeeCurrency(row,body.effectiveMonth as string))throw Error('ACCOUNT_INVALID');
   const inputCurrency=projectSalesCurrency(row);const currency=projectFeeCurrency(row,body.effectiveMonth as string);
   const storedFxRate=row.fxRate??source?.fxRate;
   const fixedRate=storedFxRate?.replace(/(\.\d*?[1-9])0+$|\.0+$/, '$1');
