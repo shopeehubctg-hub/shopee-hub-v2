@@ -430,3 +430,14 @@ body{background:var(--paper);color:var(--ink)}
 .store-account-custom .account-tier-fields>div{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto}
 .store-account-custom .account-tier-fields>div>label{min-width:0}
 @media(max-width:600px){.store-account-custom .account-tier-fields>div{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.value-proof{display:grid;gap:1rem;margin-bottom:2rem}
+.value-proof>p{margin:0;color:var(--muted,#667085)}
+.value-proof-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.8rem;margin:1rem 0}
+.value-proof-form label{display:grid;gap:.35rem;font-size:.9rem;font-weight:600}
+.value-proof-form input,.value-proof-form select,.value-proof-form textarea{width:100%;border:1px solid #d0d5dd;border-radius:8px;padding:.65rem;font:inherit;background:#fff;color:#1d2939}
+.value-proof-form textarea{min-height:90px;resize:vertical}
+.value-proof-list{display:grid;gap:1rem}
+.value-proof-item p{line-height:1.5}
+.value-proof-result{padding:.8rem;border-radius:8px;background:#f1f8f5}
+.profit-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;margin:1rem 0}
+.profit-grid .card h3{font-size:1.45rem;margin:.4rem 0}

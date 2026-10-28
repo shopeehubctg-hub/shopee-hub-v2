@@ -1,4 +1,19 @@
 "use client";
 import {useEffect,useState} from "react";
 
-export default function AuthCallback(){const [message,setMessage]=useState("Completing secure sign-in…");useEffect(()=>{const params=new URLSearchParams(window.location.hash.slice(1));const accessToken=params.get("access_token");if(!accessToken){setMessage(params.get("error_description")||"This sign-in link is invalid or expired.");return;}fetch("/api/auth/session",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({accessToken})}).then(async response=>{const data=await response.json();if(!response.ok)throw new Error(data.error||"Sign-in failed");window.location.replace("/?section=permissions");}).catch(error=>setMessage(error.message));},[]);return <main className="login-shell"><section className="login-card"><p className="kicker">SHOPEE HUB</p><h1>{message}</h1><a href="/login">Return to sign in</a></section></main>}
+export default function AuthCallback(){
+  const [message,setMessage]=useState("Completing secure sign-in…");
+  useEffect(()=>{
+    const params=new URLSearchParams(window.location.hash.slice(1));
+    const accessToken=params.get("access_token");
+    if(!accessToken){queueMicrotask(()=>setMessage(params.get("error_description")||"This sign-in link is invalid or expired."));return;}
+    if(["recovery","invite"].includes(params.get("type")||"")){
+      window.location.replace(`/reset-password${window.location.hash}`);
+      return;
+    }
+    fetch("/api/auth/session",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({accessToken})})
+      .then(async response=>{const data=await response.json();if(!response.ok)throw new Error(data.error||"Sign-in failed");window.location.replace("/?section=permissions");})
+      .catch(error=>setMessage(error.message));
+  },[]);
+  return <main className="login-shell"><section className="login-card"><p className="kicker">SHOPEE HUB</p><h1>{message}</h1><a href="/login">Return to sign in</a></section></main>;
+}

@@ -108,8 +108,45 @@ export const adBalances = pgTable("ad_balances", {
 export const managementActions = pgTable("management_actions", {
   id:bigserial("id", { mode:"number" }).primaryKey(), tenantId:text("tenant_id").notNull().references(()=>tenants.id),
   storeId:text("store_id").notNull().references(()=>stores.id), actionDate:date("action_date", { mode:"string" }).notNull(),
-  category:text("category").notNull(), title:text("title").notNull(), detail:text("detail").notNull(), impact:text("impact").notNull(), createdAt:createdAt(),
-}, table=>[index("management_actions_tenant_date_idx").on(table.tenantId,table.actionDate),index("management_actions_store_date_idx").on(table.storeId,table.actionDate)]);
+  category:text("category").notNull(), title:text("title").notNull(), detail:text("detail").notNull(), impact:text("impact").notNull(),
+  status:text("status",{enum:["draft","approved","in_progress","completed"]}).notNull().default("draft"),
+  ownerEmail:text("owner_email"), dueDate:date("due_date",{mode:"string"}),
+  createdBy:text("created_by"), approvedBy:text("approved_by"), approvedAt:timestamp("approved_at",{withTimezone:true,mode:"string"}),
+  clientVisibleAt:timestamp("client_visible_at",{withTimezone:true,mode:"string"}),
+  evidenceUrl:text("evidence_url"), resultSummary:text("result_summary"),
+  resultType:text("result_type",{enum:["verified_saving","sales_change","unattributed","risk_reduction"]}),
+  resultAmount:numeric("result_amount",{precision:18,scale:2}), resultCurrency:text("result_currency"),
+  resultSource:text("result_source"), resultVerifiedAt:timestamp("result_verified_at",{withTimezone:true,mode:"string"}),
+  createdAt:createdAt(), updatedAt:timestamp("updated_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),
+}, table=>[
+  foreignKey({name:"management_actions_tenant_store_fk",columns:[table.tenantId,table.storeId],foreignColumns:[stores.tenantId,stores.id]}),
+  index("management_actions_tenant_date_idx").on(table.tenantId,table.actionDate),index("management_actions_store_date_idx").on(table.storeId,table.actionDate),
+]);
+
+export const managementActionEvents=pgTable("management_action_events",{
+  id:bigserial("id",{mode:"number"}).primaryKey(), actionId:bigint("action_id",{mode:"number"}).notNull().references(()=>managementActions.id),
+  tenantId:text("tenant_id").notNull().references(()=>tenants.id), storeId:text("store_id").notNull().references(()=>stores.id),
+  eventType:text("event_type",{enum:["created","approved","progress","result"]}).notNull(),
+  actorEmail:text("actor_email").notNull(), detail:jsonb("detail").$type<Record<string,unknown>>().notNull(), createdAt:createdAt(),
+},table=>[foreignKey({name:"management_action_events_tenant_store_fk",columns:[table.tenantId,table.storeId],foreignColumns:[stores.tenantId,stores.id]}),index("management_action_events_action_idx").on(table.actionId,table.createdAt)]);
+
+export const storeMonthlyFinancials=pgTable("store_monthly_financials",{
+  id:bigserial("id",{mode:"number"}).primaryKey(),tenantId:text("tenant_id").notNull().references(()=>tenants.id),storeId:text("store_id").notNull().references(()=>stores.id),
+  month:date("month",{mode:"string"}).notNull(),currency:text("currency").notNull(),
+  netSales:numeric("net_sales",{precision:18,scale:2}),platformFees:numeric("platform_fees",{precision:18,scale:2}),
+  adSpend:numeric("ad_spend",{precision:18,scale:2}),sellerDiscounts:numeric("seller_discounts",{precision:18,scale:2}),
+  goodsCost:numeric("goods_cost",{precision:18,scale:2}),fulfilmentCost:numeric("fulfilment_cost",{precision:18,scale:2}),
+  sourceRefs:jsonb("source_refs").$type<Record<string,string>>().notNull().default({}),verifiedBy:text("verified_by"),verifiedAt:timestamp("verified_at",{withTimezone:true,mode:"string"}),createdAt:createdAt(),
+},table=>[foreignKey({name:"store_monthly_financials_tenant_store_fk",columns:[table.tenantId,table.storeId],foreignColumns:[stores.tenantId,stores.id]}),uniqueIndex("store_monthly_financials_unique_month_idx").on(table.storeId,table.month)]);
+
+export const departmentMonthlyFinancials=pgTable("department_monthly_financials",{
+  id:bigserial("id",{mode:"number"}).primaryKey(),tenantId:text("tenant_id").notNull().references(()=>tenants.id),storeId:text("store_id").notNull().references(()=>stores.id),
+  month:date("month",{mode:"string"}).notNull(),currency:text("currency").notNull(),projectKind:text("project_kind",{enum:["external","internal"]}).notNull(),
+  cashRevenue:numeric("cash_revenue",{precision:18,scale:2}),laborCost:numeric("labor_cost",{precision:18,scale:2}),toolCost:numeric("tool_cost",{precision:18,scale:2}),
+  outsourcedCost:numeric("outsourced_cost",{precision:18,scale:2}),otherCost:numeric("other_cost",{precision:18,scale:2}),internalValue:numeric("internal_value",{precision:18,scale:2}),
+  hours:numeric("hours",{precision:12,scale:2}),sourceRefs:jsonb("source_refs").$type<Record<string,string>>().notNull().default({}),
+  verifiedBy:text("verified_by"),verifiedAt:timestamp("verified_at",{withTimezone:true,mode:"string"}),createdAt:createdAt(),
+},table=>[foreignKey({name:"department_monthly_financials_tenant_store_fk",columns:[table.tenantId,table.storeId],foreignColumns:[stores.tenantId,stores.id]}),uniqueIndex("department_monthly_financials_unique_month_idx").on(table.storeId,table.month)]);
 
 export const inventorySkus = pgTable("inventory_skus", {
   id:text("id").primaryKey(), tenantId:text("tenant_id").notNull().references(()=>tenants.id), sku:text("sku").notNull(),
