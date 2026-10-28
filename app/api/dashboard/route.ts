@@ -230,13 +230,13 @@ export async function GET(request: Request) {
   if (process.env.VERCEL === "1") {
     const user = await getChatGPTUser();
     if (!user) return Response.json({ error:"Authentication required" },{ status:401 });
-    const memberships = await supabaseRest<Array<{id:number;tenant_id:string;role:"customer"|"manager"|"superadmin";active:boolean;module_access_mode:"role_default"|"custom";store_access_mode:"all"|"selected"}>>(`customer_users?select=id,tenant_id,role,active,module_access_mode,store_access_mode&email=eq.${encodeURIComponent(user.email.toLowerCase())}&limit=1`);
+    const memberships = await supabaseRest<Array<{id:number;tenant_id:string;role:"customer"|"manager"|"superadmin";active:boolean;can_manage_permissions:boolean;module_access_mode:"role_default"|"custom";store_access_mode:"all"|"selected"}>>(`customer_users?select=id,tenant_id,role,active,can_manage_permissions,module_access_mode,store_access_mode&email=eq.${encodeURIComponent(user.email.toLowerCase())}&limit=1`);
     const membership=memberships[0];
     if(!membership?.active)return Response.json({error:"Portal access is disabled"},{status:403});
     const [tenantModules,userModules,userStores,tenantStatus]=await Promise.all([
       supabaseRest<Array<{module_id:string;enabled:boolean}>>(`tenant_module_permissions?select=module_id,enabled&tenant_id=eq.${encodeURIComponent(membership.tenant_id)}`),
       supabaseRest<Array<{module_id:string;enabled:boolean}>>(`user_module_permissions?select=module_id,enabled&user_id=eq.${membership.id}`),
-      membership.store_access_mode==="selected"?supabaseRest<Array<{store_id:string}>>(`user_store_access?select=store_id&user_id=eq.${membership.id}`):Promise.resolve([]),
+      membership.store_access_mode==="selected"?supabaseRest<Array<{store_id:string}>>(`user_store_access?select=store_id&enabled=eq.true&user_id=eq.${membership.id}`):Promise.resolve([]),
       supabaseRest<Array<{active:boolean}>>(`tenants?select=active&id=eq.${encodeURIComponent(membership.tenant_id)}&limit=1`),
     ]);
     if(!tenantStatus[0]?.active)return Response.json({error:"Tenant access is disabled"},{status:403});
@@ -244,7 +244,7 @@ export async function GET(request: Request) {
     const customEnabled=new Set(userModules.filter(row=>row.enabled).map(row=>row.module_id));
     const clientEnabledModules=ALL_PORTAL_MODULE_IDS.filter(id=>id==="live_calendar"?tenantEnabled.get(id)===true:tenantEnabled.get(id)!==false);
     const enabledModules=membership.role==="superadmin"?ALL_PORTAL_MODULE_IDS:membership.module_access_mode==="custom"?ALL_PORTAL_MODULE_IDS.filter(id=>customEnabled.has(id)&&(id==="live_calendar"?tenantEnabled.get(id)===true:tenantEnabled.get(id)!==false)):ALL_PORTAL_MODULE_IDS.filter(id=>id==="live_calendar"?tenantEnabled.get(id)===true:tenantEnabled.get(id)!==false);
-    if(!dashboardSectionAllowed(plan.section,enabledModules,membership.role,membership.role==="superadmin"))return Response.json({error:"Module access denied"},{status:403});
+    if(!dashboardSectionAllowed(plan.section,enabledModules,membership.role,membership.role==="superadmin"||membership.can_manage_permissions===true))return Response.json({error:"Module access denied"},{status:403});
     const assignedStoreIds=new Set(userStores.map(row=>canonicalStoreId(row.store_id)));
     const [registry,directory]=await Promise.all([
       supabaseRest<RegistryStore[]>(`stores?select=id,name,display_name,platform,bigseller_name&tenant_id=eq.${encodeURIComponent(membership.tenant_id)}&order=name.asc`),
@@ -304,7 +304,7 @@ export async function GET(request: Request) {
       productProfile,
       coFundVouchers:selectedCoFundVouchers,
       user: { email: user.email },
-      access: { role:membership.role, enabledModules, clientEnabledModules, canManagePermissions:membership.role==="superadmin" },
+      access: { role:membership.role, enabledModules, clientEnabledModules, canManagePermissions:membership.role==="superadmin"||membership.can_manage_permissions===true },
       dataSources: {
         directory: "Store directory",
         advertisingBalance: "Daily advertising balance",
@@ -317,7 +317,7 @@ export async function GET(request: Request) {
   if (!user) return Response.json({ error: "Authentication required" }, { status: 401 });
 
   const db = await getDb();
-  const [membership] = await db.select({ id:customerUsers.id, tenantId: customerUsers.tenantId, role: customerUsers.role, active:customerUsers.active, moduleAccessMode:customerUsers.moduleAccessMode, storeAccessMode:customerUsers.storeAccessMode })
+  const [membership] = await db.select({ id:customerUsers.id, tenantId: customerUsers.tenantId, role: customerUsers.role, active:customerUsers.active, canManagePermissions:customerUsers.canManagePermissions, moduleAccessMode:customerUsers.moduleAccessMode, storeAccessMode:customerUsers.storeAccessMode })
     .from(customerUsers)
     .where(eq(customerUsers.email, user.email.toLowerCase()))
     .limit(1);
@@ -327,7 +327,7 @@ export async function GET(request: Request) {
   if (!tenant) return Response.json({ error: "Customer dashboard is inactive" }, { status: 403 });
 
   const allTenantStores = await db.select().from(stores).where(eq(stores.tenantId, tenant.id));
-  const assignedStoreRows = membership.storeAccessMode === "selected" ? await db.select({ storeId:userStoreAccess.storeId }).from(userStoreAccess).where(eq(userStoreAccess.userId,membership.id)) : [];
+  const assignedStoreRows = membership.storeAccessMode === "selected" ? await db.select({ storeId:userStoreAccess.storeId }).from(userStoreAccess).where(and(eq(userStoreAccess.userId,membership.id),eq(userStoreAccess.enabled,true))) : [];
   const assignedStoreIds = new Set(assignedStoreRows.map(row=>canonicalStoreId(row.storeId)));
   const canonicalTenantStores=allTenantStores.filter(store=>canonicalStoreId(store.id)===store.id);
   const tenantStores = membership.role === "superadmin" || membership.storeAccessMode === "all" ? canonicalTenantStores : canonicalTenantStores.filter(store=>assignedStoreIds.has(store.id));
@@ -338,7 +338,7 @@ export async function GET(request: Request) {
   const enabledModules = membership.role === "superadmin" ? ALL_PORTAL_MODULE_IDS : membership.moduleAccessMode === "custom"
     ? ALL_PORTAL_MODULE_IDS.filter(moduleId=>userModuleRows.find(row=>row.moduleId===moduleId)?.enabled===true && (moduleId==="live_calendar" ? configuredModules.get(moduleId)===true : configuredModules.get(moduleId)!==false))
     : clientEnabledModules;
-  if(!dashboardSectionAllowed(plan.section,enabledModules,membership.role,membership.role==="superadmin"))return Response.json({error:"Module access denied"},{status:403});
+  if(!dashboardSectionAllowed(plan.section,enabledModules,membership.role,membership.role==="superadmin"||membership.canManagePermissions===true))return Response.json({error:"Module access denied"},{status:403});
   const [profiles,projects]=await Promise.all([
     db.select().from(linkDirectoryStores).where(eq(linkDirectoryStores.tenantId,tenant.id)),
     db.select().from(linkDirectoryProjects).orderBy(linkDirectoryProjects.id),
@@ -438,6 +438,6 @@ export async function GET(request: Request) {
     productProfile,
     coFundVouchers:selectedCoFundVouchers,
     user: { email: user.email },
-    access: { role: membership.role, enabledModules, clientEnabledModules, canManagePermissions: membership.role === "superadmin" },
+    access: { role: membership.role, enabledModules, clientEnabledModules, canManagePermissions: membership.role === "superadmin" || membership.canManagePermissions===true },
   },started);
 }

@@ -33,6 +33,7 @@ beforeEach(() => {
     const table = new URL(path, "https://rest.test/").pathname.slice(1);
     const body = init.body ? JSON.parse(init.body) : null;
     if (table === "customer_users") return [state.member];
+    if (["user_module_permissions","tenant_module_permissions","user_store_access"].includes(table)) return [];
     if (table === "tenants") return [{ active: state.tenantActive ?? true }];
     if (table === "stores") return state.stores;
     if (table === "rpc/account_create_store_with_setup_v2") {
@@ -57,7 +58,7 @@ beforeEach(() => {
   };
 });
 
-test("only Super Admin may create a store with Account setup", async () => {
+test("ordinary users cannot create a store with Account setup; Super Admin still can", async () => {
   state.member.role = "customer";
   assert.equal((await api.POST(request("POST", setup))).status, 403);
   state.member.role = "superadmin";

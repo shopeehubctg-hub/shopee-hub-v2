@@ -187,7 +187,7 @@ export async function GET(request: Request) {
   const assignedStoreRows = membership.role === "superadmin" || membership.storeAccessMode === "all"
     ? []
     : await db.select({ storeId:userStoreAccess.storeId }).from(userStoreAccess)
-      .where(eq(userStoreAccess.userId, membership.id));
+      .where(and(eq(userStoreAccess.userId, membership.id),eq(userStoreAccess.enabled,true)));
   const assignedStoreIds = new Set(assignedStoreRows.map(row => row.storeId));
   const accessibleStores = tenantStores.filter(store =>
     membership.role === "superadmin" || membership.storeAccessMode === "all" || assignedStoreIds.has(store.id),

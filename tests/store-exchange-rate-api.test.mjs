@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 
 const bundle=await build({entryPoints:['app/api/admin/store-exchange-rate/route.ts'],bundle:true,write:false,platform:'node',format:'esm',plugins:[{name:'exchange-test-adapters',setup(build){
-  build.onResolve({filter:/\/(chatgpt-auth|supabase-rest|account-fx-source)$/},args=>({path:args.path.split('/').at(-1),namespace:'exchange-test'}));
-  build.onLoad({filter:/.*/,namespace:'exchange-test'},args=>({loader:'js',contents:args.path==='chatgpt-auth'?'export async function getChatGPTUser(){return globalThis.__fxActor;}':args.path==='supabase-rest'?'export async function supabaseRest(path,options){return globalThis.__fxRest(path,options);}':`export const BNM_MONTHLY_URL='https://storage.data.gov.my/finsector/exr/monthly.csv';export async function bnmMarketServiceRate(month,currency){return globalThis.__fxRate(month,currency);}`}));
+  build.onResolve({filter:/^(server-only|.*\/(chatgpt-auth|supabase-rest|account-fx-source))$/},args=>({path:args.path.split('/').at(-1),namespace:'exchange-test'}));
+  build.onLoad({filter:/.*/,namespace:'exchange-test'},args=>({loader:'js',contents:args.path==='server-only'?'':args.path==='chatgpt-auth'?'export async function getChatGPTUser(){return globalThis.__fxActor;}':args.path==='supabase-rest'?'export async function supabaseRest(path,options){return globalThis.__fxRest(path,options);}':`export const BNM_MONTHLY_URL='https://storage.data.gov.my/finsector/exr/monthly.csv';export async function bnmMarketServiceRate(month,currency){return globalThis.__fxRate(month,currency);}`}));
 }}]});
 const {GET}=await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
 let state;
