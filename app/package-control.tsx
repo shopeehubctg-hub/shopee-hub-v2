@@ -38,6 +38,12 @@ export type PackageItem = {
   priceSchedules?:PriceSchedule[];
   recurringCampaign?:RecurringCampaignRule|null; currentPriceLabel?:string;
 };
+function sellingMarkets(item:PackageItem):MarketCode[] {
+  const codes=new Set<string>((item.market??"").split(",").map(code=>code.trim()));
+  for(const line of item.priceSchedules??[])if(isMarket(line.market))codes.add(line.market);
+  for(const event of item.recurringCampaign?.events??[])for(const code of MARKET_CODES)if(event.prices[code])codes.add(code);
+  return MARKET_CODES.filter(code=>codes.has(code));
+}
 // Duration follows the normal-day period. Recurring campaigns have their own dates.
 function packageDuration(item:PackageItem):"long-term"|"monthly"|"unknown" {
   if(item.durationType) return item.durationType==="long_term"?"long-term":"monthly";
@@ -132,9 +138,9 @@ function packageCampaignMonths(from:string,to:string|null) {
   return months;
 }
 
-function PackagePriceSummary({item}:{item:PackageItem}) {
+function PackagePriceSummary({item,country="all"}:{item:PackageItem;country?:"all"|MarketCode}) {
   const schedules=item.priceSchedules??[];
-  const markets=MARKET_CODES.filter(market=>schedules.some(line=>line.market===market)||item.recurringCampaign?.events.some(event=>event.prices[market]));
+  const markets=MARKET_CODES.filter(market=>(country==="all"||country===market)&&(schedules.some(line=>line.market===market)||item.recurringCampaign?.events.some(event=>event.prices[market])));
   return <div className="package-market-prices">{markets.map(market=>{
     const marketSchedules=schedules.filter(line=>line.market===market);
     const campaign=item.recurringCampaign
@@ -186,6 +192,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
   const [filter,setFilter] = useState("all");
   const [search,setSearch] = useState("");
   const [durationFilter,setDurationFilter] = useState("all");
+  const [countryFilter,setCountryFilter] = useState<"all"|MarketCode>("all");
   const [view,setView] = useState<"grid"|"list">("grid");
   const [openDetails,setOpenDetails] = useState<string|null>(null);
   const [displayCount,setDisplayCount] = useState(30);
@@ -381,10 +388,11 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
   const visible = useMemo(()=>scopedItems.filter(item =>
     (filter==="all"||item.status===filter) &&
     (durationFilter==="all"||packageDuration(item)===durationFilter) &&
+    (countryFilter==="all"||sellingMarkets(item).includes(countryFilter)) &&
     `${item.packageSku} ${item.name} ${item.platforms?.map(platform=>platform.packageSku).join(" ")}`.toLowerCase().includes(search.toLowerCase())
-  ),[scopedItems,filter,search,durationFilter]);
+  ),[scopedItems,filter,search,durationFilter,countryFilter]);
   const displayed = visible.slice(0,displayCount);
-  const listMarkets=MARKET_CODES.filter(market=>visible.some(item=>item.priceSchedules?.some(line=>line.market===market)||item.recurringCampaign?.events.some(event=>event.prices[market])||(!item.priceSchedules?.length&&item.market.split(",").map(value=>value.trim()).includes(market))));
+  const listMarkets=MARKET_CODES.filter(market=>(countryFilter==="all"||countryFilter===market)&&visible.some(item=>sellingMarkets(item).includes(market)));
   const active = scopedItems.filter(item=>item.status==="active").length;
   const scheduled = scopedItems.filter(item=>item.status==="scheduled").length;
   const drafts = scopedItems.filter(item=>item.status==="draft"||item.status==="review").length;
@@ -869,7 +877,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
     {item.recurringCampaign?.events.map(event=>{const price=event.prices[market];return price?<div className="package-sheet-price" key={event.id}><span>{recurringEventLabels[event.id]} · Every month</span><strong>{money(price.sellingPrice,market)}</strong><small>Original {money(price.originalPrice,market)}</small></div>:null;})}</>;
   }
   function renderListDates(item:PackageItem) {
-    return <>{item.priceSchedules?.length?item.priceSchedules.map((line,index)=><div key={index}><b>{line.market} {line.priceType==="non_campaign"?"Normal":"Campaign"}</b><span>{displayDate(line.effectiveFrom)} → {line.effectiveTo?displayDate(line.effectiveTo):"Ongoing"}</span></div>):<div>{displayDate(item.effectiveFrom)} → {item.effectiveTo===null?"Ongoing":item.effectiveTo?displayDate(item.effectiveTo):"Not recorded"}</div>}
+    return <>{item.priceSchedules?.length?item.priceSchedules.filter(line=>countryFilter==="all"||line.market===countryFilter).map((line,index)=><div key={index}><b>{line.market} {line.priceType==="non_campaign"?"Normal":"Campaign"}</b><span>{displayDate(line.effectiveFrom)} → {line.effectiveTo?displayDate(line.effectiveTo):"Ongoing"}</span></div>):<div>{displayDate(item.effectiveFrom)} → {item.effectiveTo===null?"Ongoing":item.effectiveTo?displayDate(item.effectiveTo):"Not recorded"}</div>}
       {item.recurringCampaign&&<div><b>Monthly campaign</b><span>{displayDate(item.recurringCampaign.startDate)} → {item.recurringCampaign.endDate?displayDate(item.recurringCampaign.endDate):"Ongoing"}</span></div>}</>;
   }
 
@@ -884,8 +892,9 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
       </div>
     </div>
 
-    {canShowSamples&&!standaloneCreate&&<div className="package-sample-toolbar"><span role="status">{sampleMode?"Sample data · Read only":""}</span><button type="button" disabled={saving||showCreate} aria-pressed={sampleMode} onClick={()=>{resetListScope();setFilter("all");setDurationFilter("all");setSearch("");setSampleMode(value=>!value);}}>{sampleMode?"Back to real data":"View sample data"}</button></div>}
+    {canShowSamples&&!standaloneCreate&&<div className="package-sample-toolbar"><span role="status">{sampleMode?"Sample data · Read only":""}</span><button type="button" disabled={saving||showCreate} aria-pressed={sampleMode} onClick={()=>{resetListScope();setFilter("all");setDurationFilter("all");setCountryFilter("all");setSearch("");setSampleMode(value=>!value);}}>{sampleMode?"Back to real data":"View sample data"}</button></div>}
 
+    <p className="package-summary-scope">Summary · {sampleMode?"All sample packages":storeName} · All selling countries</p>
     <section className="metric-grid package-metrics">
       <article className="metric"><span>Total Packages</span><strong>{scopedItems.length}</strong><em>{sampleMode?"Sample packages":storeName}</em></article>
       <article className="metric"><span>Active Now</span><strong>{active}</strong><em>Currently Selling</em></article>
@@ -898,25 +907,28 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
         <div role="group" aria-label="Package status">{["All","Active","Scheduled","Draft","Review","Expired"].map(label=>{const value=label.toLowerCase();return <button key={value} className={filter===value?"active":""} aria-pressed={filter===value} onClick={()=>{resetListScope();setFilter(value);}}>{label}</button>})}</div>
         <span className="package-filter-divider" aria-hidden="true"/>
         <div role="group" aria-label="Package duration">{[["all","All types"],["long-term","Long Term"],["monthly","Monthly"]].map(([value,label])=><button key={value} className={durationFilter===value?"active":""} aria-pressed={durationFilter===value} onClick={()=>{resetListScope();setDurationFilter(value);}}>{label}</button>)}</div>
+        <label className="package-country-filter">Country<select aria-label="Package country" value={countryFilter} onChange={event=>{resetListScope();setCountryFilter(isMarket(event.currentTarget.value)?event.currentTarget.value:"all");}}><option value="all">All countries</option>{MARKET_CODES.map(market=><option value={market} key={market}>{MARKET_CONFIG[market].name}</option>)}</select></label>
       </div>
       <div className="package-view-controls"><div role="group" aria-label="Package view">{(["grid","list"] as const).map(value=><button type="button" key={value} aria-pressed={view===value} className={view===value?"active":""} onClick={()=>setView(value)}>{value==="grid"?"Grid View":"List View"}</button>)}</div><input aria-label="Search package or platform SKU" value={search} onChange={event=>{resetListScope();setSearch(event.target.value);}} placeholder="Search package or platform SKU" /></div>
     </div>
+    <p className="package-result-count" role="status">{visible.length} matching package{visible.length===1?"":"s"} · {countryFilter==="all"?"All countries":MARKET_CONFIG[countryFilter].name}{countryFilter!=="all"?" · Package actions apply to all selling markets":""}</p>
     {!sampleMode&&message&&<div className={`package-message ${messageType}`} role={messageType==="error"?"alert":"status"} aria-live={messageType==="error"?"assertive":"polite"}>{message}{messageType==="warning"&&<a href={HISTORY_SHEET_URL} target="_blank" rel="noopener noreferrer">Open History Sheet</a>}</div>}
     {kitError&&!kitPreview&&<div className="package-message error" role="alert">{kitError}</div>}
 
     {view==="grid"?<div className="package-list">{displayed.map(item=><article className="package-card" key={item.id}>
       <div className="package-card-head">
         <div>{renderSelection(item)}<span className={`package-status ${item.status}`}>{item.status}</span><span className={`sync-status ${item.pendingVersion?"pending":item.sheetSyncStatus ?? "pending"}`}>Sheet {item.pendingVersion?`v${item.pendingVersion} needs sync`:item.sheetSyncStatus==="not_sent"?"not sent":item.sheetSyncStatus ?? "preview"}</span><h3>{item.name}</h3></div>
-        {!item.priceSchedules?.length&&<div className="package-price"><small>{item.market}{item.currentPriceLabel?` · ${item.currentPriceLabel}`:""}</small><del>{money(item.originalPrice,item.market,source==="database")}</del><strong>{money(item.sellingPrice,item.market,source==="database")}</strong></div>}
+        {!item.priceSchedules?.length&&!item.recurringCampaign&&isMarket(item.market)&&<div className="package-price"><small>{item.market}{item.currentPriceLabel?` · ${item.currentPriceLabel}`:""}</small><del>{money(item.originalPrice,item.market,source==="database")}</del><strong>{money(item.sellingPrice,item.market,source==="database")}</strong></div>}
       </div>
+      {!item.priceSchedules?.length&&!item.recurringCampaign&&!isMarket(item.market)&&<p className="package-result-count">{countryFilter==="all"?(sellingMarkets(item).join(", ")||"Country not recorded"):countryFilter} · Price details unavailable</p>}
       {packageDuration(item)==="long-term"&&<span className="package-long-term-badge">Long-term Package</span>}
-      {item.priceSchedules?.length?<PackagePriceSummary item={item}/>:null}
+      {(item.priceSchedules?.length||item.recurringCampaign)?<PackagePriceSummary item={item} country={countryFilter}/>:null}
       <div className="platform-skus">{(item.platforms?.length?item.platforms:[{platform:"Shopee" as const,packageSku:item.packageSku}]).map(platform=><div key={platform.platform}><span>{platform.platform}</span><b>{platform.packageSku}</b></div>)}</div>
       <div className="package-meta">{allStoresSelected&&<span>Store <b>{item.storeName??item.storeId}</b></span>}<span>Version <b>v{item.version}</b></span></div>
       <div className="component-list">{item.components.map((line,index)=><div key={`${line.inventorySku}-${index}`}><span className={`component-kind ${line.kind}`}>{line.kind}</span><b>{line.inventorySku}</b><span>{line.name}</span><strong>× {line.quantity}</strong></div>)}</div>
       {renderHistory(item)}
       {renderActions(item)}
-    </article>)}</div>:<div className="package-sheet-scroll" tabIndex={0} role="region" aria-label="Package list spreadsheet"><table className="package-sheet"><caption>Packages & Pricing · {visible.length} package{visible.length===1?"":"s"} · Showing {displayed.length}</caption><thead><tr><th scope="col" className="package-sheet-name">Package</th>{allStoresSelected&&<th scope="col">Store</th>}<th scope="col">Type</th><th scope="col">Status / Sheet</th>{listMarkets.map(market=><th scope="col" key={market}>{market} · {MARKET_CONFIG[market].symbol} prices</th>)}<th scope="col">Effective dates</th><th scope="col">Platform SKU</th><th scope="col">Inventory SKU / Quantity</th><th scope="col">Version</th><th scope="col">Actions</th></tr></thead><tbody>{displayed.map(item=><Fragment key={item.id}><tr><th scope="row" className="package-sheet-name"><strong>{item.name}</strong>{renderSelection(item)}<button type="button" aria-expanded={openDetails===item.id} onClick={()=>setOpenDetails(openDetails===item.id?null:item.id)} aria-label={`View details for ${item.name}`}>{openDetails===item.id?"Hide details":"View details"}</button></th>{allStoresSelected&&<td>{item.storeName??item.storeId}</td>}<td>{durationLabel(item)}</td><td><span className={`package-status ${item.status}`}>{item.status}</span><span className={`sync-status ${item.pendingVersion?"pending":item.sheetSyncStatus??"pending"}`}>Sheet {item.pendingVersion?`v${item.pendingVersion} needs sync`:item.sheetSyncStatus==="not_sent"?"not sent":item.sheetSyncStatus??"preview"}</span></td>{listMarkets.map(market=><td key={market}>{renderListPrices(item,market)}</td>)}<td className="package-sheet-dates">{renderListDates(item)}</td><td>{(item.platforms?.length?item.platforms:[{platform:"Shopee",packageSku:item.packageSku}]).map(line=><div key={line.platform}><small>{line.platform}</small><div>{line.packageSku}</div></div>)}</td><td>{item.components.map((line,index)=><div key={index} title={`${line.kind} · ${line.name}`}>{line.inventorySku} × {line.quantity}</div>)}</td><td>v{item.version}</td><td>{renderActions(item)}</td></tr>{(openDetails===item.id||openHistory===item.id)&&<tr className="package-sheet-detail"><td colSpan={8+listMarkets.length+(allStoresSelected?1:0)}>{openDetails===item.id&&<div><h3>{item.name}</h3>{item.priceSchedules?.length?<PackagePriceSummary item={item}/>:null}<div className="component-list">{item.components.map((line,index)=><div key={index}><span className={`component-kind ${line.kind}`}>{line.kind}</span><b>{line.inventorySku}</b><span>{line.name}</span><strong>× {line.quantity}</strong></div>)}</div></div>}{renderHistory(item)}</td></tr>}</Fragment>)}</tbody></table></div>}
+    </article>)}</div>:<div className="package-sheet-scroll" tabIndex={0} role="region" aria-label="Package list spreadsheet"><table className="package-sheet"><caption>Packages & Pricing · {visible.length} package{visible.length===1?"":"s"} · Showing {displayed.length}</caption><thead><tr><th scope="col" className="package-sheet-name">Package</th>{allStoresSelected&&<th scope="col">Store</th>}<th scope="col">Type</th><th scope="col">Status / Sheet</th>{listMarkets.map(market=><th scope="col" key={market}>{market} · {MARKET_CONFIG[market].symbol} prices</th>)}<th scope="col">Effective dates</th><th scope="col">Platform SKU</th><th scope="col">Inventory SKU / Quantity</th><th scope="col">Version</th><th scope="col">Actions</th></tr></thead><tbody>{displayed.map(item=><Fragment key={item.id}><tr><th scope="row" className="package-sheet-name"><strong>{item.name}</strong>{renderSelection(item)}<button type="button" aria-expanded={openDetails===item.id} onClick={()=>setOpenDetails(openDetails===item.id?null:item.id)} aria-label={`View details for ${item.name}`}>{openDetails===item.id?"Hide details":"View details"}</button></th>{allStoresSelected&&<td>{item.storeName??item.storeId}</td>}<td>{durationLabel(item)}</td><td><span className={`package-status ${item.status}`}>{item.status}</span><span className={`sync-status ${item.pendingVersion?"pending":item.sheetSyncStatus??"pending"}`}>Sheet {item.pendingVersion?`v${item.pendingVersion} needs sync`:item.sheetSyncStatus==="not_sent"?"not sent":item.sheetSyncStatus??"preview"}</span></td>{listMarkets.map(market=><td key={market}>{renderListPrices(item,market)}</td>)}<td className="package-sheet-dates">{renderListDates(item)}</td><td>{(item.platforms?.length?item.platforms:[{platform:"Shopee",packageSku:item.packageSku}]).map(line=><div key={line.platform}><small>{line.platform}</small><div>{line.packageSku}</div></div>)}</td><td>{item.components.map((line,index)=><div key={index} title={`${line.kind} · ${line.name}`}>{line.inventorySku} × {line.quantity}</div>)}</td><td>v{item.version}</td><td>{renderActions(item)}</td></tr>{(openDetails===item.id||openHistory===item.id)&&<tr className="package-sheet-detail"><td colSpan={8+listMarkets.length+(allStoresSelected?1:0)}>{openDetails===item.id&&<div><h3>{item.name}</h3>{(item.priceSchedules?.length||item.recurringCampaign)?<PackagePriceSummary item={item} country={countryFilter}/>:null}<div className="component-list">{item.components.map((line,index)=><div key={index}><span className={`component-kind ${line.kind}`}>{line.kind}</span><b>{line.inventorySku}</b><span>{line.name}</span><strong>× {line.quantity}</strong></div>)}</div></div>}{renderHistory(item)}</td></tr>}</Fragment>)}</tbody></table></div>}
 
     {visible.length>displayCount&&<button type="button" className="package-load-more" onClick={()=>setDisplayCount(count=>count+30)}>Show more packages ({visible.length-displayCount} remaining)</button>}
     {!visible.length&&<div className="package-empty"><strong>{!hasPackageScope?"Select a Store":allStoresSelected?"No Packages In Accessible Stores":"No Packages In This View"}</strong><span>{!hasPackageScope?"Package information will appear after you choose a store.":allStoresSelected?"Only packages from stores you have permission to access appear here.":"Choose another filter or create the first package."}</span></div>}

@@ -1,4 +1,5 @@
-export type AccountCurrency = "MYR" | "SGD";
+import type {MarketCode} from './markets';
+export type AccountCurrency = "MYR" | "SGD" | "THB" | "PHP";
 /** Exact decimal string; never coerce monetary ledger values to floating point. */
 export type AccountMoney = string;
 export type AccountMappingCandidate = {
@@ -7,9 +8,11 @@ export type AccountMappingCandidate = {
 export type AccountStoreRow = {
   id: string; rosterKey?: string; storeId: string | null; storeName: string; project: string;
   currency: AccountCurrency; statementMonth: string; invoiceMonth: string;
+  salesCurrency?: AccountCurrency;
+  previewMarketFxEligible?: boolean;
   previewRateDefaultsEligible?: boolean;
-  previewServiceFxRate?: {serviceMonth:string;rate:string;policy:'bnm-service-average';verified:true;reference:string};
-  entity?: string; market?: "MY" | "SG"; termsVersion?: "NEW" | "OLD";
+  previewServiceFxRate?: {serviceMonth:string;rate:string;policy:'bnm-service-average';verified:true;reference:string;currency?:AccountCurrency;quotationUnit?:1};
+  entity?: string; market?: MarketCode; termsVersion?: "NEW" | "OLD";
   mappingStatus?: "resolved" | "candidate" | "ambiguous" | "missing"; mappingReason?: string;
   candidates?: AccountMappingCandidate[];
   latestSettingsVersion?: string; appliedSettingsVersion?: string | null; settingsEffectiveMonth?: string | null;

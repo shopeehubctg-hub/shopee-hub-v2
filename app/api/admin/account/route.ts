@@ -1,9 +1,9 @@
-import { bnmServiceRate } from '../../../account-fx-source';
+import { bnmServiceRate, bnmMarketServiceRate } from '../../../account-fx-source';
 import { canonicalStoreId } from '../../../live-calendar-model';
 import { getChatGPTUser } from '../../../chatgpt-auth';
 import { supabaseRest } from '../../../supabase-rest';
-import { buildAccount, emptyAccount, malaysiaDate } from '../../../account-ledger';
-import { accountRosterFallback, mergeAccountRoster } from '../../../account-roster';
+import { buildAccount, emptyAccount, malaysiaDate, previousMonth } from '../../../account-ledger';
+import { accountRosterFallback, mergeAccountRoster, appendAccountMarketStores } from '../../../account-roster';
 import { applyAccountSettings, type AccountSetting } from '../../../account-settings-model';
 import type { AccountResponse } from '../../../account-contract';
 import type { Cycle, Term, Assessment, Invoice, Receipt, Allocation } from '../../../account-ledger';
@@ -34,7 +34,23 @@ export async function GET(request:Request) {
     let settings:AccountSetting[]=[];let settingsAvailable=true;
     try { settings=await rows<AccountSetting>('account_billing_unit_versions','id,roster_key,roster_project,legal_entity,currency,change_action,version::text,effective_month,store_id,fee_rule,created_at',member.tenant_id); }
     catch(error){if(error instanceof Error&&/"code":"(PGRST205|42P01)"/.test(error.message))settingsAvailable=false;else throw error;}
-    const decorate=async(account:AccountResponse)=>{account.settingsAvailable=settingsAvailable;account.storeOptions=stores.filter(s=>canonicalStoreId(s.id)===s.id).map(s=>({id:s.id,name:s.display_name??s.name,platform:s.platform})).sort((a,b)=>a.name.localeCompare(b.name));const decorated=applyAccountSettings(account,settings,storeNames);for(const row of decorated.stores){row.previewRateDefaultsEligible=member.tenant_id==='j-packaging';delete row.previewServiceFxRate;}if(member.tenant_id==='j-packaging'){const bonlife=decorated.stores.filter(row=>row.currency==='SGD'&&row.rosterKey==='roster-2026-10-sg-3'&&row.project==='BONLIFE SG');if(bonlife.length){const rate=await bnmServiceRate(invoiceMonth);if(rate)for(const row of bonlife)row.previewServiceFxRate=rate;}}return decorated;};
+    const decorate=async(account:AccountResponse)=>{
+      account.settingsAvailable=settingsAvailable;
+      account.storeOptions=stores.filter(s=>canonicalStoreId(s.id)===s.id).map(s=>({id:s.id,name:s.display_name??s.name,platform:s.platform})).sort((a,b)=>a.name.localeCompare(b.name));
+      const decorated=appendAccountMarketStores(applyAccountSettings(account,settings,storeNames),stores);
+      for(const row of decorated.stores){row.previewRateDefaultsEligible=member.tenant_id==='j-packaging';delete row.previewServiceFxRate;}
+      const bonlife=member.tenant_id==='j-packaging'?decorated.stores.filter(row=>row.currency==='SGD'&&row.market==='SG'&&row.salesCurrency==='SGD'&&row.rosterKey==='roster-2026-10-sg-3'&&row.project==='BONLIFE SG'):[];
+      await Promise.all([
+        ...(bonlife.length?[bnmServiceRate(invoiceMonth).then(rate=>{if(rate&&rate.policy==='bnm-service-average'&&rate.verified===true&&Boolean(rate.reference)&&rate.serviceMonth===previousMonth(invoiceMonth))for(const row of bonlife)row.previewServiceFxRate={...rate,currency:'SGD',quotationUnit:1};})]:[]),
+        ...(['THB','PHP'] as const).map(async currency=>{
+          const targets=decorated.stores.filter(row=>row.previewMarketFxEligible&&row.salesCurrency===currency);
+          if(!targets.length)return;
+          const rate=await bnmMarketServiceRate(invoiceMonth,currency);
+          if(rate&&rate.policy==='bnm-service-average'&&rate.verified===true&&Boolean(rate.reference)&&rate.currency===currency&&rate.quotationUnit===1&&rate.serviceMonth===previousMonth(invoiceMonth))for(const row of targets)row.previewServiceFxRate=rate;
+        }),
+      ]);
+      return decorated;
+    };
     try {
       const [cycles,terms,assessments,invoices,receipts,allocations]=await Promise.all([
         rows<Cycle>('account_billing_cycles','id,statement_month,invoice_month,service_period_start,service_period_end,updated_at',member.tenant_id),

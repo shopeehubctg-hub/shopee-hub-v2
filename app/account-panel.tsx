@@ -1,4 +1,7 @@
 "use client";
+import {MARKET_CODES,MARKET_CONFIG,type MarketCode} from "./markets";
+import {accountRowMarket,showAccountSummary} from "./account-market-display";
+import "./account-markets.css";
 import { accountMappingDisplay } from './account-mapping-display';
 
 import { useEffect, useRef, useState } from "react";
@@ -9,7 +12,6 @@ import { RateCell, RecordDetails } from "./account-settings-ui";
 import { billingRowsMatching, visibleSelection, useFeePlans, useFeePreviewState } from "./fee-plan-context";
 import { FeePlansPreview } from "./fee-plans-preview";
 
-const currencies: AccountCurrency[] = ["MYR", "SGD"];
 
 function monthLabel(month: string) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return month;
@@ -31,8 +33,8 @@ function CurrencyCard({currency,summary,invoiceMonth,today}:{currency:AccountCur
     {label:'Invoiced',value:summary?.billed,period:monthLabel(invoiceMonth)},
     {label:'Outstanding',value:summary?.outstanding,period:monthLabel(invoiceMonth)},
   ];
-  return <section className="account-summary-market" aria-label={`${currency==='MYR'?'Malaysia':'Singapore'} overview`}>
-    <h3>{currency==='MYR'?'Malaysia':'Singapore'} <span>{currency}</span></h3>
+  return <section className="account-summary-market" aria-label={`${currency} income overview`}>
+    <h3>{currency} income</h3>
     <div className="account-overview-metrics">{metrics.map(metric=><article className="metric" key={metric.label}><span>{metric.label}</span><strong>{accountMoney(metric.value,currency)}</strong><small>{metric.period}</small></article>)}</div>
   </section>;
 }
@@ -48,6 +50,7 @@ export function AccountPanel() {
   const {previewRows,mergePreviewRows,openFeeWorkspace}=useFeePlans();
   const [invoiceMonth, setInvoiceMonth] = useFeePreviewState<string>("account-invoice-month","2026-10");
   const [query, setQuery] = useState("");
+  const [country,setCountry]=useState<"all"|MarketCode>("all");
   const [selected,setSelected]=useState<string[]>([]);
   const [detailId,setDetailId]=useState<string|null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -78,7 +81,8 @@ export function AccountPanel() {
   const updatedAt = accountUpdatedAt(data?.updatedAt ?? null);
   const canConfigure = invoiceMonth >= (data?.today || "").slice(0, 7);
   const canSaveSettings = Boolean(data?.settingsAvailable && canConfigure);
-  const visibleRows=billingRowsMatching(data?.stores??[],query);
+  const searchedRows=billingRowsMatching(data?.stores??[],query);
+  const visibleRows=searchedRows.filter(row=>country==="all"||accountRowMarket(row)===country);
   const selectedKeys=visibleSelection(visibleRows,selected);
   function changeInvoiceMonth(value:string){if(value!==invoiceMonth&&/^\d{4}-(0[1-9]|1[0-2])$/.test(value)){setDetailId(null);setSelected([]);setInvoiceMonth(value);setLoading(true);}}
   function toggleGroup(keys:string[]){setSelected(current=>{const all=keys.every(key=>current.includes(key));return all?current.filter(key=>!keys.includes(key)):[...new Set([...current,...keys])];});}
@@ -90,12 +94,13 @@ export function AccountPanel() {
     {!loading && data?.status === "not_configured" && <div className="account-notice" role="status">No income records yet.</div>}
     {!loading && data && <>
       {updatedAt && <p className="account-updated">Last updated {updatedAt} MYT</p>}
-      <section className="account-finance-overview" aria-label="Income by currency">{currencies.map(currency => <CurrencyCard key={currency} currency={currency} summary={data.summaries.find(item => item.currency === currency)} invoiceMonth={displayMonth} today={data.today} />)}</section>
+      <section className="account-finance-overview" aria-label="Income by currency">{data.summaries.filter(showAccountSummary).map(summary => <CurrencyCard key={summary.currency} currency={summary.currency} summary={summary} invoiceMonth={displayMonth} today={data.today} />)}</section>
       <section className="account-stores" aria-labelledby="account-stores-title">
         <div className="account-stores-head"><div><h3 id="account-stores-title">Billing records</h3><span className="account-record-count">{visibleRows.length} records · {monthLabel(displayMonth)}</span>{!data.settingsAvailable&&<p className="account-preview-note">Preview edits reset on refresh.</p>}</div><button type="button" className="account-fee-settings-button" onClick={()=>openFeeWorkspace({view:'settings',month:invoiceMonth})}>Fee settings</button></div>
-        {data.stores.length>0&&<div className="account-record-search"><label className="sr-only" htmlFor="account-record-search">Search entity, client or store</label><input id="account-record-search" type="search" placeholder="Search entity, client or store" value={query} onChange={event=>{setSelected([]);setQuery(event.target.value);}}/></div>}
+        <div className="account-country-filter"><label htmlFor="account-country">Country</label><select id="account-country" aria-label="Billing country" value={country} onChange={event=>{setCountry(event.target.value as "all"|MarketCode);setSelected([]);setDetailId(null);}}><option value="all">All countries</option>{MARKET_CODES.map(market=><option key={market} value={market}>{MARKET_CONFIG[market].name} ({searchedRows.filter(row=>accountRowMarket(row)===market).length})</option>)}</select></div>
+        {data.stores.length>0&&<div className="account-record-search"><label className="sr-only" htmlFor="account-record-search">Search entity, client or store</label><input id="account-record-search" type="search" placeholder="Search entity, client or store" value={query} onChange={event=>{setSelected([]);setDetailId(null);setQuery(event.target.value);}}/></div>}
         {selectedKeys.length>0&&<div className="account-selection-bar" role="region" aria-label="Selected billing records"><strong>{selectedKeys.length} selected</strong><button type="button" onClick={()=>setSelected([])}>Clear</button><button type="button" className="account-bulk-rate" onClick={()=>openFeeWorkspace({view:'bulk',month:invoiceMonth,unitKeys:[...selectedKeys]})}>Update rate card</button></div>}
-        {visibleRows.length?(['MY','SG'] as const).filter(group=>visibleRows.some(row=>row.market===group)).map(group=><section className="account-market-section" key={group} aria-labelledby={`account-market-${group}`}><h4 id={`account-market-${group}`}>{group==='MY'?'Malaysia':'Singapore'} <span>{group==='MY'?'MYR':'SGD'}</span></h4><div className="account-table-scroll"><table className="account-daily-table"><thead><tr><th scope="col" className="account-selection-col"><SelectionCheckbox label={`Select all visible ${group==='MY'?'Malaysia':'Singapore'} records`} checked={visibleRows.filter(row=>row.market===group).every(row=>selectedKeys.includes(row.rosterKey??row.id))} indeterminate={visibleRows.filter(row=>row.market===group).some(row=>selectedKeys.includes(row.rosterKey??row.id))&&!visibleRows.filter(row=>row.market===group).every(row=>selectedKeys.includes(row.rosterKey??row.id))} onChange={()=>toggleGroup(visibleRows.filter(row=>row.market===group).map(row=>row.rosterKey??row.id))}/></th><th scope="col">Client</th><th scope="col">Monthly rate</th><th scope="col">Invoiced</th><th scope="col">Received</th><th scope="col">Outstanding</th></tr></thead><tbody>{visibleRows.filter(row=>row.market===group).map(row=><tr key={row.id}><td className="account-selection-col" data-label="Select"><SelectionCheckbox checked={selectedKeys.includes(row.rosterKey??row.id)} label={`Select ${row.project||row.storeName}`} onChange={()=>setSelected(current=>current.includes(row.rosterKey??row.id)?current.filter(key=>key!==(row.rosterKey??row.id)):[...current,row.rosterKey??row.id])}/></td><th scope="row" data-label="Client"><button type="button" className="account-record-name" aria-label={`View details for ${row.project||row.storeName}${accountMappingDisplay(row).needsReview?' · Store mapping required':''}`} onClick={()=>setDetailId(row.id)}><span>{row.project||row.storeName}{accountMappingDisplay(row).needsReview&&<span className="account-mapping-warning" role="img" aria-label="Store mapping required" title="Store mapping required">❗️</span>}</span><span aria-hidden="true">›</span></button></th><td data-label="Monthly rate"><RateCell row={row} month={invoiceMonth} onEdit={()=>openFeeWorkspace({view:'assignment',month:invoiceMonth,unitKey:row.rosterKey??row.id})}/></td><td data-label="Invoiced">{accountMoney(row.billed,row.currency)}</td><td data-label="Received">{accountMoney(row.collected,row.currency)}</td><td data-label="Outstanding">{accountMoney(row.outstanding,row.currency)}</td></tr>)}</tbody></table></div></section>):<div className="account-empty">{data.stores.length?'No matching records.':`No billing records for ${monthLabel(displayMonth)}.`}</div>}
+        {query.trim()&&!visibleRows.length?<div className="account-empty">No matching records.</div>:MARKET_CODES.filter(group=>(country==="all"||country===group)&&(!query.trim()||visibleRows.some(row=>accountRowMarket(row)===group))).map(group=><section className="account-market-section" key={group} aria-labelledby={`account-market-${group}`}><h4 id={`account-market-${group}`}>{MARKET_CONFIG[group].name} <span>{visibleRows.filter(row=>accountRowMarket(row)===group).length}</span></h4>{visibleRows.some(row=>accountRowMarket(row)===group)?<div className="account-table-scroll"><table className="account-daily-table"><thead><tr><th scope="col" className="account-selection-col"><SelectionCheckbox label={`Select all visible ${MARKET_CONFIG[group].name} records`} checked={visibleRows.filter(row=>accountRowMarket(row)===group).every(row=>selectedKeys.includes(row.rosterKey??row.id))} indeterminate={visibleRows.filter(row=>accountRowMarket(row)===group).some(row=>selectedKeys.includes(row.rosterKey??row.id))&&!visibleRows.filter(row=>accountRowMarket(row)===group).every(row=>selectedKeys.includes(row.rosterKey??row.id))} onChange={()=>toggleGroup(visibleRows.filter(row=>accountRowMarket(row)===group).map(row=>row.rosterKey??row.id))}/></th><th scope="col">Client</th><th scope="col">Monthly rate</th><th scope="col">Invoiced</th><th scope="col">Received</th><th scope="col">Outstanding</th></tr></thead><tbody>{visibleRows.filter(row=>accountRowMarket(row)===group).map(row=><tr key={row.id}><td className="account-selection-col" data-label="Select"><SelectionCheckbox checked={selectedKeys.includes(row.rosterKey??row.id)} label={`Select ${row.project||row.storeName}`} onChange={()=>setSelected(current=>current.includes(row.rosterKey??row.id)?current.filter(key=>key!==(row.rosterKey??row.id)):[...current,row.rosterKey??row.id])}/></td><th scope="row" data-label="Client"><button type="button" className="account-record-name" aria-label={`View details for ${row.project||row.storeName}${accountMappingDisplay(row).needsReview?' · Store mapping required':''}`} onClick={()=>setDetailId(row.id)}><span>{row.project||row.storeName}{accountMappingDisplay(row).needsReview&&<span className="account-mapping-warning" role="img" aria-label="Store mapping required" title="Store mapping required">❗️</span>}</span><span aria-hidden="true">›</span></button></th><td data-label="Monthly rate"><RateCell row={row} month={invoiceMonth} onEdit={()=>openFeeWorkspace({view:'assignment',month:invoiceMonth,unitKey:row.rosterKey??row.id})}/></td><td data-label="Invoiced">{accountMoney(row.billed,row.currency)}</td><td data-label="Received">{accountMoney(row.collected,row.currency)}</td><td data-label="Outstanding">{accountMoney(row.outstanding,row.currency)}</td></tr>)}</tbody></table></div>:<div className="account-empty">No billing records for {MARKET_CONFIG[group].name}.</div>}</section>)}
       </section>
     </>}
     {data&&detailId&&data.stores.find(row=>row.id===detailId)&&<RecordDetails key={`${detailId}:${invoiceMonth}`} row={data.stores.find(row=>row.id===detailId)!} month={invoiceMonth} canConfigure={canConfigure} canSave={canSaveSettings} options={data.storeOptions??[]} onClose={()=>setDetailId(null)} onSaved={()=>{setDetailId(null);setLoading(true);setRefreshKey(value=>value+1);}}/>}

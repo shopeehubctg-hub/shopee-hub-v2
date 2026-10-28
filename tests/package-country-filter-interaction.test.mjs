@@ -1,0 +1,39 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdir} from 'node:fs/promises';
+import {build} from 'esbuild';
+import {JSDOM} from 'jsdom';
+import React,{act} from 'react';
+const dir=new URL('../node_modules/.package-country-test/',import.meta.url);await mkdir(dir,{recursive:true});
+await build({entryPoints:[new URL('../app/package-control.tsx',import.meta.url).pathname],outfile:new URL('ui.mjs',dir).pathname,bundle:true,format:'esm',platform:'browser',jsx:'automatic',packages:'external',logLevel:'silent'});
+const {PackageControl}=await import(new URL('ui.mjs',dir));
+
+test('country combines selling markets, status, duration and search while prices narrow and whole-package edits stay complete',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{url:'https://shopee-hub-v2-260731-git-cod-e05b8d-shopeehubctg-5199s-projects.vercel.app/'});
+ const values={window:dom.window,document:dom.window.document,navigator:dom.window.navigator,HTMLElement:dom.window.HTMLElement,Event:dom.window.Event,MouseEvent:dom.window.MouseEvent,IS_REACT_ACT_ENVIRONMENT:true};const prior=Object.fromEntries([...Object.keys(values),'fetch'].map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));for(const [key,value] of Object.entries(values))Object.defineProperty(globalThis,key,{configurable:true,writable:true,value});
+ const markets=['MY','SG','TH','PH'];const schedule=(market,index,end=null)=>({market,priceType:'non_campaign',originalPrice:150+index*100,sellingPrice:100+index*100,promotionType:'custom',effectiveFrom:'2026-10-01',effectiveTo:end});
+ const base=(id,extra={})=>({id,name:id,storeId:'store',storeName:'Malaysia Store',packageSku:id,market:'MY',status:'active',version:1,promotionType:'custom',originalPrice:15000,sellingPrice:10000,effectiveFrom:'2026-10-01',effectiveTo:null,components:[{inventorySku:'INV',name:'Product',quantity:1,kind:'product'}],platforms:[{platform:'Shopee',packageSku:id}],sheetSyncStatus:'synced',...extra});
+ const items=[base('Four countries',{market:markets.join(','),priceSchedules:markets.map((market,index)=>schedule(market,index)),samePricing:true}),base('Legacy CSV',{market:' SG, TH, invalid ',effectiveTo:'2026-10-31'}),base('Recurring Philippines',{market:'invalid',recurringCampaign:{schema:1,startDate:'2026-10-01',endDate:null,events:[{id:'payday',startDay:24,endDay:25,prices:{PH:{originalPrice:600,sellingPrice:500}}}]},effectiveTo:undefined}),base('Scheduled Thailand',{market:'TH',status:'scheduled',priceSchedules:[schedule('TH',2,'2026-11-30')]}),...Array.from({length:33},(_,i)=>base(`MY filler ${i}`))];const writes=[];
+ globalThis.fetch=async(url,options={})=>{if(options.method){writes.push(JSON.parse(options.body));return {ok:true,json:async()=>({ok:true,packageId:'Four countries',version:2,status:'active'})};}return {ok:true,json:async()=>({source:'database',canExportKits:true,canDelete:true,packages:items})};};
+ const {createRoot}=await import('react-dom/client');const root=createRoot(dom.window.document.getElementById('root'));const doc=dom.window.document;
+ const click=async(text,scope=doc)=>{const button=[...scope.querySelectorAll('button')].find(button=>button.textContent===text);assert.ok(button,`button ${text}`);await act(async()=>button.click());};const named=label=>doc.querySelector(`[aria-label="${label}"]`);
+ const country=async(value)=>act(async()=>{named('Package country').value=value;named('Package country').dispatchEvent(new dom.window.Event('change',{bubbles:true}));});
+ const search=async(value)=>act(async()=>{const input=named('Search package or platform SKU');Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value').set.call(input,value);input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));input.dispatchEvent(new dom.window.Event('change',{bubbles:true}));});
+ const rows=()=>[...doc.querySelectorAll('.package-sheet tbody>tr:not(.package-sheet-detail)')];const columns=()=>[...doc.querySelectorAll('.package-sheet thead th')].filter(cell=>cell.textContent.includes('prices')).map(cell=>cell.textContent);
+ try{
+ await act(async()=>root.render(React.createElement(PackageControl,{storeId:'store',storeName:'Malaysia Store',storePlatform:'Shopee MY',allowSamplePreview:true})));
+ assert.equal(doc.querySelectorAll('.package-card').length,30);await click('Show more packages (7 remaining)');assert.equal(doc.querySelectorAll('.package-card').length,37);
+ await act(async()=>named('Select Four countries for fulfillment sheet').click());await click('List View');assert.equal(named('Select Four countries for fulfillment sheet').checked,true);
+ await act(async()=>named('View history for Four countries').click());await act(async()=>named('View details for Four countries').click());assert.ok(doc.querySelector('.package-sheet-detail'));
+ await country('TH');assert.equal(rows().length,3);assert.equal(named('Select Four countries for fulfillment sheet').checked,false);assert.equal(doc.querySelector('.package-sheet-detail'),null);assert.deepEqual(columns(),['TH · ฿ prices']);assert.match(doc.querySelector('.package-summary-scope').textContent,/Malaysia Store · All selling countries/);assert.match(doc.querySelector('.package-result-count').textContent,/3 matching packages · Thailand/);
+ await act(async()=>named('View details for Four countries').click());assert.equal(doc.querySelector('.package-sheet-detail td').colSpan,9);assert.equal(doc.querySelector('.package-sheet-detail .package-market-column h4').textContent,'TH ฿');
+ await click('Active');assert.equal(rows().length,2);await click('Long Term');assert.equal(rows().length,1);assert.match(rows()[0].textContent,/Four countries/);
+ await search('Legacy CSV');assert.equal(rows().length,0);await search('');await click('Monthly');assert.equal(rows().length,1);assert.match(rows()[0].textContent,/Legacy CSV/);
+ await country('PH');await click('All types');assert.equal(rows().length,2);assert.match(doc.querySelector('.package-sheet').textContent,/Recurring Philippines/);assert.deepEqual(columns(),['PH · ₱ prices']);assert.match(doc.querySelector('.package-sheet').textContent,/₱ 500.00/);
+ await click('Grid View');const four=[...doc.querySelectorAll('.package-card')].find(card=>card.querySelector('h3').textContent==='Four countries');assert.equal(four.querySelectorAll('.package-market-column').length,1);assert.match(four.querySelector('.package-market-prices').textContent,/PH ₱/);assert.doesNotMatch(four.querySelector('.package-market-prices').textContent,/RM|S\$|฿/);
+ await country('TH');await act(async()=>named('Edit package Four countries').click());assert.deepEqual([...doc.querySelectorAll('.market-selector label')].filter(label=>label.querySelector('input').checked).map(label=>label.querySelector('b').textContent),markets);assert.equal(doc.querySelectorAll('.nonCampaign .market-price-card').length,4);await click('Save Changes');assert.deepEqual(writes[0].markets,markets);assert.deepEqual([...new Set(writes[0].priceSchedules.map(line=>line.market))],markets);
+ await country('all');await click('All');await click('List View');await click('Show more packages (7 remaining)');assert.equal(rows().length,37);await country('MY');await country('all');assert.equal(rows().length,30,'country changes reset pagination');
+ await click('View sample data');assert.equal(rows().length,10);await country('TH');assert.equal(rows().length,1);assert.match(rows()[0].textContent,/Thailand Wellness/);assert.equal(doc.querySelector('.kit-package-selector'),null);assert.equal(doc.querySelector('.package-delete'),null);await country('PH');assert.equal(rows().length,1);assert.match(rows()[0].textContent,/Philippines Monthly/);
+ assert.equal(writes.length,1);
+ }finally{await act(async()=>root.unmount());dom.window.close();for(const [key,desc] of Object.entries(prior)){if(desc)Object.defineProperty(globalThis,key,desc);else delete globalThis[key];}}
+});

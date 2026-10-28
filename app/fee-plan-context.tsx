@@ -70,7 +70,7 @@ export function applyRateCardPreview(memory:Record<string,unknown>,rows:AccountS
  const history=(memory['fee-preview-application-history']??[]) as RateCardApplyAudit[];
  const priorRequest=history.find(item=>item.requestId===command.requestId);if(priorRequest){if(priorRequest.fingerprint===fingerprint)return memory;throw Error('This preview request was already used. Review and apply again.');}
  const targets=keys.map(key=>{const row=rows.find(item=>(item.rosterKey??item.id)===key);if(!row)throw Error('A selected record is no longer available. Clear the selection and try again.');return row;});
- if(new Set(targets.map(row=>row.currency)).size!==1)throw Error('Select records with the same currency. No records were updated.');
+ if(new Set(targets.map(row=>projectFeeCurrency(row,command.effectiveMonth))).size!==1)throw Error('Select records with the same currency for billing. No records were updated.');
  const plan=planForMonth(plans,command.planId,command.effectiveMonth);if(!plan||plan.version!==command.planVersion)throw Error('This rate card changed. Review the card and apply again.');
  if(plan.archivedAt)throw Error('This rate card was deleted. Choose another card.');
  validatePlan(plan);

@@ -1,4 +1,6 @@
 "use client";
+import {MARKET_CONFIG} from "./markets";
+import {accountRowMarket} from "./account-market-display";
 import { accountMappingDisplay } from './account-mapping-display';
 
 import { useEffect, useRef, useState } from "react";
@@ -103,10 +105,11 @@ export function RecordDetails({row,month,canConfigure,canSave,options,onClose,on
   const dialogRef=useRef<HTMLDialogElement>(null);
   useEffect(()=>{const dialog=dialogRef.current;dialog?.showModal();return ()=>{if(dialog?.open)dialog.close();};},[]);
   return <dialog className="account-record-dialog" ref={dialogRef} aria-labelledby="account-record-title" onCancel={event=>{event.preventDefault();onClose();}}>
-    <header><div><h3 id="account-record-title">{row.project||row.storeName}</h3><p>{row.market==='SG'?'Singapore':'Malaysia'} · {row.currency}</p></div><button type="button" className="account-record-close" aria-label="Close billing record" onClick={onClose}>×</button></header>
+    <header><div><h3 id="account-record-title">{row.project||row.storeName}</h3><p>{MARKET_CONFIG[accountRowMarket(row)].name} · {row.currency}</p></div><button type="button" className="account-record-close" aria-label="Close billing record" onClick={onClose}>×</button></header>
     <div className="account-record-body"><dl className="account-record-fields">
       <div><dt>Company</dt><dd><CompanyCell row={row} month={month} canSave={canSave} editable={canConfigure} onSaved={onSaved}/></dd></div>
       <div><dt>Store</dt><dd><StoreNameCell row={row} options={options} month={month} canSave={canSave} configurable={canConfigure} onSaved={onSaved}/></dd></div>
+      <div><dt>Sales currency</dt><dd>{row.salesCurrency??row.currency}</dd></div>
       <div><dt>Invoice month</dt><dd>{row.invoiceMonth||'Not set'}</dd></div>
       <div><dt>Report month</dt><dd>{row.statementMonth||'Not set'}<small>Fee calculation reference</small></dd></div>
 
