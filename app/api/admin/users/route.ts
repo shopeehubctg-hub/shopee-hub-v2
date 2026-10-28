@@ -22,7 +22,7 @@ async function portalUsers(tenantId:string){
     supabaseRest<Array<{roster_key:string;legal_entity:string;version:string;store_id:string|null;effective_month:string}>>(`account_billing_unit_versions?select=roster_key,legal_entity,version::text,store_id,effective_month&tenant_id=eq.${encodeURIComponent(tenantId)}&order=version.desc`)
       .then(rows=>({rows,available:true}))
       .catch(error=>{if(error instanceof Error&&/"code":"(PGRST205|42P01)"/.test(error.message))return {rows:[],available:false};throw error;}),
-    supabaseRest<boolean>("rpc/account_store_setup_available",{method:"POST"})
+    supabaseRest<boolean>("rpc/account_store_setup_v2_available",{method:"POST"})
       .catch(error=>{if(error instanceof Error&&/"code":"(PGRST202|PGRST205|42883)"/.test(error.message))return false;throw error;}),
   ]);
   const accountVersions=accountStatus.rows;
@@ -43,6 +43,12 @@ async function portalUsers(tenantId:string){
     const units=unitsByStore.get(current.store_id)??[];
     units.push({rosterKey:key,legalEntity:current.legal_entity,latestVersion:latestByKey.get(key)?.version??current.version});
     unitsByStore.set(current.store_id,units);
+  }
+  for(const [key,latest] of latestByKey){
+    if(currentByKey.has(key)||!latest.store_id)continue;
+    const units=unitsByStore.get(latest.store_id)??[];
+    units.push({rosterKey:key,legalEntity:latest.legal_entity,latestVersion:latest.version});
+    unitsByStore.set(latest.store_id,units);
   }
   const tenantStores=tenantStoreRows.filter(store=>canonicalStoreId(store.id)===store.id).map(store=>{
     const units=unitsByStore.get(store.id)??[];

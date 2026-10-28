@@ -1,7 +1,7 @@
 import {MARKET_CONFIG,MARKET_CODES} from './markets';
 import { cents, previousMonth } from './account-ledger';
-import type { AccountCurrency, AccountFeeRule, AccountResponse } from './account-contract';
-export type AccountSetting = {id:string;roster_key:string;roster_project:string;legal_entity:string;currency:AccountCurrency;change_action:'mapping'|'fee_rule'|'company'|'setup';version:string;effective_month:string;store_id:string|null;fee_rule:AccountFeeRule|null;created_at:string};
+import type { AccountCurrency, AccountFeeRule, AccountResponse,AccountStoreRow } from './account-contract';
+export type AccountSetting = {id:string;roster_key:string;roster_project:string;legal_entity:string;currency:AccountCurrency;change_action:'mapping'|'fee_rule'|'company'|'setup';version:string;effective_month:string;store_id:string|null;fee_rule:AccountFeeRule|null;created_at:string;market?:AccountStoreRow['market'];input_currency?:AccountCurrency;client_type?:AccountStoreRow['clientType'];rate_card?:AccountStoreRow['rateCard'];fx_policy?:AccountStoreRow['fxPolicy'];fx_rate?:string|null};
 const money=/^\d{1,16}(?:\.\d{1,2})?$/;
 export function validateFeeRule(value:unknown,currency:AccountCurrency):AccountFeeRule {
   if(!value||typeof value!=='object'||Array.isArray(value)) throw new Error('Choose a monthly fee rule');
@@ -29,7 +29,7 @@ export function applyAccountSettings(account:AccountResponse,settings:AccountSet
   const represented=new Set(account.stores.map(row=>row.rosterKey));
   const units=new Map<string,AccountSetting>();
   for(const setting of settings.filter(s=>s.effective_month.slice(0,7)<=account.invoiceMonth).sort((a,b)=>a.effective_month.localeCompare(b.effective_month)||(BigInt(a.version)<BigInt(b.version)?-1:1)))units.set(setting.roster_key,setting);
-  for(const setting of units.values())if(!represented.has(setting.roster_key)){account.stores.push({id:setting.roster_key,rosterKey:setting.roster_key,project:setting.roster_project,entity:setting.legal_entity,market:MARKET_CODES.find(market=>MARKET_CONFIG[market].currency===setting.currency),storeId:null,storeName:setting.roster_project,currency:setting.currency,statementMonth:previousMonth(account.invoiceMonth),invoiceMonth:account.invoiceMonth,servicePeriodStart:null,servicePeriodEnd:null,status:'pending_terms',expectedNetFee:null,billed:null,collected:null,outstanding:null});}
+  for(const setting of units.values())if(!represented.has(setting.roster_key)){account.stores.push({id:setting.roster_key,rosterKey:setting.roster_key,project:setting.roster_project,entity:setting.legal_entity,market:setting.market??MARKET_CODES.find(market=>MARKET_CONFIG[market].currency===setting.currency),storeId:null,storeName:setting.roster_project,currency:setting.currency,statementMonth:previousMonth(account.invoiceMonth),invoiceMonth:account.invoiceMonth,servicePeriodStart:null,servicePeriodEnd:null,status:'pending_terms',expectedNetFee:null,billed:null,collected:null,outstanding:null});}
   for(const row of account.stores) {
     row.market??=MARKET_CODES.find(market=>MARKET_CONFIG[market].currency===row.currency);
     const history=settings.filter(s=>s.roster_key===row.rosterKey).sort((a,b)=>BigInt(a.version)<BigInt(b.version)?-1:1);
@@ -43,6 +43,10 @@ export function applyAccountSettings(account:AccountResponse,settings:AccountSet
     row.rateHistory=history.filter(s=>(s.change_action==='fee_rule'||s.change_action==='setup')).map(s=>({action:'fee_rule',version:s.version,effectiveMonth:s.effective_month.slice(0,7),rule:s.fee_rule,storeId:s.store_id,changedAt:s.created_at}));
     row.mappingEffectiveMonth=currentMapping?.effective_month.slice(0,7)??null;row.rateEffectiveMonth=currentRule?.effective_month.slice(0,7)??null;
     row.rateRule=currentRule?.fee_rule??null;row.calculatedFee=null;
+    if(currentRule?.market)row.market=currentRule.market;
+    if(currentRule?.input_currency)row.salesCurrency=currentRule.input_currency;
+    row.clientType=currentRule?.client_type;row.rateCard=currentRule?.rate_card;
+    row.fxPolicy=currentRule?.fx_policy;row.fxRate=currentRule?.fx_rate;
     row.calculationStatus=row.rateRule?'pending_statement':'pending_rule';
     if(currentMapping?.store_id&&storeNames.has(currentMapping.store_id)) { row.storeId=currentMapping.store_id;row.storeName=storeNames.get(currentMapping.store_id)!;row.mappingStatus='resolved';row.mappingReason='Manually selected by Super Admin';row.candidates=[{mappingId:'',username:'',storeId:currentMapping.store_id,storeName:row.storeName}];if(row.status==='pending_mapping')row.status=row.rateRule?'pending_statement':'pending_terms'; }
   }

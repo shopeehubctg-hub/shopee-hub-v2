@@ -1,0 +1,16 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';
+import {mkdtempSync,mkdirSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';import {pathToFileURL} from 'node:url';import {build} from 'esbuild';import {JSDOM} from 'jsdom';
+mkdirSync(join(process.cwd(),'work'),{recursive:true});const directory=mkdtempSync(join(process.cwd(),'work','test-catalog-'));const outfile=join(directory,'ui.mjs');
+await build({stdin:{contents:`import React from 'react';import {FeePlansProvider,useFeePlans} from './app/fee-plan-context';function Inner(){const c=useFeePlans();return <><output>{JSON.stringify({status:c.catalogStatus,plans:c.plans})}</output><button onClick={async()=>{try{await c.upsertPlan({id:'qa-fixed',name:'QA Fixed',clientType:'Internal',currency:'MYR',effectiveMonth:'2099-10',rule:{type:'fixed',currency:'MYR',basis:'fixed_monthly',fixedAmount:'123.45'}});}catch{}}}>Save card</button></>};export const App=()=> <FeePlansProvider persistent><Inner/></FeePlansProvider>;`,resolveDir:process.cwd(),loader:'tsx'},outfile,bundle:true,format:'esm',platform:'browser',jsx:'automatic',packages:'external',logLevel:'silent'});
+const {App}=await import(pathToFileURL(outfile));
+test('persistent catalog loads server data, saves exact versions and replays a failed response without duplicate IDs; remount keeps saved card',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{url:'https://example.test'});globalThis.window=dom.window;globalThis.document=dom.window.document;globalThis.HTMLElement=dom.window.HTMLElement;globalThis.IS_REACT_ACT_ENVIRONMENT=true;
+ const React=await import('react');const {act}=React;const {createRoot}=await import('react-dom/client');let stored=[];let first=true;const posts=[];let id;
+ globalThis.fetch=async(url,options={})=>{assert.equal(url,'/api/admin/account/rate-cards');if(options.method==='POST'){const body=JSON.parse(options.body);posts.push(body);if(!id){id=body.requestId;stored=[{...body.card,version:1}];}assert.equal(body.requestId,id);if(first){first=false;throw Error('Response lost');}}return {ok:true,json:async()=>({available:true,plans:structuredClone(stored)})};};
+ let root=createRoot(document.querySelector('#root'));const settle=()=>new Promise(resolve=>setTimeout(resolve,0));
+ await act(async()=>{root.render(React.createElement(App));await settle();});assert.deepEqual(JSON.parse(document.querySelector('output').textContent),{status:'ready',plans:[]});
+ await act(async()=>{document.querySelector('button').click();await settle();});assert.equal(JSON.parse(document.querySelector('output').textContent).plans.length,0);
+ await act(async()=>{document.querySelector('button').click();await settle();});assert.equal(posts.length,2);assert.equal(posts[0].requestId,posts[1].requestId);assert.equal(JSON.parse(document.querySelector('output').textContent).plans[0].rule.fixedAmount,'123.45');
+ await act(async()=>{root.unmount();});root=createRoot(document.querySelector('#root'));await act(async()=>{root.render(React.createElement(App));await settle();});assert.equal(JSON.parse(document.querySelector('output').textContent).plans[0].version,1);assert.equal(JSON.parse(document.querySelector('output').textContent).plans[0].name,'QA Fixed');
+ await act(async()=>{root.unmount();});dom.window.close();
+});

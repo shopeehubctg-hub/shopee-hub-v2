@@ -32,14 +32,14 @@ export async function GET(request:Request) {
     const stores=await rows<{id:string;name:string;display_name:string|null;platform:string}>('stores','id,name,display_name,platform',member.tenant_id);
     const storeNames=new Map(stores.filter(s=>canonicalStoreId(s.id)===s.id).map(s=>[s.id,s.display_name??s.name]));
     let settings:AccountSetting[]=[];let settingsAvailable=true;
-    try { settings=await rows<AccountSetting>('account_billing_unit_versions','id,roster_key,roster_project,legal_entity,currency,change_action,version::text,effective_month,store_id,fee_rule,created_at',member.tenant_id); }
-    catch(error){if(error instanceof Error&&/"code":"(PGRST205|42P01)"/.test(error.message))settingsAvailable=false;else throw error;}
+    try { settings=await rows<AccountSetting>('account_billing_unit_versions','id,roster_key,roster_project,legal_entity,currency,change_action,version::text,effective_month,store_id,fee_rule,created_at,market,input_currency,client_type,rate_card,fx_policy,fx_rate::text',member.tenant_id); }
+    catch(error){if(error instanceof Error&&/"code":"(PGRST204|PGRST205|42P01|42703)"/.test(error.message))settingsAvailable=false;else throw error;}
     const decorate=async(account:AccountResponse)=>{
       account.settingsAvailable=settingsAvailable;
       account.storeOptions=stores.filter(s=>canonicalStoreId(s.id)===s.id).map(s=>({id:s.id,name:s.display_name??s.name,platform:s.platform})).sort((a,b)=>a.name.localeCompare(b.name));
       const decorated=appendAccountMarketStores(applyAccountSettings(account,settings,storeNames),stores);
       for(const row of decorated.stores){row.previewRateDefaultsEligible=member.tenant_id==='j-packaging';delete row.previewServiceFxRate;}
-      const bonlife=member.tenant_id==='j-packaging'?decorated.stores.filter(row=>row.currency==='SGD'&&row.market==='SG'&&row.salesCurrency==='SGD'&&row.rosterKey==='roster-2026-10-sg-3'&&row.project==='BONLIFE SG'):[];
+      const bonlife=decorated.stores.filter(row=>row.market==='SG'&&row.salesCurrency==='SGD'&&(row.fxPolicy==='bnm-service-average'||member.tenant_id==='j-packaging'&&row.currency==='SGD'&&row.rosterKey==='roster-2026-10-sg-3'&&row.project==='BONLIFE SG'));
       await Promise.all([
         ...(bonlife.length?[bnmServiceRate(invoiceMonth).then(rate=>{if(rate&&rate.policy==='bnm-service-average'&&rate.verified===true&&Boolean(rate.reference)&&rate.serviceMonth===previousMonth(invoiceMonth))for(const row of bonlife)row.previewServiceFxRate={...rate,currency:'SGD',quotationUnit:1};})]:[]),
         ...(['THB','PHP'] as const).map(async currency=>{

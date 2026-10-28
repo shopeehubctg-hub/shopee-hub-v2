@@ -25,7 +25,7 @@ const bundled = await build({
   } }],
 });
 const api = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`);
-const req = (method, body) => new Request('https://portal.test/api/admin/stores', { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+const req = (method, body) => new Request('https://portal.test/api/admin/stores', { method, headers: { 'content-type': 'application/json', origin: 'https://portal.test' }, body: JSON.stringify(body) });
 const uuid = '11111111-1111-4111-8111-111111111111';
 let state;
 beforeEach(() => {
@@ -38,6 +38,7 @@ beforeEach(() => {
     const body = init.body ? JSON.parse(init.body) : null;
     state.calls.push({ table, method: init.method ?? 'GET', body });
     if (table === 'customer_users') return [{ tenant_id: state.tenant, role: state.role, active: true }];
+    if (table === 'tenants') return [{ active: true }];
     if (table.startsWith('rpc/')) throw new Error('Account RPC must not be called for legacy Store actions');
     if (table !== 'stores') throw new Error(`Unexpected table ${table}`);
     if (init.method === 'POST') { state.stores.push(body); return [{ ...body, display_name: null }]; }
@@ -81,13 +82,13 @@ test('legacy Store writes keep Super Admin and tenant ownership guards', async (
   assert.equal(state.stores[0].display_name, null);
 });
 
-test('v2 Account payloads fail closed with no Store or directory writes', async () => {
+test('malformed v2 Account payloads fail closed with no Store or directory writes', async () => {
   for (const method of ['POST', 'PATCH']) {
     const body = method === 'POST'
       ? { name: 'New', market: 'MY', accountSetup: { version: 2, rateCard: { id: 'plan' } } }
       : { id: 'store', name: 'Changed', accountSetup: { version: 2 } };
     const response = await api[method](req(method, body));
-    assert.equal(response.status, 503);
+    assert.equal(response.status, 400);
   }
   assert.equal(state.stores.length, 0);
   assert.equal(globalThis.__compatDetails.length, 0);

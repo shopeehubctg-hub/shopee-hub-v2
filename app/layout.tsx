@@ -12,5 +12,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="zh-Hans" className={notoSans.variable}><body><FeePlansProvider>{children}</FeePlansProvider></body></html>;
+  return <html lang="zh-Hans" className={notoSans.variable}><body><FeePlansProvider persistent>{children}</FeePlansProvider></body></html>;
 }

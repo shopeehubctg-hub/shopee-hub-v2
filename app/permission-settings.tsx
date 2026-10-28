@@ -90,6 +90,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
   const [editingStore, setEditingStore] = useState<Store | null>(null);
   const [storeDraft, setStoreDraft] = useState<StoreDraft>(emptyStoreDraft);
   const [newStore, setNewStore] = useState<StoreDraft>(emptyStoreDraft);
+  const [newSourceName, setNewSourceName] = useState("");
   const [newAccount, setNewAccount] = useState<AccountSetupDraft>(emptyAccountSetup);
   const [editLegalEntity, setEditLegalEntity] = useState("");
   const [editEntityMonth, setEditEntityMonth] = useState(malaysiaMonth);
@@ -196,7 +197,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
   }
   const accountMarket = newStore.market;
   const newAccountPreview = accountSetupPreview;
-  const editAccountPreview = accountSetupPreview && !!editingStore && ["MY","SG"].includes(marketFromPlatform(editingStore.platform));
+  const editAccountPreview = accountSetupPreview && !!editingStore;
   async function addStore() {
     if (newAccountPreview && !data?.accountSettingsAvailable) { setStoreError("Saving is not enabled in this preview."); return; }
     if (newStore.projectLinks.some(projectLinkError)) return;
@@ -212,7 +213,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
     setSaving(true);
     try {
       const accountSetup = newAccountPreview ? accountSetupPayload(newAccount, accountMarket, plans) : undefined;
-      const payload = { ...newStore, adsTopUpOwner: newStore.adsTopUpOwner || null, accountSetup };
+      const payload = { ...newStore, sourceName: newSourceName.trim(), adsTopUpOwner: newStore.adsTopUpOwner || null, accountSetup };
       const payloadText = JSON.stringify(payload);
       if (storeRequest.current?.payload !== payloadText) storeRequest.current = { payload: payloadText, id: crypto.randomUUID() };
       const response = await fetch("/api/admin/stores", {
@@ -233,6 +234,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
       onStoreChanged?.();
       closeStoreModal();
       setNewStore(emptyStoreDraft());
+      setNewSourceName("");
       setNewAccount(emptyAccountSetup());
       storeRequest.current = null;
       setMessage("Store added. Customer access can be assigned under Users & roles.");
@@ -537,6 +539,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
             </div>
             <div className="access-form" aria-busy={saving}>
               <label>Store name<input ref={storeNameInputRef} maxLength={120} required value={newStore.name} onChange={event => updateNewStore({ name: event.target.value })} /></label>
+              <label>Source name (optional)<input maxLength={120} value={newSourceName} onChange={event => { setStoreError(""); setNewSourceName(event.target.value); }} /></label>
               <label>Market<select value={newStore.market} onChange={event => {
                 const market = event.target.value as MarketCode;
                 if (market === newStore.market) return;

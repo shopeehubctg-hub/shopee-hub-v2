@@ -47,7 +47,7 @@ function SelectionCheckbox({checked,indeterminate,label,onChange}:{checked:boole
 }
 
 export function AccountPanel() {
-  const {previewRows,mergePreviewRows,openFeeWorkspace}=useFeePlans();
+  const {previewRows,mergePreviewRows,openFeeWorkspace,settingsRevision}=useFeePlans();
   const [invoiceMonth, setInvoiceMonth] = useFeePreviewState<string>("account-invoice-month","2026-10");
   const [query, setQuery] = useState("");
   const [country,setCountry]=useState<"all"|MarketCode>("all");
@@ -75,7 +75,7 @@ export function AccountPanel() {
     void refresh();
     const interval = window.setInterval(() => { if (document.visibilityState === "visible") void refresh(); }, 60_000);
     return () => { controller.abort(); window.clearInterval(interval); };
-  }, [invoiceMonth, refreshKey, mergePreviewRows]);
+  }, [invoiceMonth, refreshKey, mergePreviewRows,settingsRevision]);
 
   const displayMonth = data?.invoiceMonth ?? invoiceMonth;
   const updatedAt = accountUpdatedAt(data?.updatedAt ?? null);

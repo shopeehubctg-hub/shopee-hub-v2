@@ -13,7 +13,7 @@ export function sourceProjectRate(row:AccountStoreRow,month:string,data:PreviewR
 }
 export function projectSalesCurrency(row:AccountStoreRow):AccountCurrency{return row.salesCurrency??row.currency;}
 function bnmStore(row:AccountStoreRow){return row.previewMarketFxEligible===true&&((row.market==='TH'&&projectSalesCurrency(row)==='THB')||(row.market==='PH'&&projectSalesCurrency(row)==='PHP'));}
-export function projectFeeCurrency(row:AccountStoreRow,month:string,data:PreviewRateSource=source):AccountCurrency{return bnmStore(row)||row.currency==='SGD'&&sourceProjectRate(row,month,data)?.market==='SG'?'MYR':row.currency;}
+export function projectFeeCurrency(row:AccountStoreRow,month:string,data:PreviewRateSource=source):AccountCurrency{return (row.clientType&&row.fxPolicy&&row.rateEffectiveMonth&&row.rateEffectiveMonth<=month?row.rateRule?.currency:undefined)??(bnmStore(row)||row.currency==='SGD'&&sourceProjectRate(row,month,data)?.market==='SG'?'MYR':row.currency);}
 /** Convert cents using an exact decimal rate; round half up once to MYR cents. */
 export function convertCurrencyToMyr(amount:string,rate:string){
  if(!/^\d{1,4}(?:\.\d{1,8})?$/.test(rate))throw Error('A verified positive source-currency to MYR rate is required.');
@@ -30,8 +30,8 @@ export function calculateProjectPreview(row:AccountStoreRow,month:string,plan:Fe
  if(plan.rule.type==='fixed')return {...base,status:'ready',calculation:calculateFee(plan.rule,'')};
  if(amount!=='')cents(amount);
  if(base.inputCurrency===outputCurrency){return amount!==''?{...base,status:'ready',calculation:calculateFee(plan.rule,amount)}:{...base,status:'pending_amount'};}
- const mapping=sourceProjectRate(row,month,data);const fxPolicy=bnmStore(row)?'bnm-service-average':mapping?.fxPolicy??'pending';let fxRate:string|undefined;let fxReference:string|undefined;
- if(fxPolicy==='fixed')fxRate=mapping?.fxRate;
+ const mapping=sourceProjectRate(row,month,data);const fxPolicy=bnmStore(row)?'bnm-service-average':row.fxPolicy==='fixed'||row.fxPolicy==='bnm-service-average'?row.fxPolicy:mapping?.fxPolicy??'pending';let fxRate:string|undefined;let fxReference:string|undefined;
+ if(fxPolicy==='fixed')fxRate=row.fxRate??mapping?.fxRate;
  if(fxPolicy==='bnm-service-average'){
   const provided=row.previewServiceFxRate;
   const providedMatches=provided?.policy==='bnm-service-average'&&provided.serviceMonth===base.serviceMonth&&provided.verified===true&&Boolean(provided.reference)&&(bnmStore(row)?provided.currency===base.inputCurrency&&provided.quotationUnit===1:(!provided.currency||provided.currency===base.inputCurrency)&&(!provided.quotationUnit||provided.quotationUnit===1));

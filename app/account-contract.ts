@@ -18,6 +18,8 @@ export type AccountStoreRow = {
   latestSettingsVersion?: string; appliedSettingsVersion?: string | null; settingsEffectiveMonth?: string | null;
   mappingEffectiveMonth?: string | null; rateEffectiveMonth?: string | null;
   rateRule?: AccountFeeRule | null; rateHistory?: AccountSettingsHistory[];
+  clientType?:'Internal'|'External'; rateCard?:{id:string;version:number;name:string}|null;
+  fxPolicy?:'none'|'fixed'|'bnm-service-average'; fxRate?:string|null;
   calculatedFee?: null; calculationStatus?: 'pending_rule' | 'pending_statement';
   servicePeriodStart: string | null; servicePeriodEnd: string | null;
   status: "pending_source" | "pending_mapping" | "pending_terms" | "pending_statement" | "assessed" | "invoiced";
