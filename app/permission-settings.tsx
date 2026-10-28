@@ -149,6 +149,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
     [enabled, saved],
   );
   async function loadUsers() {
+    setLoadError("");
     try {
       const response = await fetch("/api/admin/users", { cache: "no-store" });
       const result = await response.json().catch(() => null);
@@ -351,6 +352,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
       return next;
     });
   }
+  if (!data) return <div className="permission-page"><section className="permission-hero"><div><p className="kicker">PERMISSION SETTINGS</p><h2>User Access Management</h2></div></section>{loadError?<div className="access-error" role="alert">{loadError} <button type="button" onClick={loadUsers}>Retry</button></div>:<div className="access-toolbar card" role="status" aria-busy="true">Loading permissions…</div>}</div>;
   return (
     <div className="permission-page">
       <section className="permission-hero">

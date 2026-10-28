@@ -107,3 +107,14 @@ test('load and save errors stay visible and keep the editor usable',async()=>{
   assert.equal(requestIds[0],requestIds[1]);
  });
 });
+
+test('initial permissions request shows loading instead of zero users or premature actions',async()=>{
+ let resolveRequest;
+ await withApp(()=>new Promise(resolve=>{resolveRequest=resolve;}),async()=>{
+  assert.match(document.body.textContent,/Loading permissions/);
+  assert.doesNotMatch(document.body.textContent,/0 portal users|Add user/);
+  await act(async()=>resolveRequest(Response.json(data(true))));
+  assert.doesNotMatch(document.body.textContent,/Loading permissions/);
+  assert.match(document.body.textContent,/1 portal users/);
+ });
+});
