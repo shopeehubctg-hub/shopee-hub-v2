@@ -1,6 +1,6 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, ne } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { coFundVouchers, customerUsers, dashboardSnapshots, linkDirectoryProjects, linkDirectoryStores, managementActions, projectProductCatalog, stores, tenantModulePermissions, tenants, userModulePermissions, userStoreAccess } from "../../../db/schema";
+import { coFundVouchers, customerUsers, dashboardSnapshots, departmentMonthlyFinancials, linkDirectoryProjects, linkDirectoryStores, managementActionEvents, managementActions, projectProductCatalog, storeMonthlyFinancials, stores, tenantModulePermissions, tenants, userModulePermissions, userStoreAccess } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { ALL_PORTAL_MODULE_IDS } from "../../module-permissions";
 import { storeDirectory } from "../../store-directory";
@@ -12,8 +12,10 @@ import { withoutAdCampaigns } from "../../dashboard-snapshot.js";
 import { shouldShowAllStoresTopUps, summarizeAllStoresTopUps } from "../../ad-topup-overview.js";
 import { balanceCsvColumns, isCurrentBalanceDate, parseAdBalance } from "../../ad-balance-validation.js";
 import { canonicalStoreId, type RegistryStore } from "../../live-calendar-model";
+import { departmentContribution, storeContribution } from "../../profit-model";
 
 export const dynamic = "force-dynamic";
+const valueProofEnabled=process.env.SHOPEE_VALUE_PROOF_ENABLED==="1";
 
 const AD_BALANCE_SHEET_CSV = "https://docs.google.com/spreadsheets/d/13NOwTGkbDjW8y869CvS6lr6H8I7XRn3I0urt_-rqkgs/export?format=csv&gid=421872532";
 const GOOGLE_SHEET_TIMEOUT_MS = 5_000;
@@ -323,12 +325,32 @@ export async function GET(request: Request) {
   const topUpOwner = selectedStore
     ? normalizeTopUpOwner(directoryById.get(selectedStore.id)?.adsTopUpOwner)
     : null;
-  const actions = await db.select().from(managementActions)
-    .where(selectedStore
-      ? and(eq(managementActions.tenantId, tenant.id), eq(managementActions.storeId, selectedStore.id))
-      : eq(managementActions.tenantId, tenant.id))
+  const actionStoreIds=selectedStore?[selectedStore.id]:visibleStores.map(store=>store.id);
+  const actions = valueProofEnabled&&actionStoreIds.length ? await db.select().from(managementActions)
+    .where(and(
+      eq(managementActions.tenantId,tenant.id),inArray(managementActions.storeId,actionStoreIds),
+      ...(membership.role==="customer"?[ne(managementActions.status,"draft"),isNotNull(managementActions.clientVisibleAt)]:[]),
+    ))
     .orderBy(desc(managementActions.actionDate), desc(managementActions.id))
-    .limit(20);
+    .limit(100) : [];
+  const resultEvents=actions.length&&membership.role!=="customer"?await db.select().from(managementActionEvents)
+    .where(and(inArray(managementActionEvents.actionId,actions.map(action=>action.id)),eq(managementActionEvents.eventType,"result")))
+    .orderBy(desc(managementActionEvents.id)).limit(1000):[];
+  const resultSubmittedBy=new Map<number,string>();
+  for(const event of resultEvents){
+    if(!resultSubmittedBy.has(event.actionId)&&event.detail.verification!==true)resultSubmittedBy.set(event.actionId,event.actorEmail);
+  }
+  const visibleActions=actions.map(action=>({
+    ...action,
+    ...(membership.role==="customer"&&!action.resultVerifiedAt?{resultSummary:null,resultType:null,resultAmount:null,resultCurrency:null,resultSource:null}:{}),
+    resultSubmittedBy:membership.role==="customer"?null:resultSubmittedBy.get(action.id)??null,
+  }));
+  const [storeFact]=valueProofEnabled&&selectedStore?await db.select().from(storeMonthlyFinancials)
+    .where(and(eq(storeMonthlyFinancials.tenantId,tenant.id),eq(storeMonthlyFinancials.storeId,selectedStore.id)))
+    .orderBy(desc(storeMonthlyFinancials.month)).limit(1):[];
+  const [departmentFact]=valueProofEnabled&&selectedStore&&membership.role==="superadmin"?await db.select().from(departmentMonthlyFinancials)
+    .where(and(eq(departmentMonthlyFinancials.tenantId,tenant.id),eq(departmentMonthlyFinancials.storeId,selectedStore.id)))
+    .orderBy(desc(departmentMonthlyFinancials.month)).limit(1):[];
   const selectedCoFundVouchers = selectedStore ? await readCoFundVouchers(selectedStore.id,tenant.id) : [];
   const sourceShopName=selectedStore?sourceShopNameFor(selectedStore.directoryName):null;
   const storedProducts=!sourceShopName?[]:await db.select().from(projectProductCatalog)
@@ -380,7 +402,12 @@ export async function GET(request: Request) {
     adPerformance:adPerformance.daily,
     adPerformanceUpdatedAt:adPerformance.updatedAt,
     adTopUpOverview,
-    actions,
+    actions:visibleActions,
+    valueProofEnabled,
+    profit: {
+      store:storeFact?{month:storeFact.month,currency:storeFact.currency,contribution:storeContribution(storeFact),verifiedAt:storeFact.verifiedAt}:null,
+      department:departmentFact?{month:departmentFact.month,currency:departmentFact.currency,projectKind:departmentFact.projectKind,contribution:departmentContribution(departmentFact),verifiedAt:departmentFact.verifiedAt,internalValue:departmentFact.internalValue,hours:departmentFact.hours}:null,
+    },
     productProfile,
     coFundVouchers:selectedCoFundVouchers,
     user: { email: user.email },
