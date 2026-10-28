@@ -28,3 +28,30 @@ test('custom tier caps and min/cap validation survive SG payload; no card defaul
  const selected=selectAccountRateCard(initial(),'internal-new',plans);const custom={...selected,planId:'custom',planVersion:null};assert.equal(payload(custom,'SG').feeRule.tiers[4].cap,'4000.00');assert.equal(payload(custom,'SG').rateCard,null);assert.throws(()=>payload({...custom,minimum:'5000'}),/tier cap/);assert.throws(()=>payload({...custom,tiers:[{from:'0',percent:'2',cap:'-1'}]}),/cap/);
  for(const patch of [{legalEntity:''},{effectiveMonth:'2026-09'},{effectiveMonth:'2026-13'},{clientType:''},{planId:''}])assert.throws(()=>payload({...selected,...patch}));
 });
+
+test('TH/PH Internal and External explicitly select shared MYR cards, preserve tier caps and always use BNM service-month FX',()=>{
+ for(const [market,currency] of [['TH','THB'],['PH','PHP']])for(const clientType of ['Internal','External']){
+  const reset=resetAccountSetupSelection(initial(),market,clientType);assert.equal(reset.planId,'');assert.equal(reset.planVersion,null);assert.equal(reset.fxPolicy,'bnm-service-average');
+  const selected=selectAccountRateCard(reset,clientType==='Internal'?'internal-new':'external-10',plans);const result=payload(selected,market);
+  assert.equal(result.version,2);assert.equal(result.effectiveMonth,'2026-10');assert.equal(result.inputCurrency,currency);assert.equal(result.billingCurrency,'MYR');assert.equal(result.feeRule.currency,'MYR');assert.equal(result.fxPolicy,'bnm-service-average');assert.equal(result.fxRate,undefined);assert.equal(result.clientType,clientType);assert.deepEqual(result.rateCard,{id:selected.planId,version:1});
+  if(clientType==='Internal'){assert.equal(result.feeRule.tiers[4].cap,'4000.00');assert.equal(result.feeRule.tiers[3].cap,undefined);}else assert.equal(result.feeRule.percent,'10');
+  assert.equal(payload({...selected,fxPolicy:'fixed'},market).fxPolicy,'bnm-service-average');assert.equal(payload({...selected,fxPolicy:'fixed'},market).fxRate,undefined);
+ }
+});
+test('switching MY/SG/TH/PH and client type clears card and SG fixed FX, but preserves entity and invoice month',()=>{
+ let current=selectAccountRateCard(initial(),'internal-new',plans);
+ for(const market of ['SG','TH','PH','MY']){
+  current=resetAccountSetupSelection(current,market);assert.equal(current.legalEntity,'Example entity');assert.equal(current.effectiveMonth,'2026-10');assert.equal(current.planId,'');assert.equal(current.planVersion,null);assert.equal(current.fxPolicy,market==='SG'?'fixed':market==='MY'?'':'bnm-service-average');current=selectAccountRateCard(current,'internal-new',plans);
+ }
+ for(const market of ['TH','PH']){const external=resetAccountSetupSelection(current,market,'External');assert.equal(external.clientType,'External');assert.equal(external.fxPolicy,'bnm-service-average');assert.equal(external.planId,'');assert.ok(availableAccountRateCards(plans,external).every(card=>card.clientType==='External'&&card.currency==='MYR'));assert.equal(selectAccountRateCard(external,'internal-new',plans).planId,'');}
+});
+test('TH/PH archived, removed or stale cards and missing required fields fail closed; month-effective version remains exact',()=>{
+ const selected=selectAccountRateCard(initial(),'internal-new',plans);const archived=archiveRateCard(plans,'internal-new','2026-10-28T12:00:00Z');const newer={...plans.find(card=>card.id==='internal-new'),version:2,effectiveMonth:'2026-11',rule:{type:'percent',currency:'MYR',basis:'custom',basisLabel:'Shopee Sales',percent:'2'}};const versions=[...plans,newer];
+ for(const market of ['TH','PH']){
+  assert.throws(()=>payload(selected,market,archived),/available/);assert.throws(()=>payload(selected,market,plans.filter(card=>card.id!==selected.planId)),/available/);assert.throws(()=>payload({...selected,effectiveMonth:'2026-11'},market,versions),/changed/);
+  const refreshed=changeAccountSetupMonth(selected,'2026-11',versions);const result=payload(refreshed,market,versions);assert.deepEqual(result.rateCard,{id:'internal-new',version:2});assert.equal(result.effectiveMonth,'2026-11');assert.equal(result.feeRule.percent,'2');assert.equal(result.fxRate,undefined);
+  for(const patch of [{legalEntity:''},{effectiveMonth:'2026-09'},{effectiveMonth:'2026-13'},{clientType:''},{planId:''}])assert.throws(()=>payload({...selected,...patch},market));
+  const custom=payload({...selected,planId:'custom',planVersion:null},market);assert.equal(custom.feeRule.currency,'MYR');assert.equal(custom.feeRule.tiers[4].cap,'4000.00');assert.equal(custom.fxPolicy,'bnm-service-average');assert.equal(custom.rateCard,null);
+ }
+ assert.throws(()=>payload(selected,'VN'),/market/);
+});

@@ -194,8 +194,8 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
       setSaving(false);
     }
   }
-  const accountMarket = newStore.market === "SG" ? "SG" : "MY";
-  const newAccountPreview = accountSetupPreview && (newStore.market === "MY" || newStore.market === "SG");
+  const accountMarket = newStore.market;
+  const newAccountPreview = accountSetupPreview;
   const editAccountPreview = accountSetupPreview && !!editingStore && ["MY","SG"].includes(marketFromPlatform(editingStore.platform));
   async function addStore() {
     if (newAccountPreview && !data?.accountSettingsAvailable) { setStoreError("Saving is not enabled in this preview."); return; }
@@ -541,10 +541,10 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                 const market = event.target.value as MarketCode;
                 if (market === newStore.market) return;
                 updateNewStore({ market });
-                setNewAccount(current => resetAccountSetupSelection(current, market === "SG" ? "SG" : "MY"));
+                setNewAccount(current => resetAccountSetupSelection(current, market));
               }}>{MARKET_CODES.map(market=><option key={market} value={market}>{MARKET_CONFIG[market].name} ({market})</option>)}</select></label>
-              <StoreExchangeRateField market={newStore.market} invoiceMonth={newAccount.effectiveMonth} onInvoiceMonthChange={month=>setNewAccount(current=>({...current,effectiveMonth:month}))} showInvoiceMonth />
               {newAccountPreview && <AccountSetupFields draft={newAccount} market={accountMarket} update={updateNewAccount} />}
+              <StoreExchangeRateField market={newStore.market} invoiceMonth={newAccount.effectiveMonth} onInvoiceMonthChange={month=>setNewAccount(current=>({...current,effectiveMonth:month}))} showInvoiceMonth={!newAccountPreview} />
               {newAccountPreview && accountSetupError(newAccount, accountMarket, plans) && <p className="store-field-error" role="status">{accountSetupError(newAccount, accountMarket, plans)}</p>}
               <StoreLinkFields draft={newStore} update={updateNewStore} idPrefix="add-store" />
               {newAccountPreview && !data?.accountSettingsAvailable && <p className="store-access-note" role="status">Saving is not enabled in this preview.</p>}

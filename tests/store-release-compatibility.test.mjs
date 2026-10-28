@@ -94,8 +94,8 @@ test('v2 Account payloads fail closed with no Store or directory writes', async 
   assert.ok(state.calls.every(call => call.table !== 'stores' && !call.table.startsWith('rpc/')));
 });
 
-for(const market of ['MY','TH','PH'])test(`Store UI ${market} sends store-only Add/Edit without unconfigured Account rates`, async () => {
-  const accountPreview=market!=='MY';
+for(const scenario of [{market:'MY',preview:false},{market:'TH',preview:false},{market:'PH',preview:false},{market:'TH',preview:true},{market:'PH',preview:true}])test(`Store UI ${scenario.market} ${scenario.preview?'Rate Card preview':'store-only'} preserves the persistence boundary`, async () => {
+  const {market,preview:accountPreview}=scenario;
   const { JSDOM } = await import(process.env.BD_DOM_TEST_JSDOM ?? 'jsdom');
   const compiled = execFileSync('node_modules/.bin/esbuild', ['--bundle', '--format=esm', '--platform=node', '--target=node20', '--loader=tsx', '--loader:.css=empty', '--jsx=automatic'], {
     maxBuffer: 10 * 1024 * 1024,
@@ -138,6 +138,23 @@ for(const market of ['MY','TH','PH'])test(`Store UI ${market} sends store-only A
     await click(namedButton('Stores'));
     await click(namedButton('+ Add store'));
     if(market!=='MY')await act(()=>{const select=document.querySelector('[aria-label="Add store"] select');select.value=market;select.dispatchEvent(new Event('change',{bubbles:true}));});
+    if(accountPreview){
+      const dialog=document.querySelector('[aria-label="Add store"]');
+      assert.match(dialog.textContent,/Account setup/);assert.ok(dialog.querySelector('[aria-label="Account rate card"]'));
+      const company=[...dialog.querySelectorAll('label')].find(label=>label.textContent.startsWith('Company name')).querySelector('input');
+      await act(()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value').set.call(company,'New Overseas Company');company.dispatchEvent(new Event('input',{bubbles:true}));});
+      await act(()=>{const select=dialog.querySelector('[aria-label="Account client type"]');select.value='Internal';select.dispatchEvent(new Event('change',{bubbles:true}));});
+      await act(()=>{const select=dialog.querySelector('[aria-label="Account rate card"]');select.value='internal-new';select.dispatchEvent(new Event('change',{bubbles:true}));});
+      assert.equal(dialog.querySelector('[aria-label="Account rate card"]').value,'internal-new');
+      assert.match(dialog.textContent,new RegExp(`Sales currency: ${market==='TH'?'THB':'PHP'} · Fee currency: MYR`));
+      assert.match(dialog.textContent,/cap MYR 4000/);assert.doesNotMatch(dialog.textContent,/3.2/);
+      assert.equal(dialog.querySelectorAll('input[type="month"]').length,1);
+      assert.match(dialog.querySelector('output').textContent,market==='TH'?/1 THB = MYR 0.1225/:/1 PHP = MYR 0.065/);
+      assert.equal(namedButton('Add store').disabled,true);
+      await click(namedButton('Add store'));assert.equal(payloads.length,0);
+      assert.match(dialog.textContent,/Saving is not enabled in this preview/);
+      return;
+    }
     assert.equal(document.querySelector('[aria-label="Add store"] fieldset')?.textContent.includes('Account setup') ?? false, false);
     const addDialog = document.querySelector('[aria-label="Add store"]');
     if(market!=='MY'){assert.match(addDialog.textContent,/Currency Exchange Rate/);assert.match(addDialog.textContent,/Bank Negara monthly average/);assert.match(addDialog.querySelector('output').textContent,market==='TH'?/1 THB = MYR 0.1225/:/1 PHP = MYR 0.065/);}
