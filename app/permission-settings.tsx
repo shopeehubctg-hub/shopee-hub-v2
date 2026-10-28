@@ -90,7 +90,6 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
   const [editingStore, setEditingStore] = useState<Store | null>(null);
   const [storeDraft, setStoreDraft] = useState<StoreDraft>(emptyStoreDraft);
   const [newStore, setNewStore] = useState<StoreDraft>(emptyStoreDraft);
-  const [newSourceName, setNewSourceName] = useState("");
   const [newAccount, setNewAccount] = useState<AccountSetupDraft>(emptyAccountSetup);
   const [editLegalEntity, setEditLegalEntity] = useState("");
   const [editEntityMonth, setEditEntityMonth] = useState(malaysiaMonth);
@@ -199,7 +198,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
   const newAccountPreview = accountSetupPreview;
   const editAccountPreview = accountSetupPreview && !!editingStore;
   async function addStore() {
-    if (newAccountPreview && !data?.accountSettingsAvailable) { setStoreError("Saving is not enabled in this preview."); return; }
+    if (newAccountPreview && !data?.accountSettingsAvailable) { setStoreError("Store saving is temporarily unavailable."); return; }
     if (newStore.projectLinks.some(projectLinkError)) return;
     const visibleMonth = storeModalRef.current?.querySelector<HTMLInputElement>('[name="accountEffectiveInvoiceMonth"]')?.value;
     if (visibleMonth !== undefined && visibleMonth !== newAccount.effectiveMonth) {
@@ -213,7 +212,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
     setSaving(true);
     try {
       const accountSetup = newAccountPreview ? accountSetupPayload(newAccount, accountMarket, plans) : undefined;
-      const payload = { ...newStore, sourceName: newSourceName.trim(), adsTopUpOwner: newStore.adsTopUpOwner || null, accountSetup };
+      const payload = { ...newStore, adsTopUpOwner: newStore.adsTopUpOwner || null, accountSetup };
       const payloadText = JSON.stringify(payload);
       if (storeRequest.current?.payload !== payloadText) storeRequest.current = { payload: payloadText, id: crypto.randomUUID() };
       const response = await fetch("/api/admin/stores", {
@@ -234,7 +233,6 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
       onStoreChanged?.();
       closeStoreModal();
       setNewStore(emptyStoreDraft());
-      setNewSourceName("");
       setNewAccount(emptyAccountSetup());
       storeRequest.current = null;
       setMessage("Store added. Customer access can be assigned under Users & roles.");
@@ -246,7 +244,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
   }
   async function saveStore() {
     if (!editingStore) return;
-    if (editAccountPreview && !data?.accountSettingsAvailable) { setStoreError("Saving is not enabled in this preview."); return; }
+    if (editAccountPreview && !data?.accountSettingsAvailable) { setStoreError("Store saving is temporarily unavailable."); return; }
     if (storeDraft.projectLinks.some(projectLinkError)) return;
     const companyChanged = editAccountPreview && !!editingStore.accountUnit && editLegalEntity.trim() !== editingStore.accountUnit.legalEntity;
     if (companyChanged && (!editLegalEntity.trim() || !/^20\d{2}-(0[1-9]|1[0-2])$/.test(editEntityMonth) || editEntityMonth < malaysiaMonth())) {
@@ -499,7 +497,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
               <span>Add a store to make it available in the portal.</span>
             </div>
             <span className="store-access-note">Customer visibility is managed separately under Users & roles.</span>
-            <button onClick={event => { storeReturnFocusRef.current = event.currentTarget; setMessage(""); setStoreError(""); setAddingStore(true); }}>+ Add store</button>
+            <button disabled={!data} onClick={event => { storeReturnFocusRef.current = event.currentTarget; setMessage(""); setStoreError(""); setAddingStore(true); }}>+ Add store</button>
           </section>
           <section className="store-access-list">
             {data?.stores.map(store => (
@@ -539,7 +537,6 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
             </div>
             <div className="access-form" aria-busy={saving}>
               <label>Store name<input ref={storeNameInputRef} maxLength={120} required value={newStore.name} onChange={event => updateNewStore({ name: event.target.value })} /></label>
-              <label>Source name (optional)<input maxLength={120} value={newSourceName} onChange={event => { setStoreError(""); setNewSourceName(event.target.value); }} /></label>
               <label>Market<select value={newStore.market} onChange={event => {
                 const market = event.target.value as MarketCode;
                 if (market === newStore.market) return;
@@ -550,7 +547,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
               <StoreExchangeRateField market={newStore.market} invoiceMonth={newAccount.effectiveMonth} onInvoiceMonthChange={month=>setNewAccount(current=>({...current,effectiveMonth:month}))} showInvoiceMonth={!newAccountPreview} />
               {newAccountPreview && accountSetupError(newAccount, accountMarket, plans) && <p className="store-field-error" role="status">{accountSetupError(newAccount, accountMarket, plans)}</p>}
               <StoreLinkFields draft={newStore} update={updateNewStore} idPrefix="add-store" />
-              {newAccountPreview && !data?.accountSettingsAvailable && <p className="store-access-note" role="status">Saving is not enabled in this preview.</p>}
+              {newAccountPreview && !data?.accountSettingsAvailable && <p className="store-access-note" role="status">Store saving is temporarily unavailable.</p>}
               {storeError && <p id="add-store-error" className="store-form-error" role="alert">{storeError}</p>}
               <button className="primary" disabled={saving || (newAccountPreview && !data?.accountSettingsAvailable) || !newStore.name.trim() || (newAccountPreview && !!accountSetupError(newAccount, accountMarket, plans)) || newStore.projectLinks.some(projectLinkError)} aria-describedby={storeError ? "add-store-error" : undefined} onClick={addStore}>{saving ? "Adding…" : "Add store"}</button>
             </div>
@@ -570,7 +567,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
               <StoreExchangeRateField market={marketFromPlatform(editingStore.platform)} invoiceMonth={editEntityMonth} onInvoiceMonthChange={setEditEntityMonth} showInvoiceMonth />
               {editAccountPreview && (editingStore.accountUnit ? <fieldset><legend>Account company</legend><div className="account-rate-fields"><label className="account-field-wide">Company name<input maxLength={240} value={editLegalEntity} onChange={event => { setStoreError(""); setEditLegalEntity(event.target.value); }} required /></label><label>Effective invoice month<input type="month" min={malaysiaMonth()} value={editEntityMonth} onChange={event => { setStoreError(""); setEditEntityMonth(event.target.value); }} required /></label></div></fieldset> : <p className="store-access-note">{(editingStore.accountUnitCount ?? 0) > 1 ? "This store has multiple billing projects. Edit each company in Account." : "No Account setup is linked to this store yet. Set up its billing project in Account."}</p>)}
               <StoreLinkFields draft={storeDraft} update={updateStoreDraft} idPrefix="edit-store" />
-              {editAccountPreview && !data?.accountSettingsAvailable && <p className="store-access-note" role="status">Saving is not enabled in this preview.</p>}
+              {editAccountPreview && !data?.accountSettingsAvailable && <p className="store-access-note" role="status">Store saving is temporarily unavailable.</p>}
               {storeError && <p id="edit-store-error" className="store-form-error" role="alert">{storeError}</p>}
               <button className="primary" disabled={saving || (editAccountPreview && !data?.accountSettingsAvailable) || !storeDraft.name.trim() || storeDraft.projectLinks.some(projectLinkError)} aria-describedby={storeError ? "edit-store-error" : undefined} onClick={saveStore}>{saving ? "Saving…" : "Save store"}</button>
             </div>

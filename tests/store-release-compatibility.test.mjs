@@ -138,6 +138,7 @@ for(const scenario of [{market:'MY',preview:false},{market:'TH',preview:false},{
     await act(async () => {});
     await click(namedButton('Stores'));
     await click(namedButton('+ Add store'));
+    assert.equal([...document.querySelectorAll('label')].some(label=>label.textContent.includes('Source name')),false);
     if(market!=='MY')await act(()=>{const select=document.querySelector('[aria-label="Add store"] select');select.value=market;select.dispatchEvent(new Event('change',{bubbles:true}));});
     if(accountPreview){
       const dialog=document.querySelector('[aria-label="Add store"]');
@@ -153,7 +154,7 @@ for(const scenario of [{market:'MY',preview:false},{market:'TH',preview:false},{
       assert.match(dialog.querySelector('output').textContent,market==='TH'?/1 THB = MYR 0.1225/:/1 PHP = MYR 0.065/);
       assert.equal(namedButton('Add store').disabled,true);
       await click(namedButton('Add store'));assert.equal(payloads.length,0);
-      assert.match(dialog.textContent,/Saving is not enabled in this preview/);
+      assert.match(dialog.textContent,/Store saving is temporarily unavailable/);
       return;
     }
     assert.equal(document.querySelector('[aria-label="Add store"] fieldset')?.textContent.includes('Account setup') ?? false, false);
