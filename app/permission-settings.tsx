@@ -66,12 +66,17 @@ type PortalUser = {
   enabledModules: PortalModuleId[];
   storeIds: string[];
   createdAt: string;
+  canManagePermissions: boolean;
+  editable: boolean;
+  permissionsVersion: number;
 };
+type PermissionAccess = { isSuperAdmin: boolean; canManageStores: boolean; canManageDefaults: boolean; grantableModules: PortalModuleId[] };
 type UserData = {
   users: PortalUser[];
   stores: Store[];
   clientDefaults: PortalModuleId[];
   accountSettingsAvailable: boolean;
+  access: PermissionAccess;
 };
 
 export function PermissionSettings({ initialEnabledModules, onStoreChanged, accountSetupPreview=false }: Props) {
@@ -83,6 +88,8 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
   const [editing, setEditing] = useState<PortalUser | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [userError, setUserError] = useState("");
   const [storeError, setStoreError] = useState("");
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
@@ -94,6 +101,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
   const [editLegalEntity, setEditLegalEntity] = useState("");
   const [editEntityMonth, setEditEntityMonth] = useState(malaysiaMonth);
   const storeRequest = useRef<{ payload: string; id: string } | null>(null);
+  const userRequest = useRef<{ payload: string; id: string } | null>(null);
   const storeModalRef = useRef<HTMLDivElement>(null);
   const storeNameInputRef = useRef<HTMLInputElement>(null);
   const storeReturnFocusRef = useRef<HTMLButtonElement | null>(null);
@@ -133,13 +141,25 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
     email: "",
     role: "customer" as Role,
   });
+  const access = data?.access;
+  const isSuperAdmin = access?.isSuperAdmin === true;
+  const grantableModules = isSuperAdmin ? PORTAL_MODULES : PORTAL_MODULES.filter(module => access?.grantableModules.includes(module.id));
   const dirty = useMemo(
     () => PORTAL_MODULES.some(({ id }) => enabled.has(id) !== saved.has(id)),
     [enabled, saved],
   );
   async function loadUsers() {
-    const response = await fetch("/api/admin/users", { cache: "no-store" });
-    if (response.ok) setData(await response.json());
+    setLoadError("");
+    try {
+      const response = await fetch("/api/admin/users", { cache: "no-store" });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.access) throw Error(result?.error ?? "Unable to load Permission Settings.");
+      setData(result);
+      setTab(current => current === "stores" && !result.access.canManageStores || current === "modules" && !result.access.canManageDefaults ? "users" : current);
+      setLoadError("");
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to load Permission Settings.");
+    }
   }
   useEffect(() => {
     loadUsers();
@@ -170,18 +190,19 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
     } else setMessage("Unable to save module visibility.");
   }
   async function addUser() {
+    setUserError("");
     setSaving(true);
     try {
       const response = await fetch("/api/admin/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newUser),
+        body: JSON.stringify(isSuperAdmin ? newUser : { displayName: newUser.displayName, email: newUser.email, role: "customer", canManagePermissions: false, moduleAccessMode: "custom", enabledModules: [], storeAccessMode: "selected", storeIds: [] }),
       });
       const result = await response
         .json()
         .catch(() => ({ error: "The server returned an invalid response" }));
       if (!response.ok) {
-        setMessage(result.error ?? "Unable to add user");
+        setUserError(result.error ?? "Unable to add user");
         return;
       }
       setData(result);
@@ -189,7 +210,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
       setNewUser({ displayName: "", email: "", role: "customer" });
       setMessage("User access created.");
     } catch {
-      setMessage("Unable to add user. Please try again.");
+      setUserError("Unable to add user. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -284,22 +305,36 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
     }
   }
   async function saveUser() {
-    if (!editing) return;
+    if (!editing || !editing.editable) return;
+    setUserError("");
     setSaving(true);
-    const response = await fetch("/api/admin/users", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(editing),
-    });
-    const result = await response.json();
-    setSaving(false);
-    if (!response.ok) {
-      setMessage(result.error ?? "Unable to update user");
-      return;
+    try {
+      const payload = {
+        id: editing.id, displayName: editing.displayName, active: editing.active,
+        moduleAccessMode: isSuperAdmin ? editing.moduleAccessMode : "custom",
+        enabledModules: isSuperAdmin ? editing.enabledModules : editing.enabledModules.filter(id => access?.grantableModules.includes(id)),
+        storeAccessMode: isSuperAdmin ? editing.storeAccessMode : "selected", storeIds: editing.storeIds,
+        ...(isSuperAdmin ? { role: editing.role, canManagePermissions: editing.canManagePermissions } : {}),
+        expectedVersion: editing.permissionsVersion,
+      };
+      const payloadText = JSON.stringify(payload);
+      if (userRequest.current?.payload !== payloadText) userRequest.current = { payload: payloadText, id: crypto.randomUUID() };
+      const response = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...payload, requestId: userRequest.current.id }),
+      });
+      const result = await response.json().catch(() => ({ error: "The server returned an invalid response" }));
+      if (!response.ok) { setUserError(result.error ?? "Unable to update user"); return; }
+      setData(result);
+      setEditing(null);
+      userRequest.current = null;
+      setMessage("User access updated.");
+    } catch {
+      setUserError("Unable to update user. Please try again.");
+    } finally {
+      setSaving(false);
     }
-    setData(result);
-    setEditing(null);
-    setMessage("User access updated.");
   }
   const users =
     data?.users.filter((user) =>
@@ -310,24 +345,26 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
   function updateEditing(patch: Partial<PortalUser>) {
     setEditing((current) => {
       if (!current) return current;
-      const next={...current,...patch};
+      const next={...current,...patch,...(!isSuperAdmin ? { role: current.role, canManagePermissions: current.canManagePermissions, moduleAccessMode: "custom" as const, storeAccessMode: "selected" as const } : {})};
+      if (next.role === "superadmin") next.canManagePermissions = false;
       if(next.role==="customer"&&patch.enabledModules?.includes("live_calendar")&&next.storeAccessMode==="all")
         return {...next,storeAccessMode:"selected",storeIds:[]};
       return next;
     });
   }
+  if (!data) return <div className="permission-page"><section className="permission-hero"><div><p className="kicker">PERMISSION SETTINGS</p><h2>User Access Management</h2></div></section>{loadError?<div className="access-error" role="alert">{loadError} <button type="button" onClick={loadUsers}>Retry</button></div>:<div className="access-toolbar card" role="status" aria-busy="true">Loading permissions…</div>}</div>;
   return (
     <div className="permission-page">
       <section className="permission-hero">
         <div>
-          <p className="kicker">SUPER ADMIN</p>
+          <p className="kicker">{isSuperAdmin ? "SUPER ADMIN" : "PERMISSION SETTINGS"}</p>
           <h2>User Access Management</h2>
           <p>
             Manage portal users, roles, account status, store access and
             individual module permissions from one place.
           </p>
         </div>
-        <span className="superadmin-badge">Super Admin</span>
+        {isSuperAdmin && <span className="superadmin-badge">Super Admin</span>}
       </section>
       <div className="access-tabs">
         <button
@@ -336,20 +373,21 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
         >
           Users & roles
         </button>
-        <button
+        {access?.canManageStores && <button
           className={tab === "stores" ? "active" : ""}
           onClick={() => setTab("stores")}
         >
           Stores
-        </button>
-        <button
+        </button>}
+        {access?.canManageDefaults && <button
           className={tab === "modules" ? "active" : ""}
           onClick={() => setTab("modules")}
         >
           Client module defaults
-        </button>
+        </button>}
       </div>
       {message && <div className="access-message">{message}</div>}
+      {loadError && <div className="access-error" role="alert">{loadError} <button type="button" onClick={loadUsers}>Retry</button></div>}
 
       {tab === "users" && (
         <>
@@ -366,7 +404,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
-            <button onClick={() => setAdding(true)}>+ Add user</button>
+            <button disabled={!data} onClick={() => { setUserError(""); setAdding(true); }}>+ Add user</button>
           </section>
           <section className="user-access-list">
             {users.map((user) => (
@@ -409,7 +447,12 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                 </span>
                 <button
                   className="edit-access"
-                  onClick={() => setEditing({ ...user })}
+                  disabled={!user.editable}
+                  onClick={() => {
+                    setUserError("");
+                    userRequest.current = null;
+                    setEditing(isSuperAdmin ? { ...user } : { ...user, moduleAccessMode: "custom", storeAccessMode: "selected", enabledModules: user.enabledModules.filter(id => access?.grantableModules.includes(id)) });
+                  }}
                 >
                   Manage
                 </button>
@@ -419,7 +462,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
         </>
       )}
 
-      {tab === "modules" && (
+      {tab === "modules" && access?.canManageDefaults && (
         <>
           <section className="permission-summary card">
             <div>
@@ -489,7 +532,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
         </>
       )}
 
-      {tab === "stores" && (
+      {tab === "stores" && access?.canManageStores && (
         <>
           <section className="access-toolbar card">
             <div>
@@ -594,6 +637,8 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                 onClick={() => {
                   setAdding(false);
                   setEditing(null);
+                  setUserError("");
+                  userRequest.current = null;
                 }}
               >
                 ×
@@ -620,7 +665,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                     }
                   />
                 </label>
-                <label>
+                {isSuperAdmin && <label>
                   Role
                   <select
                     value={newUser.role}
@@ -632,7 +677,8 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                     <option value="manager">Manager</option>
                     <option value="superadmin">Super Admin</option>
                   </select>
-                </label>
+                </label>}
+                {userError && <p className="access-error" role="alert">{userError}</p>}
                 <button
                   className="primary"
                   disabled={saving || !newUser.email}
@@ -644,7 +690,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
             ) : (
               editing && (
                 <div className="access-form">
-                  <div className="form-two">
+                  <div className={isSuperAdmin ? "form-two" : "form-one"}>
                     <label>
                       Display name
                       <input
@@ -654,7 +700,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                         }
                       />
                     </label>
-                    <label>
+                    {isSuperAdmin && <label>
                       Role
                       <select
                         value={editing.role}
@@ -666,7 +712,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                         <option value="manager">Manager</option>
                         <option value="superadmin">Super Admin</option>
                       </select>
-                    </label>
+                    </label>}
                   </div>
                   <label className="account-toggle">
                     <input
@@ -681,10 +727,14 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                       <small>Disabled users cannot access this portal.</small>
                     </span>
                   </label>
+                  {isSuperAdmin && editing.role !== "superadmin" && <label className="account-toggle">
+                    <input type="checkbox" checked={editing.canManagePermissions} onChange={event => updateEditing({ canManagePermissions: event.target.checked })} />
+                    <span><b>Permission Settings</b><small>Allow this user to manage access for assigned users.</small></span>
+                  </label>}
                   <fieldset>
                     <legend>Store access</legend>
-                    {editing.role==="customer"&&<p>Live Calendar requires explicitly selected stores for this customer. All stores does not grant calendar access.</p>}
-                    <div className="access-choice">
+                    {editing.role==="customer"&&isSuperAdmin&&<p>Live Calendar requires explicitly selected stores for this customer. All stores does not grant calendar access.</p>}
+                    {isSuperAdmin ? <div className="access-choice">
                       <button
                         className={
                           editing.storeAccessMode === "all" ? "active" : ""
@@ -705,7 +755,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                       >
                         Selected stores
                       </button>
-                    </div>
+                    </div> : <p className="access-scope-note">Selected stores</p>}
                     {editing.storeAccessMode === "selected" && (
                       <>
                         <div className="access-bulk-actions">
@@ -761,7 +811,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                   </fieldset>
                   <fieldset>
                     <legend>Module access</legend>
-                    <div className="access-choice">
+                    {isSuperAdmin ? <div className="access-choice">
                       <button
                         className={
                           editing.moduleAccessMode === "role_default"
@@ -784,20 +834,20 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                       >
                         Custom access
                       </button>
-                    </div>
+                    </div> : <p className="access-scope-note">Custom access</p>}
                     {editing.moduleAccessMode === "custom" && (
                       <>
                         <div className="access-bulk-actions">
                           <span>
                             {editing.enabledModules.length} of{" "}
-                            {PORTAL_MODULES.length} selected
+                            {grantableModules.length} selected
                           </span>
                           <div>
                             <button
                               type="button"
                               onClick={() =>
                                 updateEditing({
-                                  enabledModules: PORTAL_MODULES.map(
+                                  enabledModules: grantableModules.map(
                                     (module) => module.id,
                                   ),
                                 })
@@ -816,7 +866,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                           </div>
                         </div>
                         <div className="access-check-grid modules">
-                        {PORTAL_MODULES.map((module) => (
+                        {grantableModules.map((module) => (
                           <label key={module.id}>
                             <input
                               type="checkbox"
@@ -841,6 +891,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                       </>
                     )}
                   </fieldset>
+                  {userError && <p className="access-error" role="alert">{userError}</p>}
                   <button
                     className="primary"
                     disabled={saving}

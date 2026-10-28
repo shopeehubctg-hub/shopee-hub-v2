@@ -11,8 +11,8 @@ const compiled=await build({
   stdin:{contents:'export { GET, POST, PATCH } from "./app/api/live-calendar/route"; export { PATCH as updateUser } from "./app/api/admin/users/route"; export * from "./app/live-calendar-model";',resolveDir:process.cwd(),loader:"ts"},
   bundle:true,write:false,platform:"node",format:"esm",
   plugins:[{name:"calendar-test-adapters",setup(build){
-    build.onResolve({filter:/\/(chatgpt-auth|supabase-rest|store-directory)$/},args=>({path:args.path.split("/").pop(),namespace:"calendar-test"}));
-    build.onLoad({filter:/.*/,namespace:"calendar-test"},args=>({contents:args.path==="chatgpt-auth"?'export async function getChatGPTUser(){return globalThis.__calendarUser;}':args.path==="store-directory"?'export async function storeDirectory(){return {byId:new Map(),links:new Map()};} export function storeDetails(){return {projectLinks:[],storeGroupLink:"",googleDriveLink:"",adsTopUpOwner:null};}':'export async function supabaseRest(path,init){return globalThis.__calendarRest(path,init);} export function supabaseConfig(){return {url:"https://unused.test",secret:"test"};}',loader:"js"}));
+    build.onResolve({filter:/^(server-only|.*\/(chatgpt-auth|supabase-rest|store-directory))$/},args=>({path:args.path.split("/").pop(),namespace:"calendar-test"}));
+    build.onLoad({filter:/.*/,namespace:"calendar-test"},args=>({contents:args.path==="server-only"?"":args.path==="chatgpt-auth"?'export async function getChatGPTUser(){return globalThis.__calendarUser;}':args.path==="store-directory"?'export async function storeDirectory(){return {byId:new Map(),links:new Map()};} export function storeDetails(){return {projectLinks:[],storeGroupLink:"",googleDriveLink:"",adsTopUpOwner:null};}':'export async function supabaseRest(path,init){return globalThis.__calendarRest(path,init);} export function supabaseConfig(){return {url:"https://unused.test",secret:"test"};}',loader:"js"}));
   }}],
 });
 const api=await import(`data:text/javascript;base64,${Buffer.from(compiled.outputFiles[0].text).toString("base64")}`);
@@ -21,7 +21,7 @@ const sg={id:"shopee-skindae-sg",tenant_id:"j-packaging",name:"SkinDae SG",bigse
 const my={id:"shopee-skindae-my-by-ctg4u",tenant_id:"j-packaging",name:"SkinDae MY by CTG4u",bigseller_name:"SkinDae MY by CTG4u",platform:"Shopee"};
 const id="00000000-0000-4000-8000-000000000001";
 let state;
-const request=(method,body)=>new Request("https://calendar.test/api/live-calendar",{method,headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+const request=(method,body)=>new Request("https://calendar.test/api/live-calendar",{method,headers:{"Content-Type":"application/json",origin:"https://calendar.test"},body:JSON.stringify(body)});
 const input=()=>({storeId:sg.id,title:"SG launch",startLocal:"2026-09-28T23:30",endLocal:"2026-09-29T00:30",timeZone:"Asia/Singapore",internalNote:"Internal staffing note"});
 const session=(extra={})=>({id,tenant_id:"j-packaging",store_id:sg.id,title:"SG launch",start_at:"2026-09-28T15:30:00.000Z",end_at:"2026-09-28T16:30:00.000Z",time_zone:"Asia/Singapore",status:"scheduled",internal_note:"Private",...extra});
 

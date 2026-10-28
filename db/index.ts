@@ -3,11 +3,13 @@ import "server-only";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
+import { assertDeploymentIsolation } from "../app/deployment-isolation";
 
 let client: ReturnType<typeof postgres> | undefined;
 let database: ReturnType<typeof drizzle<typeof schema>> | undefined;
 
 export async function getDb() {
+  assertDeploymentIsolation();
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error("DATABASE_URL is unavailable. Configure the Supabase transaction-pooler URL in Vercel.");

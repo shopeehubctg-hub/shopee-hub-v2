@@ -7,9 +7,9 @@ export type FeePreviewChoice={clientType:''|ClientType;planId:string};
 export type FeePreviewAssignment=FeePreviewChoice&{effectiveMonth:string};
 export type FeePreviewSnapshot={id:string;month:string;unitKey:string;unitName:string;plan:FeePlan;amount:string;result:FeeCalculation;createdAt:string;conversion?:ProjectFeePreview};
 export type FeeWorkspaceRequest={view:'settings'|'assignment'|'bulk';month:string;unitKey?:string;unitKeys?:string[]};
-type FeePlansContextValue={persistent:boolean;catalogStatus:'preview'|'loading'|'ready'|'unavailable';catalogError:string;settingsRevision:number;notifyAccountSaved:()=>void;refreshPlans:()=>Promise<void>;feeWorkspace:FeeWorkspaceRequest|null;openFeeWorkspace:(request:FeeWorkspaceRequest)=>void;closeFeeWorkspace:()=>void;previewRows:AccountStoreRow[];mergePreviewRows:(rows:AccountStoreRow[])=>void;plans:FeePlan[];upsertPlan:(draft:FeePlanDraft)=>Promise<void>;archivePlan:(id:string)=>Promise<void>;previewMemory:Record<string,unknown>;setPreviewMemory:Dispatch<SetStateAction<Record<string,unknown>>>};
+type FeePlansContextValue={ensurePlans:()=>void;persistent:boolean;catalogStatus:'preview'|'loading'|'ready'|'unavailable';catalogError:string;settingsRevision:number;notifyAccountSaved:()=>void;refreshPlans:()=>Promise<void>;feeWorkspace:FeeWorkspaceRequest|null;openFeeWorkspace:(request:FeeWorkspaceRequest)=>void;closeFeeWorkspace:()=>void;previewRows:AccountStoreRow[];mergePreviewRows:(rows:AccountStoreRow[])=>void;plans:FeePlan[];upsertPlan:(draft:FeePlanDraft)=>Promise<void>;archivePlan:(id:string)=>Promise<void>;previewMemory:Record<string,unknown>;setPreviewMemory:Dispatch<SetStateAction<Record<string,unknown>>>};
 const FeePlansContext=createContext<FeePlansContextValue|null>(null);
-export function FeePlansProvider({children,persistent=false}:{children:ReactNode;persistent?:boolean}){
+export function FeePlansProvider({children,persistent=false,deferLoad=false}:{children:ReactNode;persistent?:boolean;deferLoad?:boolean}){
  const [feeWorkspace,setFeeWorkspace]=useState<FeeWorkspaceRequest|null>(null);
  const openFeeWorkspace=useCallback((request:FeeWorkspaceRequest)=>setFeeWorkspace(request),[]);
  const closeFeeWorkspace=useCallback(()=>setFeeWorkspace(null),[]);
@@ -19,12 +19,22 @@ export function FeePlansProvider({children,persistent=false}:{children:ReactNode
  const [settingsRevision,setSettingsRevision]=useState(0);
  const notifyAccountSaved=useCallback(()=>setSettingsRevision(value=>value+1),[]);
  const retry=useRef<{fingerprint:string;requestId:string}|null>(null);
- const refreshPlans=useCallback(async()=>{
-  if(!persistent)return;
+ const catalogRequested=useRef(false);
+ const catalogRequest=useRef<Promise<void>|null>(null);
+ const refreshPlans=useCallback(()=>{
+  if(!persistent)return Promise.resolve();
+  if(catalogRequest.current)return catalogRequest.current;
+  catalogRequested.current=true;
+  const request=(async()=>{
   try{const response=await fetch('/api/admin/account/rate-cards',{cache:'no-store'});const data=await response.json();if(!response.ok||!data.available||!Array.isArray(data.plans))throw Error(data.error||'Rate cards are unavailable.');setPlans(data.plans);setCatalogStatus('ready');setCatalogError('');}
   catch(error){setCatalogStatus('unavailable');setCatalogError(error instanceof Error?error.message:'Rate cards are unavailable.');throw error;}
+  })();
+  catalogRequest.current=request;
+  void request.finally(()=>{if(catalogRequest.current===request)catalogRequest.current=null;}).catch(()=>{});
+  return request;
  },[persistent]);
- useEffect(()=>{const load=async()=>{await refreshPlans().catch(()=>{});};void load();},[refreshPlans]);
+ const ensurePlans=useCallback(()=>{if(persistent&&!catalogRequested.current)void refreshPlans().catch(()=>{});},[persistent,refreshPlans]);
+ useEffect(()=>{if(!deferLoad)ensurePlans();},[deferLoad,ensurePlans]);
  const [previewRows,setPreviewRows]=useState<AccountStoreRow[]>([]);
  const mergePreviewRows=useCallback((rows:AccountStoreRow[])=>{if(!rows.length)return;setPreviewRows(current=>[...new Map([...current,...rows].map(row=>[row.rosterKey??row.id,row])).values()]);},[]);
  const [previewMemory,setPreviewMemory]=useState<Record<string,unknown>>({});
@@ -37,9 +47,9 @@ export function FeePlansProvider({children,persistent=false}:{children:ReactNode
  }
  async function upsertPlan(draft:FeePlanDraft){const checked=validatePlan(draft);const existing=plans.find(plan=>plan.id===checked.id);if(existing?.archivedAt)throw Error('This rate card was deleted. Choose another card.');if(existing&&(existing.currency!==checked.currency||existing.clientType!==checked.clientType))throw Error('Copy the plan to use a different client type or currency.');const expectedVersion=Math.max(0,...plans.filter(plan=>plan.id===checked.id).map(plan=>plan.version));if(persistent){await writeCatalog('POST',{card:checked,expectedVersion});return;}setPlans(current=>current.some(plan=>plan.id===checked.id&&plan.archivedAt)?current:[...current,{...checked,version:expectedVersion+1}]);}
  async function archivePlan(id:string){const archivedAt=new Date().toISOString();archiveRateCard(plans,id,archivedAt);if(persistent){await writeCatalog('DELETE',{id,expectedVersion:Math.max(...plans.filter(plan=>plan.id===id).map(plan=>plan.version))});return;}setPlans(current=>current.map(plan=>plan.id===id?{...plan,archivedAt:plan.archivedAt??archivedAt}:plan));}
- return <FeePlansContext.Provider value={{persistent,catalogStatus,catalogError,settingsRevision,notifyAccountSaved,refreshPlans,feeWorkspace,openFeeWorkspace,closeFeeWorkspace,previewRows,mergePreviewRows,plans,upsertPlan,archivePlan,previewMemory,setPreviewMemory}}>{children}</FeePlansContext.Provider>;
+ return <FeePlansContext.Provider value={{ensurePlans,persistent,catalogStatus,catalogError,settingsRevision,notifyAccountSaved,refreshPlans,feeWorkspace,openFeeWorkspace,closeFeeWorkspace,previewRows,mergePreviewRows,plans,upsertPlan,archivePlan,previewMemory,setPreviewMemory}}>{children}</FeePlansContext.Provider>;
 }
-export function useFeePlans(){const context=useContext(FeePlansContext);if(!context)throw Error('FeePlansProvider is required');return context;}
+export function useFeePlans(){const context=useContext(FeePlansContext);const ensurePlans=context?.ensurePlans;useEffect(()=>{ensurePlans?.();},[ensurePlans]);if(!context)throw Error('FeePlansProvider is required');return context;}
 
 /** Tab-memory only: survives module navigation, resets on page reload, never writes financial records. */
 export function useFeePreviewState<T>(key:string,initial:T):[T,Dispatch<SetStateAction<T>>]{

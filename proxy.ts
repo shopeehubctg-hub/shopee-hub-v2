@@ -9,6 +9,8 @@ const PUBLIC_PAGES = new Set([
   "/auth/callback",
 ]);
 const PUBLIC_AUTH_APIS = new Set([
+  // Returns operational readiness only, without accounts or table contents.
+  "/api/health",
   "/api/auth/login",
   "/api/auth/recover",
   "/api/auth/password",

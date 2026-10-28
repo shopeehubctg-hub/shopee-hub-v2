@@ -37,8 +37,9 @@ beforeEach(() => {
     const table = url.pathname.slice(1);
     const body = init.body ? JSON.parse(init.body) : null;
     state.calls.push({ table, method: init.method ?? 'GET', body });
-    if (table === 'customer_users') return [{ tenant_id: state.tenant, role: state.role, active: true }];
+    if (table === 'customer_users') return [{ id:1,email:'admin@example.test',tenant_id: state.tenant, role: state.role, active: true,module_access_mode:'role_default',store_access_mode:'all',can_manage_permissions:false }];
     if (table === 'tenants') return [{ active: true }];
+    if (['user_module_permissions','tenant_module_permissions','user_store_access'].includes(table)) return [];
     if (table.startsWith('rpc/')) throw new Error('Account RPC must not be called for legacy Store actions');
     if (table !== 'stores') throw new Error(`Unexpected table ${table}`);
     if (init.method === 'POST') { state.stores.push(body); return [{ ...body, display_name: null }]; }
@@ -92,7 +93,7 @@ test('malformed v2 Account payloads fail closed with no Store or directory write
   }
   assert.equal(state.stores.length, 0);
   assert.equal(globalThis.__compatDetails.length, 0);
-  assert.ok(state.calls.every(call => call.table !== 'stores' && !call.table.startsWith('rpc/')));
+  assert.ok(state.calls.every(call => call.method === 'GET')); // authorization may read Store scope; malformed setup must never write.
 });
 
 for(const scenario of [{market:'MY',preview:false},{market:'TH',preview:false},{market:'PH',preview:false},{market:'TH',preview:true},{market:'PH',preview:true}])test(`Store UI ${scenario.market} ${scenario.preview?'Rate Card preview':'store-only'} preserves the persistence boundary`, async () => {
@@ -119,6 +120,7 @@ for(const scenario of [{market:'MY',preview:false},{market:'TH',preview:false},{
     if (url === '/api/admin/users') return Response.json({
       stores: [{ id: 'shopee-existing', name: 'Existing', platform: `Shopee ${market}` }],
       users: [], clientDefaults: [], accountSettingsAvailable: false,
+      access: { isSuperAdmin: true, canManageStores: true, canManageDefaults: true, grantableModules: [] },
     });
     if (url.startsWith('/api/admin/store-exchange-rate?')) {const params=new URL(url,'https://portal.test').searchParams;return Response.json({status:'available',market:params.get('market'),currency:params.get('market')==='TH'?'THB':'PHP',invoiceMonth:params.get('invoiceMonth'),serviceMonth:(()=>{const [year,month]=params.get('invoiceMonth').split('-').map(Number);return `${month===1?year-1:year}-${String(month===1?12:month-1).padStart(2,'0')}`;})(),policy:'bnm-service-average',rate:params.get('market')==='TH'?'0.1225':'0.065',quotationUnit:1,reference:'https://storage.data.gov.my/finsector/exr/monthly.csv'});}
     if (url === '/api/admin/stores') {

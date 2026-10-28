@@ -1,6 +1,7 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { assertDeploymentIsolation } from "./deployment-isolation";
 
 export type ChatGPTUser = {
   displayName: string;
@@ -20,6 +21,7 @@ export const PORTAL_SESSION_COOKIE = "shopee_hub_portal_session";
 export const PASSWORD_RESET_COOKIE = "shopee_hub_password_reset";
 
 function sessionSecret() {
+  assertDeploymentIsolation();
   const secret = process.env.SUPABASE_SECRET_KEY;
   if (!secret) throw new Error("SUPABASE_SECRET_KEY is unavailable");
   return secret;

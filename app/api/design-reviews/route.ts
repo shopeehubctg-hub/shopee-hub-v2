@@ -3,14 +3,13 @@ import {getDb} from "../../../db";
 import {customerUsers,designReviewImages,designReviews} from "../../../db/schema";
 import {getChatGPTUser} from "../../chatgpt-auth";
 import {canAccessModule,canAccessStore} from "../../module-access";
+import {supabaseConfig} from "../../supabase-rest";
 export const dynamic="force-dynamic";
 type Meta={name:string;width:number;height:number;size:number;type:string};
 type Finding={level:"pass"|"warning"|"fail";title:string;detail:string};
 
 async function uploadDesignFile(file:File,objectKey:string){
-  const projectUrl=process.env.SUPABASE_URL;
-  const secretKey=process.env.SUPABASE_SECRET_KEY;
-  if(!projectUrl||!secretKey)throw new Error("Supabase Storage is not configured");
+  const {url:projectUrl,secret:secretKey}=supabaseConfig();
   const response=await fetch(`${projectUrl}/storage/v1/object/design-uploads/${objectKey.split("/").map(encodeURIComponent).join("/")}`,{
     method:"POST",
     headers:{Authorization:`Bearer ${secretKey}`,apikey:secretKey,"Content-Type":file.type,"x-upsert":"false"},

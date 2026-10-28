@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { syncHistoryToGoogleSheet } from '../app/api/packages/history-sync.ts';
+import { loadHistorySync } from './support/load-history-sync.mjs';
+const { syncHistoryToGoogleSheet } = await loadHistorySync();
 
 async function withWebhook(fetcher, run) {
   const previousFetch = globalThis.fetch;

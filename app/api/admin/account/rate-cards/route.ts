@@ -1,9 +1,10 @@
+import {permissionManagement} from '../../../../permission-management';
 import {accountAdmin,accountJson,accountSaveError,loadRateCards} from '../../../../account-rate-cards';
 import {supabaseRest} from '../../../../supabase-rest';
 import {validatePlan,type FeePlanDraft} from '../../../../fee-plan-model';
 import {malaysiaDate} from '../../../../account-ledger';
 export const dynamic='force-dynamic';
-export async function GET(){try{const auth=await accountAdmin();if('error'in auth)return auth.error;return Response.json({plans:await loadRateCards(auth.tenantId),available:true});}catch(error){return accountSaveError(error);}}
+export async function GET(){try{const auth=await permissionManagement();if('error'in auth)return auth.error;return Response.json({plans:await loadRateCards(auth.member.tenant_id),available:true});}catch(error){return accountSaveError(error);}}
 async function mutate(request:Request,archive:boolean){try{
  const auth=await accountAdmin(request,true);if('error'in auth)return auth.error;
  const body=await accountJson(request);

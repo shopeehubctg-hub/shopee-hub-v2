@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { createPasswordResetRequest, PASSWORD_RESET_COOKIE } from "../../../chatgpt-auth";
 import { supabaseRest } from "../../../supabase-rest";
+import { stagingRecipientAllowed } from "../../../deployment-isolation";
 
 export const dynamic="force-dynamic";
 const SPECIALIST_WHATSAPP="601120784022";
@@ -8,6 +9,8 @@ const SPECIALIST_WHATSAPP="601120784022";
 export async function POST(request:Request){
   const body=await request.json().catch(()=>null)as{email?:string}|null;const email=body?.email?.trim().toLowerCase()??"";
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return Response.json({error:"Enter a valid email address"},{status:400});
+  try { if (!stagingRecipientAllowed(email)) return Response.json({error:"Password recovery is unavailable for this account in Staging"},{status:503}); }
+  catch { return Response.json({error:"Staging authentication configuration is unavailable"},{status:503}); }
   const membership=await supabaseRest<Array<{active:boolean;role:string}>>(`customer_users?select=active,role&email=eq.${encodeURIComponent(email)}&limit=1`);
   if(!membership[0]?.active)return Response.json({error:"No portal access found. Please contact a Shopee Hub Specialist."},{status:403});
   if(membership[0].role==="superadmin")return Response.json({error:"Super Admin passwords cannot be reset here. Please contact the system administrator."},{status:403});
