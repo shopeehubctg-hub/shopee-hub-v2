@@ -25,6 +25,7 @@ import { syncHistoryToGoogleSheet } from "./history-sync";
 import { endPackage } from "./end-package";
 import { packageHistoryAction } from "../../package-ending";
 import { boundCampaignPeriods } from "../../package-period-bounds";
+import { readCompactPackageRows } from "./compact-read";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -217,7 +218,7 @@ export async function GET(request: Request) {
     return Response.json({ packages:sample, source:"sheet-migration-preview", canCreate:storeId !== "all", canDelete:false }, { headers:{ "Cache-Control":"private, no-store" } });
   }
   const ids = rows.map(row => row.id);
-  const [versions,prices,platformRows] = await Promise.all([
+  const [versions,prices,platformRows] = compact ? await readCompactPackageRows(db, ids) : await Promise.all([
     db.select().from(packageVersions).where(inArray(packageVersions.packageId, ids)).orderBy(desc(packageVersions.version)),
     db.select().from(packagePrices).where(inArray(packagePrices.packageId, ids)).orderBy(desc(packagePrices.createdAt)),
     db.select().from(packagePlatformSkus).where(inArray(packagePlatformSkus.packageId, ids)),
