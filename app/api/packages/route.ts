@@ -22,6 +22,7 @@ import { versionChangeSummary } from "./version-change-summary";
 import { syncHistoryToGoogleSheet } from "./history-sync";
 import { endPackage } from "./end-package";
 import { packageHistoryAction } from "../../package-ending";
+import { boundCampaignPeriods } from "../../package-period-bounds";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -490,19 +491,9 @@ async function savePackage(request: Request) {
     db.select().from(packagePlatformSkus).where(eq(packagePlatformSkus.versionId,previousVersion.id)),
   ]) : [[], []];
   const longTermLifecycle=Boolean(body.longTerm||body.campaignLongTerm||recurringCampaign||previousVersion?.calculatorSettings?._longTermLifecycle===true);
-  if(previousVersion?.calculatorSettings?._longTermLifecycle===true&&oldPrices.some(item=>item.priceType==="non_campaign"&&item.effectiveTo===null)&&!body.longTerm&&!body.campaignLongTerm){
-    for(const market of markets){
-      const normal=schedules.filter(item=>item.market===market&&item.priceType==="non_campaign");
-      const base=normal[0];
-      const end=normal.reduce((latest,line)=>line.effectiveTo&&line.effectiveTo>latest?line.effectiveTo:latest,base.effectiveTo??"");
-      for(let index=schedules.length-1;index>=0;index--){
-        const period=schedules[index];
-        if(period.market!==market||period.priceType!=="campaign")continue;
-        if(period.effectiveFrom>end)schedules.splice(index,1);
-        else if(!period.effectiveTo||period.effectiveTo>end)period.effectiveTo=end;
-      }
-      if(!schedules.some(item=>item.market===market&&item.priceType==="campaign"))schedules.push({...base,priceType:"campaign"});
-    }
+  if(!body.longTerm&&!body.campaignLongTerm){
+    const bounded=boundCampaignPeriods(schedules);
+    schedules.splice(0,schedules.length,...bounded);
   }
   const primaryPeriod=schedules.find(item=>item.effectiveTo===null)??schedules.find(item=>item.priceType==="campaign")!;
   const changeSummary = nextVersion === 1 ? "新开配套" : previousVersion
