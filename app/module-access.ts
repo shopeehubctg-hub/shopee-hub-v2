@@ -10,14 +10,14 @@ type Database = Awaited<ReturnType<typeof getDb>>;
 export async function canAccessModule(db: Database, membership: { id:number; tenantId:string; role:"customer"|"manager"|"superadmin"; active:boolean; moduleAccessMode:"role_default"|"custom" }, moduleId: PortalModuleId) {
   if (!membership.active) return false;
   if (membership.role === "superadmin") return true;
-  const [tenantPermission] = await db.select({ enabled:tenantModulePermissions.enabled }).from(tenantModulePermissions)
-    .where(and(eq(tenantModulePermissions.tenantId,membership.tenantId),eq(tenantModulePermissions.moduleId,moduleId))).limit(1);
-  if (moduleId === "live_calendar" ? tenantPermission?.enabled !== true : tenantPermission?.enabled === false) return false;
   if (membership.moduleAccessMode === "custom") {
     const [permission] = await db.select({ enabled:userModulePermissions.enabled }).from(userModulePermissions)
       .where(and(eq(userModulePermissions.userId,membership.id),eq(userModulePermissions.moduleId,moduleId))).limit(1);
     return permission?.enabled === true;
   }
+  const [tenantPermission] = await db.select({ enabled:tenantModulePermissions.enabled }).from(tenantModulePermissions)
+    .where(and(eq(tenantModulePermissions.tenantId,membership.tenantId),eq(tenantModulePermissions.moduleId,moduleId))).limit(1);
+  if (moduleId === "live_calendar" ? tenantPermission?.enabled !== true : tenantPermission?.enabled === false) return false;
   return true;
 }
 
