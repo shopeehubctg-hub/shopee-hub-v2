@@ -18,21 +18,22 @@ import {JSDOM} from 'jsdom';
 import React,{act} from 'react';
 const componentBundle=await build({entryPoints:['app/overview-sales.tsx'],bundle:true,write:false,platform:'node',format:'cjs',packages:'external',jsx:'automatic'});
 const module={exports:{}};vm.runInNewContext(componentBundle.outputFiles[0].text,{module,exports:module.exports,require,fetch:(...args)=>globalThis.fetch(...args),AbortController,console,Intl,Date});const {OverviewSales}=module.exports;
-test('sales UI uses latest MTD snapshot, selects date/platform, and distinguishes loading/empty/failure',async()=>{
+test('sales UI uses latest MTD snapshot, uses latest month/platform, and distinguishes loading/empty/failure',async()=>{
  const dom=new JSDOM('<div id="root"></div>',{url:'https://local.test/'});
  for(const key of ['window','document','navigator','HTMLElement','Event','MouseEvent'])Object.defineProperty(globalThis,key,{configurable:true,value:dom.window[key]});
  globalThis.IS_REACT_ACT_ENVIRONMENT=true;
  const {createRoot}=await import('react-dom/client');const root=createRoot(document.getElementById('root'));
  let resolve;globalThis.fetch=()=>new Promise(r=>resolve=r);
- await act(async()=>root.render(React.createElement(OverviewSales)));
+ await act(async()=>root.render(React.createElement(OverviewSales,{canView:true})));
  assert.match(document.body.textContent,/Loading sales/);assert.doesNotMatch(document.body.textContent,/No sales data/);
  const row=(day,mtd)=>({report_date:`2026-10-${day}`,synced_at:'2026-10-29T02:00:00Z',day_all:100,day_shopee:100,day_lazada:0,day_tiktok:null,mtd_all:mtd,mtd_shopee:mtd,mtd_lazada:0,mtd_tiktok:null,target:1000,days_remaining:3,estimated_monthly:310,sales_difference:700,daily_sales_target:233.33,target_progress_pct:30});
  await act(async()=>resolve({ok:true,json:async()=>({month:'2026-10',rows:[row('27',200),row('28',300)],sample:true})}));
  assert.match(document.body.textContent,/Sample data/);assert.match(document.querySelector('.sales-metrics').textContent,/300.00/);assert.doesNotMatch(document.querySelector('.sales-metrics').textContent,/500.00/);
- const select=document.querySelector('.sales-toolbar select');await act(async()=>{select.value='2026-10-27';select.dispatchEvent(new Event('change',{bubbles:true}));});assert.match(document.querySelector('.sales-metrics').textContent,/200.00/);
+ assert.equal(document.querySelector('.sales-toolbar select'),null);assert.equal(document.querySelector('input[type=month]'),null);
  const platform=document.querySelector('.sales-trend select');await act(async()=>{platform.value='tiktok';platform.dispatchEvent(new Event('change',{bubbles:true}));});assert.match(document.querySelector('.sales-day').getAttribute('aria-label'),/—/);
- globalThis.fetch=async()=>({ok:true,json:async()=>({month:'2026-10',rows:[],sample:false})});await act(async()=>root.render(React.createElement(OverviewSales,{refreshKey:1})));assert.match(document.body.textContent,/No sales data/);
- globalThis.fetch=async()=>({ok:false,json:async()=>({error:'Unable to load sales.'})});await act(async()=>root.render(React.createElement(OverviewSales,{refreshKey:2})));assert.match(document.querySelector('[role="alert"]').textContent,/Retry/);assert.doesNotMatch(document.body.textContent,/No sales data/);
+ globalThis.fetch=async()=>({ok:true,json:async()=>({month:'2026-10',rows:[],sample:false})});await act(async()=>root.render(React.createElement(OverviewSales,{refreshKey:1,canView:true})));assert.match(document.body.textContent,/No sales data/);
+ globalThis.fetch=async()=>({ok:false,json:async()=>({error:'Unable to load sales.'})});await act(async()=>root.render(React.createElement(OverviewSales,{refreshKey:2,canView:true})));assert.match(document.querySelector('[role="alert"]').textContent,/Retry/);assert.doesNotMatch(document.body.textContent,/No sales data/);
+ let reads=0;globalThis.fetch=async()=>{reads++;throw Error('locked must not fetch');};await act(async()=>root.render(React.createElement(OverviewSales,{canView:false})));assert.equal(reads,0);assert.match(document.body.textContent,/Sales data is restricted/);assert.doesNotMatch(document.body.textContent,/300.00|200.00/);assert.equal(document.querySelectorAll('svg[aria-label=Locked]').length,6);
  await act(async()=>root.unmount());dom.window.close();
 });
 

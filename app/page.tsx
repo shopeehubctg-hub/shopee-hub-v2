@@ -148,7 +148,7 @@ export default function Home() {
   const [standalonePackageCreate, setStandalonePackageCreate] = useState(false);
 
   const moduleKey=`${section}:${storeId}:${dataRevision}:${moduleRetry}`;
-  const salesOverview=section==="overview"&&shellData?.access?.role==="superadmin";
+  const salesOverview=section==="overview";
   const needsModuleData=SNAPSHOT_SECTIONS.has(section)&&!salesOverview;
   const currentModule=moduleResult?.key===moduleKey?moduleResult:null;
   const moduleReady=!needsModuleData||Boolean(currentModule?.data);
@@ -357,7 +357,7 @@ export default function Home() {
 
       <DashboardModuleBoundary key={section}><Suspense fallback={<ModuleLoading/>}>
       {needsModuleData&&!storeId?<div className="card" role="status">No stores are available. Select or add a store to view this module.</div>:!moduleReady?(currentModule?.error?<div className="card" role="alert"><p>{currentModule.error}</p><button type="button" onClick={()=>setModuleRetry(value=>value+1)}>Retry module</button></div>:<ModuleLoading/>):stagingSnapshotUnavailable?<div className="card" role="status"><h2>No data</h2><p>No Staging snapshot is available for this store.</p></div>:<>
-      {salesOverview && <OverviewSales refreshKey={dataRevision}/> }
+      {salesOverview && <OverviewSales refreshKey={dataRevision} canView={shellData?.access?.role==="superadmin"}/> }
       {section==="overview" && !salesOverview && <div className="page">
         <div className="page-title"><div><p className="kicker">OVERVIEW</p><h2>Business Pulse</h2></div><div className="warning-pill">{importantWarningCount} important warnings</div></div>
         <section className="owner-brief"><div><span>今日重点</span><strong>{adFunds.needsTopUp ? `Ad Balance ${formatRinggit(adFunds.balance)} · Top-up ${formatRinggit(adFunds.recommendedTopUp)}` : `${warningOrders.length} orders need attention`}</strong><small>{adFunds.syncStatus === "delayed" ? "Advertising data delayed" : (adFunds.needsTopUp ? (adFunds.topUpOwner === "shopee_hub" ? "Managed by Shopee Hub" : "Action required") : "Ads healthy")}</small></div><button onClick={()=>setSection(adFunds.needsTopUp?"advertising":"orders")}>View →</button></section>
