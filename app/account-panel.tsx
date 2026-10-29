@@ -11,6 +11,8 @@ import { RateCell, RecordDetails } from "./account-settings-ui";
 
 import { billingRowsMatching, visibleSelection, useFeePlans, useFeePreviewState } from "./fee-plan-context";
 import { FeePlansPreview } from "./fee-plans-preview";
+import { AccountSecurityPanel } from "./account-security-panel";
+import { useAccountSecurity } from "./account-security-context";
 
 
 function monthLabel(month: string) {
@@ -47,6 +49,8 @@ function SelectionCheckbox({checked,indeterminate,label,onChange}:{checked:boole
 }
 
 export function AccountPanel() {
+  const security = useAccountSecurity();
+  const { enabled: securityEnabled, phase: securityPhase, epoch: securityEpoch, isCurrentAccess, lockLocal } = security;
   const {previewRows,mergePreviewRows,openFeeWorkspace,settingsRevision}=useFeePlans();
   const [invoiceMonth, setInvoiceMonth] = useFeePreviewState<string>("account-invoice-month","2026-10");
   const [query, setQuery] = useState("");
@@ -58,6 +62,17 @@ export function AccountPanel() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   useEffect(() => {
+    let cancelled = false;
+    if (securityEnabled && securityPhase !== "unlocked") {
+      queueMicrotask(() => {
+        if (cancelled) return;
+        setData(null); setDetailId(null); setSelected([]); setError(""); setLoading(false);
+      });
+    }
+    return () => { cancelled = true; };
+  }, [securityEnabled, securityPhase, securityEpoch]);
+  useEffect(() => {
+    if (securityEnabled && securityPhase !== "unlocked") return;
     const controller = new AbortController();
     let inFlight = false;
     async function refresh() {
@@ -65,17 +80,20 @@ export function AccountPanel() {
       inFlight = true;
       try {
         const response = await fetch(`/api/admin/account?invoiceMonth=${encodeURIComponent(invoiceMonth)}`, { cache: "no-store", signal: controller.signal });
-        if (!response.ok) throw new Error(response.status === 403 ? "Super Admin access is required." : "Account data is unavailable. Please try again.");
+        if (!response.ok) {
+          if (securityEnabled && [401,403,423].includes(response.status)) lockLocal();
+          throw new Error(response.status === 423 ? "Account is locked." : response.status === 403 ? "Super Admin access is required." : "Account data is unavailable. Please try again.");
+        }
         const result = await response.json() as AccountResponse;
-        if (!controller.signal.aborted) { setData(result); mergePreviewRows(result.stores); setError(""); setLoading(false); }
+        if (!controller.signal.aborted && (!securityEnabled || isCurrentAccess(securityEpoch))) { setData(result); mergePreviewRows(result.stores); setError(""); setLoading(false); }
       } catch (cause) {
-        if (!controller.signal.aborted) { setError(cause instanceof Error ? cause.message : "Account data is unavailable. Please try again."); setLoading(false); }
+        if (!controller.signal.aborted) { if (securityEnabled) setData(null); setError(cause instanceof Error ? cause.message : "Account data is unavailable. Please try again."); setLoading(false); }
       } finally { inFlight = false; }
     }
     void refresh();
     const interval = window.setInterval(() => { if (document.visibilityState === "visible") void refresh(); }, 60_000);
     return () => { controller.abort(); window.clearInterval(interval); };
-  }, [invoiceMonth, refreshKey, mergePreviewRows,settingsRevision]);
+  }, [invoiceMonth, refreshKey, mergePreviewRows,settingsRevision,securityEnabled,securityPhase,securityEpoch,isCurrentAccess,lockLocal]);
 
   const displayMonth = data?.invoiceMonth ?? invoiceMonth;
   const updatedAt = accountUpdatedAt(data?.updatedAt ?? null);
@@ -86,7 +104,9 @@ export function AccountPanel() {
   const selectedKeys=visibleSelection(visibleRows,selected);
   function changeInvoiceMonth(value:string){if(value!==invoiceMonth&&/^\d{4}-(0[1-9]|1[0-2])$/.test(value)){setDetailId(null);setSelected([]);setInvoiceMonth(value);setLoading(true);}}
   function toggleGroup(keys:string[]){setSelected(current=>{const all=keys.every(key=>current.includes(key));return all?current.filter(key=>!keys.includes(key)):[...new Set([...current,...keys])];});}
+  if (securityEnabled && securityPhase !== "unlocked") return <div className="account-panel account-refined"><AccountSecurityPanel /></div>;
   return <div className="account-panel account-refined" aria-busy={loading}>
+    {securityEnabled && <AccountSecurityPanel />}
     <header className="page-title account-page-title" aria-label="Account controls"><div className="account-page-controls"><label>Invoice month<input aria-label="Invoice month" type="month" value={invoiceMonth} onInput={event=>changeInvoiceMonth(event.currentTarget.value)} onChange={event=>changeInvoiceMonth(event.currentTarget.value)}/></label><button type="button" disabled={loading} onClick={()=>{setLoading(true);setRefreshKey(value=>value+1);}}>Refresh</button></div></header>
     <p className="account-invoice-remark">Invoice month is based on the previous month’s service period.</p>
     {error && <div className="account-notice error" role="alert">{error}</div>}
