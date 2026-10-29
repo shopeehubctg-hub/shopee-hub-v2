@@ -4,8 +4,8 @@ import {build} from 'esbuild';
 
 const bundle=await build({entryPoints:['app/api/admin/users/route.ts'],bundle:true,write:false,platform:'node',format:'esm',plugins:[{name:'permission-test-adapters',setup(build){
   build.onResolve({filter:/^server-only$/},()=>({path:'empty',namespace:'permissions-test'}));
-  build.onResolve({filter:/\/(chatgpt-auth|supabase-rest|store-directory)$/},args=>({path:args.path.split('/').at(-1),namespace:'permissions-test'}));
-  build.onLoad({filter:/.*/,namespace:'permissions-test'},args=>({loader:'js',contents:args.path==='chatgpt-auth'?'export async function getChatGPTUser(){return globalThis.__permissionActor;}':args.path==='supabase-rest'?'export async function supabaseRest(path,options){return globalThis.__permissionRest(path,options);} export function supabaseConfig(){return {url:"https://auth.test",secret:"server-test-key"};}':args.path==='store-directory'?'export async function storeDirectory(){return [];} export function storeDetails(){return {};}':'export {};'}));
+  build.onResolve({filter:/\/(chatgpt-auth|supabase-rest|store-directory|account-security-server)$/},args=>({path:args.path.split('/').at(-1),namespace:'permissions-test'}));
+  build.onLoad({filter:/.*/,namespace:'permissions-test'},args=>({loader:'js',contents:args.path==='account-security-server'?'export async function accountSecurityGate(){return null;} export async function accountAccessGranted(){return true;}':args.path==='chatgpt-auth'?'export async function getChatGPTUser(){return globalThis.__permissionActor;}':args.path==='supabase-rest'?'export async function supabaseRest(path,options){return globalThis.__permissionRest(path,options);} export function supabaseConfig(){return {url:"https://auth.test",secret:"server-test-key"};}':args.path==='store-directory'?'export async function storeDirectory(){return [];} export function storeDetails(){return {};}':'export {};'}));
 }}]});
 const {GET,PATCH,POST}=await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
 let state;

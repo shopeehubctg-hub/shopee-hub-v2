@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-async function load(file){const compiled=execFileSync(process.execPath,['node_modules/esbuild/bin/esbuild',file,'--bundle','--format=esm','--platform=node','--target=node20',...(file.includes('seeds.server')?['--conditions=react-server']:[])]);return import(`data:text/javascript;base64,${compiled.toString('base64')}`);}
+async function load(file){const compiled=execFileSync('node_modules/esbuild/bin/esbuild',[file,'--bundle','--format=esm','--platform=node','--target=node20',...(file.includes('seeds.server')?['--conditions=react-server']:[])]);return import(`data:text/javascript;base64,${compiled.toString('base64')}`);}
 const {emptyAccountSetup,availableAccountRateCards,selectAccountRateCard,resetAccountSetupSelection,changeAccountSetupMonth,accountSetupPayload}=await load('app/store-account-setup-model.ts');
 const {seedFeePlans}=await load('app/fee-plan-seeds.server.ts');const {archiveRateCard}=await load('app/fee-plan-model.ts');const plans=seedFeePlans();
 const initial=()=>({...emptyAccountSetup(),legalEntity:'Example entity',effectiveMonth:'2026-10',clientType:'Internal'});

@@ -100,7 +100,7 @@ test('malformed v2 Account payloads fail closed with no Store or directory write
 for(const scenario of [{market:'MY',preview:false},{market:'TH',preview:false},{market:'PH',preview:false},{market:'MY',preview:true,available:false},{market:'TH',preview:true,available:false},{market:'PH',preview:true,available:false},{market:'TH',preview:true,available:true},{market:'PH',preview:true,available:true}])test(`Store UI ${scenario.market} ${scenario.preview?(scenario.available?'Account available':'Account locked'):'store-only'} preserves the persistence boundary`, async () => {
   const {market,preview:accountPreview,available:accountAvailable=false}=scenario;
   const { JSDOM } = await import(process.env.BD_DOM_TEST_JSDOM ?? 'jsdom');
-  const compiled = execFileSync(process.execPath, [esbuildCli, '--bundle', '--format=esm', '--platform=node', '--target=node20', '--loader=tsx', '--loader:.css=empty', '--jsx=automatic'], {
+  const compiled = execFileSync(esbuildCli, [ '--bundle', '--format=esm', '--platform=node', '--target=node20', '--loader=tsx', '--loader:.css=empty', '--jsx=automatic'], {
     maxBuffer: 10 * 1024 * 1024,
     input: `import React,{act} from 'react';import {createRoot} from 'react-dom/client';
       import {FeePlansProvider} from './app/fee-plan-context';import {PermissionSettings} from './app/permission-settings';import {AccountSecurityProvider} from './app/account-security-context';

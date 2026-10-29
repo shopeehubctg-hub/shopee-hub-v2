@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-const compiled=execFileSync(process.execPath,['node_modules/esbuild/bin/esbuild','app/fee-plan-seeds.server.ts','--bundle','--format=esm','--platform=node','--target=node20','--conditions=react-server']);
+const compiled=execFileSync('node_modules/esbuild/bin/esbuild',['app/fee-plan-seeds.server.ts','--bundle','--format=esm','--platform=node','--target=node20','--conditions=react-server']);
 const {seedFeePlans}=await import(`data:text/javascript;base64,${compiled.toString('base64')}`);
-const model=execFileSync(process.execPath,['node_modules/esbuild/bin/esbuild','app/fee-plan-model.ts','--bundle','--format=esm','--platform=node','--target=node20']); const {calculateFee,planForMonth,validatePlan,currentPlanVersions}=await import(`data:text/javascript;base64,${model.toString('base64')}`); const plan=seedFeePlans().find(p=>p.id==='berlanco-tier');
+const model=execFileSync('node_modules/esbuild/bin/esbuild',['app/fee-plan-model.ts','--bundle','--format=esm','--platform=node','--target=node20']); const {calculateFee,planForMonth,validatePlan,currentPlanVersions}=await import(`data:text/javascript;base64,${model.toString('base64')}`); const plan=seedFeePlans().find(p=>p.id==='berlanco-tier');
 test('whole-month brackets use exact thresholds, not progressive sums',()=>{
  for(const [amount,fee,rate] of [['0','0.00','9%'],['149999.99','13500.00','9%'],['150000','12000.00','8%'],['200000','16000.00','8%'],['299999.99','24000.00','8%'],['300000','21000.00','7%']]){const result=calculateFee(plan.rule,amount);assert.equal(result.fee,fee);assert.equal(result.rateLabel,rate);}
 });
