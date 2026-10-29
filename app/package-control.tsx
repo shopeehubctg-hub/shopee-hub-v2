@@ -178,8 +178,10 @@ function PackagePriceSummary({item,country="all"}:{item:PackageItem;country?:"al
   })}</div>;
 }
 
-export function PackageControl({ storeId, storeName, storePlatform, canCreate=true, allowSamplePreview=false, staging=false, prefills=[], standaloneCreate=false, draftStorageKey, onPrefillsAccepted }:Props) {
+export function PackageControl({ storeId, storeName, storePlatform, canCreate=true, allowSamplePreview=false, staging=false, prefills=[], standaloneCreate:initialStandaloneCreate=false, draftStorageKey, onPrefillsAccepted }:Props) {
   const [batchStore,setBatchStore] = useState<string|null>(null);
+  const [batchListView,setBatchListView] = useState(false);
+  const standaloneCreate=initialStandaloneCreate&&!batchListView;
   const [items,setItems] = useState<PackageItem[]>([]);
   const [sampleMode,setSampleMode] = useState(false);
   const [canShowSamples,setCanShowSamples] = useState(false);
@@ -943,7 +945,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
       {item.recurringCampaign&&<div><b>Monthly campaign</b><span>{displayDate(item.recurringCampaign.startDate)} → {item.recurringCampaign.endDate?displayDate(item.recurringCampaign.endDate):"Ongoing"}</span></div>}</>;
   }
 
-  if(staging&&canCreate&&hasSelectedStore&&!sampleMode&&batchStore===storeId)return <PackageBatchPreview key={storeId} storeId={storeId} storeName={storeName} onExit={()=>{setBatchStore(null);void load();}}/>;
+  if(staging&&canCreate&&hasSelectedStore&&!sampleMode&&batchStore===storeId)return <PackageBatchPreview key={storeId} storeId={storeId} storeName={storeName} backLabel={standaloneCreate?"Back to Single Package":"Back to Packages"} onExit={(notice)=>{setBatchStore(null);if(notice){setBatchListView(true);setShowCreate(false);setMessage(notice);setMessageType("success");setFilter("all");setSearch("");}void load();}}/>;
   return <div className={`package-control${standaloneCreate?" standalone-create":""}`}>
     <div className="package-hero">
       <div><p className="kicker">OXM PACKAGE CONTROL</p><h2>Packages & Pricing</h2><p>Create packages, choose platforms and set promotion dates. Every change is saved in history.</p></div>
@@ -952,12 +954,12 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
         <span>{sampleMode?"Sample data":!hasPackageScope?"Select a Store":allStoresSelected?"Accessible Stores":source==="sheet-migration-preview"?"Sheet Migration Preview":"Live Database"}</span>
         {!sampleMode&&canExportKits&&hasSelectedStore&&loadedStoreId===storeId&&source==="database"&&<button type="button" className="kit-export-button" onClick={previewKitExport} disabled={!selectedKitIds.length||kitBusy}>Generate Fulfillment Sheet{selectedKitIds.length?` (${selectedKitIds.length})`:""}</button>}
         {!sampleMode&&canCreate&&hasSelectedStore&&<button onClick={openNew}>{staging?"Create Single Package":"+ New Package"}</button>}
+    {staging&&!sampleMode&&canCreate&&hasSelectedStore&&<button type="button" onClick={()=>setBatchStore(storeId)}>Batch Upload Packages</button>}
       </div>
     </div>
 
-    {canShowSamples&&!standaloneCreate&&<div className="package-sample-toolbar"><span role="status">{sampleMode?"Sample data · Read only":""}</span><button type="button" disabled={saving||showCreate} aria-pressed={sampleMode} onClick={()=>{resetListScope();setFilter("all");setDurationFilter("all");setCountryFilter("all");setSearch("");setSampleMode(value=>!value);}}>{sampleMode?"Back to real data":"View sample data"}</button></div>}
+    {sampleMode&&canShowSamples&&!standaloneCreate&&<div className="package-sample-toolbar"><span role="status">{sampleMode?"Sample data · Read only":""}</span><button type="button" disabled={saving||showCreate} aria-pressed={sampleMode} onClick={()=>{resetListScope();setFilter("all");setDurationFilter("all");setCountryFilter("all");setSearch("");setSampleMode(value=>!value);}}>{sampleMode?"Back to real data":"View sample data"}</button></div>}
 
-    {staging&&!sampleMode&&canCreate&&hasSelectedStore&&<button type="button" onClick={()=>setBatchStore(storeId)}>Batch Upload Packages</button>}
     <p className="package-summary-scope">Summary · {sampleMode?"All sample packages":storeName} · All selling countries</p>
     <section className="metric-grid package-metrics">
       <article className="metric"><span>Total Packages</span><strong>{listReady?scopedItems.length:"—"}</strong><em>{sampleMode?"Sample packages":storeName}</em></article>
