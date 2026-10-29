@@ -1,0 +1,36 @@
+'use client';
+import {useEffect,useState} from 'react';
+type Row={report_date:string;synced_at:string;[key:string]:string|number|null};
+type Sales={month:string;latestDate:string|null;rows:Row[];sample:boolean};
+const n=(v:unknown)=>v===null||v===undefined||v===''?null:Number.isFinite(Number(v))?Number(v):null;
+const money=(v:unknown)=>n(v)===null?'—':new Intl.NumberFormat('en-MY',{style:'currency',currency:'MYR',maximumFractionDigits:2}).format(n(v)!);
+const date=(s:string)=>new Date(`${s}T00:00:00Z`).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'});
+const platforms=[['shopee','Shopee'],['lazada','Lazada'],['tiktok','TikTok']] as const;
+export function OverviewSales({refreshKey=0}:{refreshKey?:number}){
+ const [month,setMonth]=useState(''),[selected,setSelected]=useState(''),[platform,setPlatform]=useState('all');
+ const [data,setData]=useState<Sales|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true),[retry,setRetry]=useState(0);
+ useEffect(()=>{const controller=new AbortController();setLoading(true);setError('');
+ fetch(`/api/overview/sales${month?`?month=${encodeURIComponent(month)}`:''}`,{signal:controller.signal,cache:'no-store'}).then(async response=>{const result=await response.json();if(!response.ok)throw Error(result.error||'Unable to load sales.');if(!controller.signal.aborted){setData(result);setSelected('');}}).catch(e=>{if(!controller.signal.aborted)setError(e.message);}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();
+ },[month,retry,refreshKey]);
+ const rows=data?.rows??[],row=rows.find(r=>r.report_date===selected)??rows.at(-1),report=row?.report_date;
+ const max=Math.max(1,...rows.map(r=>n(r[`day_${platform}`])??0));
+ const progress=n(row?.target_progress_pct),gap=n(row?.sales_difference);
+ return <div className="page sales-overview">
+  <div className="page-title"><div><p className="kicker">OVERVIEW</p><h2>Sales Overview</h2><p className="sales-muted">Company-wide sales · MYR</p></div><label className="sales-month">Month<input type="month" value={month||data?.month||''} onChange={e=>setMonth(e.target.value)}/></label></div>
+  {loading?<div className="card" role="status">Loading sales…</div>:error?<div className="card" role="alert"><p>{error}</p><button onClick={()=>setRetry(v=>v+1)}>Retry</button></div>:!row?<div className="card"><h3>No sales data</h3><p>No records are available for this month.</p></div>:<>
+   {data?.sample&&<p className="sales-sample" role="status">Sample data · Staging preview only</p>}
+   <div className="sales-toolbar"><label>Report date<select value={report} onChange={e=>setSelected(e.target.value)}>{rows.map(r=><option key={r.report_date} value={r.report_date}>{date(r.report_date)}</option>)}</select></label><span className="sales-muted">Last updated {new Date(row.synced_at).toLocaleString('en-GB',{timeZone:'Asia/Kuala_Lumpur',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})} MYT</span></div>
+   <section aria-label="Sales Summary" className="metric-grid sales-metrics">
+    <article className="metric"><span>Daily Sales</span><strong>{money(row.day_all)}</strong><small>{date(report!)}</small></article>
+    <article className="metric"><span>Month to Date</span><strong>{money(row.mtd_all)}</strong><small>Through {date(report!)}</small></article>
+    <article className="metric"><span>Monthly Target</span><strong>{money(row.target)}</strong><small>{progress===null?'Target not set':`${progress.toFixed(2)}% achieved`}</small></article>
+    <article className="metric"><span>Projected Month End</span><strong>{money(row.estimated_monthly)}</strong><small>Estimate based on daily average</small></article>
+   </section>
+   <section className="card sales-trend" aria-label="Sales Trend"><div className="card-head"><h3>Sales Trend</h3><label>Platform<select value={platform} onChange={e=>setPlatform(e.target.value)}><option value="all">All Platforms</option>{platforms.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label></div><p className="sales-muted">Daily sales · {data?.month}</p>
+    <div className="sales-chart" role="group" aria-label="Daily sales chart">{rows.map(r=>{const v=n(r[`day_${platform}`]);return <button key={r.report_date} className={`sales-day ${r.report_date===report?'selected':''}`} onClick={()=>setSelected(r.report_date)} aria-label={`${date(r.report_date)}: ${money(v)}`} title={`${date(r.report_date)}: ${money(v)}`}><span className="sales-bar-area"><i style={{height:v===null?'0%':`${Math.max(1,Math.max(0,v)/max*100)}%`}}/></span><small>{Number(r.report_date.slice(-2))}</small></button>;})}</div><p className="sales-muted">Select a day to view its totals. Missing records are not counted as zero.</p>
+   </section>
+   <div className="sales-bottom"><section className="card" aria-label="Platform Sales"><h3>Platform Sales</h3><div className="sales-table-wrap"><table><thead><tr><th>Platform</th><th>Daily Sales</th><th>Month to Date</th><th>MTD Share</th></tr></thead><tbody>{platforms.map(([id,label])=>{const amount=n(row[`mtd_${id}`]),total=n(row.mtd_all);return <tr key={id}><th>{label}</th><td>{money(row[`day_${id}`])}</td><td>{money(amount)}</td><td>{amount!==null&&total!==null&&total>0?`${(amount/total*100).toFixed(1)}%`:'—'}</td></tr>;})}</tbody></table></div></section>
+   <section className="card" aria-label="Monthly Target"><div className="card-head"><h3>Monthly Target</h3><strong>{progress===null?'—':`${progress.toFixed(2)}%`}</strong></div><div className="progress" role="progressbar" aria-label="Target achieved" aria-valuenow={progress===null?undefined:Math.min(100,Math.max(0,progress))} aria-valuemin={0} aria-valuemax={100}><i style={{width:`${Math.min(100,Math.max(0,progress??0))}%`}}/></div><dl className="sales-target-details"><div><dt>{gap!==null&&gap<0?'Above target':'Remaining to target'}</dt><dd>{money(gap===null?null:Math.abs(gap))}</dd></div><div><dt>Days remaining</dt><dd>{row.days_remaining??'—'}</dd></div><div><dt>Daily sales needed</dt><dd>{money(n(row.daily_sales_target)===null?null:Math.max(0,n(row.daily_sales_target)!))}</dd></div></dl><p className="sales-muted">As of {date(report!)}. Latest configured target applies until changed.</p></section></div>
+  </>}
+ </div>;
+}

@@ -1,0 +1,37 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+import {createRequire} from 'node:module';
+import vm from 'node:vm';
+const require=createRequire(import.meta.url);
+let auth={tenantId:'tenant-a'}, calls=[], handler;
+const bundled=await build({entryPoints:['app/api/overview/sales/route.ts'],bundle:true,write:false,platform:'node',format:'cjs',plugins:[{name:'dependencies',setup(b){b.onResolve({filter:/account-rate-cards|supabase-rest/},a=>({path:a.path,namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},a=>({contents:a.path.includes('account-rate')?'export const accountAdmin=()=>globalThis.auth();':'export const supabaseRest=(q)=>globalThis.query(q);',loader:'js'}));}}]});
+const context={exports:{},module:{exports:{}},Response,URL,Date,Promise,encodeURIComponent,auth:async()=>auth,query:async q=>{calls.push(q);return handler(q);}};
+vm.runInNewContext(bundled.outputFiles[0].text,context);const GET=context.module.exports.GET;
+const request=q=>new Request('https://local.test/api/overview/sales'+q);
+test('sales endpoint denies ordinary accounts before any database reads',async()=>{calls=[];auth={error:Response.json({error:'Forbidden'},{status:403})};assert.equal((await GET(request(''))).status,403);assert.equal(calls.length,0);});
+test('sales endpoint bounds queries to authenticated tenant and requested month',async()=>{auth={tenantId:'tenant-a'};calls=[];handler=q=>q.includes('limit=1')&&q.includes('order=')?[{report_date:'2026-10-28'}]:q.includes('currency')?[{currency:'MYR'}]:[];const response=await GET(request('?month=2026-09&tenant_id=tenant-b&storeId=other'));assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'private, no-store');assert.equal((await response.json()).month,'2026-09');assert.ok(calls.every(q=>q.includes('tenant_id=eq.tenant-a')));assert.ok(calls.slice(1).every(q=>q.includes('report_date=gte.2026-09-01&report_date=lt.2026-10-01')));assert.ok(calls.every(q=>!q.includes('tenant-b')));});
+test('invalid months fail without queries; missing data is not an error',async()=>{calls=[];assert.equal((await GET(request('?month=2026-13'))).status,400);assert.equal(calls.length,0);handler=()=>[];assert.deepEqual((await (await GET(request(''))).json()).rows,[]);});
+test('currency mismatch and database failure return safe errors',async()=>{handler=q=>q.includes('order=report_date.desc')?[{report_date:'2026-10-28'}]:q.includes('currency')?[{currency:'SGD'}]:[];assert.equal((await GET(request(''))).status,503);handler=()=>{throw Error('secret-database-details')};const response=await GET(request(''));assert.equal(response.status,503);assert.doesNotMatch(await response.text(),/secret/);});
+
+import {JSDOM} from 'jsdom';
+import React,{act} from 'react';
+const componentBundle=await build({entryPoints:['app/overview-sales.tsx'],bundle:true,write:false,platform:'node',format:'cjs',packages:'external',jsx:'automatic'});
+const module={exports:{}};vm.runInNewContext(componentBundle.outputFiles[0].text,{module,exports:module.exports,require,fetch:(...args)=>globalThis.fetch(...args),AbortController,console,Intl,Date});const {OverviewSales}=module.exports;
+test('sales UI uses latest MTD snapshot, selects date/platform, and distinguishes loading/empty/failure',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{url:'https://local.test/'});
+ for(const key of ['window','document','navigator','HTMLElement','Event','MouseEvent'])Object.defineProperty(globalThis,key,{configurable:true,value:dom.window[key]});
+ globalThis.IS_REACT_ACT_ENVIRONMENT=true;
+ const {createRoot}=await import('react-dom/client');const root=createRoot(document.getElementById('root'));
+ let resolve;globalThis.fetch=()=>new Promise(r=>resolve=r);
+ await act(async()=>root.render(React.createElement(OverviewSales)));
+ assert.match(document.body.textContent,/Loading sales/);assert.doesNotMatch(document.body.textContent,/No sales data/);
+ const row=(day,mtd)=>({report_date:`2026-10-${day}`,synced_at:'2026-10-29T02:00:00Z',day_all:100,day_shopee:100,day_lazada:0,day_tiktok:null,mtd_all:mtd,mtd_shopee:mtd,mtd_lazada:0,mtd_tiktok:null,target:1000,days_remaining:3,estimated_monthly:310,sales_difference:700,daily_sales_target:233.33,target_progress_pct:30});
+ await act(async()=>resolve({ok:true,json:async()=>({month:'2026-10',rows:[row('27',200),row('28',300)],sample:true})}));
+ assert.match(document.body.textContent,/Sample data/);assert.match(document.querySelector('.sales-metrics').textContent,/300.00/);assert.doesNotMatch(document.querySelector('.sales-metrics').textContent,/500.00/);
+ const select=document.querySelector('.sales-toolbar select');await act(async()=>{select.value='2026-10-27';select.dispatchEvent(new Event('change',{bubbles:true}));});assert.match(document.querySelector('.sales-metrics').textContent,/200.00/);
+ const platform=document.querySelector('.sales-trend select');await act(async()=>{platform.value='tiktok';platform.dispatchEvent(new Event('change',{bubbles:true}));});assert.match(document.querySelector('.sales-day').getAttribute('aria-label'),/—/);
+ globalThis.fetch=async()=>({ok:true,json:async()=>({month:'2026-10',rows:[],sample:false})});await act(async()=>root.render(React.createElement(OverviewSales,{refreshKey:1})));assert.match(document.body.textContent,/No sales data/);
+ globalThis.fetch=async()=>({ok:false,json:async()=>({error:'Unable to load sales.'})});await act(async()=>root.render(React.createElement(OverviewSales,{refreshKey:2})));assert.match(document.querySelector('[role="alert"]').textContent,/Retry/);assert.doesNotMatch(document.body.textContent,/No sales data/);
+ await act(async()=>root.unmount());dom.window.close();
+});
