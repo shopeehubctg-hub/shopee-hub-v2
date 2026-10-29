@@ -14,7 +14,7 @@ export function publicLeaderboard(row:Record<string,unknown>){
  const observed=row.observed_shops,missing=row.missing_shops;
  if(row.currency!=='MYR'||!['partial','complete'].includes(String(row.status))||!Array.isArray(observed)||!Array.isArray(missing)||observed.length+missing.length!==8||((row.status==='complete')!== (missing.length===0)))throw Error('Invalid snapshot');
  const seen=new Set<string>();let total=0;
- const username=(v:unknown)=>{if(typeof v!=='string'||!v.trim()||seen.has(v))throw Error('Invalid shop');seen.add(v);return v;};
+ const username=(v:unknown)=>{if(typeof v!=='string'||!v.trim())throw Error('Invalid shop');const name=v.trim(),identity=name.toLowerCase();if(seen.has(identity))throw Error('Invalid shop');seen.add(identity);return name;};
  const shops=observed.map((shop)=>{
   const name=username(shop?.shop_username),cents=shop?.sales_cents;
   if(!Number.isSafeInteger(cents)||cents<0)throw Error('Invalid sales');total+=cents;
