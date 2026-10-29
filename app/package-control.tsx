@@ -179,6 +179,7 @@ function PackagePriceSummary({item,country="all"}:{item:PackageItem;country?:"al
 }
 
 export function PackageControl({ storeId, storeName, storePlatform, canCreate=true, allowSamplePreview=false, staging=false, prefills=[], standaloneCreate=false, draftStorageKey, onPrefillsAccepted }:Props) {
+  const [batchStore,setBatchStore] = useState<string|null>(null);
   const [items,setItems] = useState<PackageItem[]>([]);
   const [sampleMode,setSampleMode] = useState(false);
   const [canShowSamples,setCanShowSamples] = useState(false);
@@ -942,6 +943,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
       {item.recurringCampaign&&<div><b>Monthly campaign</b><span>{displayDate(item.recurringCampaign.startDate)} → {item.recurringCampaign.endDate?displayDate(item.recurringCampaign.endDate):"Ongoing"}</span></div>}</>;
   }
 
+  if(staging&&canCreate&&hasSelectedStore&&!sampleMode&&batchStore===storeId)return <PackageBatchPreview key={storeId} storeName={storeName} onExit={()=>setBatchStore(null)}/>;
   return <div className={`package-control${standaloneCreate?" standalone-create":""}`}>
     <div className="package-hero">
       <div><p className="kicker">OXM PACKAGE CONTROL</p><h2>Packages & Pricing</h2><p>Create packages, choose platforms and set promotion dates. Every change is saved in history.</p></div>
@@ -949,13 +951,13 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
         {!staging&&<a href={HISTORY_SHEET_URL} target="_blank" rel="noopener noreferrer">Google Sheet History</a>}
         <span>{sampleMode?"Sample data":!hasPackageScope?"Select a Store":allStoresSelected?"Accessible Stores":source==="sheet-migration-preview"?"Sheet Migration Preview":"Live Database"}</span>
         {!sampleMode&&canExportKits&&hasSelectedStore&&loadedStoreId===storeId&&source==="database"&&<button type="button" className="kit-export-button" onClick={previewKitExport} disabled={!selectedKitIds.length||kitBusy}>Generate Fulfillment Sheet{selectedKitIds.length?` (${selectedKitIds.length})`:""}</button>}
-        {!sampleMode&&canCreate&&hasSelectedStore&&<button onClick={openNew}>+ New Package</button>}
+        {!sampleMode&&canCreate&&hasSelectedStore&&<button onClick={openNew}>{staging?"Create Single Package":"+ New Package"}</button>}
       </div>
     </div>
 
     {canShowSamples&&!standaloneCreate&&<div className="package-sample-toolbar"><span role="status">{sampleMode?"Sample data · Read only":""}</span><button type="button" disabled={saving||showCreate} aria-pressed={sampleMode} onClick={()=>{resetListScope();setFilter("all");setDurationFilter("all");setCountryFilter("all");setSearch("");setSampleMode(value=>!value);}}>{sampleMode?"Back to real data":"View sample data"}</button></div>}
 
-    {staging&&!sampleMode&&canCreate&&hasSelectedStore&&<PackageBatchPreview key={storeId}/>}
+    {staging&&!sampleMode&&canCreate&&hasSelectedStore&&<button type="button" onClick={()=>setBatchStore(storeId)}>Batch Upload Packages</button>}
     <p className="package-summary-scope">Summary · {sampleMode?"All sample packages":storeName} · All selling countries</p>
     <section className="metric-grid package-metrics">
       <article className="metric"><span>Total Packages</span><strong>{listReady?scopedItems.length:"—"}</strong><em>{sampleMode?"Sample packages":storeName}</em></article>
@@ -1002,7 +1004,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
 
     {showCreate&&<div className={`package-modal${standaloneCreate?" standalone":""}`} role={standaloneCreate?undefined:"dialog"} aria-modal={standaloneCreate?undefined:"true"} aria-labelledby={standaloneCreate?undefined:"package-form-title"}><div className="package-form">
       <div className="package-form-head"><div><p className="kicker">{editingDraft?"EDIT DRAFT":editingPackageId?"EDIT PACKAGE":"NEW PACKAGE"}</p><h3 id="package-form-title">{editingDraft?"Edit Draft":editingPackageId?"Edit / Modify Package":"Create A Package"}</h3><span>{editingStore?.name??storeName}{prefillQueue.length?` · ${prefillQueue.length} Ready Package${prefillQueue.length===1?"":"s"} Remaining`:""}</span></div><button onClick={closeCreate} aria-label="Close">×</button></div>
-      {staging&&canCreate&&hasSelectedStore&&!editingPackageId&&!editingDraft&&<PackageBatchPreview key={`create-${storeId}`}/>}
+      {staging&&canCreate&&hasSelectedStore&&!editingPackageId&&!editingDraft&&<button type="button" onClick={()=>setBatchStore(storeId)}>Switch to Batch Upload Packages</button>}
 
       {editingPackageId&&!editingDraft&&<p className="package-edit-note">Saving creates a new version. Previous details, your account and the time of the edit are retained in View History for Super Admin review.</p>}
 

@@ -43,6 +43,7 @@ const positive = (value:string|number) => Math.max(0, Number(value) || 0);
 const editableNumber = (value:string):NumberValue => value===""?"":positive(value);
 
 export function PriceCalculator({ staging=false, storeName="", productProfile, coFundVouchers=[], onCreatePackage, onCreatePackages }:Props) {
+  const [batchMarket,setBatchMarket] = useState<"MY"|"SG"|"MY+SG">("MY");
   const [batchMessage,setBatchMessage] = useState("");
   const [packages,setPackages] = useState(INITIAL_PACKAGES);
   const [pendingConfirmation,setPendingConfirmation] = useState<PendingConfirmation|null>(null);
@@ -266,13 +267,13 @@ export function PriceCalculator({ staging=false, storeName="", productProfile, c
     </section>
 
     <section className="calculator-table calculator-results card">
-      <div className="calculator-section-head"><div><p className="kicker">STEP 2 · PACKAGE RESULTS</p><h3>Recommended Prices</h3></div><div className="calculator-result-head-actions">{staging&&<button type="button" disabled={!storeName} onClick={async()=>{try{
+      <div className="calculator-section-head"><div><p className="kicker">STEP 2 · PACKAGE RESULTS</p><h3>Recommended Prices</h3></div><div className="calculator-result-head-actions">{staging&&<label>Excel markets<select value={batchMarket} onChange={e=>setBatchMarket(e.target.value as "MY"|"SG"|"MY+SG")}><option value="MY">MY</option><option value="SG">SG</option><option value="MY+SG">MY + SG</option></select></label>}{staging&&<button type="button" disabled={!storeName} onClick={async()=>{try{
  const rows=calculations.flatMap(({row,scenarios})=>{
  const normal=scenarios.find(s=>s.mode==="nonCampaign"),campaign=scenarios.find(s=>s.mode==="campaign");
  if(!normal||!campaign||!packagePrefill(row,normal.mode,normal.result,normal.suggested,row.id)||!packagePrefill(row,campaign.mode,campaign.result,campaign.suggested,row.id))return [];
  return [{code:`PKG-${row.id}`,name:row.name,normal:Number(normal.result.requiredPrice.toFixed(2)),campaign:Number(campaign.result.requiredPrice.toFixed(2))}];});
  if(!rows.length){setBatchMessage("Complete package prices and quantities first.");return;}
- await (await import("./package-batch-excel")).saveBatch(rows);setBatchMessage(`${rows.length} packages downloaded. Fill Original Price, Parent SKU and inventory pairs across each row, then use Batch Upload in Packages & Pricing.`);
+ await (await import("./package-batch-excel")).saveBatch(rows,batchMarket);setBatchMessage(`${rows.length} packages downloaded. Fill Original Price, platform SKUs and inventory pairs across each row (SG prices are blank if selected), then use Batch Upload in Packages & Pricing.`);
  }catch{setBatchMessage("Download failed. Please retry.");}}}>Batch Download Excel</button>}{staging&&batchMessage&&<p role="status">{batchMessage}</p>}<button className="create-all-packages" disabled={!readyPackages.length} onClick={()=>setPendingConfirmation({kind:"batch",rows:readyConfirmationRows})}>Create All Ready ({readyPackages.length})</button><button onClick={addPackage}>+ Add Package</button></div></div>
       <div className="package-result-list">{calculations.map(({row,scenarios})=><article className="package-result-card dual-package-card" key={row.id}>
         <div className="dual-package-inputs">

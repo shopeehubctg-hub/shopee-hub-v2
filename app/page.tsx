@@ -119,7 +119,7 @@ function startLoadTiming(requestKind:"bootstrap"|"module",section:string,storeId
 }
 
 export default function Home() {
-  const [requestedSection, setSection] = useState("overview");
+  const [requestedSection, setRequestedSection] = useState("overview");
   const [stagingPreview,setStagingPreview] = useState(false);
   const [sidebarCollapsed,setSidebarCollapsed] = useState(false);
   const [shellData, setShellData] = useState<(DashboardResponse & { user: { email:string } }) | null>(null);
@@ -245,7 +245,10 @@ export default function Home() {
     return ()=>controller.abort();
   },[shellData,section,storeId,needsModuleData,moduleKey,dataRevision]);
 
+  function permitBatchLeave(){return window.dispatchEvent(new Event("package-batch-leave",{cancelable:true}));}
+  function setSection(id:string){if(id!==requestedSection&&!permitBatchLeave())return;setRequestedSection(id);}
   function selectStore(id:string){
+    if(id!==storeId&&!permitBatchLeave())return;
     bootstrapController.current?.abort();++loadSequence.current;setLoading(false);
     setStoreSelectionMade(true);setStoreId(id);
   }

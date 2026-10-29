@@ -1,121 +1,30 @@
-import ExcelJS from "exceljs";
-import * as XLSX from "xlsx";
-export const HEADERS = ["Package Code","Package Name","MY Original Price","MY Normal Price","MY Campaign Price","SG Original Price","SG Normal Price","SG Campaign Price","Period Type","Start Date","End Date","Campaign Months","Campaign Events","Shopee SKU","Lazada SKU","TikTok SKU"];
-export const ITEM_HEADERS = ["Package Code","Inventory SKU","Quantity","Item Type"];
-export type BatchRow = {code:string; name:string; normal:number; campaign:number};
-export function batchWorkbook(rows:BatchRow[]) {
- const book=XLSX.utils.book_new();
- const packages=XLSX.utils.aoa_to_sheet([HEADERS,...rows.map(r=>[r.code,r.name,"",r.normal,r.campaign,"","","","","","","","","","",""])]);
- packages["!cols"]=HEADERS.map(()=>({wch:24}));
- const items=XLSX.utils.aoa_to_sheet([ITEM_HEADERS]);items["!cols"]=ITEM_HEADERS.map(()=>({wch:24}));
- XLSX.utils.book_append_sheet(book,packages,"Packages");XLSX.utils.book_append_sheet(book,items,"Package Items");return book;
-}
-export const NEW_HEADERS=[...HEADERS.slice(0,12).map((h,i)=>h+([0,1,8,9].includes(i)?" *":"")),"Campaign Month 2","Campaign Month 3","Double Day","Mid Month Madness","Payday",...HEADERS.slice(13),"Inventory SKU *","Quantity *","Item Type *"];
-NEW_HEADERS[11]="Campaign Month 1";
-async function legacyDownloadBatch(rows:BatchRow[]) {
- const book=new ExcelJS.Workbook();const sheet=book.addWorksheet("Packages");
- sheet.views=[{state:"frozen",ySplit:8,xSplit:2}];
- const notes=["PACKAGE BATCH UPLOAD · STAGING PREVIEW", "* Required. One package per first row; add its other inventory items on the following rows with the same Package Code. Leave other package fields blank on continuation rows.","For each selling market: Original + Normal Price required. Blank Campaign Price = Normal Price. Leave all SG prices blank for MY only. At least one platform SKU required.","Period Type: choose from dropdown. Start Date required; End Date required for Full Month / Custom Dates. Long-term Package: leave End Date blank. Enter dates as DD/MM/YYYY.","Campaign: select up to 3 months and Yes/No for each event. Long-term: leave months blank for recurring events. This trial applies selected events to all selected months.","Inventory SKU, whole Quantity and Product/Gift are required for every item. Use rows 9–508. Add extra items using the same Package Code; do not create new codes for components.","Preview only: uploading does not save packages. Calculator prices are copied values, not Excel formulas. MY = RM, SG = S$." ];
- notes.forEach((v,i)=>{sheet.mergeCells(i+1,1,i+1,23);sheet.getCell(i+1,1).value=v;sheet.getRow(i+1).height=i===0?30:32;sheet.getCell(i+1,1).alignment={wrapText:true,vertical:"middle"};});
- sheet.getRow(8).values=NEW_HEADERS;sheet.getRow(8).height=36;
- sheet.columns=NEW_HEADERS.map((h,i)=>({width:i===1?32:i>=20?23:22}));
- const options=book.addWorksheet("Options");options.state="veryHidden";
- const year=new Date().getFullYear();for(let i=0;i<60;i++)options.getCell(i+1,1).value=`${year-1+Math.floor(i/12)}-${String(i%12+1).padStart(2,"0")}`;
- for(let row=9;row<=508;row++){
-  const r=sheet.getRow(row);r.height=24;
-  for(let col=1;col<=23;col++){const cell=r.getCell(col);cell.font={name:"Noto Sans",size:11,color:{argb:"FF16465A"}};cell.fill={type:"pattern",pattern:"solid",fgColor:{argb:row%2?"FFF2F7FA":"FFFFFFFF"}};cell.numFmt=col>=3&&col<=8?"0.00":col===10||col===11?"dd/mm/yyyy":"@";}
-  const list=(col:number,formula:string)=>{r.getCell(col).dataValidation={type:"list",allowBlank:true,formulae:[formula],showErrorMessage:true,errorStyle:"stop",errorTitle:"Choose a value",error:"Use the dropdown list."};};
-  list(9,'"Long-term Package,Full Month,Custom Dates"');for(const col of [12,13,14])list(col,"'Options'!$A$1:$A$60");for(const col of [15,16,17])list(col,'"Yes,No"');list(23,'"Product,Gift"');
-  for(const col of [10,11])r.getCell(col).dataValidation={type:"date",operator:"between",allowBlank:true,formulae:[new Date(Date.UTC(2020,0,1)),new Date(Date.UTC(2100,11,31))],showErrorMessage:true,errorStyle:"stop",errorTitle:"Valid date required",error:"Enter a real date, for example 01/11/2026."};
-  r.getCell(22).numFmt="0";r.getCell(22).dataValidation={type:"whole",operator:"between",allowBlank:true,formulae:[1,100000],showErrorMessage:true,errorStyle:"stop",error:"Quantity must be a positive whole number."};
+import ExcelJS from 'exceljs';
+import * as XLSX from 'xlsx';
+import {batchMarkets,type MarketChoice,type BatchPackage} from './package-batch-model';
+export type BatchRow={code:string;name:string;normal:number;campaign:number};
+export const headersFor=(choice:MarketChoice)=>['Package Name *',...batchMarkets(choice).flatMap(m=>[`${m} Original Price (${m==='MY'?'RM':'S$'}) *`,`${m} Normal Price (${m==='MY'?'RM':'S$'}) *`,`${m} Campaign Price (${m==='MY'?'RM':'S$'})`]),'Shopee SKU','Lazada SKU','TikTok SKU',...Array.from({length:10},(_,i)=>[`Inventory SKU ${i+1}${i===0?' *':''}`,`Quantity ${i+1}${i===0?' *':''}`]).flat()];
+export async function downloadBatch(rows:BatchRow[],choice:MarketChoice='MY'){
+ const b=new ExcelJS.Workbook(),s=b.addWorksheet('Packages'),headers=headersFor(choice),markets=batchMarkets(choice),base=1+markets.length*3+3;
+ s.views=[{state:'frozen',xSplit:base,ySplit:6}];s.columns=headers.map((_,i)=>({width:i===0?30:i>=base&&(i-base)%2===1?14:23}));
+ const notes=['PACKAGE BATCH · ONE PACKAGE PER ROW','* Required. Fill at least one platform SKU. Fill up to 10 Inventory SKU / Quantity pairs; leave unused pairs blank.','Blank Campaign Price = Normal Price. Original and Normal prices are required for each selling market.','Calculator supplies MY prices only. SG prices remain blank for you to fill; no currency conversion is applied.','Set dates after upload in Dashboard. Preview only — no packages saved.'];
+ notes.forEach((v,i)=>{s.mergeCells(i+1,1,i+1,Math.min(headers.length,9));const c=s.getCell(i+1,1);c.value=v;c.font={name:'Noto Sans',size:i===0?14:11,bold:i===0,color:{argb:'FF075670'}};c.alignment={wrapText:true,vertical:'middle'};s.getRow(i+1).height=32;});
+ s.getRow(6).values=headers;s.getRow(6).height=38;s.getRow(6).eachCell(c=>{c.font={name:'Noto Sans',bold:true,color:{argb:'FFFFFFFF'}};c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF075670'}};c.alignment={wrapText:true};});
+ for(let r=7;r<=506;r++)for(let i=0;i<headers.length;i++){
+  const c=s.getCell(r,i+1),price=i>=1&&i<1+markets.length*3,quantity=i>=base&&(i-base)%2===1;c.font={name:'Noto Sans',size:11,color:{argb:'FF174B70'}};c.fill={type:'pattern',pattern:'solid',fgColor:{argb:r%2?'FFF0F6F9':'FFFFFFFF'}};c.numFmt=price?'0.00':quantity?'0':'@';
+  if(price||quantity)c.dataValidation={type:quantity?'whole':'decimal',operator:quantity?'between':'greaterThan',allowBlank:true,formulae:quantity?[1,100000]:[0],showErrorMessage:true,errorStyle:'stop',error:quantity?'Enter a whole quantity from 1 to 100,000.':'Enter a positive numeric price.'};
  }
- rows.forEach((r,i)=>{const row=sheet.getRow(i+9);row.getCell(1).value=r.code;row.getCell(2).value=r.name;row.getCell(4).value=r.normal;row.getCell(5).value=r.campaign;});
- sheet.getRow(8).eachCell(c=>{c.font={name:"Noto Sans",bold:true,color:{argb:"FFFFFFFF"}};c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF075670"}};c.alignment={wrapText:true};});
- const bytes=await book.xlsx.writeBuffer();return bytes;
+ rows.forEach((r,i)=>{s.getCell(i+7,1).value=r.name;if(markets.includes('MY')){s.getCell(i+7,3).value=r.normal;s.getCell(i+7,4).value=r.campaign;}});return b.xlsx.writeBuffer();
 }
-export const HORIZONTAL_HEADERS=["Package Name *","MY Original Price (RM) *","MY Normal Price (RM) *","MY Campaign Price (RM)","Parent SKU *",...Array.from({length:10},(_,i)=>[`Inventory SKU ${i+1}${i===0?" *":""}`,`Quantity ${i+1}${i===0?" *":""}`]).flat()];
-export async function downloadBatch(rows:BatchRow[]) {
- const book=new ExcelJS.Workbook(),sheet=book.addWorksheet("Packages");
- sheet.views=[{state:"frozen",ySplit:6,xSplit:5}];
- const notes=["PACKAGE BATCH · ONE PACKAGE PER ROW","* Required. Fill up to 10 Inventory SKU / Quantity pairs across each row. Leave unused pairs blank.","Blank Campaign Price = Normal Price. Prices are for the whole package, not per item. MY prices are in RM.","Parent SKU is your actual listing / bundle SKU. Single SKU: fill one pair. Bundle: fill multiple pairs.","Dates are not entered in this Excel. Staging upload currently previews content only; no packages are saved."];
- notes.forEach((text,i)=>{sheet.mergeCells(i+1,1,i+1,9);const c=sheet.getCell(i+1,1);c.value=text;c.alignment={wrapText:true,vertical:"middle"};c.font={name:"Noto Sans",size:i===0?14:11,bold:i===0,color:{argb:"FF075670"}};sheet.getRow(i+1).height=32;});
- sheet.columns=HORIZONTAL_HEADERS.map((_,i)=>({width:i===0?32:i>=6&&i%2===0?14:23}));
- sheet.getRow(6).values=HORIZONTAL_HEADERS;sheet.getRow(6).height=38;
- sheet.getRow(6).eachCell(c=>{c.font={name:"Noto Sans",bold:true,color:{argb:"FFFFFFFF"}};c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF075670"}};c.alignment={wrapText:true};});
- for(let r=7;r<=506;r++)for(let c=1;c<=25;c++){
-  const cell=sheet.getCell(r,c);cell.font={name:"Noto Sans",size:11,color:{argb:"FF174B70"}};cell.fill={type:"pattern",pattern:"solid",fgColor:{argb:r%2?"FFF0F6F9":"FFFFFFFF"}};cell.numFmt=c>=2&&c<=4?"0.00":c>=7&&c%2===1?"0":"@";
-  if(c>=7&&c%2===1)cell.dataValidation={type:"whole",operator:"between",allowBlank:true,formulae:[1,100000],showErrorMessage:true,errorStyle:"stop",error:"Enter a positive whole quantity."};
-  if(c>=2&&c<=4)cell.dataValidation={type:"decimal",operator:"greaterThan",allowBlank:true,formulae:[0],showErrorMessage:true,errorStyle:"stop",error:"Enter a positive numeric price."};
- }
- rows.forEach((r,i)=>{sheet.getCell(i+7,1).value=r.name;sheet.getCell(i+7,3).value=r.normal;sheet.getCell(i+7,4).value=r.campaign;});
- return book.xlsx.writeBuffer();
-}
-function horizontalPreview(input:string[][]):PreviewPackage[]{
- if(!input.length)throw new Error("No packages found. Fill the Packages sheet first.");
- return input.map(r=>{
-  const issues:string[]=[],items:string[]=[];const seen=new Set<string>();
-  if(!r[0]||!r[4])issues.push("Package Name and Parent SKU are required.");
-  if(r[4]&&input.filter(other=>other[4]===r[4]).length>1)issues.push("Duplicate Parent SKU. Keep each package on one row.");
-  if(!r[1]||!r[2]||r.slice(1,4).some(v=>v!==""&&(!Number.isFinite(Number(v))||Number(v)<=0)))issues.push("Enter positive Original and Normal prices; Campaign can be blank for same price.");
-  for(let i=0;i<10;i++){const sku=r[5+i*2]||"",qty=r[6+i*2]||"";if(!sku&&!qty)continue;
-   if(!sku||!qty||!Number.isInteger(Number(qty))||Number(qty)<=0||Number(qty)>100000)issues.push(`Inventory ${i+1}: enter SKU and a positive whole quantity (max 100,000).`);
-   if(sku&&seen.has(sku))issues.push(`Inventory SKU ${sku} appears more than once. Combine its quantity.`);seen.add(sku);items.push(`${sku||"Missing SKU"} × ${qty||"—"}`);
-  }
-  if(!items.length)issues.push("Add at least one Inventory SKU and Quantity pair.");
-  return {code:r[4],name:r[0],prices:[`MY · Original ${r[1]||"—"} · Normal ${r[2]||"—"} · Campaign ${r[3]||r[2]||"—"}`],period:"Dates not set · Content preview only",items,issues};
- });
-}
-export async function saveBatch(rows:BatchRow[]){const bytes=await downloadBatch(rows);const blob=new Blob([bytes as BlobPart],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="Package_Batch_Horizontal.xlsx";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-export type PreviewPackage={code:string;name:string;prices:string[];period:string;items:string[];issues:string[]};
-export function readBatch(data:ArrayBuffer):PreviewPackage[] {
- const book=XLSX.read(data,{type:"array",cellDates:false});
- function rows(name:string,headers:string[],raw=false) {
-  const sheet=book.Sheets[name];if(!sheet)throw new Error(`Missing sheet: ${name}`);
-  if(Object.values(sheet).some(c=>c&&typeof c==="object"&&"f" in c))throw new Error("Please paste values only; formulas are not supported in this preview.");
-  const all=XLSX.utils.sheet_to_json<unknown[]>(sheet,{header:1,defval:"",raw});
-  const start=all.findIndex(row=>headers.every((h,i)=>row[i]===h));if(start<0)throw new Error(`Headers do not match in ${name}. Use the downloaded template.`);
-  const result=all.slice(start+1).filter(r=>r.some(v=>String(v).trim()));if(result.length>2000)throw new Error("Please use at most 2,000 rows per sheet.");return result.map(r=>r.map(v=>String(v).trim()));
- }
- const sheet=book.Sheets["Packages"];
- if(sheet){const raw=XLSX.utils.sheet_to_json<unknown[]>(sheet,{header:1,defval:""});if(raw.some(r=>r[0]===HORIZONTAL_HEADERS[0]&&r[4]===HORIZONTAL_HEADERS[4]))return horizontalPreview(rows("Packages",HORIZONTAL_HEADERS,true));}
- let packages:string[][],items:string[][];
- if(book.Sheets["Package Items"]){packages=rows("Packages",HEADERS);items=rows("Package Items",ITEM_HEADERS);}
- else {
-  const input=rows("Packages",NEW_HEADERS);packages=[];items=[];
-  for(const r of input){
-   const existing=packages.find(p=>p[0]===r[0]);
-   if(!existing){
-    const events=["Double Day","Mid Month Madness","Payday"].filter((_,i)=>r[14+i]==="Yes").join(", ");
-    for(const value of r.slice(14,17))if(value&&!['Yes','No'].includes(value))throw new Error("Campaign event choices must be Yes or No.");
-    for(const value of r.slice(11,14))if(value&&!/^20\d{2}-(0[1-9]|1[0-2])$/.test(value))throw new Error("Select a valid Campaign Month from the dropdown.");
-    packages.push([...r.slice(0,11),[...new Set(r.slice(11,14).filter(Boolean))].join(", "),events,...r.slice(17,20)]);
-   }else if(r.slice(1,20).some(Boolean))throw new Error(`Repeat only Package Code and inventory fields for extra items (${r[0]}).`);
-   if(r.slice(20,23).some(Boolean))items.push([r[0],...r.slice(20,23)]);
-  }
- }
- if(!packages.length)throw new Error("No packages found. Fill the Packages sheet first.");
- if(items.some(r=>!packages.some(p=>p[0]===r[0])))throw new Error("An inventory row has an unknown Package Code.");
- return packages.map(r=>{
-  const issues:string[]=[];const linked=items.filter(i=>i[0]===r[0]);
-  if(!r[0]||!r[1])issues.push("Package Code and Package Name are required.");
-  if(packages.filter(p=>p[0]===r[0]).length>1)issues.push("Duplicate Package Code.");
-  const prices:string[]=[];
-  for(const [market,start] of [["MY",2],["SG",5]] as const){
-   const values=r.slice(start,start+3);if(!values.some(Boolean))continue;
-   if(!values[0]||!values[1]||values.some(v=>v!==""&&(!Number.isFinite(Number(v))||Number(v)<=0)))issues.push(`${market}: enter positive Original and Normal prices; Campaign can be blank for same price.`);
-   prices.push(`${market} · Original ${values[0]||"—"} · Normal ${values[1]||"—"} · Campaign ${values[2]||values[1]||"—"}`);
-  }
-  if(!prices.length)issues.push("Add MY or SG prices.");
-  if(!["Long-term Package","Full Month","Custom Dates"].includes(r[8]))issues.push("Choose Period Type: Long-term Package, Full Month or Custom Dates.");
-  const date=(v:string)=>{const m=/^(\d{2})\/(\d{2})\/(\d{4})$/.exec(v);if(!m)return null;const d=new Date(Date.UTC(+m[3],+m[2]-1,+m[1]));return d.getUTCFullYear()===+m[3]&&d.getUTCMonth()===+m[2]-1&&d.getUTCDate()===+m[1]?d:null;};
-  if(!date(r[9]))issues.push("Start Date must be a valid DD/MM/YYYY date.");
-  if(r[10]&&!date(r[10]))issues.push("End Date must be a valid DD/MM/YYYY date.");
-  if(date(r[9])&&date(r[10])&&date(r[10])!<date(r[9])!)issues.push("End Date cannot be before Start Date.");
-  if(r[8]==="Long-term Package"&&r[10])issues.push("Leave End Date blank for Long-term Package.");
-  if(r[8]!=="Long-term Package"&&!r[10])issues.push("End Date is required for a fixed period.");
-  if(!r.slice(13,16).some(Boolean))issues.push("Add at least one platform SKU.");
-  if(!linked.length)issues.push("Add inventory rows in Package Items.");
-  if(linked.some(i=>!i[1]||!Number.isInteger(Number(i[2]))||Number(i[2])<=0||!["Product","Gift"].includes(i[3])))issues.push("Inventory rows need an SKU, a positive whole quantity and Product/Gift type.");
-  return {code:r[0],name:r[1],prices,period:`${r[8]||"Period not set"} · ${r[9]||"—"} – ${r[8]==="Long-term Package"?"Ongoing":r[10]||"—"}${r[11]?` · ${r[11]}`:""}${r[12]?` · ${r[12]}`:""}`,items:linked.map(i=>`${i[1]} × ${i[2]} (${i[3]})`),issues};
- });
+export async function saveBatch(rows:BatchRow[],choice:MarketChoice='MY'){const bytes=await downloadBatch(rows,choice),url=URL.createObjectURL(new Blob([bytes as BlobPart],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})),a=document.createElement('a');a.href=url;a.download=`Package_Batch_${choice.replace('+','_')}.xlsx`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+export function readBatch(data:ArrayBuffer):BatchPackage[]{
+ const b=XLSX.read(data,{type:'array',cellDates:false}),s=b.Sheets.Packages;if(!s)throw new Error('Missing Packages sheet. Download the current template.');
+ if(Object.entries(s).some(([k,c])=>!k.startsWith('!')&&c&&typeof c==='object'&&'f' in c))throw new Error('Formulas are not supported. Paste values only.');
+ const range=XLSX.utils.decode_range(s['!ref']||'A1');if(range.e.r>2006||range.e.c>40)throw new Error('Workbook is too large. Use at most 2,000 package rows.');
+ const raw=XLSX.utils.sheet_to_json<unknown[]>(s,{header:1,defval:'',raw:true}).map(r=>r.map(v=>String(v).trim()));
+ if(raw.some(r=>r.some(v=>v.startsWith('Parent SKU')||v==='Package Code')))throw new Error('This is an older template. Download the new template with Shopee / Lazada / TikTok SKU columns.');
+ let choice:MarketChoice|undefined,start=-1;
+ for(const candidate of ['MY','SG','MY+SG'] as const){const h=headersFor(candidate);const i=raw.findIndex(r=>h.every((v,col)=>v===r[col]));if(i>=0){choice=candidate;start=i;break;}}
+ if(!choice)throw new Error('Headers do not match. Download the current template; keep the headers unchanged.');
+ const rows=raw.slice(start+1).filter(r=>r.some(Boolean));if(!rows.length)throw new Error('No packages found.');if(rows.length>500)throw new Error('Use at most 500 packages per preview.');const markets=batchMarkets(choice);
+ return rows.map((r,i)=>{let c=1;const prices:BatchPackage['prices']={};for(const m of markets){prices[m]={original:r[c]||'',normal:r[c+1]||'',campaign:r[c+2]||''};c+=3;}const skus={Shopee:r[c]||'',Lazada:r[c+1]||'',TikTok:r[c+2]||''};c+=3;const items=Array.from({length:10},(_,j)=>({sku:r[c+j*2]||'',quantity:r[c+j*2+1]||''})).filter(v=>v.sku||v.quantity);return {id:`row-${i}`,name:r[0]||'',prices,skus,items:items.length?items:[{sku:'',quantity:''}],dates:null};});
 }
