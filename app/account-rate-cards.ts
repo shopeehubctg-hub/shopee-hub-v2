@@ -1,10 +1,12 @@
 import 'server-only';
 import {getChatGPTUser} from './chatgpt-auth';
+import {accountSecurityGate} from './account-security-server';
 import {supabaseRest} from './supabase-rest';
 import {validatePlan,type FeePlan} from './fee-plan-model';
 
 type CardRow={card_id:string;version:string|number;name:string;client_type:FeePlan['clientType'];currency:FeePlan['currency'];effective_month:string;fee_rule:FeePlan['rule'];archived_at:string|null};
 export async function accountAdmin(request?:Request,write=false){
+ const gate=await accountSecurityGate();if(gate)return {error:gate};
  const actor=await getChatGPTUser();if(!actor)return {error:Response.json({error:'Authentication required'},{status:401})};
  const members=await supabaseRest<Array<{tenant_id:string;role:string;active:boolean}>>(`customer_users?select=tenant_id,role,active&email=eq.${encodeURIComponent(actor.email.toLowerCase())}&limit=1`);
  const member=members[0];if(!member?.active||member.role!=='superadmin')return {error:Response.json({error:'Super Admin access required'},{status:403})};
