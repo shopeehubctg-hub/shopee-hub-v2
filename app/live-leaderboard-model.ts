@@ -10,6 +10,13 @@ export function validWeek(start:string){
  const d=new Date(start+'T00:00:00Z');
  return Number.isFinite(d.getTime())&&d.toISOString().slice(0,10)===start&&d.getUTCDay()===1&&start<=weekBounds(new Date(),0).start;
 }
+export function monthBounds(now=new Date(),offset=0){
+ const local=new Date(now.getTime()+8*3600000);
+ const start=new Date(Date.UTC(local.getUTCFullYear(),local.getUTCMonth()+offset,1));
+ const end=new Date(Date.UTC(start.getUTCFullYear(),start.getUTCMonth()+1,0));
+ return {start:start.toISOString().slice(0,10),end:end.toISOString().slice(0,10)};
+}
+export function validMonth(month:string){return /^20\d{2}-(0[1-9]|1[0-2])$/.test(month)&&month<=monthBounds().start.slice(0,7);}
 export function publicLeaderboard(row:Record<string,unknown>){
  const observed=row.observed_shops,missing=row.missing_shops;
  if(row.currency!=='MYR'||!['partial','complete'].includes(String(row.status))||!Array.isArray(observed)||!Array.isArray(missing)||observed.length+missing.length!==8||((row.status==='complete')!== (missing.length===0)))throw Error('Invalid snapshot');
@@ -18,11 +25,12 @@ export function publicLeaderboard(row:Record<string,unknown>){
  const shops=observed.map((shop)=>{
   const name=username(shop?.shop_username),cents=shop?.sales_cents;
   if(!Number.isSafeInteger(cents)||cents<0)throw Error('Invalid sales');total+=cents;
-  return {name,salesCents:cents};
+  return {name,salesCents:cents,observed:true};
  }).sort((a,b)=>b.salesCents-a.salesCents||a.name.localeCompare(b.name));
  const pending=missing.map(shop=>({name:username(shop?.shop_username)}));
  if(!Number.isSafeInteger(total)||String(total)!==String(row.observed_sales_cents))throw Error('Invalid total');
- let rank=0;const ranked=shops.map((shop,index)=>{if(index===0||shop.salesCents!==shops[index-1].salesCents)rank=index+1;return {...shop,rank};});
+ const combined=[...shops,...pending.map(shop=>({...shop,salesCents:0,observed:false}))].sort((a,b)=>b.salesCents-a.salesCents||a.name.localeCompare(b.name));
+ let rank=0;const ranked=combined.map((shop,index)=>{if(index===0||shop.salesCents!==combined[index-1].salesCents)rank=index+1;return {...shop,rank};});
  const updated=typeof row.synced_at==='string'&&Number.isFinite(Date.parse(row.synced_at))?row.synced_at:null;
  return {status:row.status,currency:'MYR',shops:ranked,pending,totalCents:total,updated};
 }
