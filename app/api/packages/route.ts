@@ -55,8 +55,8 @@ type PriceScheduleInput = {
 type PackageErrorSection = "Package Details" | "Pricing & Promotion" | "Inventory Items" | "Saving";
 type DatabaseError = Error & { code?:string; constraint_name?:string; constraint?:string; table_name?:string; table?:string; column_name?:string; column?:string };
 
-function packageError(section:PackageErrorSection,error:string,status=400) {
-  return Response.json({ section,error,errors:[{ section,message:error }] },{ status });
+function packageError(section:PackageErrorSection,error:string,status=400,code?:string) {
+  return Response.json({ section,error,...(code?{code}:{}),errors:[{ section,message:error }] },{ status });
 }
 
 function saveFailure(error:unknown) {
@@ -468,7 +468,7 @@ async function savePackage(request: Request) {
   const [packageSkuConflict] = await db.select({ id:packages.id }).from(packages)
     .where(and(eq(packages.storeId,body.storeId),eq(packages.packageSku,platforms[0].packageSku),isNull(packages.deletedAt))).limit(1);
   if (packageSkuConflict && (!requestedPackageId || packageSkuConflict.id!==requestedPackageId)) {
-    return packageError("Package Details",`Listing SKU ${platforms[0].packageSku} is already used by another package in this store. Enter a different SKU.`,409);
+    return packageError("Package Details",`Listing SKU ${platforms[0].packageSku} is already used by another package in this store. Enter a different SKU.`,409,"BATCH_SKU_CONFLICT");
   }
   for (const line of platforms) {
     const conflict = await db.select({ packageId:packagePlatformSkus.packageId }).from(packagePlatformSkus)
@@ -476,7 +476,7 @@ async function savePackage(request: Request) {
       .where(and(eq(packagePlatformSkus.storeId, body.storeId), eq(packagePlatformSkus.platform, line.platform), eq(packagePlatformSkus.packageSku, line.packageSku),isNull(packages.deletedAt)))
       .limit(1);
     if (conflict[0] && (!requestedPackageId || conflict[0].packageId !== requestedPackageId)) {
-      return packageError("Package Details",`${line.platform} listing SKU ${line.packageSku} is already used by another package in this store. Enter a different SKU.`,409);
+      return packageError("Package Details",`${line.platform} listing SKU ${line.packageSku} is already used by another package in this store. Enter a different SKU.`,409,"BATCH_SKU_CONFLICT");
     }
   }
 
