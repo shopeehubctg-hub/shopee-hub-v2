@@ -30,6 +30,16 @@ test('sales UI uses latest MTD snapshot, uses latest month/platform, and disting
  await act(async()=>resolve({ok:true,json:async()=>({month:'2026-10',rows:[row('27',200),row('28',300)],sample:true})}));
  assert.match(document.body.textContent,/Sample data/);assert.match(document.querySelector('.sales-metrics').textContent,/300.00/);assert.doesNotMatch(document.querySelector('.sales-metrics').textContent,/500.00/);
  assert.equal(document.querySelector('.sales-toolbar select'),null);assert.equal(document.querySelector('input[type=month]'),null);
+ assert.match(document.querySelector('[aria-label="Daily sales chart"]').getAttribute('aria-label'),/Daily/);
+ assert.match(document.querySelector('[aria-label="Selected day platform sales"]').textContent,/100.00/);
+ await act(async()=>document.querySelector('.sales-day').click());
+ assert.match(document.querySelector('.sales-trend h4').textContent,/27 Oct/);
+ assert.match(document.querySelector('.sales-metrics').textContent,/300.00/);
+ const mtdButton=[...document.querySelectorAll('.sales-trend-tabs button')].find(b=>b.textContent==='Monthly');
+ await act(async()=>mtdButton.click());
+ assert.equal(document.querySelector('[aria-label="Month to date sales chart"]')!==null,true);
+ assert.match(document.querySelector('.sales-day').getAttribute('aria-label'),/200.00/);
+ assert.match(document.querySelector('[aria-label="Daily sales breakdown"]').textContent,/Shopee.*Lazada.*TikTok/);
  const platform=document.querySelector('.sales-trend select');await act(async()=>{platform.value='tiktok';platform.dispatchEvent(new Event('change',{bubbles:true}));});assert.match(document.querySelector('.sales-day').getAttribute('aria-label'),/—/);
  globalThis.fetch=async()=>({ok:true,json:async()=>({month:'2026-10',rows:[],sample:false})});await act(async()=>root.render(React.createElement(OverviewSales,{refreshKey:1,canView:true})));assert.match(document.body.textContent,/No sales data/);
  globalThis.fetch=async()=>({ok:false,json:async()=>({error:'Unable to load sales.'})});await act(async()=>root.render(React.createElement(OverviewSales,{refreshKey:2,canView:true})));assert.match(document.querySelector('[role="alert"]').textContent,/Retry/);assert.doesNotMatch(document.body.textContent,/No sales data/);
