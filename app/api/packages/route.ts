@@ -341,6 +341,7 @@ async function savePackage(request: Request) {
   const accessDb = await getDb();
   if (!await canAccessModule(accessDb, membership, "packages")) return packageError("Saving","Packages & Pricing is not enabled for your account. Contact an administrator.",403);
   const body = await request.json() as {
+    batchUpload?: boolean;
     mode?: "draft" | "publish";
     clientRequestId?: string;
     packageId?: string;
@@ -365,6 +366,7 @@ async function savePackage(request: Request) {
     campaignLongTerm?: boolean;
     recurringCampaign?: unknown;
   };
+  if(body.batchUpload&&deploymentTarget()!=="staging")return packageError("Saving","Batch creation is only enabled in Staging.",403);
   const mode = body.mode ?? "draft";
   if (mode!=="draft"&&mode!=="publish") return packageError("Saving","Choose Create Package or Save Draft.");
   if (mode==="publish"&&!historyWebhookConfigured()) return packageError("Saving","Package History Google Sheet is not connected. Save a draft or ask the administrator to connect the Sheet before creating the package.",503);

@@ -943,7 +943,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
       {item.recurringCampaign&&<div><b>Monthly campaign</b><span>{displayDate(item.recurringCampaign.startDate)} → {item.recurringCampaign.endDate?displayDate(item.recurringCampaign.endDate):"Ongoing"}</span></div>}</>;
   }
 
-  if(staging&&canCreate&&hasSelectedStore&&!sampleMode&&batchStore===storeId)return <PackageBatchPreview key={storeId} storeName={storeName} onExit={()=>setBatchStore(null)}/>;
+  if(staging&&canCreate&&hasSelectedStore&&!sampleMode&&batchStore===storeId)return <PackageBatchPreview key={storeId} storeId={storeId} storeName={storeName} onExit={()=>{setBatchStore(null);void load();}}/>;
   return <div className={`package-control${standaloneCreate?" standalone-create":""}`}>
     <div className="package-hero">
       <div><p className="kicker">OXM PACKAGE CONTROL</p><h2>Packages & Pricing</h2><p>Create packages, choose platforms and set promotion dates. Every change is saved in history.</p></div>

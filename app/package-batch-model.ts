@@ -33,9 +33,11 @@ export function dateIssues(d:BatchDates|null,same:boolean):string[]{
 export function batchIssues(p:BatchPackage,all:BatchPackage[],includeDates=true){
  const issues:string[]=[];if(!p.name.trim())issues.push('Package Name: required.');
  if(!Object.values(p.skus).some(v=>v.trim()))issues.push('Platform SKU: fill at least one platform.');
- for(const platform of ['Shopee','Lazada','TikTok'] as const)if(p.skus[platform].trim()&&all.some(other=>other.id!==p.id&&other.skus[platform].trim()===p.skus[platform].trim()))issues.push(`${platform} SKU: duplicated in another package.`);
+ for(const platform of ['Shopee','Lazada','TikTok'] as const)if(p.skus[platform].trim()&&all.some(other=>other.id!==p.id&&other.skus[platform].trim().toUpperCase()===p.skus[platform].trim().toUpperCase()))issues.push(`${platform} SKU: duplicated in another package.`);
+ const platformValues=Object.values(p.skus).map(v=>v.trim().toUpperCase()).filter(Boolean);if(new Set(platformValues).size!==platformValues.length)issues.push('Platform SKU: each platform listing SKU must be different.');
  if(!Object.keys(p.prices).length)issues.push('Prices: choose a selling market.');
  for(const [market,v] of Object.entries(p.prices))for(const key of ['original','normal','campaign'] as const){if(key==='campaign'&&!v[key])continue;if(!v[key].trim()||!Number.isFinite(Number(v[key]))||Number(v[key])<=0)issues.push(`${market} ${key} price: enter a positive number.`);}
+ for(const [market,v] of Object.entries(p.prices)){if(Number(v.normal)>Number(v.original)||Number(v.campaign||v.normal)>Number(v.original))issues.push(`${market} selling price cannot exceed Original Price.`);if(Object.values(v).some(x=>x&&Math.abs(Number(x)*100-Math.round(Number(x)*100))>0.000001))issues.push(`${market} prices: use at most two decimal places.`);}
  const entered=p.items.filter(i=>i.sku||i.quantity);if(!entered.length)issues.push('Inventory: add at least one item.');if(entered.length>10)issues.push('Inventory: maximum 10 items.');
  entered.forEach((i,index)=>{if(!i.sku.trim()||!Number.isInteger(Number(i.quantity))||Number(i.quantity)<=0||Number(i.quantity)>100000)issues.push(`Inventory ${index+1}: SKU and whole quantity 1–100,000 required.`);if(i.sku&&entered.slice(0,index).some(v=>v.sku.trim()===i.sku.trim()))issues.push(`Inventory ${index+1}: duplicate SKU; combine quantities.`);});
  return includeDates?[...issues,...dateIssues(p.dates,sameBatchPrice(p))]:issues;
