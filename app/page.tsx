@@ -12,6 +12,7 @@ import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
 import { DashboardLoading } from "./dashboard-loading";
 import { projectDriveFolders } from "./project-drive-folders";
 import { DashboardModuleBoundary, ModuleLoading } from "./dashboard-module-boundary";
+const OverviewSales=lazy(()=>import("./overview-sales").then(module=>({default:module.OverviewSales})));
 const PackageControl=lazy(()=>import("./package-control").then(module=>({default:module.PackageControl})));
 const PriceCalculator=lazy(()=>import("./price-calculator").then(module=>({default:module.PriceCalculator})));
 const DesignChecker=lazy(()=>import("./design-checker").then(module=>({default:module.DesignChecker})));
@@ -147,7 +148,8 @@ export default function Home() {
   const [standalonePackageCreate, setStandalonePackageCreate] = useState(false);
 
   const moduleKey=`${section}:${storeId}:${dataRevision}:${moduleRetry}`;
-  const needsModuleData=SNAPSHOT_SECTIONS.has(section);
+  const salesOverview=section==="overview";
+  const needsModuleData=SNAPSHOT_SECTIONS.has(section)&&!salesOverview;
   const currentModule=moduleResult?.key===moduleKey?moduleResult:null;
   const moduleReady=!needsModuleData||Boolean(currentModule?.data);
   const data=shellData?(currentModule?.data?{...shellData,...currentModule.data}:shellData):null;
@@ -259,7 +261,7 @@ export default function Home() {
   const staticSnapshot = !isStaging&&store ? storeSnapshots[store.sourceName ?? store.name] : null;
   const live = data?.snapshot?.payload ?? staticSnapshot ?? {};
   const noSample = isStaging||Boolean(live.noSample);
-  const stagingSnapshotUnavailable=isStaging&&((!data?.snapshot&&["overview","orders","health","protection"].includes(section))||(section==="protection"&&(!Array.isArray(live.fakeSellerCases)||!live.fakeSellerCases.length)));
+  const stagingSnapshotUnavailable=!salesOverview&&isStaging&&((!data?.snapshot&&["overview","orders","health","protection"].includes(section))||(section==="protection"&&(!Array.isArray(live.fakeSellerCases)||!live.fakeSellerCases.length)));
   const overview = Array.isArray(live.overview) ? live.overview : isStaging?overviewFallback.map(([label])=>[label,"暂无数据",""]):overviewFallback;
   const adsBase = data?.adPerformance?.length ? { ...unavailableAdvertising, ...(live.advertising ?? {}) } : unavailableAdvertising;
   const relevantDailyAds = data?.adPerformance ?? [];
@@ -355,7 +357,8 @@ export default function Home() {
 
       <DashboardModuleBoundary key={section}><Suspense fallback={<ModuleLoading/>}>
       {needsModuleData&&!storeId?<div className="card" role="status">No stores are available. Select or add a store to view this module.</div>:!moduleReady?(currentModule?.error?<div className="card" role="alert"><p>{currentModule.error}</p><button type="button" onClick={()=>setModuleRetry(value=>value+1)}>Retry module</button></div>:<ModuleLoading/>):stagingSnapshotUnavailable?<div className="card" role="status"><h2>No data</h2><p>No Staging snapshot is available for this store.</p></div>:<>
-      {section==="overview" && <div className="page">
+      {salesOverview && <OverviewSales refreshKey={dataRevision} canView={shellData?.access?.role==="superadmin"}/> }
+      {section==="overview" && !salesOverview && <div className="page">
         <div className="page-title"><div><p className="kicker">OVERVIEW</p><h2>Business Pulse</h2></div><div className="warning-pill">{importantWarningCount} important warnings</div></div>
         <section className="owner-brief"><div><span>今日重点</span><strong>{adFunds.needsTopUp ? `Ad Balance ${formatRinggit(adFunds.balance)} · Top-up ${formatRinggit(adFunds.recommendedTopUp)}` : `${warningOrders.length} orders need attention`}</strong><small>{adFunds.syncStatus === "delayed" ? "Advertising data delayed" : (adFunds.needsTopUp ? (adFunds.topUpOwner === "shopee_hub" ? "Managed by Shopee Hub" : "Action required") : "Ads healthy")}</small></div><button onClick={()=>setSection(adFunds.needsTopUp?"advertising":"orders")}>View →</button></section>
         <section className="metric-grid">{overview.map((m:any)=><article className="metric" key={m[0]}><span>{m[0]}</span><strong>{m[1]}</strong><em>{m[2]}</em></article>)}</section>
