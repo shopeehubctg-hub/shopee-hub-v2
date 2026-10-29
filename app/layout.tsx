@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Noto_Sans } from "next/font/google";
 import "./globals.css";
 import { FeePlansProvider } from "./fee-plan-context";
+import { AccountSecurityProvider } from "./account-security-context";
 import "./action-link.css";
 
 const notoSans = Noto_Sans({ subsets:["latin"], display:"swap", variable:"--font-noto-sans" });
@@ -12,5 +13,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="zh-Hans" className={notoSans.variable}><body><FeePlansProvider persistent deferLoad>{children}</FeePlansProvider></body></html>;
+  return <html lang="zh-Hans" className={notoSans.variable}><body><AccountSecurityProvider enabled={process.env.SHOPEE_ACCOUNT_SECURITY_ENABLED === "1"}><FeePlansProvider persistent deferLoad>{children}</FeePlansProvider></AccountSecurityProvider></body></html>;
 }

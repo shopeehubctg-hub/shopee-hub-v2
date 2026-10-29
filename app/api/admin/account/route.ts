@@ -1,6 +1,7 @@
 import { bnmServiceRate, bnmMarketServiceRate } from '../../../account-fx-source';
 import { canonicalStoreId } from '../../../live-calendar-model';
 import { getChatGPTUser } from '../../../chatgpt-auth';
+import { accountSecurityGate } from '../../../account-security-server';
 import { supabaseRest } from '../../../supabase-rest';
 import { buildAccount, emptyAccount, malaysiaDate, previousMonth } from '../../../account-ledger';
 import { accountRosterFallback, mergeAccountRoster, appendAccountMarketStores } from '../../../account-roster';
@@ -18,6 +19,7 @@ async function rows<T>(table:string,select:string,tenant:string):Promise<T[]> {
   }
 }
 export async function GET(request:Request) {
+  const gate=await accountSecurityGate();if(gate)return gate;
   const actor=await getChatGPTUser();
   if(!actor) return Response.json({error:'Authentication required'},{status:401});
   try {
@@ -61,10 +63,10 @@ export async function GET(request:Request) {
         rows<Allocation>('account_receipt_allocations','id,invoice_id,receipt_id,amount::text,updated_at',member.tenant_id),
       ]);
       const account=buildAccount({cycles,terms,assessments,invoices,receipts,allocations,storeNames},invoiceMonth,today);
-      return Response.json(await decorate(mergeAccountRoster(account,accountRosterFallback(member.tenant_id,invoiceMonth,today,storeNames))));
+      return Response.json(await decorate(mergeAccountRoster(account,accountRosterFallback(member.tenant_id,invoiceMonth,today,storeNames))),{headers:{'Cache-Control':'private, no-store'}});
     } catch(error) {
       // Missing migration is an explicit setup state; permission/network/data errors are failures.
-      if(error instanceof Error&&(/"code":"(PGRST205|42P01)"/.test(error.message))) return Response.json(await decorate(accountRosterFallback(member.tenant_id,invoiceMonth,today,storeNames)??emptyAccount(invoiceMonth,today,'not_configured')));
+      if(error instanceof Error&&(/"code":"(PGRST205|42P01)"/.test(error.message))) return Response.json(await decorate(accountRosterFallback(member.tenant_id,invoiceMonth,today,storeNames)??emptyAccount(invoiceMonth,today,'not_configured')),{headers:{'Cache-Control':'private, no-store'}});
       throw error;
     }
   } catch {

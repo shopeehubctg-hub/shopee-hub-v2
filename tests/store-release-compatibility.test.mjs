@@ -6,6 +6,7 @@ import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const require = createRequire(import.meta.url);
+const esbuildCli = require.resolve('esbuild/bin/esbuild', { paths: [dirname(require.resolve('vite'))] });
 const { build } = await import(pathToFileURL(require.resolve('esbuild', { paths: [dirname(require.resolve('vite'))] })));
 const bundled = await build({
   entryPoints: ['app/api/admin/stores/route.ts'], bundle: true, write: false, platform: 'node', format: 'esm',
@@ -13,7 +14,7 @@ const bundled = await build({
     build.onResolve({ filter: /^(server-only|.*\/chatgpt-auth|.*\/supabase-rest|.*\/store-directory)$/ }, args => ({ path: args.path.split('/').at(-1), namespace: 'stub' }));
     build.onLoad({ filter: /.*/, namespace: 'stub' }, args => ({
       contents: args.path === 'server-only' ? '' : args.path === 'chatgpt-auth'
-        ? 'export async function getChatGPTUser(){return globalThis.__compatActor;}'
+        ? 'export const PORTAL_SESSION_COOKIE="portal_session";export function readPortalSessionWithId(){return null;}export async function getChatGPTUser(){return globalThis.__compatActor;}'
         : args.path === 'supabase-rest'
           ? 'export async function supabaseRest(path,init){return globalThis.__compatRest(path,init);}'
           : `export function parseStoreDetails(body){return {value:{storeGroupLink:body.storeGroupLink??'',googleDriveLink:body.googleDriveLink??'',projectLinks:body.projectLinks??[],adsTopUpOwner:body.adsTopUpOwner??null}};}
@@ -96,14 +97,14 @@ test('malformed v2 Account payloads fail closed with no Store or directory write
   assert.ok(state.calls.every(call => call.method === 'GET')); // authorization may read Store scope; malformed setup must never write.
 });
 
-for(const scenario of [{market:'MY',preview:false},{market:'TH',preview:false},{market:'PH',preview:false},{market:'TH',preview:true},{market:'PH',preview:true}])test(`Store UI ${scenario.market} ${scenario.preview?'Rate Card preview':'store-only'} preserves the persistence boundary`, async () => {
-  const {market,preview:accountPreview}=scenario;
+for(const scenario of [{market:'MY',preview:false},{market:'TH',preview:false},{market:'PH',preview:false},{market:'MY',preview:true,available:false},{market:'TH',preview:true,available:false},{market:'PH',preview:true,available:false},{market:'TH',preview:true,available:true},{market:'PH',preview:true,available:true}])test(`Store UI ${scenario.market} ${scenario.preview?(scenario.available?'Account available':'Account locked'):'store-only'} preserves the persistence boundary`, async () => {
+  const {market,preview:accountPreview,available:accountAvailable=false}=scenario;
   const { JSDOM } = await import(process.env.BD_DOM_TEST_JSDOM ?? 'jsdom');
-  const compiled = execFileSync('node_modules/.bin/esbuild', ['--bundle', '--format=esm', '--platform=node', '--target=node20', '--loader=tsx', '--loader:.css=empty', '--jsx=automatic'], {
+  const compiled = execFileSync(process.execPath, [esbuildCli, '--bundle', '--format=esm', '--platform=node', '--target=node20', '--loader=tsx', '--loader:.css=empty', '--jsx=automatic'], {
     maxBuffer: 10 * 1024 * 1024,
     input: `import React,{act} from 'react';import {createRoot} from 'react-dom/client';
-      import {FeePlansProvider} from './app/fee-plan-context';import {PermissionSettings} from './app/permission-settings';
-      export {act,createRoot};export const App=()=> <FeePlansProvider><PermissionSettings initialEnabledModules={[]} accountSetupPreview={${accountPreview}}/></FeePlansProvider>;`,
+      import {FeePlansProvider} from './app/fee-plan-context';import {PermissionSettings} from './app/permission-settings';import {AccountSecurityProvider} from './app/account-security-context';
+      export {act,createRoot};export const App=()=> <AccountSecurityProvider enabled={false}><FeePlansProvider persistent><PermissionSettings initialEnabledModules={[]} accountSetupPreview={${accountPreview}}/></FeePlansProvider></AccountSecurityProvider>;`,
   });
   const dom = new JSDOM('<!doctype html><div id="root"></div>', { url: 'https://portal.test/' });
   const saved = new Map();
@@ -117,9 +118,10 @@ for(const scenario of [{market:'MY',preview:false},{market:'TH',preview:false},{
   const nativeFetch = globalThis.fetch;
   const payloads = [];
   globalThis.fetch = async (url, init = {}) => {
+    if (url === '/api/admin/account/rate-cards') return Response.json({available:true,plans:[{id:'internal-new',name:'Internal NEW',clientType:'Internal',currency:'MYR',version:1,effectiveMonth:'2026-10',rule:{type:'tiers',currency:'MYR',basis:'custom',basisLabel:'Shopee Sales',tiers:[{from:'0',percent:'4'},{from:'10000',percent:'3.5'},{from:'100000',percent:'3'},{from:'150000',percent:'2.5'},{from:'200000',percent:'2',cap:'4000'}]}}],previewRateSource:{records:[]}});
     if (url === '/api/admin/users') return Response.json({
       stores: [{ id: 'shopee-existing', name: 'Existing', platform: `Shopee ${market}` }],
-      users: [], clientDefaults: [], accountSettingsAvailable: false,
+      users: [], clientDefaults: [], accountSettingsAvailable: accountAvailable,
       access: { isSuperAdmin: true, canManageStores: true, canManageDefaults: true, grantableModules: [] },
     });
     if (url.startsWith('/api/admin/store-exchange-rate?')) {const params=new URL(url,'https://portal.test').searchParams;return Response.json({status:'available',market:params.get('market'),currency:params.get('market')==='TH'?'THB':'PHP',invoiceMonth:params.get('invoiceMonth'),serviceMonth:(()=>{const [year,month]=params.get('invoiceMonth').split('-').map(Number);return `${month===1?year-1:year}-${String(month===1?12:month-1).padStart(2,'0')}`;})(),policy:'bnm-service-average',rate:params.get('market')==='TH'?'0.1225':'0.065',quotationUnit:1,reference:'https://storage.data.gov.my/finsector/exr/monthly.csv'});}
@@ -142,7 +144,7 @@ for(const scenario of [{market:'MY',preview:false},{market:'TH',preview:false},{
     await click(namedButton('+ Add store'));
     assert.equal([...document.querySelectorAll('label')].some(label=>label.textContent.includes('Source name')),false);
     if(market!=='MY')await act(()=>{const select=document.querySelector('[aria-label="Add store"] select');select.value=market;select.dispatchEvent(new Event('change',{bubbles:true}));});
-    if(accountPreview){
+    if(accountPreview && accountAvailable){
       const dialog=document.querySelector('[aria-label="Add store"]');
       assert.match(dialog.textContent,/Account setup/);assert.ok(dialog.querySelector('[aria-label="Account rate card"]'));
       const company=[...dialog.querySelectorAll('label')].find(label=>label.textContent.startsWith('Company name')).querySelector('input');
@@ -154,16 +156,28 @@ for(const scenario of [{market:'MY',preview:false},{market:'TH',preview:false},{
       assert.match(dialog.textContent,/cap MYR 4000/);assert.doesNotMatch(dialog.textContent,/3.2/);
       assert.equal(dialog.querySelectorAll('input[type="month"]').length,1);
       assert.match(dialog.querySelector('output').textContent,market==='TH'?/1 THB = MYR 0.1225/:/1 PHP = MYR 0.065/);
-      assert.equal(namedButton('Add store').disabled,true);
-      await click(namedButton('Add store'));assert.equal(payloads.length,0);
-      assert.match(dialog.textContent,/Store saving is temporarily unavailable/);
+      assert.equal(payloads.length,0);
       return;
     }
     assert.equal(document.querySelector('[aria-label="Add store"] fieldset')?.textContent.includes('Account setup') ?? false, false);
     const addDialog = document.querySelector('[aria-label="Add store"]');
+    if(accountPreview) assert.match(addDialog.textContent,/Unlock Account to add a Store with its billing setup/);
     if(market!=='MY'){assert.match(addDialog.textContent,/Currency Exchange Rate/);assert.match(addDialog.textContent,/Bank Negara monthly average/);assert.match(addDialog.querySelector('output').textContent,market==='TH'?/1 THB = MYR 0.1225/:/1 PHP = MYR 0.065/);}
     const addName = [...addDialog.querySelectorAll('label')].find(label => label.textContent.includes('Store name')).querySelector('input');
     await act(() => { Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(addName, 'Release UI'); addName.dispatchEvent(new Event('input', { bubbles: true })); });
+    if(accountPreview){
+      assert.equal(namedButton('Add store').disabled,true);
+      assert.equal(payloads.length,0);
+      await click(addDialog.querySelector('button[aria-label="Close"]'));
+      await click(namedButton('Edit store'));
+      assert.equal(document.querySelector('[aria-label="Edit store"] fieldset')?.textContent.includes('Account company') ?? false, false);
+      assert.match(document.querySelector('[aria-label="Edit store"]').textContent,/Store details can still be saved/);
+      await click(namedButton('Save store'));
+      await act(async () => {});
+      assert.equal(payloads[0]?.method,'PATCH');
+      for(const field of ['accountSetup','legalEntity','feeRule','effectiveMonth','accountRosterKey','expectedAccountVersion'])assert.equal(field in payloads[0].body,false);
+      return;
+    }
     assert.equal(namedButton('Add store').disabled, false);
     await click(namedButton('Add store'));
     await act(async () => {});
@@ -172,6 +186,7 @@ for(const scenario of [{market:'MY',preview:false},{market:'TH',preview:false},{
     for (const field of ['accountSetup','legalEntity','feeRule','effectiveMonth','accountRosterKey','expectedAccountVersion']) assert.equal(field in payloads[0].body, false);
     await click(namedButton('Edit store'));
     assert.equal(document.querySelector('[aria-label="Edit store"] fieldset')?.textContent.includes('Account company') ?? false, false);
+    if(accountPreview) assert.match(document.querySelector('[aria-label="Edit store"]').textContent,/Store details can still be saved/);
     await click(namedButton('Save store'));
     await act(async () => {});
     assert.equal(payloads[1]?.method, 'PATCH');

@@ -6,6 +6,7 @@ import { parseStoreDetails } from "../../../store-directory";
 import { malaysiaDate } from "../../../account-ledger";
 import { isMarket, marketFromPlatform } from "../../../markets";
 import { parseStoreAccountSetup } from "../../../store-account-setup-server";
+import { accountSecurityGate } from "../../../account-security-server";
 
 export const dynamic = "force-dynamic";
 
@@ -40,10 +41,12 @@ function sameOrigin(request: Request) {
 
 export async function POST(request: Request) {
   if (!sameOrigin(request)) return Response.json({ error: "Request origin is not allowed" }, { status: 403 });
+  const candidate=await request.clone().json().catch(()=>null);
+  const accountBearing=Boolean(candidate&&typeof candidate==="object"&&!Array.isArray(candidate)&&["accountSetup","legalEntity","feeRule","effectiveMonth","accountRosterKey","expectedAccountVersion"].some(key=>key in candidate));
+  if(accountBearing){const accountGate=await accountSecurityGate();if(accountGate)return accountGate;}
   const auth=await permissionManagement(request);
   if("error" in auth)return auth.error;
-  const candidate=await request.clone().json().catch(()=>null);
-  if(candidate&&typeof candidate==="object"&&!Array.isArray(candidate)&&!["accountSetup","legalEntity","feeRule","effectiveMonth","accountRosterKey","expectedAccountVersion"].some(key=>key in candidate))return auth.isSuperAdmin?legacyCreateStore(request):Response.json({error:"Use complete Account setup to create a store atomically."},{status:403});
+  if(candidate&&typeof candidate==="object"&&!Array.isArray(candidate)&&!accountBearing)return auth.isSuperAdmin?legacyCreateStore(request):Response.json({error:"Use complete Account setup to create a store atomically."},{status:403});
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   if (body?.accountSetup === undefined) return Response.json({ error: "Account setup is required" }, { status: 400 });
   const name = typeof body?.name === "string" ? body.name.trim().replace(/\s+/g, " ") : "";
@@ -74,10 +77,12 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   if (!sameOrigin(request)) return Response.json({ error: "Request origin is not allowed" }, { status: 403 });
+  const candidate=await request.clone().json().catch(()=>null);
+  const accountBearing=Boolean(candidate&&typeof candidate==="object"&&!Array.isArray(candidate)&&["accountSetup","legalEntity","feeRule","effectiveMonth","accountRosterKey","expectedAccountVersion"].some(key=>key in candidate));
+  if(accountBearing){const accountGate=await accountSecurityGate();if(accountGate)return accountGate;}
   const auth=await permissionManagement(request);
   if("error" in auth)return auth.error;
-  const candidate=await request.clone().json().catch(()=>null);
-  if(candidate&&typeof candidate==="object"&&!Array.isArray(candidate)&&!["accountSetup","legalEntity","feeRule","effectiveMonth","accountRosterKey","expectedAccountVersion"].some(key=>key in candidate))return auth.isSuperAdmin?legacyUpdateStore(request):Response.json({error:"Use complete store setup to update this store atomically."},{status:403});
+  if(candidate&&typeof candidate==="object"&&!Array.isArray(candidate)&&!accountBearing)return auth.isSuperAdmin?legacyUpdateStore(request):Response.json({error:"Use complete store setup to update this store atomically."},{status:403});
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   const id = typeof body?.id === "string" ? body.id.trim() : "";
   const name = typeof body?.name === "string" ? body.name.trim().replace(/\s+/g, " ") : "";

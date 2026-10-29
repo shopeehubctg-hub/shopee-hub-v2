@@ -1,11 +1,13 @@
 import 'server-only';
 import roster from './account-roster-data.json';
 import { getChatGPTUser } from './chatgpt-auth';
+import { accountSecurityGate } from './account-security-server';
 import { supabaseRest } from './supabase-rest';
 import { canonicalStoreId } from './live-calendar-model';
 import { malaysiaDate } from './account-ledger';
 import { validateFeeRule } from './account-settings-model';
 export async function saveAccountSetting(request:Request,action:'mapping'|'fee_rule'|'company'):Promise<Response> {
+  const gate=await accountSecurityGate();if(gate)return gate;
   const actor=await getChatGPTUser();
   if(!actor)return Response.json({error:'Authentication required'},{status:401});
   try {

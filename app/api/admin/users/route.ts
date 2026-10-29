@@ -6,6 +6,7 @@ import { randomBytes } from "node:crypto";
 import { permissionManagement, permissionSaveError, manageablePermissionUser, effectivePermissionModules, type PermissionContext, type PermissionMember } from "../../../permission-management";
 import { storeDetails, storeDirectory } from "../../../store-directory";
 import { malaysiaDate } from "../../../account-ledger";
+import { accountAccessGranted } from "../../../account-security-server";
 
 export const dynamic="force-dynamic";
 type Role="customer"|"manager"|"superadmin";
@@ -14,15 +15,16 @@ const headers={"Cache-Control":"private, no-store"};
 
 async function portalUsers(auth: PermissionContext){
   const tenantId=auth.member.tenant_id;
+  const accountReadable=await accountAccessGranted();
   const [users,tenantModules,tenantStoreRows,directory,accountStatus,storeSetupAvailable]=await Promise.all([
     supabaseRest<Member[]>(`customer_users?select=*&tenant_id=eq.${encodeURIComponent(tenantId)}&order=email.asc`),
     supabaseRest<Array<{module_id:string;enabled:boolean}>>(`tenant_module_permissions?select=module_id,enabled&tenant_id=eq.${encodeURIComponent(tenantId)}`),
     supabaseRest<Array<{id:string;name:string;display_name:string|null;platform:string;bigseller_name:string}>>(`stores?select=id,name,display_name,platform,bigseller_name&tenant_id=eq.${encodeURIComponent(tenantId)}&order=name.asc`),
     storeDirectory(tenantId),
-    supabaseRest<Array<{roster_key:string;legal_entity:string;version:string;store_id:string|null;effective_month:string}>>(`account_billing_unit_versions?select=roster_key,legal_entity,version::text,store_id,effective_month&tenant_id=eq.${encodeURIComponent(tenantId)}&order=version.desc`)
+    (accountReadable?supabaseRest<Array<{roster_key:string;legal_entity:string;version:string;store_id:string|null;effective_month:string}>>(`account_billing_unit_versions?select=roster_key,legal_entity,version::text,store_id,effective_month&tenant_id=eq.${encodeURIComponent(tenantId)}&order=version.desc`):Promise.resolve([]))
       .then(rows=>({rows,available:true}))
       .catch(error=>{if(error instanceof Error&&/"code":"(PGRST205|42P01)"/.test(error.message))return {rows:[],available:false};throw error;}),
-    supabaseRest<boolean>("rpc/account_store_setup_v2_available",{method:"POST"})
+    (accountReadable?supabaseRest<boolean>("rpc/account_store_setup_v2_available",{method:"POST"}):Promise.resolve(false))
       .catch(error=>{if(error instanceof Error&&/"code":"(PGRST202|PGRST205|42883)"/.test(error.message))return false;throw error;}),
   ]);
   const accountVersions=accountStatus.rows;
@@ -52,7 +54,7 @@ async function portalUsers(auth: PermissionContext){
   }
   const tenantStores=tenantStoreRows.filter(store=>canonicalStoreId(store.id)===store.id).map(store=>{
     const units=unitsByStore.get(store.id)??[];
-    return {...store,name:store.display_name??store.name,...storeDetails(directory,store.id),accountUnit:units.length===1?units[0]:null,accountUnitCount:units.length};
+    return {...store,name:store.display_name??store.name,...storeDetails(directory,store.id),...(accountReadable?{accountUnit:units.length===1?units[0]:null,accountUnitCount:units.length}:{})};
   });
   const ids=users.map(user=>user.id);const [moduleRows,storeRows]=ids.length?await Promise.all([
     supabaseRest<Array<{user_id:number;module_id:string;enabled:boolean}>>(`user_module_permissions?select=user_id,module_id,enabled&user_id=in.(${ids.join(",")})`),
@@ -73,7 +75,7 @@ async function portalUsers(auth: PermissionContext){
       enabledModules,storeIds,canManagePermissions:user.role==="superadmin"||delegated,editable,
       permissionsVersion:user.permissions_version}];
   });
-  return{stores:allowedStores,accountSettingsAvailable:accountStatus.available&&storeSetupAvailable===true,
+  return{stores:allowedStores,accountSettingsAvailable:accountReadable&&accountStatus.available&&storeSetupAvailable===true,
     clientDefaults,users:exposedUsers,access:{isSuperAdmin:auth.isSuperAdmin,canManageStores:true,
       canManageDefaults:auth.isSuperAdmin,grantableModules:auth.grantableModules}};
 }
