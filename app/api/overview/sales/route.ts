@@ -1,11 +1,17 @@
-import { accountAdmin } from '../../../account-rate-cards';
+import { getChatGPTUser } from '../../../chatgpt-auth';
 import { supabaseRest } from '../../../supabase-rest';
 export const dynamic='force-dynamic';
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'private, no-store'}});
 export async function GET(request:Request){
  try{
-  const auth=await accountAdmin();if('error'in auth)return auth.error;
-  const tenant=encodeURIComponent(auth.tenantId);
+  const actor=await getChatGPTUser();
+  if(!actor)return json({error:'Authentication required'},401);
+  const members=await supabaseRest<Array<{tenant_id:string;role:string;active:boolean}>>(`customer_users?select=tenant_id,role,active&email=eq.${encodeURIComponent(actor.email.toLowerCase())}&limit=1`);
+  const member=members[0];
+  if(!member?.active||member.role!=='superadmin')return json({error:'Super Admin access required'},403);
+  const tenant=encodeURIComponent(member.tenant_id);
+  const tenants=await supabaseRest<Array<{active:boolean}>>(`tenants?select=active&id=eq.${tenant}&limit=1`);
+  if(!tenants[0]?.active)return json({error:'Active tenant access required'},403);
   const requested=new URL(request.url).searchParams.get('month');
   if(requested&&!/^20\d{2}-(0[1-9]|1[0-2])$/.test(requested))return json({error:'Choose a valid month.'},400);
   const latest=await supabaseRest<Array<{report_date:string}>>(`sales_overview_daily?select=report_date&tenant_id=eq.${tenant}&order=report_date.desc&limit=1`);
