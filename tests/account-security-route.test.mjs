@@ -152,6 +152,9 @@ test("unlock reserves before verification and issues cookie only after successfu
   const finish = f.events.findIndex(event => event[1] === "rpc/account_finish_attempt");
   const cookie = f.events.findIndex(event => event[0] === "cookie");
   assert.ok(reserve < verify && verify < finish && finish < cookie);
+  const stepupCookie = f.events[cookie];
+  assert.ok(stepupCookie[3].maxAge > 15 * 60);
+  assert.ok(stepupCookie[3].maxAge <= 7 * 24 * 60 * 60);
   const wrong = fixture({ approved: true });
   assert.equal((await wrong.route.POST(request("unlock", { accountPassword: "wrong account password" }))).status, 401);
   assert.equal(wrong.events.some(event => event[0] === "cookie"), false);

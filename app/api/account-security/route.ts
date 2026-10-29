@@ -204,8 +204,13 @@ export async function POST(request: Request) {
         }),
       });
       if (result !== "succeeded") return json({ error: result === "failed" ? "Incorrect Account password." : "Account unlock could not be completed." }, result === "failed" ? 401 : 409);
+      // Keep the step-up cookie only as long as the bound Dashboard session.
+      // The database independently verifies both sessions on every Account read.
+      const remainingPrimarySeconds = Math.max(0, Math.min(
+        7 * 24 * 60 * 60, Math.floor(actor.primaryExpiresAt - Date.now() / 1000),
+      ));
       (await cookies()).set(ACCOUNT_STEPUP_COOKIE, token, {
-        httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 15 * 60,
+        httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: remainingPrimarySeconds,
       });
       return json({ outcome: "unlocked" });
     }

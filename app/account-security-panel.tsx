@@ -127,7 +127,7 @@ export function AccountSecurityPanel() {
     {phase === "unavailable" && <div role="alert"><p>Account security is temporarily unavailable.</p><button type="button" onClick={() => void security.refresh()}>Retry</button></div>}
     {error && <p id={errorId} className="account-security-error" role="alert">{error}</p>}
     {notice && <p className="account-security-notice" role="status">{notice}</p>}
-    {phase === "unlocked" && <p role="status">Access expires {time(status?.expires_at)} MYT. You can lock Account without signing out of Dashboard.</p>}
+    {phase === "unlocked" && <p>Account stays unlocked while this Dashboard session is active. Select Lock Account to end access immediately. Signing out or the Dashboard session ending also ends access.</p>}
     {phase === "locked" && status && <>
       {request && <p role="status">Latest {purposeLabel(request.purpose)} request: {requestGuidance(request)} Request expiry {time(request.expires_at)} MYT.</p>}
       {awaitingOwner && <p>The bound owner must approve this request before you can set an Account password.</p>}
