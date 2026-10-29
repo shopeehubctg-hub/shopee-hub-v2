@@ -272,7 +272,7 @@ export function PriceCalculator({ staging=false, storeName="", productProfile, c
  if(!normal||!campaign||!packagePrefill(row,normal.mode,normal.result,normal.suggested,row.id)||!packagePrefill(row,campaign.mode,campaign.result,campaign.suggested,row.id))return [];
  return [{code:`PKG-${row.id}`,name:row.name,normal:Number(normal.result.requiredPrice.toFixed(2)),campaign:Number(campaign.result.requiredPrice.toFixed(2))}];});
  if(!rows.length){setBatchMessage("Complete package prices and quantities first.");return;}
- (await import("./package-batch-excel")).downloadBatch(rows);setBatchMessage(`${rows.length} packages downloaded. Fill Original Price, SKU, inventory and dates, then use Batch Upload in Packages & Pricing.`);
+ await (await import("./package-batch-excel")).saveBatch(rows);setBatchMessage(`${rows.length} packages downloaded. Fill Original Price, SKU, inventory and dates in the same sheet, then use Batch Upload in Packages & Pricing.`);
  }catch{setBatchMessage("Download failed. Please retry.");}}}>Batch Download Excel</button>}{staging&&batchMessage&&<p role="status">{batchMessage}</p>}<button className="create-all-packages" disabled={!readyPackages.length} onClick={()=>setPendingConfirmation({kind:"batch",rows:readyConfirmationRows})}>Create All Ready ({readyPackages.length})</button><button onClick={addPackage}>+ Add Package</button></div></div>
       <div className="package-result-list">{calculations.map(({row,scenarios})=><article className="package-result-card dual-package-card" key={row.id}>
         <div className="dual-package-inputs">
