@@ -21,7 +21,7 @@ type FeeDraft = {
   sellerShipping:NumberValue; facebookShipping:NumberValue;
 };
 type CoFundVoucher = { id:number; campaignName:string; campaignDate:string|null; campaignStartAt:string|null; campaignEndAt:string|null; voucherName:string; discountAmount:number; currency:string; quantity:number };
-type Props = { storeName?:string; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; onCreatePackage?:(prefill:PackagePrefill)=>void; onCreatePackages?:(prefills:PackagePrefill[])=>void };
+type Props = { staging?:boolean; storeName?:string; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; onCreatePackage?:(prefill:PackagePrefill)=>void; onCreatePackages?:(prefills:PackagePrefill[])=>void };
 type ConfirmationRow = { prefill:PackagePrefill; scenario:string; quantity:number; facebookPpu:number|null; customerPpu:number|null };
 type PendingConfirmation = { kind:"single"|"batch"; rows:ConfirmationRow[] };
 type LadderRow = { name:string; quantity:number; customerPrice:number; ppu:number; status:"base"|"better"|"higher"; label:string };
@@ -42,7 +42,8 @@ const pct = (value:number) => `${Number.isFinite(value) ? value.toFixed(2) : "0.
 const positive = (value:string|number) => Math.max(0, Number(value) || 0);
 const editableNumber = (value:string):NumberValue => value===""?"":positive(value);
 
-export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[], onCreatePackage, onCreatePackages }:Props) {
+export function PriceCalculator({ staging=false, storeName="", productProfile, coFundVouchers=[], onCreatePackage, onCreatePackages }:Props) {
+  const [batchMessage,setBatchMessage] = useState("");
   const [packages,setPackages] = useState(INITIAL_PACKAGES);
   const [pendingConfirmation,setPendingConfirmation] = useState<PendingConfirmation|null>(null);
   const [pricingGoals,setPricingGoals] = useState<Record<ServiceMode,GoalSetting>>({
@@ -265,7 +266,14 @@ export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[
     </section>
 
     <section className="calculator-table calculator-results card">
-      <div className="calculator-section-head"><div><p className="kicker">STEP 2 · PACKAGE RESULTS</p><h3>Recommended Prices</h3></div><div className="calculator-result-head-actions"><button className="create-all-packages" disabled={!readyPackages.length} onClick={()=>setPendingConfirmation({kind:"batch",rows:readyConfirmationRows})}>Create All Ready ({readyPackages.length})</button><button onClick={addPackage}>+ Add Package</button></div></div>
+      <div className="calculator-section-head"><div><p className="kicker">STEP 2 · PACKAGE RESULTS</p><h3>Recommended Prices</h3></div><div className="calculator-result-head-actions">{staging&&<button type="button" disabled={!storeName} onClick={async()=>{try{
+ const rows=calculations.flatMap(({row,scenarios})=>{
+ const normal=scenarios.find(s=>s.mode==="nonCampaign"),campaign=scenarios.find(s=>s.mode==="campaign");
+ if(!normal||!campaign||!packagePrefill(row,normal.mode,normal.result,normal.suggested,row.id)||!packagePrefill(row,campaign.mode,campaign.result,campaign.suggested,row.id))return [];
+ return [{code:`PKG-${row.id}`,name:row.name,normal:Number(normal.result.requiredPrice.toFixed(2)),campaign:Number(campaign.result.requiredPrice.toFixed(2))}];});
+ if(!rows.length){setBatchMessage("Complete package prices and quantities first.");return;}
+ (await import("./package-batch-excel")).downloadBatch(rows);setBatchMessage(`${rows.length} packages downloaded. Fill Original Price, SKU, inventory and dates, then use Batch Upload in Packages & Pricing.`);
+ }catch{setBatchMessage("Download failed. Please retry.");}}}>Batch Download Excel</button>}{staging&&batchMessage&&<p role="status">{batchMessage}</p>}<button className="create-all-packages" disabled={!readyPackages.length} onClick={()=>setPendingConfirmation({kind:"batch",rows:readyConfirmationRows})}>Create All Ready ({readyPackages.length})</button><button onClick={addPackage}>+ Add Package</button></div></div>
       <div className="package-result-list">{calculations.map(({row,scenarios})=><article className="package-result-card dual-package-card" key={row.id}>
         <div className="dual-package-inputs">
           <label className="result-input"><span>Package</span><input className="package-name-input" value={row.name} onChange={event=>updatePackage(row.id,"name",event.target.value)}/></label>

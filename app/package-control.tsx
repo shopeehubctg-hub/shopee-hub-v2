@@ -1,4 +1,5 @@
 "use client";
+import {PackageBatchPreview} from "./package-batch-preview";
 
 import { MARKET_CODES, MARKET_CONFIG, isMarket, marketMoney, marketFromPlatform, marketDate, type MarketCode } from "./markets";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
@@ -954,6 +955,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
 
     {canShowSamples&&!standaloneCreate&&<div className="package-sample-toolbar"><span role="status">{sampleMode?"Sample data · Read only":""}</span><button type="button" disabled={saving||showCreate} aria-pressed={sampleMode} onClick={()=>{resetListScope();setFilter("all");setDurationFilter("all");setCountryFilter("all");setSearch("");setSampleMode(value=>!value);}}>{sampleMode?"Back to real data":"View sample data"}</button></div>}
 
+    {staging&&!sampleMode&&canCreate&&hasSelectedStore&&<PackageBatchPreview key={storeId}/>}
     <p className="package-summary-scope">Summary · {sampleMode?"All sample packages":storeName} · All selling countries</p>
     <section className="metric-grid package-metrics">
       <article className="metric"><span>Total Packages</span><strong>{listReady?scopedItems.length:"—"}</strong><em>{sampleMode?"Sample packages":storeName}</em></article>
