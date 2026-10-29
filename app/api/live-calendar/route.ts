@@ -22,8 +22,10 @@ async function access() {
   const tenants = await supabaseRest<Array<{active:boolean}>>(`tenants?select=active&id=eq.${encodeURIComponent(member.tenant_id)}&limit=1`);
   if (!tenants[0]?.active) return { error:Response.json({error:"Tenant access disabled"},{status:403}) };
   if (member.role !== "superadmin") {
+    if (member.module_access_mode !== "custom") {
     const tenantPermissions = await supabaseRest<Array<{enabled:boolean}>>(`tenant_module_permissions?select=enabled&tenant_id=eq.${encodeURIComponent(member.tenant_id)}&module_id=eq.live_calendar&limit=1`);
     if (tenantPermissions[0]?.enabled !== true) return { error:Response.json({error:"Live Calendar access disabled"},{status:403}) };
+    }
     if (member.module_access_mode === "custom") {
       const userPermissions = await supabaseRest<Array<{enabled:boolean}>>(`user_module_permissions?select=enabled&user_id=eq.${member.id}&module_id=eq.live_calendar&limit=1`);
       if (userPermissions[0]?.enabled !== true) return { error:Response.json({error:"Live Calendar access disabled"},{status:403}) };

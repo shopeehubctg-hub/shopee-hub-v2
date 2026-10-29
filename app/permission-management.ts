@@ -26,8 +26,9 @@ export function effectivePermissionModules(member: Pick<PermissionMember, "role"
   tenantRows: Array<{module_id: string; enabled: boolean}>, userRows: Array<{module_id: string; enabled: boolean}>) {
   if (member.role === "superadmin") return [...ALL_PORTAL_MODULE_IDS];
   const tenant = new Map(tenantRows.map(row => [row.module_id, row.enabled]));
-  return ALL_PORTAL_MODULE_IDS.filter(id => (id === "live_calendar" ? tenant.get(id) === true : tenant.get(id) !== false)
-    && (member.module_access_mode !== "custom" || userRows.some(row => row.module_id === id && row.enabled)));
+  return ALL_PORTAL_MODULE_IDS.filter(id => member.module_access_mode === "custom"
+    ? userRows.some(row => row.module_id === id && row.enabled)
+    : (id === "live_calendar" ? tenant.get(id) === true : tenant.get(id) !== false));
 }
 
 export async function permissionManagement(request?: Request): Promise<PermissionContext | {error: Response}> {
