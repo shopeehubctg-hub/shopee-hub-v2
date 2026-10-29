@@ -35,7 +35,7 @@ test('sales UI uses latest MTD snapshot, uses latest month/platform, and disting
  await act(async()=>document.querySelector('.sales-day').click());
  assert.match(document.querySelector('.sales-trend h4').textContent,/27 Oct/);
  assert.match(document.querySelector('.sales-metrics').textContent,/300.00/);
- const mtdButton=[...document.querySelectorAll('.sales-trend-tabs button')].find(b=>b.textContent==='MTD');
+ const mtdButton=[...document.querySelectorAll('.sales-trend-tabs button')].find(b=>b.textContent==='Monthly');
  await act(async()=>mtdButton.click());
  assert.equal(document.querySelector('[aria-label="Month to date sales chart"]')!==null,true);
  assert.match(document.querySelector('.sales-day').getAttribute('aria-label'),/200.00/);
