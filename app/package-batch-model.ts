@@ -1,7 +1,10 @@
 import {defaultRecurringEvent,recurringEventWindow,recurringEventIds,type RecurringEventId} from './recurring-campaign';
-export type BatchMarket='MY'|'SG';
-export type MarketChoice='MY'|'SG'|'MY+SG';
-export const batchMarkets=(choice:MarketChoice):BatchMarket[]=>choice==='MY+SG'?['MY','SG']:[choice];
+import type {MarketCode} from './markets';
+export type BatchMarket=MarketCode;
+export const marketChoices=['MY','MY+SG','MY+TH','MY+PH','MY+SG+TH','MY+SG+TH+PH'] as const;
+export type MarketChoice=typeof marketChoices[number];
+export const marketChoiceLabel=(choice:MarketChoice)=>choice==='MY'?'MY Only':choice;
+export const batchMarkets=(choice:MarketChoice|'SG'):BatchMarket[]=>choice.split('+') as BatchMarket[];
 export type BatchDates={normal:{mode:'months'|'custom'|'long';months:string[];start:string;end:string};campaign:{mode:'months'|'long';months:Record<string,RecurringEventId[]>;start:string;events:RecurringEventId[]}};
 export type BatchPackage={id:string;name:string;prices:Partial<Record<BatchMarket,{original:string;normal:string;campaign:string}>>;skus:{Shopee:string;Lazada:string;TikTok:string};items:{sku:string;quantity:string}[];dates:BatchDates|null};
 export const blankDates=():BatchDates=>({normal:{mode:'months',months:[],start:'',end:''},campaign:{mode:'months',months:{},start:'',events:[]}});
