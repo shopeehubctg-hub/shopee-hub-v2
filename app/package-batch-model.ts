@@ -1,12 +1,14 @@
 import {defaultRecurringEvent,recurringEventWindow,recurringEventIds,type RecurringEventId} from './recurring-campaign';
 import type {MarketCode} from './markets';
+import {MAX_INVENTORY_ITEMS,duplicateInventory} from './inventory-items';
+import type {ExportSnapshot} from './pricing-evidence';
 export type BatchMarket=MarketCode;
 export const marketChoices=['MY','MY+SG','MY+TH','MY+PH','MY+SG+TH','MY+SG+TH+PH'] as const;
 export type MarketChoice=typeof marketChoices[number];
 export const marketChoiceLabel=(choice:MarketChoice)=>choice==='MY'?'MY Only':choice;
 export const batchMarkets=(choice:MarketChoice|'SG'):BatchMarket[]=>choice.split('+') as BatchMarket[];
 export type BatchDates={normal:{mode:'months'|'custom'|'long';months:string[];start:string;end:string};campaign:{mode:'months'|'long';months:Record<string,RecurringEventId[]>;start:string;events:RecurringEventId[]}};
-export type BatchPackage={id:string;name:string;prices:Partial<Record<BatchMarket,{original:string;normal:string;campaign:string}>>;skus:{Shopee:string;Lazada:string;TikTok:string};items:{sku:string;quantity:string}[];dates:BatchDates|null};
+export type BatchPackage={id:string;name:string;prices:Partial<Record<BatchMarket,{original:string;normal:string;campaign:string}>>;skus:{Shopee:string;Lazada:string;TikTok:string};items:{sku:string;quantity:string;name?:string;uiKey?:string}[];dates:BatchDates|null;exportId?:string;fileStoreId?:string;exportSnapshot?:ExportSnapshot;priceAdjustmentReason?:string;catalogRequired?:boolean};
 export const blankDates=():BatchDates=>({normal:{mode:'months',months:[],start:'',end:''},campaign:{mode:'months',months:{},start:'',events:[]}});
 export const validDate=(v:string)=>/^\d{4}-\d{2}-\d{2}$/.test(v)&&!Number.isNaN(Date.parse(v+'T00:00:00Z'))&&new Date(v+'T00:00:00Z').toISOString().slice(0,10)===v;
 export const validMonth=(v:string)=>/^\d{4}-(0[1-9]|1[0-2])$/.test(v);
@@ -38,8 +40,10 @@ export function batchIssues(p:BatchPackage,all:BatchPackage[],includeDates=true)
  if(!Object.keys(p.prices).length)issues.push('Prices: choose a selling market.');
  for(const [market,v] of Object.entries(p.prices))for(const key of ['original','normal','campaign'] as const){if(key==='campaign'&&!v[key])continue;if(!v[key].trim()||!Number.isFinite(Number(v[key]))||Number(v[key])<=0)issues.push(`${market} ${key} price: enter a positive number.`);}
  for(const [market,v] of Object.entries(p.prices)){if(Number(v.normal)>Number(v.original)||Number(v.campaign||v.normal)>Number(v.original))issues.push(`${market} selling price cannot exceed Original Price.`);if(Object.values(v).some(x=>x&&Math.abs(Number(x)*100-Math.round(Number(x)*100))>0.000001))issues.push(`${market} prices: use at most two decimal places.`);}
- const entered=p.items.filter(i=>i.sku||i.quantity);if(!entered.length)issues.push('Inventory: add at least one item.');if(entered.length>10)issues.push('Inventory: maximum 10 items.');
- entered.forEach((i,index)=>{if(!i.sku.trim()||!Number.isInteger(Number(i.quantity))||Number(i.quantity)<=0||Number(i.quantity)>100000)issues.push(`Inventory ${index+1}: SKU and whole quantity 1–100,000 required.`);if(i.sku&&entered.slice(0,index).some(v=>v.sku.trim()===i.sku.trim()))issues.push(`Inventory ${index+1}: duplicate SKU; combine quantities.`);});
+ const entered=p.items.filter(i=>i.sku||i.quantity);if(!entered.length)issues.push('Inventory: add at least one item.');if(entered.length>MAX_INVENTORY_ITEMS)issues.push('Inventory: maximum 20 items.');
+ entered.forEach((i,index)=>{if(!i.sku.trim()||!Number.isInteger(Number(i.quantity))||Number(i.quantity)<=0||Number(i.quantity)>100000)issues.push(`Inventory ${index+1}: SKU and whole quantity 1–100,000 required.`);if(p.catalogRequired&&!i.name?.trim())issues.push(`Inventory ${index+1}: enter a Product Name for this new SKU.`);});
+ issues.push(...duplicateInventory(p.items).map(d=>d.message));
+ if(p.exportSnapshot&&p.prices.MY&&(Math.abs(Number(p.prices.MY.normal)-p.exportSnapshot.normal)>0.005||Math.abs(Number(p.prices.MY.campaign||p.prices.MY.normal)-p.exportSnapshot.campaign)>0.005)&&!p.priceAdjustmentReason?.trim())issues.push('Price Adjustment: enter a reason for changing the Calculator price.');
  return includeDates?[...issues,...dateIssues(p.dates,sameBatchPrice(p))]:issues;
 }
 export function applyBatchDates(rows:BatchPackage[],ids:string[],dates:BatchDates){return rows.map(p=>ids.includes(p.id)?{...p,dates:structuredClone(dates)}:p);}

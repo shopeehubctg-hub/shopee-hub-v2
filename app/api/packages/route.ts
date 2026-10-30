@@ -26,6 +26,9 @@ import { endPackage } from "./end-package";
 import { packageHistoryAction } from "../../package-ending";
 import { boundCampaignPeriods } from "../../package-period-bounds";
 import { readCompactPackageRows } from "./compact-read";
+import { duplicateInventory, MAX_INVENTORY_ITEMS } from "../../inventory-items";
+import {projectProducts,productName} from "../inventory-skus/catalog";
+import {resolvePricingEvidence} from "./pricing-evidence";
 import { BERLANCO_CATALOG_STORE, catalogProducts, InventoryCatalogError } from "../../inventory-catalog-model";
 import { captureInventoryProducts, inventoryFingerprint, lockInventoryCatalog } from "./inventory-capture";
 
@@ -63,6 +66,7 @@ function packageError(section:PackageErrorSection,error:string,status=400,code?:
 
 function saveFailure(error:unknown) {
   const databaseError=error as DatabaseError;
+  if(databaseError.code==="PRICING_EVIDENCE")return packageError("Pricing & Promotion",databaseError.message,409);
   const code=databaseError?.code ?? "unknown";
   const constraint=databaseError?.constraint_name ?? databaseError?.constraint ?? "";
   const table=databaseError?.table_name ?? databaseError?.table ?? "";
@@ -246,6 +250,7 @@ export async function GET(request: Request) {
   const latestPublishedVersion = new Map<string, typeof versions[number]>();
   versions.forEach(version => { if (!latestVersion.has(version.packageId)) latestVersion.set(version.packageId, version); });
   versions.forEach(version => { if (version.sheetSyncStatus === "synced" && !latestPublishedVersion.has(version.packageId)) latestPublishedVersion.set(version.packageId, version); });
+  const displayProducts=deploymentTarget()==="staging"&&scopedStoreIds.includes(BERLANCO_CATALOG_STORE)?await projectProducts(db,membership.tenantId,BERLANCO_CATALOG_STORE):[];
   const result=rows.map(row => {
       const endedVersion = latestVersion.get(row.id)?.calculatorSettings?._packageEnded === true ? latestVersion.get(row.id) : undefined;
       const version = endedVersion ?? (["active","scheduled","expired"].includes(row.status)
@@ -272,7 +277,7 @@ export async function GET(request: Request) {
         platforms:currentPlatforms,
         version:version?.version ?? 1,
         promotionType:version?.promotionType ?? "custom",
-        components:version?.components ?? [],
+        components:(version?.components ?? []).map(item=>row.storeId===BERLANCO_CATALOG_STORE?{...item,name:productName(displayProducts,item.inventorySku,item.name)}:item),
         changeNote:version?.changeNote ?? "",
         addedComponents:version?.addedComponents ?? [],
         removedComponents:version?.removedComponents ?? [],
@@ -347,6 +352,8 @@ async function savePackage(request: Request) {
   const body = await request.json() as {
     batchUpload?: boolean;
     captureInventory?: boolean;
+    exportId?:string;
+    priceAdjustmentReason?:string;
     mode?: "draft" | "publish";
     clientRequestId?: string;
     packageId?: string;
@@ -372,8 +379,9 @@ async function savePackage(request: Request) {
     recurringCampaign?: unknown;
   };
   if(body.batchUpload&&deploymentTarget()!=="staging")return packageError("Saving","Batch creation is only enabled in Staging.",403);
-  const captureInventory=body.captureInventory===true;
-  if(captureInventory&&(deploymentTarget()!=="staging"||body.storeId!==BERLANCO_CATALOG_STORE||body.packageId||body.batchUpload))return packageError("Inventory Items","Product capture is available for new Berlanco packages in Staging only.",403);
+  const catalogEnabled=deploymentTarget()==="staging"&&body.storeId===BERLANCO_CATALOG_STORE;
+  const captureInventory=catalogEnabled&&!body.packageId;
+  if(body.captureInventory&&!catalogEnabled)return packageError("Inventory Items","Product capture is available for Berlanco in Staging only.",403);
   const mode = body.mode ?? "draft";
   if (mode!=="draft"&&mode!=="publish") return packageError("Saving","Choose Create Package or Save Draft.");
   if (mode==="publish"&&!historyWebhookConfigured()) return packageError("Saving","Package History Google Sheet is not connected. Save a draft or ask the administrator to connect the Sheet before creating the package.",503);
@@ -447,6 +455,11 @@ async function savePackage(request: Request) {
     quantity:Number(item.quantity),
     kind:item.kind === "gift" ? "gift" as const : "product" as const,
   }));
+  if(deploymentTarget()==="staging"){
+    if(components.length>MAX_INVENTORY_ITEMS)return packageError("Inventory Items","Use up to 20 inventory items.");
+    const duplicate=duplicateInventory(components)[0];if(duplicate)return packageError("Inventory Items",duplicate.message);
+    if(catalogEnabled){const savedProducts=await projectProducts(accessDb,membership.tenantId,body.storeId);for(const item of components)item.name=productName(savedProducts,item.inventorySku,item.name);}
+  }
   if (components.some(item => !item.inventorySku || !item.name || !Number.isInteger(item.quantity) || item.quantity < 1)) {
     return packageError("Inventory Items","Every inventory item needs an OXM SKU, item name and a whole-number quantity of at least 1.");
   }
@@ -454,8 +467,9 @@ async function savePackage(request: Request) {
     return packageError("Pricing & Promotion","Enter positive Original and Selling prices. Selling Price cannot be higher than Original Price.");
   }
 
-  const captureFingerprint=captureInventory?inventoryFingerprint({storeId:body.storeId,name:body.name.trim(),mode,components,platforms,markets,schedules,samePricing:!!body.samePricing,longTerm:!!body.longTerm,campaignLongTerm:!!body.campaignLongTerm,recurringCampaign,changeNote:body.changeNote?.trim()??'',calculatorSettings:body.calculatorSettings??null}):null;
-  if(captureInventory){catalogProducts(components);if(!body.clientRequestId)return packageError("Saving","A stable package request ID is required. Refresh and retry.");}
+  const verifyCaptureRequest=captureInventory||(deploymentTarget()==="staging"&&body.batchUpload===true);
+  const captureFingerprint=verifyCaptureRequest?inventoryFingerprint({storeId:body.storeId,name:body.name.trim(),mode,components,platforms,markets,schedules,exportId:body.exportId??null,priceAdjustmentReason:body.priceAdjustmentReason??null,samePricing:!!body.samePricing,longTerm:!!body.longTerm,campaignLongTerm:!!body.campaignLongTerm,recurringCampaign,changeNote:body.changeNote?.trim()??'',calculatorSettings:body.calculatorSettings??null}):null;
+  if(verifyCaptureRequest){catalogProducts(components);if(!body.clientRequestId)return packageError("Saving","A stable package request ID is required. Refresh and retry.");}
   const db = await getDb();
   const requestedPackageId = body.packageId ? String(body.packageId) : null;
   const clientRequestId=!requestedPackageId ? body.clientRequestId : undefined;
@@ -467,8 +481,8 @@ async function savePackage(request: Request) {
       if(prior.deletedAt || prior.tenantId!==membership.tenantId || prior.storeId!==body.storeId || prior.createdBy.toLowerCase()!==user.email.toLowerCase())
         return packageError("Saving","This package request is already in use. Refresh the form and try again.",409);
       const [priorVersion]=await db.select().from(packageVersions).where(eq(packageVersions.packageId,prior.id)).orderBy(desc(packageVersions.version)).limit(1);
-      const [initialVersion]=captureInventory?await db.select().from(packageVersions).where(and(eq(packageVersions.packageId,prior.id),eq(packageVersions.version,1))).limit(1):[];
-      if(captureInventory&&initialVersion?.calculatorSettings?._inventoryCaptureFingerprint!==captureFingerprint)return packageError("Saving","This request already saved different package details. Refresh and check the saved package before creating another.",409);
+      const [initialVersion]=verifyCaptureRequest?await db.select().from(packageVersions).where(and(eq(packageVersions.packageId,prior.id),eq(packageVersions.version,1))).limit(1):[];
+      if(verifyCaptureRequest&&initialVersion?.calculatorSettings?._inventoryCaptureFingerprint!==captureFingerprint)return packageError("Saving","This request already saved different package details. Refresh and check the saved package before creating another.",409);
       if(!priorVersion)return packageError("Saving","This package is still being saved. Refresh the page and try again.",503);
       if(mode==="draft" || priorVersion.sheetSyncStatus==="synced")
         return Response.json({ok:true,packageId:prior.id,version:priorVersion.version,status:prior.status,sheetSyncStatus:priorVersion.sheetSyncStatus});
@@ -478,7 +492,7 @@ async function savePackage(request: Request) {
   }
   const [packageSkuConflict] = await db.select({ id:packages.id }).from(packages)
     .where(and(eq(packages.storeId,body.storeId),eq(packages.packageSku,platforms[0].packageSku),isNull(packages.deletedAt))).limit(1);
-  if (packageSkuConflict && (!requestedPackageId || packageSkuConflict.id!==requestedPackageId) && !(captureInventory&&packageSkuConflict.id===clientRequestId)) {
+  if (packageSkuConflict && (!requestedPackageId || packageSkuConflict.id!==requestedPackageId) && !(verifyCaptureRequest&&packageSkuConflict.id===clientRequestId)) {
     return packageError("Package Details",`Listing SKU ${platforms[0].packageSku} is already used by another package in this store. Enter a different SKU.`,409,"BATCH_SKU_CONFLICT");
   }
   for (const line of platforms) {
@@ -486,7 +500,7 @@ async function savePackage(request: Request) {
       .innerJoin(packages, eq(packages.id,packagePlatformSkus.packageId))
       .where(and(eq(packagePlatformSkus.storeId, body.storeId), eq(packagePlatformSkus.platform, line.platform), eq(packagePlatformSkus.packageSku, line.packageSku),isNull(packages.deletedAt)))
       .limit(1);
-    if (conflict[0] && (!requestedPackageId || conflict[0].packageId !== requestedPackageId) && !(captureInventory&&conflict[0].packageId===clientRequestId)) {
+    if (conflict[0] && (!requestedPackageId || conflict[0].packageId !== requestedPackageId) && !(verifyCaptureRequest&&conflict[0].packageId===clientRequestId)) {
       return packageError("Package Details",`${line.platform} listing SKU ${line.packageSku} is already used by another package in this store. Enter a different SKU.`,409,"BATCH_SKU_CONFLICT");
     }
   }
@@ -536,7 +550,7 @@ async function savePackage(request: Request) {
     ? emailChangeSummary({components,calculatorSettings:{_packageMetadata:metadata,_recurringCampaign:recurringCampaign}},previousVersion,schedules,oldPrices,platforms,oldSkus)
     : "配套资料修改（历史比较资料不足）";
   const captureReplay=await db.transaction(async tx => {
-    if(captureInventory){
+    if(verifyCaptureRequest){
       await lockInventoryCatalog(tx,membership.tenantId);
       const [prior]=await tx.select().from(packages).where(eq(packages.id,packageId)).limit(1);
       if(prior){
@@ -545,7 +559,13 @@ async function savePackage(request: Request) {
         if(prior.deletedAt||prior.tenantId!==membership.tenantId||prior.storeId!==body.storeId||prior.createdBy.toLowerCase()!==user.email.toLowerCase()||initialVersion?.calculatorSettings?._inventoryCaptureFingerprint!==captureFingerprint||!version)throw new InventoryCatalogError('This request was already used for different package details. Refresh and check the saved package.');
         return {packageId:prior.id,version:version.version,status:prior.status,sheetSyncStatus:version.sheetSyncStatus};
       }
-      await captureInventoryProducts(tx,membership.tenantId,body.storeId!,versionId,components);
+      if(catalogEnabled)await captureInventoryProducts(tx,membership.tenantId,body.storeId!,versionId,components);
+    }
+    if(catalogEnabled&&requestedPackageId){await lockInventoryCatalog(tx,membership.tenantId);await captureInventoryProducts(tx,membership.tenantId,body.storeId!,versionId,components);}
+    let pricingEvidence=null;
+    if(deploymentTarget()==="staging"){
+      try{pricingEvidence=await resolvePricingEvidence(tx,{tenantId:membership.tenantId,storeId:body.storeId!,actor:user.email},body,schedules,previousVersion?.calculatorSettings);}
+      catch(error){throw Object.assign(error instanceof Error?error:Error('Check Calculator pricing evidence.'),{code:'PRICING_EVIDENCE'});}
     }
     if (!requestedPackageId) {
       await tx.insert(packages).values({
@@ -572,7 +592,7 @@ async function savePackage(request: Request) {
       addedComponents:diff.added,
       removedComponents:diff.removed,
       sheetSyncStatus:mode==="draft"?"not_sent":captureInventory?"synced":"pending",
-      calculatorSettings:{...(body.calculatorSettings ?? {}),...(captureFingerprint?{_inventoryCaptureFingerprint:captureFingerprint}:{}),_packageEnded:false,_samePricing:body.samePricing===true,_longTermLifecycle:longTermLifecycle,_recurringCampaign:recurringCampaign,_packageMetadata:metadata,_packageHistorySummary:{schema:1,summary:changeSummary}},
+      calculatorSettings:{...Object.fromEntries(Object.entries(body.calculatorSettings ?? {}).filter(([key])=>!key.startsWith("_"))),...(pricingEvidence?{scenarios:pricingEvidence.scenarios,_pricingEvidence:pricingEvidence}:{}),...(captureFingerprint?{_inventoryCaptureFingerprint:captureFingerprint}:{}),_packageEnded:false,_samePricing:body.samePricing===true,_longTermLifecycle:longTermLifecycle,_recurringCampaign:recurringCampaign,_packageMetadata:metadata,_packageHistorySummary:{schema:1,summary:changeSummary}},
       changeNote:body.changeNote?.trim() || (nextVersion === 1 ? "Initial version" : `Version ${nextVersion}`),
       effectiveFrom:primaryPeriod.effectiveFrom,
       effectiveTo:primaryPeriod.effectiveTo,

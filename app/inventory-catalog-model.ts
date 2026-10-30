@@ -1,5 +1,5 @@
 export const BERLANCO_CATALOG_STORE='shopee-berlanco-beauty-official';
-export type InventoryProduct={sku:string;name:string};
+export type InventoryProduct={sku:string;name:string;id?:string};
 export type StoredInventoryProduct=InventoryProduct & {store_id:string|null;active:boolean};
 export class InventoryCatalogError extends Error {code='INVENTORY_CATALOG_CONFLICT';}
 export function catalogProducts(items:{inventorySku:string;name:string}[]):InventoryProduct[]{

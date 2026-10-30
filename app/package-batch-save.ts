@@ -12,9 +12,9 @@ export function batchCreatePayload(row:BatchPackage,storeId:string,storeName:str
   return [...normal.map(w=>({market:m,priceType:'non_campaign' as const,originalPrice:Number(p.original),sellingPrice:Number(p.normal),promotionType:w.promotionType,effectiveFrom:w.from,effectiveTo:w.to})),...campaign.map(w=>({market:m,priceType:'campaign' as const,originalPrice:Number(p.original),sellingPrice:Number(p.campaign||p.normal),promotionType:w.promotionType,effectiveFrom:w.from,effectiveTo:w.to}))];
  });
  const recurringCampaign:RecurringCampaignRule|null=!same&&d.campaign.mode==='long'?{schema:1,startDate:d.campaign.start,endDate:null,events:d.campaign.events.map(e=>({...defaultRecurringEvent(e),prices:Object.fromEntries(markets.map(m=>[m,{originalPrice:Number(row.prices[m]!.original),sellingPrice:Number(row.prices[m]!.campaign||row.prices[m]!.normal)}]))}))}:null;
- return {batchUpload:true,mode:'publish' as const,clientRequestId,storeId,storeName,name:row.name.trim(),markets,priceSchedules,samePricing:same,longTerm:d.normal.mode==='long',campaignLongTerm:campaign.every(w=>w.to===null),recurringCampaign,
+ return {exportId:row.exportId,priceAdjustmentReason:row.priceAdjustmentReason,batchUpload:true,mode:'publish' as const,clientRequestId,storeId,storeName,name:row.name.trim(),markets,priceSchedules,samePricing:same,longTerm:d.normal.mode==='long',campaignLongTerm:campaign.every(w=>w.to===null),recurringCampaign,
   platforms:Object.entries(row.skus).filter(([,sku])=>sku.trim()).map(([platform,sku])=>({platform:platform==='TikTok'?'TikTok Shop':platform,packageSku:sku.trim()})),
-  components:row.items.filter(i=>i.sku||i.quantity).map(i=>({inventorySku:i.sku.trim(),name:i.sku.trim(),quantity:Number(i.quantity),kind:'product'})),changeNote:'Created from Batch Upload'};
+  components:row.items.filter(i=>i.sku||i.quantity).map(i=>({inventorySku:i.sku.trim(),name:i.name?.trim()||i.sku.trim(),quantity:Number(i.quantity),kind:'product'})),changeNote:'Created from Batch Upload'};
 }
 export type BatchSaveResult={kind:'created'|'draft'|'failed'|'rejected'|'ready';message:string;packageId?:string};
 export type BatchSaveJournal={storeId:string;storeName:string;rows:BatchPackage[];requests:Record<string,string>;results:Record<string,BatchSaveResult>;active:boolean};
