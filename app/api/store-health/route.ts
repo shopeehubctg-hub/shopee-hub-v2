@@ -1,6 +1,6 @@
 import {getChatGPTUser} from '../../chatgpt-auth';
 import {supabaseRest} from '../../supabase-rest';
-import {assertDeploymentIsolation,STAGING_SUPABASE_REF} from '../../deployment-isolation';
+import {assertDeploymentIsolation} from '../../deployment-isolation';
 import owner from '../../account-roster-data.json';
 import {canonicalStoreId} from '../../live-calendar-model';
 import {sourceStoreResolver,type SourceStore} from '../../source-store-mapping';
@@ -11,7 +11,9 @@ const headers={'Cache-Control':'private, no-store'};
 async function bounded<T>(path:string,max:number){const rows:T[]=[];for(let offset=0;offset<max;offset+=500){const page=await supabaseRest<T[]>(`${path}&limit=500&offset=${offset}`);rows.push(...page);if(page.length<500)return rows;}throw Error('Source read limit reached');}
 export async function GET(request:Request){
  try{
-  if(assertDeploymentIsolation()!=='staging'||process.env.SUPABASE_URL?.replace(/\/$/,'')!==`https://${STAGING_SUPABASE_REF}.supabase.co`)return Response.json({error:'Store Health is unavailable in this environment.'},{status:403,headers});
+  // Fail closed when the deployment target and Supabase project do not match.
+  // Both isolated Staging and Production are valid read environments.
+  assertDeploymentIsolation();
   const actor=await getChatGPTUser();if(!actor)return Response.json({error:'Authentication required'},{status:401,headers});
   const [member]=await supabaseRest<Array<{tenant_id:string;role:string;active:boolean}>>(`customer_users?select=tenant_id,role,active&email=eq.${encodeURIComponent(actor.email.toLowerCase())}&limit=1`);
   if(!member?.active||member.role!=='superadmin'||member.tenant_id!==owner.tenantId)return Response.json({error:'Store Health access is unavailable.'},{status:403,headers});
