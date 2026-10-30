@@ -9,7 +9,7 @@ export async function lockInventoryCatalog(tx:Execute,tenantId:string){await tx.
 export async function captureInventoryProducts(tx:Execute,tenantId:string,storeId:string,versionId:string,items:{inventorySku:string;name:string}[]){
  const incoming=catalogProducts(items);
  const keys=sql.join(incoming.map(p=>sql`${p.sku.toLowerCase()}`),sql`, `);
- const existing=await tx.execute(sql`select sku,name,store_id,active from public.inventory_skus where tenant_id=${tenantId} and lower(sku) in (${keys})`);
+ const existing=await tx.execute(sql`select sku,name,store_id,active from public.inventory_skus where tenant_id=${tenantId} and store_id=${storeId} and lower(btrim(sku)) in (${keys})`);
  const additions=newCatalogProducts(Array.from(existing) as StoredInventoryProduct[],incoming,storeId);
  for(const p of additions)await tx.execute(sql`insert into public.inventory_skus(id,tenant_id,store_id,sku,name,source,active) values(${crypto.randomUUID()},${tenantId},${storeId},${p.sku},${p.name},${'package-version:'+versionId},true)`);
  return additions.length;

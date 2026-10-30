@@ -26,10 +26,10 @@ import { endPackage } from "./end-package";
 import { packageHistoryAction } from "../../package-ending";
 import { boundCampaignPeriods } from "../../package-period-bounds";
 import { readCompactPackageRows } from "./compact-read";
-import { duplicateInventory, MAX_INVENTORY_ITEMS } from "../../inventory-items";
-import {projectProducts,productName} from "../inventory-skus/catalog";
+import { duplicateInventory, MAX_INVENTORY_ITEMS, inventoryLinesUnchanged, newInventoryMappings } from "../../inventory-items";
+import {projectProducts,projectProductGroups,productName} from "../inventory-skus/catalog";
 import {resolvePricingEvidence} from "./pricing-evidence";
-import { BERLANCO_CATALOG_STORE, catalogProducts, InventoryCatalogError } from "../../inventory-catalog-model";
+import { catalogProducts, InventoryCatalogError } from "../../inventory-catalog-model";
 import { captureInventoryProducts, inventoryFingerprint, lockInventoryCatalog } from "./inventory-capture";
 
 export const dynamic = "force-dynamic";
@@ -250,7 +250,7 @@ export async function GET(request: Request) {
   const latestPublishedVersion = new Map<string, typeof versions[number]>();
   versions.forEach(version => { if (!latestVersion.has(version.packageId)) latestVersion.set(version.packageId, version); });
   versions.forEach(version => { if (version.sheetSyncStatus === "synced" && !latestPublishedVersion.has(version.packageId)) latestPublishedVersion.set(version.packageId, version); });
-  const displayProducts=deploymentTarget()==="staging"&&scopedStoreIds.includes(BERLANCO_CATALOG_STORE)?await projectProducts(db,membership.tenantId,BERLANCO_CATALOG_STORE):[];
+  const displayProducts=await projectProductGroups(db,membership.tenantId,scopedStoreIds);
   const result=rows.map(row => {
       const endedVersion = latestVersion.get(row.id)?.calculatorSettings?._packageEnded === true ? latestVersion.get(row.id) : undefined;
       const version = endedVersion ?? (["active","scheduled","expired"].includes(row.status)
@@ -277,7 +277,8 @@ export async function GET(request: Request) {
         platforms:currentPlatforms,
         version:version?.version ?? 1,
         promotionType:version?.promotionType ?? "custom",
-        components:(version?.components ?? []).map(item=>row.storeId===BERLANCO_CATALOG_STORE?{...item,name:productName(displayProducts,item.inventorySku,item.name)}:item),
+        savedComponents:version?.components ?? [],
+        components:(version?.components ?? []).map(item=>({...item,name:productName(displayProducts.get(row.storeId)??[],item.inventorySku,item.name)})),
         changeNote:version?.changeNote ?? "",
         addedComponents:version?.addedComponents ?? [],
         removedComponents:version?.removedComponents ?? [],
@@ -378,10 +379,9 @@ async function savePackage(request: Request) {
     campaignLongTerm?: boolean;
     recurringCampaign?: unknown;
   };
-  if(body.batchUpload&&deploymentTarget()!=="staging")return packageError("Saving","Batch creation is only enabled in Staging.",403);
-  const catalogEnabled=deploymentTarget()==="staging"&&body.storeId===BERLANCO_CATALOG_STORE;
+  const catalogEnabled=true;
   const captureInventory=catalogEnabled&&!body.packageId;
-  if(body.captureInventory&&!catalogEnabled)return packageError("Inventory Items","Product capture is available for Berlanco in Staging only.",403);
+  const localReceipt=deploymentTarget()==="staging"&&captureInventory;
   const mode = body.mode ?? "draft";
   if (mode!=="draft"&&mode!=="publish") return packageError("Saving","Choose Create Package or Save Draft.");
   if (mode==="publish"&&!historyWebhookConfigured()) return packageError("Saving","Package History Google Sheet is not connected. Save a draft or ask the administrator to connect the Sheet before creating the package.",503);
@@ -455,10 +455,10 @@ async function savePackage(request: Request) {
     quantity:Number(item.quantity),
     kind:item.kind === "gift" ? "gift" as const : "product" as const,
   }));
-  if(deploymentTarget()==="staging"){
-    if(components.length>MAX_INVENTORY_ITEMS)return packageError("Inventory Items","Use up to 20 inventory items.");
+  if(components.length>MAX_INVENTORY_ITEMS)return packageError("Inventory Items","Use up to 20 inventory items.");
+  if(!body.packageId){
     const duplicate=duplicateInventory(components)[0];if(duplicate)return packageError("Inventory Items",duplicate.message);
-    if(catalogEnabled){const savedProducts=await projectProducts(accessDb,membership.tenantId,body.storeId);for(const item of components)item.name=productName(savedProducts,item.inventorySku,item.name);}
+    const savedProducts=await projectProducts(accessDb,membership.tenantId,body.storeId);for(const item of components)item.name=productName(savedProducts,item.inventorySku,item.name);
   }
   if (components.some(item => !item.inventorySku || !item.name || !Number.isInteger(item.quantity) || item.quantity < 1)) {
     return packageError("Inventory Items","Every inventory item needs an OXM SKU, item name and a whole-number quantity of at least 1.");
@@ -467,7 +467,7 @@ async function savePackage(request: Request) {
     return packageError("Pricing & Promotion","Enter positive Original and Selling prices. Selling Price cannot be higher than Original Price.");
   }
 
-  const verifyCaptureRequest=captureInventory||(deploymentTarget()==="staging"&&body.batchUpload===true);
+  const verifyCaptureRequest=!body.packageId&&(body.captureInventory===true||body.batchUpload===true);
   const captureFingerprint=verifyCaptureRequest?inventoryFingerprint({storeId:body.storeId,name:body.name.trim(),mode,components,platforms,markets,schedules,exportId:body.exportId??null,priceAdjustmentReason:body.priceAdjustmentReason??null,samePricing:!!body.samePricing,longTerm:!!body.longTerm,campaignLongTerm:!!body.campaignLongTerm,recurringCampaign,changeNote:body.changeNote?.trim()??'',calculatorSettings:body.calculatorSettings??null}):null;
   if(verifyCaptureRequest){catalogProducts(components);if(!body.clientRequestId)return packageError("Saving","A stable package request ID is required. Refresh and retry.");}
   const db = await getDb();
@@ -534,6 +534,10 @@ async function savePackage(request: Request) {
     previousVersion = latest;
   }
 
+  if(requestedPackageId&&!inventoryLinesUnchanged(previousComponents,components)){
+    const duplicate=duplicateInventory(components)[0];if(duplicate)return packageError("Inventory Items",duplicate.message);
+  }
+  const mappingsToCapture=requestedPackageId?newInventoryMappings(previousComponents,components):components;
   const diff = componentDiff(previousComponents, components);
   const metadata:PackageMetadata={name:body.name.trim(),market:markets.join(","),channel:platforms.map(item=>item.platform).join(", "),packageSku:platforms[0].packageSku};
   const [oldPrices, oldSkus] = previousVersion ? await Promise.all([
@@ -550,8 +554,8 @@ async function savePackage(request: Request) {
     ? emailChangeSummary({components,calculatorSettings:{_packageMetadata:metadata,_recurringCampaign:recurringCampaign}},previousVersion,schedules,oldPrices,platforms,oldSkus)
     : "配套资料修改（历史比较资料不足）";
   const captureReplay=await db.transaction(async tx => {
+    if(catalogEnabled)await lockInventoryCatalog(tx,membership.tenantId);
     if(verifyCaptureRequest){
-      await lockInventoryCatalog(tx,membership.tenantId);
       const [prior]=await tx.select().from(packages).where(eq(packages.id,packageId)).limit(1);
       if(prior){
         const [version]=await tx.select().from(packageVersions).where(eq(packageVersions.packageId,prior.id)).orderBy(desc(packageVersions.version)).limit(1);
@@ -559,11 +563,10 @@ async function savePackage(request: Request) {
         if(prior.deletedAt||prior.tenantId!==membership.tenantId||prior.storeId!==body.storeId||prior.createdBy.toLowerCase()!==user.email.toLowerCase()||initialVersion?.calculatorSettings?._inventoryCaptureFingerprint!==captureFingerprint||!version)throw new InventoryCatalogError('This request was already used for different package details. Refresh and check the saved package.');
         return {packageId:prior.id,version:version.version,status:prior.status,sheetSyncStatus:version.sheetSyncStatus};
       }
-      if(catalogEnabled)await captureInventoryProducts(tx,membership.tenantId,body.storeId!,versionId,components);
     }
-    if(catalogEnabled&&requestedPackageId){await lockInventoryCatalog(tx,membership.tenantId);await captureInventoryProducts(tx,membership.tenantId,body.storeId!,versionId,components);}
+    if(catalogEnabled&&mappingsToCapture.length)await captureInventoryProducts(tx,membership.tenantId,body.storeId!,versionId,mappingsToCapture);
     let pricingEvidence=null;
-    if(deploymentTarget()==="staging"){
+    {
       try{pricingEvidence=await resolvePricingEvidence(tx,{tenantId:membership.tenantId,storeId:body.storeId!,actor:user.email},body,schedules,previousVersion?.calculatorSettings);}
       catch(error){throw Object.assign(error instanceof Error?error:Error('Check Calculator pricing evidence.'),{code:'PRICING_EVIDENCE'});}
     }
@@ -576,7 +579,7 @@ async function savePackage(request: Request) {
         name:body.name!.trim(),
         channel:platforms.map(item => item.platform).join(", "),
         market:markets.join(","),
-        status:captureInventory&&mode==="publish"?packageLifecycleStatus(schedules,{_longTermLifecycle:longTermLifecycle},marketToday(storeMarket)):"draft",
+        status:localReceipt&&mode==="publish"?packageLifecycleStatus(schedules,{_longTermLifecycle:longTermLifecycle},marketToday(storeMarket)):"draft",
         createdBy:user.email,
         updatedAt:now,
       });
@@ -591,7 +594,7 @@ async function savePackage(request: Request) {
       promotionType:schedules.find(item=>item.priceType==="campaign")?.promotionType ?? "monthly",
       addedComponents:diff.added,
       removedComponents:diff.removed,
-      sheetSyncStatus:mode==="draft"?"not_sent":captureInventory?"synced":"pending",
+      sheetSyncStatus:mode==="draft"?"not_sent":localReceipt?"synced":"pending",
       calculatorSettings:{...Object.fromEntries(Object.entries(body.calculatorSettings ?? {}).filter(([key])=>!key.startsWith("_"))),...(pricingEvidence?{scenarios:pricingEvidence.scenarios,_pricingEvidence:pricingEvidence}:{}),...(captureFingerprint?{_inventoryCaptureFingerprint:captureFingerprint}:{}),_packageEnded:false,_samePricing:body.samePricing===true,_longTermLifecycle:longTermLifecycle,_recurringCampaign:recurringCampaign,_packageMetadata:metadata,_packageHistorySummary:{schema:1,summary:changeSummary}},
       changeNote:body.changeNote?.trim() || (nextVersion === 1 ? "Initial version" : `Version ${nextVersion}`),
       effectiveFrom:primaryPeriod.effectiveFrom,
@@ -614,8 +617,11 @@ async function savePackage(request: Request) {
     });
   });
 
-  if(captureReplay)return Response.json({ok:true,...captureReplay});
-  if(captureInventory&&mode==="publish")return Response.json({ok:true,packageId,version:nextVersion,status:packageLifecycleStatus(schedules,{_longTermLifecycle:longTermLifecycle},marketToday(storeMarket)),sheetSyncStatus:"synced",added:diff.added,removed:diff.removed},{status:201});
+  if(captureReplay){
+    if(mode==="draft"||captureReplay.sheetSyncStatus==="synced")return Response.json({ok:true,...captureReplay});
+    return Response.json({ok:false,savedAsDraft:true,...captureReplay,error:"The package is saved, but Google Sheet sync is not confirmed. Refresh the list and retry sync from its card."},{status:503});
+  }
+  if(localReceipt&&mode==="publish")return Response.json({ok:true,packageId,version:nextVersion,status:packageLifecycleStatus(schedules,{_longTermLifecycle:longTermLifecycle},marketToday(storeMarket)),sheetSyncStatus:"synced",added:diff.added,removed:diff.removed},{status:201});
   if (mode==="draft") return Response.json({ok:true,packageId,version:nextVersion,status:"draft",sheetSyncStatus:"not_sent",added:diff.added,removed:diff.removed},{status:201});
 
   const platformMap = Object.fromEntries(["Shopee","Lazada","TikTok Shop"].map(platform=>[platform,platforms.filter(item=>item.platform===platform).map(item=>item.packageSku).join(" | ")]));
