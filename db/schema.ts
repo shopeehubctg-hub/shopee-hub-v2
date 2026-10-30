@@ -145,9 +145,14 @@ export const managementActions = pgTable("management_actions", {
 
 export const inventorySkus = pgTable("inventory_skus", {
   id:text("id").primaryKey(), tenantId:text("tenant_id").notNull().references(()=>tenants.id), sku:text("sku").notNull(),
+  storeId:text("store_id").notNull(),
   name:text("name").notNull(), source:text("source").notNull().default("OXM"), active:boolean("active").notNull().default(true),
   syncedAt:timestamp("synced_at", { withTimezone:true, mode:"string" }).notNull().defaultNow(),
-}, table=>[uniqueIndex("inventory_sku_tenant_idx").on(table.tenantId,table.sku)]);
+}, table=>[
+  uniqueIndex("inventory_sku_project_key").on(table.tenantId,table.storeId,sql`lower(btrim(${table.sku}))`),
+  unique("inventory_skus_tenant_store_id_key").on(table.tenantId,table.storeId,table.id),
+  foreignKey({name:"inventory_skus_tenant_store_fk",columns:[table.tenantId,table.storeId],foreignColumns:[stores.tenantId,stores.id]}),
+]);
 
 export const packages = pgTable("packages", {
   id:text("id").primaryKey(), tenantId:text("tenant_id").notNull().references(()=>tenants.id), storeId:text("store_id").notNull().references(()=>stores.id),

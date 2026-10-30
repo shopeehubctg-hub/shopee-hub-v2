@@ -34,8 +34,9 @@ export function calculatorSnapshots(value: unknown): CalculatorSnapshot[] {
 
 export function publicCalculatorSettings(value: Record<string, unknown> | null) {
   const snapshots = calculatorSnapshots(value);
-  if (!snapshots.length) return null;
-  if (Array.isArray(value?.scenarios)) return { scenarios: snapshots };
+  const evidence=value?._pricingEvidence;
+  if (!snapshots.length) return evidence?{_pricingEvidence:evidence}:null;
+  if (Array.isArray(value?.scenarios)) return { scenarios: snapshots,...(evidence?{_pricingEvidence:evidence}:{}) };
   const { _packageMetadata, _packageHistorySummary, _packageEnded, _endedAt, _endedDate, _endedBy, ...snapshot } = snapshots[0] as CalculatorSnapshot & Record<string, unknown>;
   void _packageMetadata;
   void _packageHistorySummary;
