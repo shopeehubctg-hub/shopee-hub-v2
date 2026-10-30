@@ -19,6 +19,7 @@ const FakeSellerReport=lazy(()=>import("./fake-seller-report").then(module=>({de
 const PermissionSettings=lazy(()=>import("./permission-settings").then(module=>({default:module.PermissionSettings})));
 const LiveCalendar=lazy(()=>import("./live-calendar").then(module=>({default:module.LiveCalendar})));
 const AccountPanel=lazy(()=>import("./account-panel").then(module=>({default:module.AccountPanel})));
+const OverviewStoreSales=lazy(()=>import("./overview-store-sales").then(module=>({default:module.OverviewStoreSales})));
 const OverviewSales=lazy(()=>import("./overview-sales").then(module=>({default:module.OverviewSales})));
 const SNAPSHOT_SECTIONS=new Set(["overview","advertising","actions","calculator","orders","health","protection"]);
 
@@ -360,7 +361,7 @@ export default function Home() {
 
       <DashboardModuleBoundary key={section}><Suspense fallback={<ModuleLoading/>}>
       {needsModuleData&&!storeId?<div className="card" role="status">No stores are available. Select or add a store to view this module.</div>:!moduleReady?(currentModule?.error?<div className="card" role="alert"><p>{currentModule.error}</p><button type="button" onClick={()=>setModuleRetry(value=>value+1)}>Retry module</button></div>:<ModuleLoading/>):stagingSnapshotUnavailable?<div className="card" role="status"><h2>No data</h2><p>No Staging snapshot is available for this store.</p></div>:<>
-      {salesOverview && <OverviewSales refreshKey={dataRevision} canView={shellData?.access?.role==="superadmin"}/> }
+      {salesOverview && (allStoresSelected ? <OverviewSales refreshKey={dataRevision} canView={shellData?.access?.role==="superadmin"}/> : <OverviewStoreSales key={storeId} storeId={storeId} refreshKey={dataRevision} canView={shellData?.access?.role==="superadmin"}/>)}
       {section==="overview" && !salesOverview && <div className="page">
         <div className="page-title"><div><p className="kicker">OVERVIEW</p><h2>Business Pulse</h2></div><div className="warning-pill">{importantWarningCount} important warnings</div></div>
         <section className="owner-brief"><div><span>今日重点</span><strong>{adFunds.needsTopUp ? `Ad Balance ${formatRinggit(adFunds.balance)} · Top-up ${formatRinggit(adFunds.recommendedTopUp)}` : `${warningOrders.length} orders need attention`}</strong><small>{adFunds.syncStatus === "delayed" ? "Advertising data delayed" : (adFunds.needsTopUp ? (adFunds.topUpOwner === "shopee_hub" ? "Managed by Shopee Hub" : "Action required") : "Ads healthy")}</small></div><button onClick={()=>setSection(adFunds.needsTopUp?"advertising":"orders")}>View →</button></section>
