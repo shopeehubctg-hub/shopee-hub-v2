@@ -4,6 +4,15 @@ import { supabaseRest } from '../../../supabase-rest';
 import { summarizeAccessibleStoreSales,type AccessibleStoreSale } from '../../../store-sales-model';
 export const dynamic='force-dynamic';
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'private, no-store'}});
+async function readStoreSales(path:string,max=10000){
+ const rows:AccessibleStoreSale[]=[];
+ for(let offset=0;offset<max;offset+=500){
+  const page=await supabaseRest<AccessibleStoreSale[]>(`${path}&limit=500&offset=${offset}`);
+  rows.push(...page);
+  if(page.length<500)return rows;
+ }
+ throw Error('Store sales read limit reached');
+}
 export async function GET(request:Request){
  try{
   const actor=await getChatGPTUser();
@@ -30,8 +39,7 @@ export async function GET(request:Request){
    const month=requested||latest[0]?.report_date.slice(0,7)||'';if(!month)return json({month:'',latestDate:null,rows:[],sample:false,scope:'assigned',storeCount:storeIds.length});
    if(month>today.slice(0,7))return json({error:'Choose a valid month.'},400);
    const next=new Date(`${month}-01T00:00:00Z`);next.setUTCMonth(next.getUTCMonth()+1);
-   const rows=await supabaseRest<AccessibleStoreSale[]>(`bigseller_store_daily?select=store_id,report_date,marketplace,currency,gross_revenue,synced_at&tenant_id=eq.${tenant}&${storeFilter}&report_date=gte.${month}-01&report_date=lt.${next.toISOString().slice(0,10)}&report_date=lte.${today}&order=report_date.asc&limit=5000`);
-   if(rows.length===5000)return json({error:'Store sales need review.'},503);
+   const rows=await readStoreSales(`bigseller_store_daily?select=store_id,report_date,marketplace,currency,gross_revenue::text,synced_at&tenant_id=eq.${tenant}&${storeFilter}&report_date=gte.${month}-01&report_date=lt.${next.toISOString().slice(0,10)}&report_date=lte.${today}&order=report_date.asc,store_id.asc`);
    return json({month,sample:false,scope:'assigned',storeCount:storeIds.length,...summarizeAccessibleStoreSales(rows,month)});
   }
   const latest=await supabaseRest<Array<{report_date:string}>>(`sales_overview_daily?select=report_date&tenant_id=eq.${tenant}&order=report_date.desc&limit=1`);
