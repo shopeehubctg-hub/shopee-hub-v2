@@ -57,7 +57,7 @@ async function portalUsers(auth: PermissionContext){
     return {...store,name:store.display_name??store.name,...storeDetails(directory,store.id),...(accountReadable?{accountUnit:units.length===1?units[0]:null,accountUnitCount:units.length}:{})};
   });
   const ids=users.map(user=>user.id);const [moduleRows,storeRows]=ids.length?await Promise.all([
-    supabaseRest<Array<{user_id:number;module_id:string;enabled:boolean}>>(`user_module_permissions?select=user_id,module_id,enabled&user_id=in.(${ids.join(",")})`),
+    supabaseRest<Array<{user_id:number;module_id:string;enabled:boolean;additive_grant:boolean}>>(`user_module_permissions?select=user_id,module_id,enabled,additive_grant&user_id=in.(${ids.join(",")})`),
     supabaseRest<Array<{user_id:number;store_id:string}>>(`user_store_access?select=user_id,store_id&enabled=eq.true&user_id=in.(${ids.join(",")})`),
   ]):[[],[]];
   const clientDefaults=ALL_PORTAL_MODULE_IDS.filter(id=>id==="live_calendar"?tenantModules.find(row=>row.module_id===id)?.enabled===true:tenantModules.find(row=>row.module_id===id)?.enabled!==false);

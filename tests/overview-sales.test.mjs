@@ -16,7 +16,7 @@ test('currency mismatch and database failure return safe errors',async()=>{handl
 
 import {JSDOM} from 'jsdom';
 import React,{act} from 'react';
-const componentBundle=await build({entryPoints:['app/overview-sales.tsx'],bundle:true,write:false,platform:'node',format:'cjs',packages:'external',jsx:'automatic'});
+const componentBundle=await build({entryPoints:['app/overview-sales.tsx'],bundle:true,write:false,platform:'node',format:'cjs',packages:'external',jsx:'automatic',loader:{'.css':'empty'}});
 const module={exports:{}};vm.runInNewContext(componentBundle.outputFiles[0].text,{module,exports:module.exports,require,fetch:(...args)=>globalThis.fetch(...args),AbortController,console,Intl,Date});const {OverviewSales}=module.exports;
 test('sales UI uses latest MTD snapshot, uses latest month/platform, and distinguishes loading/empty/failure',async()=>{
  const dom=new JSDOM('<div id="root"></div>',{url:'https://local.test/'});
@@ -48,3 +48,5 @@ test('sales UI uses latest MTD snapshot, uses latest month/platform, and disting
 });
 
 test('sales endpoint rejects missing sessions and inactive members',async()=>{auth=null;calls=[];assert.equal((await GET(request(''))).status,401);auth={email:'owner@example.com'};member.active=false;assert.equal((await GET(request(''))).status,403);assert.equal(calls.length,0);member.active=true;});
+
+test('independent leaderboard access never fetches or reveals locked company sales',async()=>{const dom=new JSDOM('<div id="root"></div>',{url:'https://local.test/'});for(const key of ['window','document','navigator','HTMLElement','Event','MouseEvent'])Object.defineProperty(globalThis,key,{configurable:true,value:dom.window[key]});globalThis.IS_REACT_ACT_ENVIRONMENT=true;const {createRoot}=await import('react-dom/client'),root=createRoot(document.getElementById('root'));const reads=[];globalThis.fetch=async url=>{reads.push(url);assert.ok(url.includes('live-leaderboard'));return {ok:true,json:async()=>({status:'complete',scope:'assigned',shops:[{name:'Permitted Store',rank:1,salesCents:100,observed:true}],updated:null})};};await act(async()=>root.render(React.createElement(OverviewSales,{canView:false,canViewLeaderboard:true})));assert.match(document.body.textContent,/Permitted Store/);assert.match(document.body.textContent,/Your stores/);assert.match(document.body.textContent,/Sales data is restricted/);assert.equal(reads.length,1);assert.equal(document.querySelectorAll('svg[aria-label=Locked]').length,6);assert.equal(document.querySelector('[aria-label="Daily sales chart"]'),null);await act(async()=>root.unmount());dom.window.close();});
