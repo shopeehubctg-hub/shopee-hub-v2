@@ -150,6 +150,10 @@ export default function Home() {
   const [packageDraftKey, setPackageDraftKey] = useState("");
   const [standalonePackageCreate, setStandalonePackageCreate] = useState(false);
 
+  useEffect(()=>{
+    if (standalonePackageCreate && requestedSection === "packages") window.scrollTo({top:0});
+  },[standalonePackageCreate,requestedSection]);
+
   const moduleKey=`${section}:${storeId}:${dataRevision}:${moduleRetry}`;
   const salesOverview=section==="overview";
   const needsModuleData=SNAPSHOT_SECTIONS.has(section)&&!salesOverview&&section!=="health";
@@ -257,9 +261,35 @@ export default function Home() {
   }
 
   function openPackageDraft(prefills:PackagePrefill[]) {
+    if (!storeId || storeId === "all") throw new Error("Please select a store before creating packages.");
+    if (!allowedSections.includes("packages")) throw new Error("Your account needs access to Packages & Pricing. Please contact your administrator.");
     const draftKey = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    window.localStorage.setItem(`package-draft:${draftKey}`, JSON.stringify({ prefills, storeId }));
-    window.open(`${window.location.pathname}?section=packages&packageDraft=${encodeURIComponent(draftKey)}`, "_blank", "noopener,noreferrer");
+    const draftUrl = `${window.location.pathname}?section=packages&packageDraft=${encodeURIComponent(draftKey)}`;
+    let stored = false;
+    try {
+      window.localStorage.setItem(`package-draft:${draftKey}`, JSON.stringify({ prefills, storeId }));
+      stored = true;
+    } catch { /* Keep the batch in memory when browser storage is unavailable. */ }
+    if (stored) {
+      try {
+        // Open a same-origin blank tab first: noopener itself returns null even
+        // when a tab opens, so it cannot tell us whether the popup was blocked.
+        const tab = window.open("", "_blank");
+        if (tab) {
+          tab.opener = null;
+          tab.location.replace(draftUrl);
+          return;
+        }
+      } catch { /* Browser popup policies must not prevent package creation. */ }
+    }
+    if (stored) {
+      try { window.history.replaceState(window.history.state,"",draftUrl); } catch { /* In-memory navigation remains available. */ }
+    }
+    setPackagePrefills(prefills);
+    setPackageDraftKey(stored ? draftKey : "");
+    setStandalonePackageCreate(true);
+    setStoreSelectionMade(true);
+    setSection("packages");
   }
   const allStoresSelected = storeId === "all";
   const store = allStoresSelected ? null : (data?.stores.find(s => s.id === storeId) ?? data?.stores[0]);

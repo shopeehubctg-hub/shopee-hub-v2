@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { autoTopUpEligibleForStore, calculatePricePerUnit, calculateShopeePrice, calculateShopeePriceForCustomerTarget, categoryIndexForProduct, commissionRateFor, maximumCoFundVoucher, resolvedCategoryForProduct, reviewPriceLadder, SERVICE_MODES } from "./price-calculator-model";
 import {marketChoices,marketChoiceLabel,type MarketChoice} from "./package-batch-model";
 import type { CalculatorSnapshot, PackagePrefill } from "./calculator-types";
@@ -48,6 +49,8 @@ export function PriceCalculator({ staging=false, storeId="", storeName="", produ
   const [batchMessage,setBatchMessage] = useState("");
   const [packages,setPackages] = useState(INITIAL_PACKAGES);
   const [pendingConfirmation,setPendingConfirmation] = useState<PendingConfirmation|null>(null);
+  const [createError,setCreateError] = useState("");
+  useEffect(()=>setCreateError(""),[pendingConfirmation]);
   const [pricingGoals,setPricingGoals] = useState<Record<ServiceMode,GoalSetting>>({
     nonCampaign:{goal:"sameCustomerPrice",discountUnit:"rm",discountValue:""},
     campaign:{goal:"sameCustomerPrice",discountUnit:"rm",discountValue:""},
@@ -192,9 +195,19 @@ export function PriceCalculator({ staging=false, storeId="", storeName="", produ
   const ladderRowsByMode=useMemo(()=>new Map(ladderReviews.map(review=>[review.mode,new Map(review.rows.map(row=>[row.name,row]))])),[ladderReviews]);
   function confirmCreate() {
     if (!pendingConfirmation) return;
-    if (pendingConfirmation.kind==="single") onCreatePackage?.(pendingConfirmation.rows[0].prefill);
-    else onCreatePackages?.(pendingConfirmation.rows.map(item=>item.prefill));
-    setPendingConfirmation(null);
+    try {
+      setCreateError("");
+      if (pendingConfirmation.kind==="single") {
+        if (!onCreatePackage) throw new Error("Unable to open Packages & Pricing. Please retry.");
+        onCreatePackage(pendingConfirmation.rows[0].prefill);
+      } else {
+        if (!onCreatePackages) throw new Error("Unable to open Packages & Pricing. Please retry.");
+        onCreatePackages(pendingConfirmation.rows.map(item=>item.prefill));
+      }
+      setPendingConfirmation(null);
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : "Unable to open Packages & Pricing. Please retry.");
+    }
   }
   function pricingGoalSummary(mode:ServiceMode) {
     const setting = pricingGoals[mode];
@@ -313,6 +326,6 @@ export function PriceCalculator({ staging=false, storeId="", storeName="", produ
       </article>)}</div>
     </section>
     {ladderReviews.length>0&&<section className="package-ladder-review card"><div className="calculator-section-head"><div><p className="kicker">STEP 3 · PACKAGE PPU COMPARISON</p><h3>Package Price Per Unit (PPU) Review</h3><span>Shows packages with Main Product Qty</span></div><button className="create-all-packages" disabled={!readyPackages.length} onClick={()=>setPendingConfirmation({kind:"batch",rows:readyConfirmationRows})}>Create All Ready ({readyPackages.length})</button></div><div className="ladder-sheet"><div className="ladder-sheet-head"><span>Package</span><span>Qty</span><span>Non-Campaign Price Per Unit</span><span>Non-Campaign Level</span><span>Campaign Price Per Unit</span><span>Campaign Level</span></div>{packages.flatMap(row=>{const nonCampaign=ladderRowsByMode.get("nonCampaign")?.get(row.name);const campaign=ladderRowsByMode.get("campaign")?.get(row.name);if(!nonCampaign||!campaign)return[];return [<div className="ladder-sheet-row" key={row.id}><b>{row.name}</b><span>{positive(row.mainProductQuantity)}</span><strong>{money(nonCampaign.ppu)}</strong><em className={nonCampaign.status}>{nonCampaign.label}</em><strong>{money(campaign.ppu)}</strong><em className={campaign.status}>{campaign.label}</em></div>];})}</div></section>}
-    {pendingConfirmation&&<div className="calculator-confirm-overlay" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setPendingConfirmation(null);}}><section className="calculator-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="calculator-confirm-title"><header><div><p className="kicker">FINAL CHECK</p><h3 id="calculator-confirm-title">Check Final Packages & Prices</h3><span>Continue to Packages & Pricing after you confirm.</span></div><button aria-label="Close confirmation" onClick={()=>setPendingConfirmation(null)}>×</button></header><div className="calculator-confirm-table"><table><thead><tr><th>Package</th><th>Day</th><th>Main Product Qty</th><th>Meta Price</th><th>Meta Price Per Unit</th><th>Shopee Price</th><th>Buyer Payment</th><th>Price Per Unit</th></tr></thead><tbody>{pendingConfirmation.rows.map((item,index)=><tr key={`${item.prefill.requestId}-${index}`}><td><b>{item.prefill.name}</b></td><td>{item.scenario}</td><td>{item.quantity||"—"}</td><td>{money(item.prefill.calculatorSettings.facebookPrice)}</td><td>{item.facebookPpu===null?"—":money(item.facebookPpu)}</td><td><strong>{money(item.prefill.sellingPrice)}</strong></td><td>{money(item.prefill.calculatorSettings.customerVoucherPrice)}</td><td>{item.customerPpu===null?"—":money(item.customerPpu)}</td></tr>)}</tbody></table></div><footer><button className="confirm-cancel" onClick={()=>setPendingConfirmation(null)}>Back to Edit</button><button className="confirm-create" onClick={confirmCreate}>Confirm & Continue</button></footer></section></div>}
+    {pendingConfirmation&&createPortal(<div className="calculator-confirm-overlay" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setPendingConfirmation(null);}}><section className="calculator-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="calculator-confirm-title"><header><div><p className="kicker">FINAL CHECK</p><h3 id="calculator-confirm-title">Check Final Packages & Prices</h3><span>Continue to Packages & Pricing after you confirm.</span></div><button aria-label="Close confirmation" onClick={()=>setPendingConfirmation(null)}>×</button></header><div className="calculator-confirm-table"><table><thead><tr><th>Package</th><th>Day</th><th>Main Product Qty</th><th>Meta Price</th><th>Meta Price Per Unit</th><th>Shopee Price</th><th>Buyer Payment</th><th>Price Per Unit</th></tr></thead><tbody>{pendingConfirmation.rows.map((item,index)=><tr key={`${item.prefill.requestId}-${index}`}><td><b>{item.prefill.name}</b></td><td>{item.scenario}</td><td>{item.quantity||"—"}</td><td>{money(item.prefill.calculatorSettings.facebookPrice)}</td><td>{item.facebookPpu===null?"—":money(item.facebookPpu)}</td><td><strong>{money(item.prefill.sellingPrice)}</strong></td><td>{money(item.prefill.calculatorSettings.customerVoucherPrice)}</td><td>{item.customerPpu===null?"—":money(item.customerPpu)}</td></tr>)}</tbody></table></div>{createError&&<p className="calculator-handoff-error package-message error" role="alert">{createError}</p>}<footer><button className="confirm-cancel" onClick={()=>setPendingConfirmation(null)}>Back to Edit</button><button className="confirm-create" onClick={confirmCreate}>Confirm & Continue</button></footer></section></div>,document.body)}
   </div>;
 }
