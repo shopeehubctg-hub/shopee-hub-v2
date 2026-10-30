@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { autoTopUpEligibleForStore, calculatePricePerUnit, calculateShopeePrice, calculateShopeePriceForCustomerTarget, categoryIndexForProduct, commissionRateFor, maximumCoFundVoucher, resolvedCategoryForProduct, reviewPriceLadder, SERVICE_MODES } from "./price-calculator-model";
+import {marketChoices,marketChoiceLabel,type MarketChoice} from "./package-batch-model";
 import type { CalculatorSnapshot, PackagePrefill } from "./calculator-types";
 import type { ProjectProductProfile } from "./product-catalog";
 import { VOUCHER_PRESET_SOURCE, voucherPresetFor } from "./voucher-presets.js";
@@ -21,7 +22,7 @@ type FeeDraft = {
   sellerShipping:NumberValue; facebookShipping:NumberValue;
 };
 type CoFundVoucher = { id:number; campaignName:string; campaignDate:string|null; campaignStartAt:string|null; campaignEndAt:string|null; voucherName:string; discountAmount:number; currency:string; quantity:number };
-type Props = { storeName?:string; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; onCreatePackage?:(prefill:PackagePrefill)=>void; onCreatePackages?:(prefills:PackagePrefill[])=>void };
+type Props = { staging?:boolean; storeId?:string; storeName?:string; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; onCreatePackage?:(prefill:PackagePrefill)=>void; onCreatePackages?:(prefills:PackagePrefill[])=>void };
 type ConfirmationRow = { prefill:PackagePrefill; scenario:string; quantity:number; facebookPpu:number|null; customerPpu:number|null };
 type PendingConfirmation = { kind:"single"|"batch"; rows:ConfirmationRow[] };
 type LadderRow = { name:string; quantity:number; customerPrice:number; ppu:number; status:"base"|"better"|"higher"; label:string };
@@ -42,7 +43,9 @@ const pct = (value:number) => `${Number.isFinite(value) ? value.toFixed(2) : "0.
 const positive = (value:string|number) => Math.max(0, Number(value) || 0);
 const editableNumber = (value:string):NumberValue => value===""?"":positive(value);
 
-export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[], onCreatePackage, onCreatePackages }:Props) {
+export function PriceCalculator({ staging=false, storeId="", storeName="", productProfile, coFundVouchers=[], onCreatePackage, onCreatePackages }:Props) {
+  const [batchMarket,setBatchMarket] = useState<MarketChoice>("MY");
+  const [batchMessage,setBatchMessage] = useState("");
   const [packages,setPackages] = useState(INITIAL_PACKAGES);
   const [pendingConfirmation,setPendingConfirmation] = useState<PendingConfirmation|null>(null);
   const [pricingGoals,setPricingGoals] = useState<Record<ServiceMode,GoalSetting>>({
@@ -265,7 +268,17 @@ export function PriceCalculator({ storeName="", productProfile, coFundVouchers=[
     </section>
 
     <section className="calculator-table calculator-results card">
-      <div className="calculator-section-head"><div><p className="kicker">STEP 2 · PACKAGE RESULTS</p><h3>Recommended Prices</h3></div><div className="calculator-result-head-actions"><button className="create-all-packages" disabled={!readyPackages.length} onClick={()=>setPendingConfirmation({kind:"batch",rows:readyConfirmationRows})}>Create All Ready ({readyPackages.length})</button><button onClick={addPackage}>+ Add Package</button></div></div>
+      <div className="calculator-section-head"><div><p className="kicker">STEP 2 · PACKAGE RESULTS</p><h3>Recommended Prices</h3></div><div className="calculator-result-head-actions">{<label className="calculator-country-picker">Select Countries<select value={batchMarket} onChange={e=>setBatchMarket(e.target.value as MarketChoice)}>{marketChoices.map(m=><option key={m} value={m}>{marketChoiceLabel(m)}</option>)}</select></label>}{<button type="button" disabled={!storeName} onClick={async()=>{try{
+ const rows=calculations.flatMap(({row,scenarios})=>{
+ const normal=scenarios.find(s=>s.mode==="nonCampaign"),campaign=scenarios.find(s=>s.mode==="campaign");
+ if(!normal||!campaign||!packagePrefill(row,normal.mode,normal.result,normal.suggested,row.id)||!packagePrefill(row,campaign.mode,campaign.result,campaign.suggested,row.id))return [];
+ return [{requestId:crypto.randomUUID(),code:`PKG-${row.id}`,name:row.name,scenarios:[packagePrefill(row,normal.mode,normal.result,normal.suggested,row.id)!.calculatorSettings,packagePrefill(row,campaign.mode,campaign.result,campaign.suggested,row.id)!.calculatorSettings],normal:Number(normal.result.requiredPrice.toFixed(2)),campaign:Number(campaign.result.requiredPrice.toFixed(2))}];});
+ if(!rows.length){setBatchMessage("Complete package prices and quantities first.");return;}
+ if(!storeId)throw Error('Select a store before exporting.');
+ const response=await fetch('/api/calculator-exports',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({storeId,rows})});const saved=await response.json();if(!response.ok)throw Error(saved.error||'Unable to save Calculator settings.');
+ const catalogResponse=await fetch('/api/inventory-skus?storeId='+encodeURIComponent(storeId),{cache:'no-store'});const catalog=await catalogResponse.json();if(!catalogResponse.ok)throw Error(catalog.error||'Unable to load products.');
+ await (await import("./package-batch-excel")).saveBatch(rows.map((row,index)=>({...row,exportId:saved.rows[index].id})),batchMarket,{products:catalog.products,storeId});setBatchMessage(`${rows.length} packages downloaded. Fill Original Price, platform SKUs and inventory pairs across each row (SG / TH / PH prices are blank if selected), then use Batch Upload in Packages & Pricing.`);
+ }catch(error){setBatchMessage(error instanceof Error?error.message:"Download failed. Please retry.");}}}>Download Excel</button>}{!storeName&&<small role="status">Please select a store first to download your packages.</small>}{batchMessage&&<p role="status">{batchMessage}</p>}<button className="create-all-packages" disabled={!readyPackages.length} onClick={()=>setPendingConfirmation({kind:"batch",rows:readyConfirmationRows})}>Create All Ready ({readyPackages.length})</button><button onClick={addPackage}>+ Add Package</button></div></div>
       <div className="package-result-list">{calculations.map(({row,scenarios})=><article className="package-result-card dual-package-card" key={row.id}>
         <div className="dual-package-inputs">
           <label className="result-input"><span>Package</span><input className="package-name-input" value={row.name} onChange={event=>updatePackage(row.id,"name",event.target.value)}/></label>

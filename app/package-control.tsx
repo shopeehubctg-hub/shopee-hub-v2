@@ -1,4 +1,9 @@
 "use client";
+import {duplicateInventory,MAX_INVENTORY_ITEMS,inventoryLinesUnchanged} from "./inventory-items";
+import {PricingEvidencePanel} from "./pricing-evidence-panel";
+import type {PricingEvidence} from "./pricing-evidence";
+import {InventorySkuPicker} from "./inventory-sku-picker";
+import {PackageBatchPreview} from "./package-batch-preview";
 
 import { MARKET_CODES, MARKET_CONFIG, isMarket, marketMoney, marketFromPlatform, marketDate, type MarketCode } from "./markets";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
@@ -8,7 +13,7 @@ import type { CalculatorSnapshot, PackagePrefill } from "./calculator-types";
 import { calculatorSnapshots, packageHistoryChanges, packageHistoryTime, type PackageHistorySnapshot } from "./package-history";
 import { defaultRecurringEvent, recurringEventIds, recurringEventLabels, validateRecurringCampaign, type RecurringCampaignEvent, type RecurringCampaignRule } from "./recurring-campaign";
 
-type ComponentLine = { inventorySku:string; name:string; quantity:number; kind:"product"|"gift" };
+type ComponentLine = { inventorySku:string; name:string; quantity:number; kind:"product"|"gift"; uiKey?:string };
 type PlatformName = "Shopee"|"Lazada"|"TikTok Shop";
 type PlatformLine = { platform:PlatformName; packageSku:string };
 type MarketName = MarketCode;
@@ -23,7 +28,7 @@ type PriceSchedule = {
 type PriceScheduleInput = Omit<PriceSchedule,"originalPrice"|"sellingPrice"> & { originalPrice:string; sellingPrice:string };
 type CampaignPeriod = { effectiveFrom:string; effectiveTo:string; originalFrom?:string; originalTo?:string };
 type RecurringEventDraft = Omit<RecurringCampaignEvent,"prices"> & {prices:Partial<Record<MarketName,{originalPrice:string;sellingPrice:string}>>};
-type CalculatorHistorySettings = CalculatorSnapshot | { scenarios:CalculatorSnapshot[] };
+type CalculatorHistorySettings = (CalculatorSnapshot | { scenarios?:CalculatorSnapshot[] }) & {_pricingEvidence?:PricingEvidence};
 type HistoryLine = PackageHistorySnapshot & {
   version:number; changeNote:string; promotionType:"monthly"|"custom"; effectiveFrom:string; effectiveTo?:string|null;
   addedComponents?:ComponentLine[]; removedComponents?:ComponentLine[]; platforms?:PlatformLine[];
@@ -34,9 +39,10 @@ export type PackageItem = {
   id:string; storeId:string; storeName?:string; packageSku:string; name:string; market:string; status:string; version:number;
   pendingVersion?:number|null; durationType?:"long_term"|"monthly";
   promotionType:"monthly"|"custom"; originalPrice:number; sellingPrice:number; effectiveFrom:string; effectiveTo?:string|null;
-  components:ComponentLine[]; platforms:PlatformLine[]; sheetSyncStatus?:"not_sent"|"pending"|"synced"|"failed"; history?:HistoryLine[]; historyLoaded?:boolean; samePricing?:boolean;
+  components:ComponentLine[]; savedComponents?:ComponentLine[]; platforms:PlatformLine[]; sheetSyncStatus?:"not_sent"|"pending"|"synced"|"failed"; history?:HistoryLine[]; historyLoaded?:boolean; samePricing?:boolean;
   priceSchedules?:PriceSchedule[];
   recurringCampaign?:RecurringCampaignRule|null; currentPriceLabel?:string;
+  calculatorSettings?:Record<string,unknown>|null;
 };
 function sellingMarkets(item:PackageItem):MarketCode[] {
   const codes=new Set<string>((item.market??"").split(",").map(code=>code.trim()));
@@ -62,7 +68,7 @@ type StoredBatch = { prefills:PackagePrefill[]; storeId?:string; requestIds?:Rec
 
 const PLATFORM_NAMES:PlatformName[] = ["Shopee","Lazada","TikTok Shop"];
 const HISTORY_SHEET_URL = "https://docs.google.com/spreadsheets/d/1mpB7KVCGzP_9IXYVbhJZsLsndM4ladU3cJre5cfALAA/edit#gid=2129880014";
-const blankLine = ():ComponentLine => ({ inventorySku:"", name:"", quantity:1, kind:"product" });
+const blankLine = ():ComponentLine => ({ inventorySku:"", name:"", quantity:1, kind:"product", uiKey:crypto.randomUUID() });
 const blankRecurringEvents = ():RecurringEventDraft[] => recurringEventIds.map(id=>({...defaultRecurringEvent(id),prices:Object.fromEntries(MARKET_CODES.map(market=>[market,{originalPrice:"",sellingPrice:""}]))}));
 const blankPeriod = () => ({ promotionType:"monthly" as "monthly"|"custom", promotionMonth:"", effectiveFrom:"", effectiveTo:"" });
 type MarketPrices = {nonCampaignOriginal:string;nonCampaignSelling:string;campaignOriginal:string;campaignSelling:string};
@@ -177,7 +183,10 @@ function PackagePriceSummary({item,country="all"}:{item:PackageItem;country?:"al
   })}</div>;
 }
 
-export function PackageControl({ storeId, storeName, storePlatform, canCreate=true, allowSamplePreview=false, staging=false, prefills=[], standaloneCreate=false, draftStorageKey, onPrefillsAccepted }:Props) {
+export function PackageControl({ storeId, storeName, storePlatform, canCreate=true, allowSamplePreview=false, staging=false, prefills=[], standaloneCreate:initialStandaloneCreate=false, draftStorageKey, onPrefillsAccepted }:Props) {
+  const [batchStore,setBatchStore] = useState<string|null>(null);
+  const [batchListView,setBatchListView] = useState(false);
+  const standaloneCreate=initialStandaloneCreate&&!batchListView;
   const [items,setItems] = useState<PackageItem[]>([]);
   const [sampleMode,setSampleMode] = useState(false);
   const [canShowSamples,setCanShowSamples] = useState(false);
@@ -220,6 +229,11 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
   const [showRecurringEndDate,setShowRecurringEndDate] = useState(false);
   const [recurringEvents,setRecurringEvents] = useState<RecurringEventDraft[]>(blankRecurringEvents);
   const [components,setComponents] = useState<ComponentLine[]>([blankLine()]);
+  const catalogStoreId=editingStore?.id??storeId;
+  const inventoryCatalogEnabled=Boolean(catalogStoreId)&&catalogStoreId!=="all";
+  const originalInventory=useRef<ComponentLine[]>([]);
+  const inventoryDuplicates=duplicateInventory(components);
+  const [priceAdjustmentReason,setPriceAdjustmentReason]=useState("");
   const [platforms,setPlatforms] = useState<PlatformLine[]>([{platform:"Shopee",packageSku:""}]);
   const [calculatorSettings,setCalculatorSettings] = useState<CalculatorSnapshot|null>(null);
   const [prefillQueue,setPrefillQueue] = useState<PackagePrefill[][]>([]);
@@ -468,6 +482,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
     setEditingStore(null);
     setForm(blankForm(marketFromPlatform(storePlatform)));
     setComponents([blankLine()]);
+    setPriceAdjustmentReason("");
     setPlatforms([{platform:"Shopee",packageSku:""}]);
     setCalculatorSettings(null);
     setFormErrors([]);
@@ -704,6 +719,8 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
       if (!form.samePricing) validatePrice("Campaign",form.prices[market].campaignOriginal,form.prices[market].campaignSelling);
     });
 
+    if(components.length>MAX_INVENTORY_ITEMS)addError("Inventory Items","Use up to 20 inventory items.");
+    if(!editingPackageId||!inventoryLinesUnchanged(originalInventory.current,components))inventoryDuplicates.forEach(d=>addError("Inventory Items",d.message));
     if (!components.length) addError("Inventory Items","Add at least one OXM inventory item.");
     components.forEach((line,index)=>{
       if (!line.inventorySku.trim()) addError("Inventory Items",`Enter the OXM inventory SKU for item ${index+1}.`);
@@ -740,7 +757,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
       const response = await fetch("/api/packages",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({name:form.name,mode,clientRequestId,markets:form.markets,changeNote:form.changeNote,
+        body:JSON.stringify({priceAdjustmentReason,name:form.name,mode,clientRequestId,...(inventoryCatalogEnabled?{captureInventory:true}:{}),markets:form.markets,changeNote:form.changeNote,
           priceSchedules:schedules,samePricing:form.samePricing,longTerm:form.longTerm,campaignLongTerm:form.campaignLongTerm||campaignLines.length>0&&campaignLines.every(line=>line.effectiveTo===null),recurringCampaign:recurringRule(),storeId:editingStore?.id??storeId,storeName:editingStore?.name??storeName,components,platforms,packageId:editingPackageId,expectedVersion:editingVersion??undefined,
           calculatorSettings:calculatorSettings?{scenarios:prefillBatch.filter(item=>batchName(item.name)===batchName(prefillBatch[0]?.name??"")).map(item=>item.calculatorSettings)}:null}),
       });
@@ -906,7 +923,9 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
       prices:Object.fromEntries(MARKET_CODES.map(market=>{const normal=priceFor(market,"non_campaign");const campaign=item.recurringCampaign?.events.find(event=>event.prices[market])?.prices[market]??priceFor(market,"campaign");return [market,{nonCampaignOriginal:String(normal?.originalPrice??""),nonCampaignSelling:String(normal?.sellingPrice??""),campaignOriginal:String(campaign?.originalPrice??""),campaignSelling:String(campaign?.sellingPrice??"")}];})) as Record<MarketName,MarketPrices>,
       changeNote:stored ? `Changes from Version ${item.version}` : "Migrated from Fulfillment Sheet",
     });
-    setComponents(item.components.map(line=>({...line})));
+    originalInventory.current=structuredClone(item.savedComponents??item.components);
+    setComponents((item.savedComponents??item.components).map(line=>({...line,uiKey:crypto.randomUUID()})));
+    setPriceAdjustmentReason(String((item.calculatorSettings?._pricingEvidence as PricingEvidence|undefined)?.adjustmentReason??""));
     setPlatforms((item.platforms?.length ? item.platforms : [{platform:"Shopee" as const,packageSku:item.packageSku}]).map(line=>({...line})));
     setCalculatorSettings(null);
     setFormErrors([]);
@@ -926,6 +945,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
         <p className="history-author">Changed by <strong>{line.createdBy || "Not recorded"}</strong> · <time dateTime={line.createdAt || undefined}>{packageHistoryTime(line.createdAt)}</time></p>
         <div className="history-changes"><table><caption>{line.version===1?"Initial package details":`Changes in version ${line.version}`}</caption><thead><tr><th scope="col">Field</th><th scope="col">Previous</th><th scope="col">Updated</th></tr></thead><tbody>{packageHistoryChanges(lines?.find(previous=>previous.version===line.version-1),line).map(change=><tr key={change.field}><th scope="row">{change.field}</th><td>{change.before}</td><td>{change.after}</td></tr>)}</tbody></table></div>
         <div className="history-diff"><span className="added">+ {(line.addedComponents ?? []).map(lineText).join(", ") || "No Additions"}</span><span className="removed">− {(line.removedComponents ?? []).map(lineText).join(", ") || "No Removals"}</span></div>
+        <PricingEvidencePanel value={line.calculatorSettings?._pricingEvidence}/>
         {calculatorSnapshots(line.calculatorSettings).length>0&&<div className="calculator-history"><b>Calculator Snapshot</b>{calculatorSnapshots(line.calculatorSettings).map(snapshot=><div key={snapshot.serviceScenario}><strong>{snapshot.serviceScenario}</strong><span>{snapshot.category}</span>{snapshot.pricingGoal?<span>Goal · {snapshot.pricingGoal==="facebookPayout"?"Match Meta Order Income":snapshot.pricingGoal==="sameCustomerPrice"?"Match Meta Buyer Payment":`Lower Than Meta by ${snapshot.discountUnit==="rm"?money(snapshot.discountValue??0,"MY"):`${(snapshot.discountValue??0).toFixed(2)}%`}`}</span>:null}<span>Meta {money(snapshot.facebookPrice,"MY")} → Shopee {money(snapshot.suggestedShopeePrice,"MY")}</span>{snapshot.mainProductQuantity?<span>Main Product Qty {snapshot.mainProductQuantity} · Meta Price Per Unit {snapshot.facebookPricePerUnit==null?"—":money(snapshot.facebookPricePerUnit,"MY")} · Buyer Price Per Unit {snapshot.customerPricePerUnit==null?"—":money(snapshot.customerPricePerUnit,"MY")}</span>:null}<span>Commission {snapshot.commissionRate.toFixed(2)}% · Service {snapshot.serviceRate.toFixed(2)}% · Payout {money(snapshot.actualPayout,"MY")}</span></div>)}</div>}
       </div>)}</div>;
   }
@@ -941,6 +961,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
       {item.recurringCampaign&&<div><b>Monthly campaign</b><span>{displayDate(item.recurringCampaign.startDate)} → {item.recurringCampaign.endDate?displayDate(item.recurringCampaign.endDate):"Ongoing"}</span></div>}</>;
   }
 
+  if(canCreate&&hasSelectedStore&&!sampleMode&&batchStore===storeId)return <PackageBatchPreview staging={staging} key={storeId} storeId={storeId} storeName={storeName} backLabel={standaloneCreate?"Back to Single Package":"Back to Packages"} onExit={(notice)=>{setBatchStore(null);if(notice){setBatchListView(true);setShowCreate(false);setMessage(notice);setMessageType("success");setFilter("all");setSearch("");}void load();}}/>;
   return <div className={`package-control${standaloneCreate?" standalone-create":""}`}>
     <div className="package-hero">
       <div><p className="kicker">OXM PACKAGE CONTROL</p><h2>Packages & Pricing</h2><p>Create packages, choose platforms and set promotion dates. Every change is saved in history.</p></div>
@@ -948,11 +969,12 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
         {!staging&&<a href={HISTORY_SHEET_URL} target="_blank" rel="noopener noreferrer">Google Sheet History</a>}
         <span>{sampleMode?"Sample data":!hasPackageScope?"Select a Store":allStoresSelected?"Accessible Stores":source==="sheet-migration-preview"?"Sheet Migration Preview":"Live Database"}</span>
         {!sampleMode&&canExportKits&&hasSelectedStore&&loadedStoreId===storeId&&source==="database"&&<button type="button" className="kit-export-button" onClick={previewKitExport} disabled={!selectedKitIds.length||kitBusy}>Generate Fulfillment Sheet{selectedKitIds.length?` (${selectedKitIds.length})`:""}</button>}
-        {!sampleMode&&canCreate&&hasSelectedStore&&<button onClick={openNew}>+ New Package</button>}
+        {!sampleMode&&canCreate&&hasSelectedStore&&<button onClick={openNew}>Create Single Package</button>}
+    {!sampleMode&&canCreate&&hasSelectedStore&&<button type="button" onClick={()=>setBatchStore(storeId)}>Batch Upload Packages</button>}
       </div>
     </div>
 
-    {canShowSamples&&!standaloneCreate&&<div className="package-sample-toolbar"><span role="status">{sampleMode?"Sample data · Read only":""}</span><button type="button" disabled={saving||showCreate} aria-pressed={sampleMode} onClick={()=>{resetListScope();setFilter("all");setDurationFilter("all");setCountryFilter("all");setSearch("");setSampleMode(value=>!value);}}>{sampleMode?"Back to real data":"View sample data"}</button></div>}
+    {sampleMode&&canShowSamples&&!standaloneCreate&&<div className="package-sample-toolbar"><span role="status">{sampleMode?"Sample data · Read only":""}</span><button type="button" disabled={saving||showCreate} aria-pressed={sampleMode} onClick={()=>{resetListScope();setFilter("all");setDurationFilter("all");setCountryFilter("all");setSearch("");setSampleMode(value=>!value);}}>{sampleMode?"Back to real data":"View sample data"}</button></div>}
 
     <p className="package-summary-scope">Summary · {sampleMode?"All sample packages":storeName} · All selling countries</p>
     <section className="metric-grid package-metrics">
@@ -1000,6 +1022,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
 
     {showCreate&&<div className={`package-modal${standaloneCreate?" standalone":""}`} role={standaloneCreate?undefined:"dialog"} aria-modal={standaloneCreate?undefined:"true"} aria-labelledby={standaloneCreate?undefined:"package-form-title"}><div className="package-form">
       <div className="package-form-head"><div><p className="kicker">{editingDraft?"EDIT DRAFT":editingPackageId?"EDIT PACKAGE":"NEW PACKAGE"}</p><h3 id="package-form-title">{editingDraft?"Edit Draft":editingPackageId?"Edit / Modify Package":"Create A Package"}</h3><span>{editingStore?.name??storeName}{prefillQueue.length?` · ${prefillQueue.length} Ready Package${prefillQueue.length===1?"":"s"} Remaining`:""}</span></div><button onClick={closeCreate} aria-label="Close">×</button></div>
+      {canCreate&&hasSelectedStore&&!editingPackageId&&!editingDraft&&<button type="button" onClick={()=>setBatchStore(storeId)}>Switch to Batch Upload Packages</button>}
 
       {editingPackageId&&!editingDraft&&<p className="package-edit-note">Saving creates a new version. Previous details, your account and the time of the edit are retained in View History for Super Admin review.</p>}
 
@@ -1051,15 +1074,17 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
         })}
       </section>
 
-      <section className="form-section"><div className="form-section-title"><span>3</span><div><h4>OXM Inventory SKU Items</h4><p>Added, removed and updated items are saved in History</p></div><button className="add-item-button" onClick={()=>setComponents([...components,blankLine()])}>+ Add Item</button></div>
-        <div className="component-editor">{components.map((line,index)=><div className="component-row" key={index}>
-          <input value={line.inventorySku} onChange={event=>setComponents(components.map((item,itemIndex)=>itemIndex===index?{...item,inventorySku:event.target.value}:item))} placeholder="OXM Inventory SKU"/>
+      <section className="form-section"><div className="form-section-title"><span>3</span><div><h4>OXM Inventory SKU Items</h4><p>Added, removed and updated items are saved in History</p></div><button className="add-item-button" disabled={components.length>=MAX_INVENTORY_ITEMS} onClick={()=>setComponents([...components,blankLine()])}>+ Add Item</button></div>
+        <div className="component-editor">{components.map((line,index)=>inventoryCatalogEnabled?<InventorySkuPicker key={line.uiKey??index} duplicateMessage={inventoryDuplicates.find(d=>d.index===index)?.message} storeId={catalogStoreId} value={line} index={index} onChange={value=>setComponents(current=>current.map((item,i)=>i===index?value:item))} onRemove={()=>setComponents(current=>current.filter((_,i)=>i!==index))}/>:<div className="component-row" key={index}>
+          <input value={line.inventorySku} onChange={event=>setComponents(components.map((item,itemIndex)=>itemIndex===index?{...item,inventorySku:event.target.value}:item))} placeholder="OXM Inventory SKU" aria-invalid={inventoryDuplicates.some(d=>d.index===index)}/>
           <input value={line.name} onChange={event=>setComponents(components.map((item,itemIndex)=>itemIndex===index?{...item,name:event.target.value}:item))} placeholder="Item Name"/>
           <input type="number" min="1" value={line.quantity} onChange={event=>setComponents(components.map((item,itemIndex)=>itemIndex===index?{...item,quantity:Number(event.target.value)}:item))}/>
           <button onClick={()=>setComponents(components.filter((_,itemIndex)=>itemIndex!==index))} aria-label={`Remove ${line.inventorySku||"component"}`}>×</button>
         </div>)}</div>
+        {!inventoryCatalogEnabled&&inventoryDuplicates.map(d=><p key={d.index} role="alert" className="inventory-notice">{d.message}</p>)}
       </section>
 
+      {editingPackageId&&<label className="change-note">Price Change Reason<input value={priceAdjustmentReason} onChange={e=>setPriceAdjustmentReason(e.target.value)} placeholder="Required when changing a Calculator price"/></label>}
       <label className="change-note">Change Note<input value={form.changeNote} onChange={event=>setForm({...form,changeNote:event.target.value})} placeholder="What changed and why?"/></label>
       <div className="form-actions"><button className="secondary" onClick={closeCreate}>Cancel</button>{(!editingPackageId||editingDraft)&&<button className="secondary" onClick={()=>save("draft")} disabled={saving}>{saving?"Saving…":prefillQueue.length?`Save Draft & Next (${prefillQueue.length} More)`:"Save Draft"}</button>}<button onClick={()=>save("publish")} disabled={saving}>{saving?"Saving…":prefillQueue.length?`Create & Continue (${prefillQueue.length} More)`:editingDraft?"Create Package":editingPackageId?"Save Changes":"Create Package"}</button></div>
     </div></div>}

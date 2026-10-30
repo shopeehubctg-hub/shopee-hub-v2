@@ -26,6 +26,11 @@ import { endPackage } from "./end-package";
 import { packageHistoryAction } from "../../package-ending";
 import { boundCampaignPeriods } from "../../package-period-bounds";
 import { readCompactPackageRows } from "./compact-read";
+import { duplicateInventory, MAX_INVENTORY_ITEMS, inventoryLinesUnchanged, newInventoryMappings } from "../../inventory-items";
+import {projectProducts,projectProductGroups,productName} from "../inventory-skus/catalog";
+import {resolvePricingEvidence} from "./pricing-evidence";
+import { catalogProducts, InventoryCatalogError } from "../../inventory-catalog-model";
+import { captureInventoryProducts, inventoryFingerprint, lockInventoryCatalog } from "./inventory-capture";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -55,17 +60,20 @@ type PriceScheduleInput = {
 type PackageErrorSection = "Package Details" | "Pricing & Promotion" | "Inventory Items" | "Saving";
 type DatabaseError = Error & { code?:string; constraint_name?:string; constraint?:string; table_name?:string; table?:string; column_name?:string; column?:string };
 
-function packageError(section:PackageErrorSection,error:string,status=400) {
-  return Response.json({ section,error,errors:[{ section,message:error }] },{ status });
+function packageError(section:PackageErrorSection,error:string,status=400,code?:string) {
+  return Response.json({ section,error,...(code?{code}:{}),errors:[{ section,message:error }] },{ status });
 }
 
 function saveFailure(error:unknown) {
   const databaseError=error as DatabaseError;
+  if(databaseError.code==="PRICING_EVIDENCE")return packageError("Pricing & Promotion",databaseError.message,409);
   const code=databaseError?.code ?? "unknown";
   const constraint=databaseError?.constraint_name ?? databaseError?.constraint ?? "";
   const table=databaseError?.table_name ?? databaseError?.table ?? "";
   const column=databaseError?.column_name ?? databaseError?.column ?? "";
   console.error("Package save failed",{ code,constraint,table,column });
+  if(code==="INVENTORY_CATALOG_CONFLICT")return packageError("Inventory Items",databaseError.message,409,code);
+  if(code==="23505"&&(/inventory_sku/.test(constraint)||table==="inventory_skus"))return packageError("Inventory Items","This Inventory SKU already exists. Select the saved product and retry.",409);
   if (code==="23505"&&(/package_sku_store|package_platform/.test(constraint)||table==="packages")) {
     return packageError("Package Details","This listing SKU is already used by another package in this store. Enter a different SKU.",409);
   }
@@ -242,6 +250,7 @@ export async function GET(request: Request) {
   const latestPublishedVersion = new Map<string, typeof versions[number]>();
   versions.forEach(version => { if (!latestVersion.has(version.packageId)) latestVersion.set(version.packageId, version); });
   versions.forEach(version => { if (version.sheetSyncStatus === "synced" && !latestPublishedVersion.has(version.packageId)) latestPublishedVersion.set(version.packageId, version); });
+  const displayProducts=await projectProductGroups(db,membership.tenantId,scopedStoreIds);
   const result=rows.map(row => {
       const endedVersion = latestVersion.get(row.id)?.calculatorSettings?._packageEnded === true ? latestVersion.get(row.id) : undefined;
       const version = endedVersion ?? (["active","scheduled","expired"].includes(row.status)
@@ -268,7 +277,8 @@ export async function GET(request: Request) {
         platforms:currentPlatforms,
         version:version?.version ?? 1,
         promotionType:version?.promotionType ?? "custom",
-        components:version?.components ?? [],
+        savedComponents:version?.components ?? [],
+        components:(version?.components ?? []).map(item=>({...item,name:productName(displayProducts.get(row.storeId)??[],item.inventorySku,item.name)})),
         changeNote:version?.changeNote ?? "",
         addedComponents:version?.addedComponents ?? [],
         removedComponents:version?.removedComponents ?? [],
@@ -341,6 +351,10 @@ async function savePackage(request: Request) {
   const accessDb = await getDb();
   if (!await canAccessModule(accessDb, membership, "packages")) return packageError("Saving","Packages & Pricing is not enabled for your account. Contact an administrator.",403);
   const body = await request.json() as {
+    batchUpload?: boolean;
+    captureInventory?: boolean;
+    exportId?:string;
+    priceAdjustmentReason?:string;
     mode?: "draft" | "publish";
     clientRequestId?: string;
     packageId?: string;
@@ -365,6 +379,9 @@ async function savePackage(request: Request) {
     campaignLongTerm?: boolean;
     recurringCampaign?: unknown;
   };
+  const catalogEnabled=true;
+  const captureInventory=catalogEnabled&&!body.packageId;
+  const localReceipt=deploymentTarget()==="staging"&&captureInventory;
   const mode = body.mode ?? "draft";
   if (mode!=="draft"&&mode!=="publish") return packageError("Saving","Choose Create Package or Save Draft.");
   if (mode==="publish"&&!historyWebhookConfigured()) return packageError("Saving","Package History Google Sheet is not connected. Save a draft or ask the administrator to connect the Sheet before creating the package.",503);
@@ -438,6 +455,11 @@ async function savePackage(request: Request) {
     quantity:Number(item.quantity),
     kind:item.kind === "gift" ? "gift" as const : "product" as const,
   }));
+  if(components.length>MAX_INVENTORY_ITEMS)return packageError("Inventory Items","Use up to 20 inventory items.");
+  if(!body.packageId){
+    const duplicate=duplicateInventory(components)[0];if(duplicate)return packageError("Inventory Items",duplicate.message);
+    const savedProducts=await projectProducts(accessDb,membership.tenantId,body.storeId);for(const item of components)item.name=productName(savedProducts,item.inventorySku,item.name);
+  }
   if (components.some(item => !item.inventorySku || !item.name || !Number.isInteger(item.quantity) || item.quantity < 1)) {
     return packageError("Inventory Items","Every inventory item needs an OXM SKU, item name and a whole-number quantity of at least 1.");
   }
@@ -445,6 +467,9 @@ async function savePackage(request: Request) {
     return packageError("Pricing & Promotion","Enter positive Original and Selling prices. Selling Price cannot be higher than Original Price.");
   }
 
+  const verifyCaptureRequest=!body.packageId&&(body.captureInventory===true||body.batchUpload===true);
+  const captureFingerprint=verifyCaptureRequest?inventoryFingerprint({storeId:body.storeId,name:body.name.trim(),mode,components,platforms,markets,schedules,exportId:body.exportId??null,priceAdjustmentReason:body.priceAdjustmentReason??null,samePricing:!!body.samePricing,longTerm:!!body.longTerm,campaignLongTerm:!!body.campaignLongTerm,recurringCampaign,changeNote:body.changeNote?.trim()??'',calculatorSettings:body.calculatorSettings??null}):null;
+  if(verifyCaptureRequest){catalogProducts(components);if(!body.clientRequestId)return packageError("Saving","A stable package request ID is required. Refresh and retry.");}
   const db = await getDb();
   const requestedPackageId = body.packageId ? String(body.packageId) : null;
   const clientRequestId=!requestedPackageId ? body.clientRequestId : undefined;
@@ -456,6 +481,8 @@ async function savePackage(request: Request) {
       if(prior.deletedAt || prior.tenantId!==membership.tenantId || prior.storeId!==body.storeId || prior.createdBy.toLowerCase()!==user.email.toLowerCase())
         return packageError("Saving","This package request is already in use. Refresh the form and try again.",409);
       const [priorVersion]=await db.select().from(packageVersions).where(eq(packageVersions.packageId,prior.id)).orderBy(desc(packageVersions.version)).limit(1);
+      const [initialVersion]=verifyCaptureRequest?await db.select().from(packageVersions).where(and(eq(packageVersions.packageId,prior.id),eq(packageVersions.version,1))).limit(1):[];
+      if(verifyCaptureRequest&&initialVersion?.calculatorSettings?._inventoryCaptureFingerprint!==captureFingerprint)return packageError("Saving","This request already saved different package details. Refresh and check the saved package before creating another.",409);
       if(!priorVersion)return packageError("Saving","This package is still being saved. Refresh the page and try again.",503);
       if(mode==="draft" || priorVersion.sheetSyncStatus==="synced")
         return Response.json({ok:true,packageId:prior.id,version:priorVersion.version,status:prior.status,sheetSyncStatus:priorVersion.sheetSyncStatus});
@@ -465,16 +492,16 @@ async function savePackage(request: Request) {
   }
   const [packageSkuConflict] = await db.select({ id:packages.id }).from(packages)
     .where(and(eq(packages.storeId,body.storeId),eq(packages.packageSku,platforms[0].packageSku),isNull(packages.deletedAt))).limit(1);
-  if (packageSkuConflict && (!requestedPackageId || packageSkuConflict.id!==requestedPackageId)) {
-    return packageError("Package Details",`Listing SKU ${platforms[0].packageSku} is already used by another package in this store. Enter a different SKU.`,409);
+  if (packageSkuConflict && (!requestedPackageId || packageSkuConflict.id!==requestedPackageId) && !(verifyCaptureRequest&&packageSkuConflict.id===clientRequestId)) {
+    return packageError("Package Details",`Listing SKU ${platforms[0].packageSku} is already used by another package in this store. Enter a different SKU.`,409,"BATCH_SKU_CONFLICT");
   }
   for (const line of platforms) {
     const conflict = await db.select({ packageId:packagePlatformSkus.packageId }).from(packagePlatformSkus)
       .innerJoin(packages, eq(packages.id,packagePlatformSkus.packageId))
       .where(and(eq(packagePlatformSkus.storeId, body.storeId), eq(packagePlatformSkus.platform, line.platform), eq(packagePlatformSkus.packageSku, line.packageSku),isNull(packages.deletedAt)))
       .limit(1);
-    if (conflict[0] && (!requestedPackageId || conflict[0].packageId !== requestedPackageId)) {
-      return packageError("Package Details",`${line.platform} listing SKU ${line.packageSku} is already used by another package in this store. Enter a different SKU.`,409);
+    if (conflict[0] && (!requestedPackageId || conflict[0].packageId !== requestedPackageId) && !(verifyCaptureRequest&&conflict[0].packageId===clientRequestId)) {
+      return packageError("Package Details",`${line.platform} listing SKU ${line.packageSku} is already used by another package in this store. Enter a different SKU.`,409,"BATCH_SKU_CONFLICT");
     }
   }
 
@@ -507,6 +534,10 @@ async function savePackage(request: Request) {
     previousVersion = latest;
   }
 
+  if(requestedPackageId&&!inventoryLinesUnchanged(previousComponents,components)){
+    const duplicate=duplicateInventory(components)[0];if(duplicate)return packageError("Inventory Items",duplicate.message);
+  }
+  const mappingsToCapture=requestedPackageId?newInventoryMappings(previousComponents,components):components;
   const diff = componentDiff(previousComponents, components);
   const metadata:PackageMetadata={name:body.name.trim(),market:markets.join(","),channel:platforms.map(item=>item.platform).join(", "),packageSku:platforms[0].packageSku};
   const [oldPrices, oldSkus] = previousVersion ? await Promise.all([
@@ -522,7 +553,23 @@ async function savePackage(request: Request) {
   const changeSummary = nextVersion === 1 ? "新开配套" : previousVersion
     ? emailChangeSummary({components,calculatorSettings:{_packageMetadata:metadata,_recurringCampaign:recurringCampaign}},previousVersion,schedules,oldPrices,platforms,oldSkus)
     : "配套资料修改（历史比较资料不足）";
-  await db.transaction(async tx => {
+  const captureReplay=await db.transaction(async tx => {
+    if(catalogEnabled)await lockInventoryCatalog(tx,membership.tenantId);
+    if(verifyCaptureRequest){
+      const [prior]=await tx.select().from(packages).where(eq(packages.id,packageId)).limit(1);
+      if(prior){
+        const [version]=await tx.select().from(packageVersions).where(eq(packageVersions.packageId,prior.id)).orderBy(desc(packageVersions.version)).limit(1);
+        const [initialVersion]=await tx.select().from(packageVersions).where(and(eq(packageVersions.packageId,prior.id),eq(packageVersions.version,1))).limit(1);
+        if(prior.deletedAt||prior.tenantId!==membership.tenantId||prior.storeId!==body.storeId||prior.createdBy.toLowerCase()!==user.email.toLowerCase()||initialVersion?.calculatorSettings?._inventoryCaptureFingerprint!==captureFingerprint||!version)throw new InventoryCatalogError('This request was already used for different package details. Refresh and check the saved package.');
+        return {packageId:prior.id,version:version.version,status:prior.status,sheetSyncStatus:version.sheetSyncStatus};
+      }
+    }
+    if(catalogEnabled&&mappingsToCapture.length)await captureInventoryProducts(tx,membership.tenantId,body.storeId!,versionId,mappingsToCapture);
+    let pricingEvidence=null;
+    {
+      try{pricingEvidence=await resolvePricingEvidence(tx,{tenantId:membership.tenantId,storeId:body.storeId!,actor:user.email},body,schedules,previousVersion?.calculatorSettings);}
+      catch(error){throw Object.assign(error instanceof Error?error:Error('Check Calculator pricing evidence.'),{code:'PRICING_EVIDENCE'});}
+    }
     if (!requestedPackageId) {
       await tx.insert(packages).values({
         id:packageId,
@@ -532,7 +579,7 @@ async function savePackage(request: Request) {
         name:body.name!.trim(),
         channel:platforms.map(item => item.platform).join(", "),
         market:markets.join(","),
-        status:"draft",
+        status:localReceipt&&mode==="publish"?packageLifecycleStatus(schedules,{_longTermLifecycle:longTermLifecycle},marketToday(storeMarket)):"draft",
         createdBy:user.email,
         updatedAt:now,
       });
@@ -547,8 +594,8 @@ async function savePackage(request: Request) {
       promotionType:schedules.find(item=>item.priceType==="campaign")?.promotionType ?? "monthly",
       addedComponents:diff.added,
       removedComponents:diff.removed,
-      sheetSyncStatus:mode==="draft"?"not_sent":"pending",
-      calculatorSettings:{...(body.calculatorSettings ?? {}),_packageEnded:false,_samePricing:body.samePricing===true,_longTermLifecycle:longTermLifecycle,_recurringCampaign:recurringCampaign,_packageMetadata:metadata,_packageHistorySummary:{schema:1,summary:changeSummary}},
+      sheetSyncStatus:mode==="draft"?"not_sent":localReceipt?"synced":"pending",
+      calculatorSettings:{...Object.fromEntries(Object.entries(body.calculatorSettings ?? {}).filter(([key])=>!key.startsWith("_"))),...(pricingEvidence?{scenarios:pricingEvidence.scenarios,_pricingEvidence:pricingEvidence}:{}),...(captureFingerprint?{_inventoryCaptureFingerprint:captureFingerprint}:{}),_packageEnded:false,_samePricing:body.samePricing===true,_longTermLifecycle:longTermLifecycle,_recurringCampaign:recurringCampaign,_packageMetadata:metadata,_packageHistorySummary:{schema:1,summary:changeSummary}},
       changeNote:body.changeNote?.trim() || (nextVersion === 1 ? "Initial version" : `Version ${nextVersion}`),
       effectiveFrom:primaryPeriod.effectiveFrom,
       effectiveTo:primaryPeriod.effectiveTo,
@@ -570,6 +617,11 @@ async function savePackage(request: Request) {
     });
   });
 
+  if(captureReplay){
+    if(mode==="draft"||captureReplay.sheetSyncStatus==="synced")return Response.json({ok:true,...captureReplay});
+    return Response.json({ok:false,savedAsDraft:true,...captureReplay,error:"The package is saved, but Google Sheet sync is not confirmed. Refresh the list and retry sync from its card."},{status:503});
+  }
+  if(localReceipt&&mode==="publish")return Response.json({ok:true,packageId,version:nextVersion,status:packageLifecycleStatus(schedules,{_longTermLifecycle:longTermLifecycle},marketToday(storeMarket)),sheetSyncStatus:"synced",added:diff.added,removed:diff.removed},{status:201});
   if (mode==="draft") return Response.json({ok:true,packageId,version:nextVersion,status:"draft",sheetSyncStatus:"not_sent",added:diff.added,removed:diff.removed},{status:201});
 
   const platformMap = Object.fromEntries(["Shopee","Lazada","TikTok Shop"].map(platform=>[platform,platforms.filter(item=>item.platform===platform).map(item=>item.packageSku).join(" | ")]));
