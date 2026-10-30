@@ -58,7 +58,7 @@ create or replace function public.grant_feature_to_all(p_tenant text,p_actor tex
 language plpgsql security invoker set search_path='' as $$
 declare actor public.customer_users;target public.customer_users;prior public.user_access_audit_log;before_modules text[];after_modules text[];deps text[];m text;before_value jsonb;after_value jsonb;child_id uuid;result jsonb;granted int:=0;skipped int:=0;already_enabled int:=0;
 begin
- if p_tenant is null or p_actor is null or p_request_id is null or p_module is null or not(p_module=any(array['overview','design','calculator','packages','advertising','orders','health','protection','live_calendar','actions','overview_leaderboard','overview_store_sales'])) then raise exception 'PERMISSION_INVALID';end if;
+ if p_tenant is null or p_actor is null or p_request_id is null or p_module is null or not(p_module=any(array['overview','design','calculator','packages','advertising','orders','protection','live_calendar','actions','overview_leaderboard','overview_store_sales'])) then raise exception 'PERMISSION_INVALID';end if;
  perform pg_advisory_xact_lock(hashtext(p_tenant),hashtext('user-access-write'));
  if not exists(select 1 from public.tenants where id=p_tenant and active) then raise exception 'PERMISSION_ACCESS_DENIED';end if;
  select * into actor from public.customer_users where tenant_id=p_tenant and email=lower(p_actor) for share;

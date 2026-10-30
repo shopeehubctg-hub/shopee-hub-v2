@@ -22,7 +22,9 @@ export function isPortalModuleId(value: unknown): value is PortalModuleId {
 export const OVERVIEW_LEADERBOARD_PERMISSION = {id:"overview_leaderboard",label:"Leaderboard",description:"Overview leaderboard section"} as const;
 export const OVERVIEW_STORE_SALES_PERMISSION = {id:"overview_store_sales",label:"Store Daily Sales",description:"Selected-store daily and monthly sales"} as const;
 export const ALL_PERMISSION_IDS:PortalModuleId[] = [...ALL_PORTAL_MODULE_IDS,"overview_leaderboard","overview_leaderboard_all_stores","overview_store_sales"];
-export const RELEASABLE_PERMISSION_IDS:PortalModuleId[] = ALL_PERMISSION_IDS.filter(id=>id!=="overview_leaderboard_all_stores");
+// Store Health remains Super Admin-only until its ordinary-user store scope is reviewed.
+// The all-store leaderboard scope is also intentionally never a tenant-wide release.
+export const RELEASABLE_PERMISSION_IDS:PortalModuleId[] = ALL_PERMISSION_IDS.filter(id=>id!=="overview_leaderboard_all_stores"&&id!=="health");
 export function isReleasablePermissionId(value:unknown):value is PortalModuleId{return typeof value==="string"&&RELEASABLE_PERMISSION_IDS.includes(value as PortalModuleId);}
 export function effectiveAccessIds(role:string,mode:string,tenant:Map<string,boolean>,custom:Set<string>,additive:Set<string>=new Set()):PortalModuleId[]{
  if(role==="superadmin")return [...ALL_PERMISSION_IDS];

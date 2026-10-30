@@ -30,3 +30,8 @@ test('server module checks include additive grants for role defaults',async()=>{
  const calendar=await fs.readFile(path.join(root,'app/api/live-calendar/route.ts'),'utf8');
  assert.match(calendar,/additive_grant/);assert.match(calendar,/const additive=/);
 });
+
+test('bulk release excludes privileged scopes',async()=>{
+ const source=await fs.readFile(path.join(root,'app/module-permissions.ts'),'utf8');
+ assert.match(source,/id!=="overview_leaderboard_all_stores"&&id!=="health"/);
+});
