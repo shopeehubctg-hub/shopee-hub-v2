@@ -26,6 +26,8 @@ import { endPackage } from "./end-package";
 import { packageHistoryAction } from "../../package-ending";
 import { boundCampaignPeriods } from "../../package-period-bounds";
 import { readCompactPackageRows } from "./compact-read";
+import { BERLANCO_CATALOG_STORE, catalogProducts, InventoryCatalogError } from "../../inventory-catalog-model";
+import { captureInventoryProducts, inventoryFingerprint, lockInventoryCatalog } from "./inventory-capture";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -66,6 +68,8 @@ function saveFailure(error:unknown) {
   const table=databaseError?.table_name ?? databaseError?.table ?? "";
   const column=databaseError?.column_name ?? databaseError?.column ?? "";
   console.error("Package save failed",{ code,constraint,table,column });
+  if(code==="INVENTORY_CATALOG_CONFLICT")return packageError("Inventory Items",databaseError.message,409,code);
+  if(code==="23505"&&(/inventory_sku/.test(constraint)||table==="inventory_skus"))return packageError("Inventory Items","This Inventory SKU already exists. Select the saved product and retry.",409);
   if (code==="23505"&&(/package_sku_store|package_platform/.test(constraint)||table==="packages")) {
     return packageError("Package Details","This listing SKU is already used by another package in this store. Enter a different SKU.",409);
   }
@@ -342,6 +346,7 @@ async function savePackage(request: Request) {
   if (!await canAccessModule(accessDb, membership, "packages")) return packageError("Saving","Packages & Pricing is not enabled for your account. Contact an administrator.",403);
   const body = await request.json() as {
     batchUpload?: boolean;
+    captureInventory?: boolean;
     mode?: "draft" | "publish";
     clientRequestId?: string;
     packageId?: string;
@@ -367,6 +372,8 @@ async function savePackage(request: Request) {
     recurringCampaign?: unknown;
   };
   if(body.batchUpload&&deploymentTarget()!=="staging")return packageError("Saving","Batch creation is only enabled in Staging.",403);
+  const captureInventory=body.captureInventory===true;
+  if(captureInventory&&(deploymentTarget()!=="staging"||body.storeId!==BERLANCO_CATALOG_STORE||body.packageId||body.batchUpload))return packageError("Inventory Items","Product capture is available for new Berlanco packages in Staging only.",403);
   const mode = body.mode ?? "draft";
   if (mode!=="draft"&&mode!=="publish") return packageError("Saving","Choose Create Package or Save Draft.");
   if (mode==="publish"&&!historyWebhookConfigured()) return packageError("Saving","Package History Google Sheet is not connected. Save a draft or ask the administrator to connect the Sheet before creating the package.",503);
@@ -447,6 +454,8 @@ async function savePackage(request: Request) {
     return packageError("Pricing & Promotion","Enter positive Original and Selling prices. Selling Price cannot be higher than Original Price.");
   }
 
+  const captureFingerprint=captureInventory?inventoryFingerprint({storeId:body.storeId,name:body.name.trim(),mode,components,platforms,markets,schedules,samePricing:!!body.samePricing,longTerm:!!body.longTerm,campaignLongTerm:!!body.campaignLongTerm,recurringCampaign,changeNote:body.changeNote?.trim()??'',calculatorSettings:body.calculatorSettings??null}):null;
+  if(captureInventory){catalogProducts(components);if(!body.clientRequestId)return packageError("Saving","A stable package request ID is required. Refresh and retry.");}
   const db = await getDb();
   const requestedPackageId = body.packageId ? String(body.packageId) : null;
   const clientRequestId=!requestedPackageId ? body.clientRequestId : undefined;
@@ -458,6 +467,8 @@ async function savePackage(request: Request) {
       if(prior.deletedAt || prior.tenantId!==membership.tenantId || prior.storeId!==body.storeId || prior.createdBy.toLowerCase()!==user.email.toLowerCase())
         return packageError("Saving","This package request is already in use. Refresh the form and try again.",409);
       const [priorVersion]=await db.select().from(packageVersions).where(eq(packageVersions.packageId,prior.id)).orderBy(desc(packageVersions.version)).limit(1);
+      const [initialVersion]=captureInventory?await db.select().from(packageVersions).where(and(eq(packageVersions.packageId,prior.id),eq(packageVersions.version,1))).limit(1):[];
+      if(captureInventory&&initialVersion?.calculatorSettings?._inventoryCaptureFingerprint!==captureFingerprint)return packageError("Saving","This request already saved different package details. Refresh and check the saved package before creating another.",409);
       if(!priorVersion)return packageError("Saving","This package is still being saved. Refresh the page and try again.",503);
       if(mode==="draft" || priorVersion.sheetSyncStatus==="synced")
         return Response.json({ok:true,packageId:prior.id,version:priorVersion.version,status:prior.status,sheetSyncStatus:priorVersion.sheetSyncStatus});
@@ -467,7 +478,7 @@ async function savePackage(request: Request) {
   }
   const [packageSkuConflict] = await db.select({ id:packages.id }).from(packages)
     .where(and(eq(packages.storeId,body.storeId),eq(packages.packageSku,platforms[0].packageSku),isNull(packages.deletedAt))).limit(1);
-  if (packageSkuConflict && (!requestedPackageId || packageSkuConflict.id!==requestedPackageId)) {
+  if (packageSkuConflict && (!requestedPackageId || packageSkuConflict.id!==requestedPackageId) && !(captureInventory&&packageSkuConflict.id===clientRequestId)) {
     return packageError("Package Details",`Listing SKU ${platforms[0].packageSku} is already used by another package in this store. Enter a different SKU.`,409,"BATCH_SKU_CONFLICT");
   }
   for (const line of platforms) {
@@ -475,7 +486,7 @@ async function savePackage(request: Request) {
       .innerJoin(packages, eq(packages.id,packagePlatformSkus.packageId))
       .where(and(eq(packagePlatformSkus.storeId, body.storeId), eq(packagePlatformSkus.platform, line.platform), eq(packagePlatformSkus.packageSku, line.packageSku),isNull(packages.deletedAt)))
       .limit(1);
-    if (conflict[0] && (!requestedPackageId || conflict[0].packageId !== requestedPackageId)) {
+    if (conflict[0] && (!requestedPackageId || conflict[0].packageId !== requestedPackageId) && !(captureInventory&&conflict[0].packageId===clientRequestId)) {
       return packageError("Package Details",`${line.platform} listing SKU ${line.packageSku} is already used by another package in this store. Enter a different SKU.`,409,"BATCH_SKU_CONFLICT");
     }
   }
@@ -524,7 +535,18 @@ async function savePackage(request: Request) {
   const changeSummary = nextVersion === 1 ? "新开配套" : previousVersion
     ? emailChangeSummary({components,calculatorSettings:{_packageMetadata:metadata,_recurringCampaign:recurringCampaign}},previousVersion,schedules,oldPrices,platforms,oldSkus)
     : "配套资料修改（历史比较资料不足）";
-  await db.transaction(async tx => {
+  const captureReplay=await db.transaction(async tx => {
+    if(captureInventory){
+      await lockInventoryCatalog(tx,membership.tenantId);
+      const [prior]=await tx.select().from(packages).where(eq(packages.id,packageId)).limit(1);
+      if(prior){
+        const [version]=await tx.select().from(packageVersions).where(eq(packageVersions.packageId,prior.id)).orderBy(desc(packageVersions.version)).limit(1);
+        const [initialVersion]=await tx.select().from(packageVersions).where(and(eq(packageVersions.packageId,prior.id),eq(packageVersions.version,1))).limit(1);
+        if(prior.deletedAt||prior.tenantId!==membership.tenantId||prior.storeId!==body.storeId||prior.createdBy.toLowerCase()!==user.email.toLowerCase()||initialVersion?.calculatorSettings?._inventoryCaptureFingerprint!==captureFingerprint||!version)throw new InventoryCatalogError('This request was already used for different package details. Refresh and check the saved package.');
+        return {packageId:prior.id,version:version.version,status:prior.status,sheetSyncStatus:version.sheetSyncStatus};
+      }
+      await captureInventoryProducts(tx,membership.tenantId,body.storeId!,versionId,components);
+    }
     if (!requestedPackageId) {
       await tx.insert(packages).values({
         id:packageId,
@@ -534,7 +556,7 @@ async function savePackage(request: Request) {
         name:body.name!.trim(),
         channel:platforms.map(item => item.platform).join(", "),
         market:markets.join(","),
-        status:"draft",
+        status:captureInventory&&mode==="publish"?packageLifecycleStatus(schedules,{_longTermLifecycle:longTermLifecycle},marketToday(storeMarket)):"draft",
         createdBy:user.email,
         updatedAt:now,
       });
@@ -549,8 +571,8 @@ async function savePackage(request: Request) {
       promotionType:schedules.find(item=>item.priceType==="campaign")?.promotionType ?? "monthly",
       addedComponents:diff.added,
       removedComponents:diff.removed,
-      sheetSyncStatus:mode==="draft"?"not_sent":"pending",
-      calculatorSettings:{...(body.calculatorSettings ?? {}),_packageEnded:false,_samePricing:body.samePricing===true,_longTermLifecycle:longTermLifecycle,_recurringCampaign:recurringCampaign,_packageMetadata:metadata,_packageHistorySummary:{schema:1,summary:changeSummary}},
+      sheetSyncStatus:mode==="draft"?"not_sent":captureInventory?"synced":"pending",
+      calculatorSettings:{...(body.calculatorSettings ?? {}),...(captureFingerprint?{_inventoryCaptureFingerprint:captureFingerprint}:{}),_packageEnded:false,_samePricing:body.samePricing===true,_longTermLifecycle:longTermLifecycle,_recurringCampaign:recurringCampaign,_packageMetadata:metadata,_packageHistorySummary:{schema:1,summary:changeSummary}},
       changeNote:body.changeNote?.trim() || (nextVersion === 1 ? "Initial version" : `Version ${nextVersion}`),
       effectiveFrom:primaryPeriod.effectiveFrom,
       effectiveTo:primaryPeriod.effectiveTo,
@@ -572,6 +594,8 @@ async function savePackage(request: Request) {
     });
   });
 
+  if(captureReplay)return Response.json({ok:true,...captureReplay});
+  if(captureInventory&&mode==="publish")return Response.json({ok:true,packageId,version:nextVersion,status:packageLifecycleStatus(schedules,{_longTermLifecycle:longTermLifecycle},marketToday(storeMarket)),sheetSyncStatus:"synced",added:diff.added,removed:diff.removed},{status:201});
   if (mode==="draft") return Response.json({ok:true,packageId,version:nextVersion,status:"draft",sheetSyncStatus:"not_sent",added:diff.added,removed:diff.removed},{status:201});
 
   const platformMap = Object.fromEntries(["Shopee","Lazada","TikTok Shop"].map(platform=>[platform,platforms.filter(item=>item.platform===platform).map(item=>item.packageSku).join(" | ")]));

@@ -1,4 +1,6 @@
 "use client";
+import {InventorySkuPicker} from "./inventory-sku-picker";
+import {BERLANCO_CATALOG_STORE} from "./inventory-catalog-model";
 import {PackageBatchPreview} from "./package-batch-preview";
 
 import { MARKET_CODES, MARKET_CONFIG, isMarket, marketMoney, marketFromPlatform, marketDate, type MarketCode } from "./markets";
@@ -9,7 +11,7 @@ import type { CalculatorSnapshot, PackagePrefill } from "./calculator-types";
 import { calculatorSnapshots, packageHistoryChanges, packageHistoryTime, type PackageHistorySnapshot } from "./package-history";
 import { defaultRecurringEvent, recurringEventIds, recurringEventLabels, validateRecurringCampaign, type RecurringCampaignEvent, type RecurringCampaignRule } from "./recurring-campaign";
 
-type ComponentLine = { inventorySku:string; name:string; quantity:number; kind:"product"|"gift" };
+type ComponentLine = { inventorySku:string; name:string; quantity:number; kind:"product"|"gift"; uiKey?:string };
 type PlatformName = "Shopee"|"Lazada"|"TikTok Shop";
 type PlatformLine = { platform:PlatformName; packageSku:string };
 type MarketName = MarketCode;
@@ -63,7 +65,7 @@ type StoredBatch = { prefills:PackagePrefill[]; storeId?:string; requestIds?:Rec
 
 const PLATFORM_NAMES:PlatformName[] = ["Shopee","Lazada","TikTok Shop"];
 const HISTORY_SHEET_URL = "https://docs.google.com/spreadsheets/d/1mpB7KVCGzP_9IXYVbhJZsLsndM4ladU3cJre5cfALAA/edit#gid=2129880014";
-const blankLine = ():ComponentLine => ({ inventorySku:"", name:"", quantity:1, kind:"product" });
+const blankLine = ():ComponentLine => ({ inventorySku:"", name:"", quantity:1, kind:"product", uiKey:crypto.randomUUID() });
 const blankRecurringEvents = ():RecurringEventDraft[] => recurringEventIds.map(id=>({...defaultRecurringEvent(id),prices:Object.fromEntries(MARKET_CODES.map(market=>[market,{originalPrice:"",sellingPrice:""}]))}));
 const blankPeriod = () => ({ promotionType:"monthly" as "monthly"|"custom", promotionMonth:"", effectiveFrom:"", effectiveTo:"" });
 type MarketPrices = {nonCampaignOriginal:string;nonCampaignSelling:string;campaignOriginal:string;campaignSelling:string};
@@ -224,6 +226,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
   const [showRecurringEndDate,setShowRecurringEndDate] = useState(false);
   const [recurringEvents,setRecurringEvents] = useState<RecurringEventDraft[]>(blankRecurringEvents);
   const [components,setComponents] = useState<ComponentLine[]>([blankLine()]);
+  const inventoryCatalogEnabled=staging&&storeId===BERLANCO_CATALOG_STORE&&!editingPackageId&&!editingDraft;
   const [platforms,setPlatforms] = useState<PlatformLine[]>([{platform:"Shopee",packageSku:""}]);
   const [calculatorSettings,setCalculatorSettings] = useState<CalculatorSnapshot|null>(null);
   const [prefillQueue,setPrefillQueue] = useState<PackagePrefill[][]>([]);
@@ -744,7 +747,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
       const response = await fetch("/api/packages",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({name:form.name,mode,clientRequestId,markets:form.markets,changeNote:form.changeNote,
+        body:JSON.stringify({name:form.name,mode,clientRequestId,...(inventoryCatalogEnabled?{captureInventory:true}:{}),markets:form.markets,changeNote:form.changeNote,
           priceSchedules:schedules,samePricing:form.samePricing,longTerm:form.longTerm,campaignLongTerm:form.campaignLongTerm||campaignLines.length>0&&campaignLines.every(line=>line.effectiveTo===null),recurringCampaign:recurringRule(),storeId:editingStore?.id??storeId,storeName:editingStore?.name??storeName,components,platforms,packageId:editingPackageId,expectedVersion:editingVersion??undefined,
           calculatorSettings:calculatorSettings?{scenarios:prefillBatch.filter(item=>batchName(item.name)===batchName(prefillBatch[0]?.name??"")).map(item=>item.calculatorSettings)}:null}),
       });
@@ -1059,7 +1062,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
       </section>
 
       <section className="form-section"><div className="form-section-title"><span>3</span><div><h4>OXM Inventory SKU Items</h4><p>Added, removed and updated items are saved in History</p></div><button className="add-item-button" onClick={()=>setComponents([...components,blankLine()])}>+ Add Item</button></div>
-        <div className="component-editor">{components.map((line,index)=><div className="component-row" key={index}>
+        <div className="component-editor">{components.map((line,index)=>inventoryCatalogEnabled?<InventorySkuPicker key={line.uiKey??index} storeId={storeId} value={line} index={index} onChange={value=>setComponents(current=>current.map((item,i)=>i===index?value:item))} onRemove={()=>setComponents(current=>current.filter((_,i)=>i!==index))}/>:<div className="component-row" key={index}>
           <input value={line.inventorySku} onChange={event=>setComponents(components.map((item,itemIndex)=>itemIndex===index?{...item,inventorySku:event.target.value}:item))} placeholder="OXM Inventory SKU"/>
           <input value={line.name} onChange={event=>setComponents(components.map((item,itemIndex)=>itemIndex===index?{...item,name:event.target.value}:item))} placeholder="Item Name"/>
           <input type="number" min="1" value={line.quantity} onChange={event=>setComponents(components.map((item,itemIndex)=>itemIndex===index?{...item,quantity:Number(event.target.value)}:item))}/>
