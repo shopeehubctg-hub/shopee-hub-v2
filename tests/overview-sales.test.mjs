@@ -23,7 +23,7 @@ test('sales UI uses latest MTD snapshot, uses latest month/platform, and disting
  for(const key of ['window','document','navigator','HTMLElement','Event','MouseEvent'])Object.defineProperty(globalThis,key,{configurable:true,value:dom.window[key]});
  globalThis.IS_REACT_ACT_ENVIRONMENT=true;
  const {createRoot}=await import('react-dom/client');const root=createRoot(document.getElementById('root'));
- let resolve;globalThis.fetch=()=>new Promise(r=>resolve=r);
+ let resolve;globalThis.fetch=(url)=>url.includes('live-leaderboard')?Promise.resolve({ok:true,json:async()=>({status:'pending',shops:[]})}):new Promise(r=>resolve=r);
  await act(async()=>root.render(React.createElement(OverviewSales,{canView:true})));
  assert.match(document.body.textContent,/Loading sales/);assert.doesNotMatch(document.body.textContent,/No sales data/);
  const row=(day,mtd)=>({report_date:`2026-10-${day}`,synced_at:'2026-10-29T02:00:00Z',day_all:100,day_shopee:100,day_lazada:0,day_tiktok:null,mtd_all:mtd,mtd_shopee:mtd,mtd_lazada:0,mtd_tiktok:null,target:1000,days_remaining:3,estimated_monthly:310,sales_difference:700,daily_sales_target:233.33,target_progress_pct:30});
@@ -41,9 +41,9 @@ test('sales UI uses latest MTD snapshot, uses latest month/platform, and disting
  assert.match(document.querySelector('.sales-day').getAttribute('aria-label'),/200.00/);
  assert.match(document.querySelector('[aria-label="Daily sales breakdown"]').textContent,/Shopee.*Lazada.*TikTok/);
  const platform=document.querySelector('.sales-trend select');await act(async()=>{platform.value='tiktok';platform.dispatchEvent(new Event('change',{bubbles:true}));});assert.match(document.querySelector('.sales-day').getAttribute('aria-label'),/—/);
- globalThis.fetch=async()=>({ok:true,json:async()=>({month:'2026-10',rows:[],sample:false})});await act(async()=>root.render(React.createElement(OverviewSales,{refreshKey:1,canView:true})));assert.match(document.body.textContent,/No sales data/);
+ globalThis.fetch=async url=>({ok:true,json:async()=>url.includes('live-leaderboard')?{status:'pending',shops:[]}:{month:'2026-10',rows:[],sample:false}});await act(async()=>root.render(React.createElement(OverviewSales,{refreshKey:1,canView:true})));assert.match(document.body.textContent,/No sales data/);
  globalThis.fetch=async()=>({ok:false,json:async()=>({error:'Unable to load sales.'})});await act(async()=>root.render(React.createElement(OverviewSales,{refreshKey:2,canView:true})));assert.match(document.querySelector('[role="alert"]').textContent,/Retry/);assert.doesNotMatch(document.body.textContent,/No sales data/);
- let reads=0;globalThis.fetch=async()=>{reads++;throw Error('locked must not fetch');};await act(async()=>root.render(React.createElement(OverviewSales,{canView:false})));assert.equal(reads,0);assert.match(document.body.textContent,/Sales data is restricted/);assert.doesNotMatch(document.body.textContent,/300.00|200.00/);assert.equal(document.querySelectorAll('svg[aria-label=Locked]').length,6);
+ let reads=0;globalThis.fetch=async()=>{reads++;throw Error('locked must not fetch');};await act(async()=>root.render(React.createElement(OverviewSales,{canView:false})));assert.equal(reads,0);assert.match(document.body.textContent,/Sales data is restricted/);assert.doesNotMatch(document.body.textContent,/300.00|200.00/);assert.equal(document.querySelectorAll('svg[aria-label=Locked]').length,7);
  await act(async()=>root.unmount());dom.window.close();
 });
 
