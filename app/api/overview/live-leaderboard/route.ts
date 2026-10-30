@@ -15,8 +15,11 @@ export async function GET(request:Request){
   const tenant=encodeURIComponent(member.tenant_id);
   const [active]=await supabaseRest<Array<{active:boolean}>>(`tenants?select=active&id=eq.${tenant}&limit=1`);
   if(!active?.active)return json({error:'Active tenant access required'},403);
-  const userRows=member.role==='superadmin'?[]:await supabaseRest<Array<{module_id:string;enabled:boolean;additive_grant:boolean}>>(`user_module_permissions?select=module_id,enabled,additive_grant&user_id=eq.${member.id}`);
-  const effective=effectivePermissionModules(member,[],userRows);
+  const [tenantRows,userRows]=member.role==='superadmin'?[[],[]]:await Promise.all([
+   supabaseRest<Array<{module_id:string;enabled:boolean}>>(`tenant_module_permissions?select=module_id,enabled&tenant_id=eq.${tenant}`),
+   supabaseRest<Array<{module_id:string;enabled:boolean;additive_grant:boolean}>>(`user_module_permissions?select=module_id,enabled,additive_grant&user_id=eq.${member.id}`),
+  ]);
+  const effective=effectivePermissionModules(member,tenantRows,userRows);
   if(!effective.includes('overview_leaderboard'))return json({error:'Leaderboard access required'},403);
   const allBoard=member.role==='superadmin'||effective.includes('overview_leaderboard_all_stores');
   const assigned=!allBoard&&member.store_access_mode==='selected'?await supabaseRest<Array<{store_id:string}>>(`user_store_access?select=store_id&enabled=eq.true&user_id=eq.${member.id}`):[];
