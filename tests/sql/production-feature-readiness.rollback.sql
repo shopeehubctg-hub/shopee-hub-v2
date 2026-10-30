@@ -44,6 +44,14 @@ begin
  or has_table_privilege('service_role','public.feature_grant_notifications','TRUNCATE')
  or has_column_privilege('service_role','public.feature_grant_notifications','module_id','UPDATE')
  or not has_column_privilege('service_role','public.feature_grant_notifications','acknowledged_at','UPDATE') then raise exception 'Notification ACL is not limited to acknowledgement';end if;
+ if not exists(
+   select 1 from pg_constraint
+   where conrelid='public.user_module_permissions'::regclass
+   and conname='user_module_permissions_module_check'
+   and pg_get_constraintdef(oid) like '%overview_leaderboard%'
+   and pg_get_constraintdef(oid) like '%overview_store_sales%'
+   and pg_get_constraintdef(oid) like '%individual_ads%'
+ ) then raise exception 'Module constraint is not aligned with the permission vocabulary';end if;
 
  execute 'set local role service_role';
  select count(*) into read_count from public.bigseller_store_daily s where s.tenant_id=t and s.store_id=fixture_store_id;
