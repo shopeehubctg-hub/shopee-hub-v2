@@ -17,3 +17,5 @@
 .sales-overview input,.sales-overview select{min-width:0;max-width:100%;box-sizing:border-box}
 @media(max-width:900px){.sales-overview .sales-bottom{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:650px){.sales-overview .sales-mtd-metrics{grid-template-columns:minmax(0,1fr)!important}.sales-overview .overview-target-ring{flex-basis:88px}.sales-overview .overview-featured>div:first-child{flex-basis:180px}.sales-overview .overview-featured{gap:20px}}
+
+.sales-overview .sales-bottom .sales-table-wrap table{min-width:0!important;width:100%;table-layout:auto}.sales-overview .sales-bottom .sales-table-wrap th,.sales-overview .sales-bottom .sales-table-wrap td{padding:13px 8px}.sales-overview .sales-bottom .overview-share-track{width:42px;margin-right:6px}
