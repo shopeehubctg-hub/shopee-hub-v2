@@ -2,7 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { coFundVouchers, customerUsers, dashboardSnapshots, linkDirectoryProjects, linkDirectoryStores, projectProductCatalog, stores, tenantModulePermissions, tenants, userModulePermissions, userStoreAccess } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
-import { ALL_PORTAL_MODULE_IDS } from "../../module-permissions";
+import { ALL_PORTAL_MODULE_IDS, effectiveAccessIds } from "../../module-permissions";
 import { storeDirectory } from "../../store-directory";
 import { storeSnapshots } from "../../store-snapshots";
 import { readProductCatalogSheet, sourceShopNameFor } from "../../product-catalog";
@@ -243,7 +243,7 @@ export async function GET(request: Request) {
     const tenantEnabled=new Map(tenantModules.map(row=>[row.module_id,row.enabled]));
     const customEnabled=new Set(userModules.filter(row=>row.enabled).map(row=>row.module_id));
     const clientEnabledModules=ALL_PORTAL_MODULE_IDS.filter(id=>id==="live_calendar"?tenantEnabled.get(id)===true:tenantEnabled.get(id)!==false);
-    const enabledModules=membership.role==="superadmin"?ALL_PORTAL_MODULE_IDS:membership.module_access_mode==="custom"?ALL_PORTAL_MODULE_IDS.filter(id=>customEnabled.has(id)):ALL_PORTAL_MODULE_IDS.filter(id=>id==="live_calendar"?tenantEnabled.get(id)===true:tenantEnabled.get(id)!==false);
+    const enabledModules=effectiveAccessIds(membership.role,membership.module_access_mode,tenantEnabled,customEnabled);
     if(!dashboardSectionAllowed(plan.section,enabledModules,membership.role,membership.role==="superadmin"||membership.can_manage_permissions===true))return Response.json({error:"Module access denied"},{status:403});
     const assignedStoreIds=new Set(userStores.map(row=>canonicalStoreId(row.store_id)));
     const [registry,directory]=await Promise.all([
@@ -335,9 +335,7 @@ export async function GET(request: Request) {
   const configuredModules = new Map(modulePermissionRows.map((row) => [row.moduleId, row.enabled]));
   const clientEnabledModules = ALL_PORTAL_MODULE_IDS.filter((moduleId) => moduleId === "live_calendar" ? configuredModules.get(moduleId) === true : configuredModules.get(moduleId) !== false);
   const userModuleRows = await db.select().from(userModulePermissions).where(eq(userModulePermissions.userId,membership.id));
-  const enabledModules = membership.role === "superadmin" ? ALL_PORTAL_MODULE_IDS : membership.moduleAccessMode === "custom"
-    ? ALL_PORTAL_MODULE_IDS.filter(moduleId=>userModuleRows.find(row=>row.moduleId===moduleId)?.enabled===true)
-    : clientEnabledModules;
+  const enabledModules = effectiveAccessIds(membership.role,membership.moduleAccessMode,configuredModules,new Set(userModuleRows.filter(row=>row.enabled).map(row=>row.moduleId)));
   if(!dashboardSectionAllowed(plan.section,enabledModules,membership.role,membership.role==="superadmin"||membership.canManagePermissions===true))return Response.json({error:"Module access denied"},{status:403});
   const [profiles,projects]=await Promise.all([
     db.select().from(linkDirectoryStores).where(eq(linkDirectoryStores.tenantId,tenant.id)),

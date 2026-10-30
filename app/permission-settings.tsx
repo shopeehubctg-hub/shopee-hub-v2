@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { StoreExchangeRateField } from "./store-exchange-rate-field";
 import { MARKET_CODES, MARKET_CONFIG, marketFromPlatform, type MarketCode } from "./markets";
 import { useFeePlans } from "./fee-plan-context";
-import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
+import { PORTAL_MODULES, OVERVIEW_LEADERBOARD_PERMISSION, type PortalModuleId } from "./module-permissions";
 import { AccountSetupFields, accountSetupError, emptyAccountSetup, accountSetupPayload, resetAccountSetupSelection, malaysiaMonth, type AccountSetupDraft } from "./store-account-setup-fields";
 
 type Props = { accountSetupPreview?:boolean; initialEnabledModules: PortalModuleId[]; onStoreChanged?: () => void };
@@ -143,7 +143,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
   });
   const access = data?.access;
   const isSuperAdmin = access?.isSuperAdmin === true;
-  const grantableModules = isSuperAdmin ? PORTAL_MODULES : PORTAL_MODULES.filter(module => access?.grantableModules.includes(module.id));
+  const grantableModules = [PORTAL_MODULES[0],OVERVIEW_LEADERBOARD_PERMISSION,...PORTAL_MODULES.slice(1)].filter(module=>isSuperAdmin||access?.grantableModules.includes(module.id));
   const dirty = useMemo(
     () => PORTAL_MODULES.some(({ id }) => enabled.has(id) !== saved.has(id)),
     [enabled, saved],
@@ -346,6 +346,8 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
     setEditing((current) => {
       if (!current) return current;
       const next={...current,...patch,...(!isSuperAdmin ? { role: current.role, canManagePermissions: current.canManagePermissions, moduleAccessMode: "custom" as const, storeAccessMode: "selected" as const } : {})};
+      if(!next.enabledModules.includes("overview"))next.enabledModules=next.enabledModules.filter(id=>id!=="overview_leaderboard"&&id!=="overview_leaderboard_all_stores");
+      if(!next.enabledModules.includes("overview_leaderboard"))next.enabledModules=next.enabledModules.filter(id=>id!=="overview_leaderboard_all_stores");
       if (next.role === "superadmin") next.canManagePermissions = false;
       if(next.role==="customer"&&patch.enabledModules?.includes("live_calendar")&&next.storeAccessMode==="all")
         return {...next,storeAccessMode:"selected",storeIds:[]};
@@ -806,6 +808,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                           </label>
                         ))}
                         </div>
+
                       </>
                     )}
                   </fieldset>
@@ -839,7 +842,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                       <>
                         <div className="access-bulk-actions">
                           <span>
-                            {editing.enabledModules.length} of{" "}
+                            {editing.enabledModules.filter(id=>id!=="overview_leaderboard_all_stores").length} of{" "}
                             {grantableModules.length} selected
                           </span>
                           <div>
@@ -867,9 +870,10 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                         </div>
                         <div className="access-check-grid modules">
                         {grantableModules.map((module) => (
-                          <label key={module.id}>
+                          <label key={module.id} style={module.id==="overview_leaderboard"?{paddingLeft:24}:undefined}>
                             <input
                               type="checkbox"
+                              disabled={module.id==="overview_leaderboard"&&!editing.enabledModules.includes("overview")}
                               checked={editing.enabledModules.includes(
                                 module.id,
                               )}
@@ -888,6 +892,12 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                           </label>
                         ))}
                         </div>
+                        {editing.enabledModules.includes("overview_leaderboard")&&<label>Leaderboard stores
+                          <select value={editing.enabledModules.includes("overview_leaderboard_all_stores")?"all":"assigned"} onChange={event=>updateEditing({enabledModules:event.target.value==="all"?[...editing.enabledModules.filter(id=>id!=="overview_leaderboard_all_stores"),"overview_leaderboard_all_stores"]:editing.enabledModules.filter(id=>id!=="overview_leaderboard_all_stores")})}>
+                            <option value="assigned">Assigned stores only</option>
+                            {(isSuperAdmin||access?.grantableModules.includes("overview_leaderboard_all_stores"))&&<option value="all">All participating stores</option>}
+                          </select>
+                        </label>}
                       </>
                     )}
                   </fieldset>

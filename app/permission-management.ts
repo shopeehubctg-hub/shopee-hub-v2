@@ -1,7 +1,7 @@
 import "server-only";
 
 import { getChatGPTUser } from "./chatgpt-auth";
-import { ALL_PORTAL_MODULE_IDS, type PortalModuleId } from "./module-permissions";
+import { effectiveAccessIds, type PortalModuleId } from "./module-permissions";
 import { supabaseRest } from "./supabase-rest";
 import { canonicalStoreId } from "./live-calendar-model";
 
@@ -24,11 +24,7 @@ export function samePermissionOrigin(request: Request) {
 
 export function effectivePermissionModules(member: Pick<PermissionMember, "role" | "module_access_mode">,
   tenantRows: Array<{module_id: string; enabled: boolean}>, userRows: Array<{module_id: string; enabled: boolean}>) {
-  if (member.role === "superadmin") return [...ALL_PORTAL_MODULE_IDS];
-  const tenant = new Map(tenantRows.map(row => [row.module_id, row.enabled]));
-  return ALL_PORTAL_MODULE_IDS.filter(id => member.module_access_mode === "custom"
-    ? userRows.some(row => row.module_id === id && row.enabled)
-    : (id === "live_calendar" ? tenant.get(id) === true : tenant.get(id) !== false));
+  return effectiveAccessIds(member.role,member.module_access_mode,new Map(tenantRows.map(row=>[row.module_id,row.enabled])),new Set(userRows.filter(row=>row.enabled).map(row=>row.module_id)));
 }
 
 export async function permissionManagement(request?: Request): Promise<PermissionContext | {error: Response}> {

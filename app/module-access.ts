@@ -10,6 +10,11 @@ type Database = Awaited<ReturnType<typeof getDb>>;
 export async function canAccessModule(db: Database, membership: { id:number; tenantId:string; role:"customer"|"manager"|"superadmin"; active:boolean; moduleAccessMode:"role_default"|"custom" }, moduleId: PortalModuleId) {
   if (!membership.active) return false;
   if (membership.role === "superadmin") return true;
+  if(moduleId==="overview_leaderboard"||moduleId==="overview_leaderboard_all_stores"){
+    if(membership.moduleAccessMode!=="custom")return false;
+    const rows=await db.select({moduleId:userModulePermissions.moduleId,enabled:userModulePermissions.enabled}).from(userModulePermissions).where(eq(userModulePermissions.userId,membership.id));
+    return ["overview","overview_leaderboard",...(moduleId==="overview_leaderboard_all_stores"?[moduleId]:[])].every(id=>rows.some(row=>row.moduleId===id&&row.enabled));
+  }
   if (membership.moduleAccessMode === "custom") {
     const [permission] = await db.select({ enabled:userModulePermissions.enabled }).from(userModulePermissions)
       .where(and(eq(userModulePermissions.userId,membership.id),eq(userModulePermissions.moduleId,moduleId))).limit(1);
