@@ -25,7 +25,7 @@ export function FeatureAnnouncementDialog() {
     }catch{setError("Unable to save. Please try again.");}
     finally{setSaving(false);}
   }
-  return <div className="feature-announcement-backdrop" role="presentation"><section className="feature-announcement" role="dialog" aria-modal="true" aria-labelledby="feature-announcement-title">
+  return <div className="feature-announcement-backdrop" role="presentation"><section className="feature-announcement" role="dialog" aria-modal="true" aria-labelledby="feature-announcement-title" onKeyDown={event=>{if(event.key==="Tab"){event.preventDefault();closeRef.current?.focus();}else if(event.key==="Escape"&&!saving){event.preventDefault();void acknowledge();}}}>
     <div className="feature-announcement-mark" aria-hidden="true">✓</div><p className="kicker">NEW ACCESS</p><h2 id="feature-announcement-title">Congratulations!</h2><p>You now have {features.length} new {features.length===1?"feature":"features"}.</p>
     <ul>{features.map(feature=><li key={feature.id}><span aria-hidden="true">✓</span>{feature.label}</li>)}</ul>
     {error&&<p className="feature-announcement-error" role="alert">{error}</p>}<button ref={closeRef} disabled={saving} onClick={acknowledge}>{saving?"Saving…":"Start exploring"}</button>
