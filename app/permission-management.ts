@@ -1,7 +1,7 @@
 import "server-only";
 
 import { getChatGPTUser } from "./chatgpt-auth";
-import { ALL_PORTAL_MODULE_IDS, type PortalModuleId } from "./module-permissions";
+import { effectiveAccessIds, type PortalModuleId } from "./module-permissions";
 import { supabaseRest } from "./supabase-rest";
 import { canonicalStoreId } from "./live-calendar-model";
 
@@ -23,12 +23,8 @@ export function samePermissionOrigin(request: Request) {
 }
 
 export function effectivePermissionModules(member: Pick<PermissionMember, "role" | "module_access_mode">,
-  tenantRows: Array<{module_id: string; enabled: boolean}>, userRows: Array<{module_id: string; enabled: boolean}>) {
-  if (member.role === "superadmin") return [...ALL_PORTAL_MODULE_IDS];
-  const tenant = new Map(tenantRows.map(row => [row.module_id, row.enabled]));
-  return ALL_PORTAL_MODULE_IDS.filter(id => member.module_access_mode === "custom"
-    ? userRows.some(row => row.module_id === id && row.enabled)
-    : (id === "live_calendar" ? tenant.get(id) === true : tenant.get(id) !== false));
+  tenantRows: Array<{module_id: string; enabled: boolean}>, userRows: Array<{module_id: string; enabled: boolean; additive_grant?: boolean}>) {
+  return effectiveAccessIds(member.role,member.module_access_mode,new Map(tenantRows.map(row=>[row.module_id,row.enabled])),new Set(userRows.filter(row=>row.enabled&&!row.additive_grant).map(row=>row.module_id)),new Set(userRows.filter(row=>row.enabled&&row.additive_grant).map(row=>row.module_id)));
 }
 
 export async function permissionManagement(request?: Request): Promise<PermissionContext | {error: Response}> {
@@ -40,7 +36,7 @@ export async function permissionManagement(request?: Request): Promise<Permissio
   if (!member?.active) return {error: Response.json({error: "Permission Settings access required"}, {status: 403})};
   const [tenants, userRows, tenantRows, stores, assigned] = await Promise.all([
     supabaseRest<Array<{active: boolean}>>(`tenants?select=active&id=eq.${encodeURIComponent(member.tenant_id)}&limit=1`),
-    supabaseRest<Array<{module_id: string; enabled: boolean}>>(`user_module_permissions?select=module_id,enabled&user_id=eq.${member.id}`),
+    supabaseRest<Array<{module_id: string; enabled: boolean; additive_grant:boolean}>>(`user_module_permissions?select=module_id,enabled,additive_grant&user_id=eq.${member.id}`),
     supabaseRest<Array<{module_id: string; enabled: boolean}>>(`tenant_module_permissions?select=module_id,enabled&tenant_id=eq.${encodeURIComponent(member.tenant_id)}`),
     supabaseRest<Array<{id: string}>>(`stores?select=id&tenant_id=eq.${encodeURIComponent(member.tenant_id)}`),
     member.store_access_mode === "selected" ? supabaseRest<Array<{store_id: string}>>(`user_store_access?select=store_id&enabled=eq.true&user_id=eq.${member.id}`) : Promise.resolve([]),

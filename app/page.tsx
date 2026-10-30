@@ -12,7 +12,7 @@ import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
 import { DashboardLoading } from "./dashboard-loading";
 import { projectDriveFolders } from "./project-drive-folders";
 import { DashboardModuleBoundary, ModuleLoading } from "./dashboard-module-boundary";
-const OverviewSales=lazy(()=>import("./overview-sales").then(module=>({default:module.OverviewSales})));
+import { FeatureAnnouncementDialog } from "./feature-announcement-dialog";
 const PackageControl=lazy(()=>import("./package-control").then(module=>({default:module.PackageControl})));
 const PriceCalculator=lazy(()=>import("./price-calculator").then(module=>({default:module.PriceCalculator})));
 const DesignChecker=lazy(()=>import("./design-checker").then(module=>({default:module.DesignChecker})));
@@ -20,6 +20,9 @@ const FakeSellerReport=lazy(()=>import("./fake-seller-report").then(module=>({de
 const PermissionSettings=lazy(()=>import("./permission-settings").then(module=>({default:module.PermissionSettings})));
 const LiveCalendar=lazy(()=>import("./live-calendar").then(module=>({default:module.LiveCalendar})));
 const AccountPanel=lazy(()=>import("./account-panel").then(module=>({default:module.AccountPanel})));
+const StoreHealth=lazy(()=>import("./store-health").then(module=>({default:module.StoreHealth})));
+const OverviewStoreSales=lazy(()=>import("./overview-store-sales").then(module=>({default:module.OverviewStoreSales})));
+const OverviewSales=lazy(()=>import("./overview-sales").then(module=>({default:module.OverviewSales})));
 const SNAPSHOT_SECTIONS=new Set(["overview","advertising","actions","calculator","orders","health","protection"]);
 
 type Store = { id: string; name: string; sourceName?: string; platform: string; contacts: { project: string; href: string; driveLink?: string }[]; storeGroupLink?: string | null; driveLink?: string | null };
@@ -119,7 +122,7 @@ function startLoadTiming(requestKind:"bootstrap"|"module",section:string,storeId
 }
 
 export default function Home() {
-  const [requestedSection, setSection] = useState("overview");
+  const [requestedSection, setRequestedSection] = useState("overview");
   const [stagingPreview,setStagingPreview] = useState(false);
   const [sidebarCollapsed,setSidebarCollapsed] = useState(false);
   const [shellData, setShellData] = useState<(DashboardResponse & { user: { email:string } }) | null>(null);
@@ -149,7 +152,7 @@ export default function Home() {
 
   const moduleKey=`${section}:${storeId}:${dataRevision}:${moduleRetry}`;
   const salesOverview=section==="overview";
-  const needsModuleData=SNAPSHOT_SECTIONS.has(section)&&!salesOverview;
+  const needsModuleData=SNAPSHOT_SECTIONS.has(section)&&!salesOverview&&section!=="health";
   const currentModule=moduleResult?.key===moduleKey?moduleResult:null;
   const moduleReady=!needsModuleData||Boolean(currentModule?.data);
   const data=shellData?(currentModule?.data?{...shellData,...currentModule.data}:shellData):null;
@@ -245,7 +248,10 @@ export default function Home() {
     return ()=>controller.abort();
   },[shellData,section,storeId,needsModuleData,moduleKey,dataRevision]);
 
+  function permitBatchLeave(){return window.dispatchEvent(new Event("package-batch-leave",{cancelable:true}));}
+  function setSection(id:string){if(id!==requestedSection&&!permitBatchLeave())return;setRequestedSection(id);}
   function selectStore(id:string){
+    if(id!==storeId&&!permitBatchLeave())return;
     bootstrapController.current?.abort();++loadSequence.current;setLoading(false);
     setStoreSelectionMade(true);setStoreId(id);
   }
@@ -261,7 +267,7 @@ export default function Home() {
   const staticSnapshot = !isStaging&&store ? storeSnapshots[store.sourceName ?? store.name] : null;
   const live = data?.snapshot?.payload ?? staticSnapshot ?? {};
   const noSample = isStaging||Boolean(live.noSample);
-  const stagingSnapshotUnavailable=!salesOverview&&isStaging&&((!data?.snapshot&&["overview","orders","health","protection"].includes(section))||(section==="protection"&&(!Array.isArray(live.fakeSellerCases)||!live.fakeSellerCases.length)));
+  const stagingSnapshotUnavailable=section!=="health"&&!salesOverview&&isStaging&&((!data?.snapshot&&["overview","orders","health","protection"].includes(section))||(section==="protection"&&(!Array.isArray(live.fakeSellerCases)||!live.fakeSellerCases.length)));
   const overview = Array.isArray(live.overview) ? live.overview : isStaging?overviewFallback.map(([label])=>[label,"暂无数据",""]):overviewFallback;
   const adsBase = data?.adPerformance?.length ? { ...unavailableAdvertising, ...(live.advertising ?? {}) } : unavailableAdvertising;
   const relevantDailyAds = data?.adPerformance ?? [];
@@ -338,6 +344,7 @@ export default function Home() {
     {(loadError || data) && <a href="/login">Back to sign in</a>}
   </section></main>;
   return <main className={`app-shell${sidebarCollapsed?" sidebar-collapsed":""}${section==="advertising"&&allStoresSelected?" advertising-all-shell":""}`}>
+    <FeatureAnnouncementDialog />
     <aside className="side">
       <div className="logo"><img src="/shopee-hub-logo-transparent.png" alt="ShopeeHub"/><small>STORE COMMAND CENTER</small></div>
       <button className="sidebar-toggle" onClick={()=>setSidebarCollapsed(current=>!current)} aria-label={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"} title={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"}>{sidebarCollapsed?"›":"‹"}</button>
@@ -357,7 +364,7 @@ export default function Home() {
 
       <DashboardModuleBoundary key={section}><Suspense fallback={<ModuleLoading/>}>
       {needsModuleData&&!storeId?<div className="card" role="status">No stores are available. Select or add a store to view this module.</div>:!moduleReady?(currentModule?.error?<div className="card" role="alert"><p>{currentModule.error}</p><button type="button" onClick={()=>setModuleRetry(value=>value+1)}>Retry module</button></div>:<ModuleLoading/>):stagingSnapshotUnavailable?<div className="card" role="status"><h2>No data</h2><p>No Staging snapshot is available for this store.</p></div>:<>
-      {salesOverview && <OverviewSales refreshKey={dataRevision} canView={shellData?.access?.role==="superadmin"}/> }
+      {salesOverview && (allStoresSelected ? <OverviewSales refreshKey={dataRevision} canView={shellData?.access?.role==="superadmin"} canViewLeaderboard={shellData?.access?.role==="superadmin"||shellData?.access?.enabledModules.includes("overview_leaderboard")}/> : <OverviewStoreSales key={storeId} storeId={storeId} refreshKey={dataRevision} canView={shellData?.access?.role==="superadmin"||shellData?.access?.enabledModules.includes("overview_store_sales")}/>)}
       {section==="overview" && !salesOverview && <div className="page">
         <div className="page-title"><div><p className="kicker">OVERVIEW</p><h2>Business Pulse</h2></div><div className="warning-pill">{importantWarningCount} important warnings</div></div>
         <section className="owner-brief"><div><span>今日重点</span><strong>{adFunds.needsTopUp ? `Ad Balance ${formatRinggit(adFunds.balance)} · Top-up ${formatRinggit(adFunds.recommendedTopUp)}` : `${warningOrders.length} orders need attention`}</strong><small>{adFunds.syncStatus === "delayed" ? "Advertising data delayed" : (adFunds.needsTopUp ? (adFunds.topUpOwner === "shopee_hub" ? "Managed by Shopee Hub" : "Action required") : "Ads healthy")}</small></div><button onClick={()=>setSection(adFunds.needsTopUp?"advertising":"orders")}>View →</button></section>
@@ -371,7 +378,7 @@ export default function Home() {
       </div>}
 
       {section==="packages" && <div className="page"><PackageControl staging={isStaging} storePlatform={store?.platform} allowSamplePreview={data.access?.role==="superadmin"} storeId={storeSelectionMade?storeId:""} storeName={!storeSelectionMade?"No Store Selected":allStoresSelected?"All Accessible Stores":(store?.name ?? "Selected Store")} prefills={packagePrefills} standaloneCreate={standalonePackageCreate} draftStorageKey={packageDraftKey ? `package-draft:${packageDraftKey}` : undefined} onPrefillsAccepted={()=>setPackagePrefills([])} /></div>}
-      {section==="calculator" && <div className="page" aria-label="Price Calculator"><PriceCalculator storeName={allStoresSelected?"":(store?.name??"")} productProfile={allStoresSelected?null:data?.productProfile} coFundVouchers={allStoresSelected?[]:data?.coFundVouchers} onCreatePackage={prefill=>openPackageDraft([prefill])} onCreatePackages={openPackageDraft} /></div>}
+      {section==="calculator" && <div className="page" aria-label="Price Calculator"><PriceCalculator staging={isStaging} storeName={allStoresSelected?"":(store?.name??"")} productProfile={allStoresSelected?null:data?.productProfile} coFundVouchers={allStoresSelected?[]:data?.coFundVouchers} onCreatePackage={prefill=>openPackageDraft([prefill])} onCreatePackages={openPackageDraft} /></div>}
       {section==="design" && <div className="page"><DesignChecker key={storeId} storeId={storeId}/></div>}
       {section==="protection" && <div className="page"><FakeSellerReport storeName={store?.name ?? "Selected store"} allStores={allStoresSelected} cases={fakeSellerCases}/></div>}
       {section==="permissions" && data?.access?.canManagePermissions && <div className="page"><PermissionSettings accountSetupPreview initialEnabledModules={data.access.clientEnabledModules} onStoreChanged={()=>load(storeId && storeId!=="all" ? storeId : undefined,true)}/></div>}
@@ -440,7 +447,7 @@ export default function Home() {
 
       {section==="orders" && <div className="page"><div className="page-title"><div><p className="kicker">ORDERS & INVENTORY</p><h2>Today’s orders & deadlines</h2></div></div><section className="metric-grid three"><article className="metric"><span>Today’s Orders</span><strong>{orderSummary?.today ?? (noSample ? "暂无数据" : 98)}</strong></article><article className="metric warn"><span>Expiring Today</span><strong>{orderSummary?.expiringToday ?? (noSample ? "暂无数据" : 7)}</strong></article><article className="metric danger"><span>Expired</span><strong>{orderSummary?.expired ?? (noSample ? "暂无数据" : 2)}</strong></article></section><div className="card table-card"><table><thead><tr><th>Order</th><th>Buyer</th><th>Product</th><th>Order Time</th><th>Order Value</th><th>Expire Time</th><th>Time Left</th><th>Status</th></tr></thead><tbody>{orders.map((o:any)=><tr key={o.id}><td><b>{o.id}</b></td><td>{o.buyer}</td><td>{o.product}</td><td>{o.time}</td><td>{o.value}</td><td>{o.expire}</td><td>{o.left}</td><td><span className={`badge ${o.status.toLowerCase()}`}>{o.status}</span></td></tr>)}{noSample && !orders.length && <tr><td colSpan={8}>暂无数据</td></tr>}</tbody></table></div></div>}
 
-      {section==="health" && noSample ? <div className="page"><div className="page-title"><div><p className="kicker">STORE HEALTH</p><h2>Reputation & compliance</h2></div></div><article className="card"><h3>暂无数据</h3><p>No store health metrics are available from this source.</p></article></div> : section==="health" && <div className="page"><div className="page-title"><div><p className="kicker">STORE HEALTH</p><h2>Reputation & compliance</h2></div><span className="health-status">Healthy</span></div><section className="metric-grid"><article className="metric"><span>Reviews</span><strong>4,286</strong><em>+182 this month</em></article><article className="metric danger"><span>Bad Reviews</span><strong>37</strong><em>0.86%</em></article><article className="metric"><span>Buyer Overall Rating</span><strong>4.92 / 5</strong></article><article className="metric"><span>Penalty Points</span><strong>0</strong><em>Normal</em></article></section><section className="health-grid"><article className="card reviews"><p className="kicker">RATING DISTRIBUTION</p>{[["5 stars",88],["4 stars",9],["1–3 stars",3]].map(r=><div key={r[0]}><span>{r[0]}</span><i><b style={{width:`${r[1]}%`}}/></i><strong>{r[1]}%</strong></div>)}</article><article className="card quality"><p className="kicker">SERVICE QUALITY</p>{[["Fast Handover Rate","96.8%"],["Chat Satisfaction","94.2%"],["Response Rate","98.1%"],["Late Shipment Rate","1.2%"]].map(r=><div key={r[0]}><span>{r[0]}</span><strong>{r[1]}</strong></div>)}</article><article className="card violations"><p className="kicker">LISTING VIOLATIONS</p><strong>0</strong><span>No active listing violations</span></article></section></div>}
+      {section==="health" && <StoreHealth key={storeId} storeId={storeId} refreshKey={dataRevision} canView={shellData?.access?.role==="superadmin"}/>}
 
       {section==="actions" && <div className="page"><div className="page-title"><div><p className="kicker">CLIENT ACTION CENTER</p><h2>What we need from the client</h2></div><span className="warning-pill">{visibleClientActions.length} open items</span></div>{adFunds.topUpOwner === "shopee_hub" && adFunds.needsTopUp && <div className="managed-note">Top-up {formatRinggit(adFunds.recommendedTopUp)} · Managed by Shopee Hub</div>}{visibleClientActions.length ? <div className="action-list">{visibleClientActions.map((a:any)=><article className="card action" key={a.title}><div className={`type ${a.type.toLowerCase()}`}>{a.type.slice(0,1)}</div><div><span className="category">{a.type}</span><h3>{a.title}</h3><p>{a.client} · Due {a.due}</p>{a.message&&<p className="action-message">{a.message}</p>}</div>{a.href?<a className="action-link" href={a.href} target="_blank" rel="noopener noreferrer">{a.action}</a>:<button>{a.action}</button>}</article>)}</div> : <article className="card empty-actions"><h3>No client action needed</h3><p>当前没有需要客户处理的事项。</p></article>}</div>}
       </>}
