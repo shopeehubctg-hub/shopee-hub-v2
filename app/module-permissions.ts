@@ -22,11 +22,14 @@ export function isPortalModuleId(value: unknown): value is PortalModuleId {
 export const OVERVIEW_LEADERBOARD_PERMISSION = {id:"overview_leaderboard",label:"Leaderboard",description:"Overview leaderboard section"} as const;
 export const OVERVIEW_STORE_SALES_PERMISSION = {id:"overview_store_sales",label:"Store Daily Sales",description:"Selected-store daily and monthly sales"} as const;
 export const ALL_PERMISSION_IDS:PortalModuleId[] = [...ALL_PORTAL_MODULE_IDS,"overview_leaderboard","overview_leaderboard_all_stores","overview_store_sales"];
-export function effectiveAccessIds(role:string,mode:string,tenant:Map<string,boolean>,custom:Set<string>):PortalModuleId[]{
+export const RELEASABLE_PERMISSION_IDS:PortalModuleId[] = ALL_PERMISSION_IDS.filter(id=>id!=="overview_leaderboard_all_stores");
+export function isReleasablePermissionId(value:unknown):value is PortalModuleId{return typeof value==="string"&&RELEASABLE_PERMISSION_IDS.includes(value as PortalModuleId);}
+export function effectiveAccessIds(role:string,mode:string,tenant:Map<string,boolean>,custom:Set<string>,additive:Set<string>=new Set()):PortalModuleId[]{
  if(role==="superadmin")return [...ALL_PERMISSION_IDS];
- const modules:PortalModuleId[]=ALL_PORTAL_MODULE_IDS.filter(id=>mode==="custom"?custom.has(id):id==="live_calendar"?tenant.get(id)===true:tenant.get(id)!==false);
- if(mode==="custom"&&tenant.get("overview")!==false&&modules.includes("overview")&&custom.has("overview_leaderboard"))modules.push("overview_leaderboard");
- if(modules.includes("overview_leaderboard")&&custom.has("overview_leaderboard_all_stores"))modules.push("overview_leaderboard_all_stores");
- if(mode==="custom"&&tenant.get("overview")!==false&&modules.includes("overview")&&custom.has("overview_store_sales"))modules.push("overview_store_sales");
+ const granted=(id:string)=>additive.has(id)||(mode==="custom"&&custom.has(id));
+ const modules:PortalModuleId[]=ALL_PORTAL_MODULE_IDS.filter(id=>additive.has(id)||(mode==="custom"?custom.has(id):id==="live_calendar"?tenant.get(id)===true:tenant.get(id)!==false));
+ if(tenant.get("overview")!==false&&modules.includes("overview")&&granted("overview_leaderboard"))modules.push("overview_leaderboard");
+ if(modules.includes("overview_leaderboard")&&granted("overview_leaderboard_all_stores"))modules.push("overview_leaderboard_all_stores");
+ if(tenant.get("overview")!==false&&modules.includes("overview")&&granted("overview_store_sales"))modules.push("overview_store_sales");
  return modules;
 }

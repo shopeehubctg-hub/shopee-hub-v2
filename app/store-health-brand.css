@@ -13,3 +13,4 @@
 }
 .health-design .health-design-bar > span { background: #4d8198; }
 .health-design button:focus-visible { outline-color: #ee4d2d; }
+.health-design{gap:15px}.health-design .health-design-hero{min-height:178px;padding:24px 27px;gap:20px}.health-design .health-design-ring{width:132px;height:132px}.health-design .health-design-summary{gap:11px}.health-design .health-design-summary>article{padding:16px 18px;border-radius:17px}.health-design .health-design-metrics{gap:11px}.health-design .health-design-metric{min-height:138px;padding:17px 18px;border-radius:17px}.health-design .health-design-checks{border-radius:17px}.health-design .health-design-checks-head{padding:17px 19px 12px}.health-design .health-design-check{padding:11px 19px}

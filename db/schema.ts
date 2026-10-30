@@ -53,6 +53,7 @@ export const userModulePermissions = pgTable("user_module_permissions", {
   id:bigserial("id", { mode:"number" }).primaryKey(),
   userId:bigint("user_id", { mode:"number" }).notNull().references(()=>customerUsers.id,{onDelete:"cascade"}),
   moduleId:text("module_id").notNull(), enabled:boolean("enabled").notNull().default(true),
+  additiveGrant:boolean("additive_grant").notNull().default(false),
   updatedAt:timestamp("updated_at", { withTimezone:true, mode:"string" }).notNull().defaultNow(),
 }, table=>[uniqueIndex("user_module_permission_idx").on(table.userId,table.moduleId),index("user_module_permissions_user_idx").on(table.userId)]);
 
@@ -111,6 +112,17 @@ export const userAccessAuditLog = pgTable("user_access_audit_log", {
   index("user_access_audit_actor_idx").on(table.actorUserId),
 ]);
 
+export const featureGrantNotifications = pgTable("feature_grant_notifications", {
+  id:bigserial("id",{mode:"number"}).primaryKey(), tenantId:text("tenant_id").notNull().references(()=>tenants.id),
+  userId:bigint("user_id",{mode:"number"}).notNull().references(()=>customerUsers.id,{onDelete:"cascade"}),
+  moduleId:text("module_id").notNull(), auditId:uuid("audit_id").notNull().references(()=>userAccessAuditLog.id),
+  grantedAt:timestamp("granted_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),
+  acknowledgedAt:timestamp("acknowledged_at",{withTimezone:true,mode:"string"}),
+},table=>[
+  uniqueIndex("feature_grant_notifications_audit_module_idx").on(table.auditId,table.moduleId),
+  index("feature_grant_notifications_pending_idx").on(table.tenantId,table.userId,table.acknowledgedAt,table.grantedAt),
+]);
+
 export const dashboardSnapshots = pgTable("dashboard_snapshots", {
   id:bigserial("id", { mode:"number" }).primaryKey(), tenantId:text("tenant_id").notNull().references(()=>tenants.id),
   storeId:text("store_id").notNull().references(()=>stores.id), periodStart:date("period_start", { mode:"string" }).notNull(),
@@ -133,10 +145,9 @@ export const managementActions = pgTable("management_actions", {
 
 export const inventorySkus = pgTable("inventory_skus", {
   id:text("id").primaryKey(), tenantId:text("tenant_id").notNull().references(()=>tenants.id), sku:text("sku").notNull(),
-  storeId:text("store_id"),
   name:text("name").notNull(), source:text("source").notNull().default("OXM"), active:boolean("active").notNull().default(true),
   syncedAt:timestamp("synced_at", { withTimezone:true, mode:"string" }).notNull().defaultNow(),
-}, table=>[uniqueIndex("inventory_sku_tenant_idx").on(table.tenantId,table.sku),index("inventory_skus_tenant_store_sku_idx").on(table.tenantId,table.storeId,table.sku),foreignKey({name:"inventory_skus_tenant_store_fk",columns:[table.tenantId,table.storeId],foreignColumns:[stores.tenantId,stores.id]})]);
+}, table=>[uniqueIndex("inventory_sku_tenant_idx").on(table.tenantId,table.sku)]);
 
 export const packages = pgTable("packages", {
   id:text("id").primaryKey(), tenantId:text("tenant_id").notNull().references(()=>tenants.id), storeId:text("store_id").notNull().references(()=>stores.id),

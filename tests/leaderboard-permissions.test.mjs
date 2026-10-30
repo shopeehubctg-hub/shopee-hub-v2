@@ -5,7 +5,7 @@ async function load(path){const b=await build({entryPoints:[path],bundle:true,wr
 const {effectiveAccessIds,PORTAL_MODULES}=await load('app/module-permissions.ts');
 const {scopeLeaderboard}=await load('app/leaderboard-access-model.ts');
 const basic='overview_leaderboard',all='overview_leaderboard_all_stores',storeSales='overview_store_sales';
-const ids=(mode,custom,tenant=[])=>effectiveAccessIds('customer',mode,new Map(tenant),new Set(custom));
+const ids=(mode,custom,tenant=[],additive=[])=>effectiveAccessIds('customer',mode,new Map(tenant),new Set(custom),new Set(additive));
 test('section defaults deny and requires all dependency grants',()=>{
  assert(!PORTAL_MODULES.some(m=>m.id===basic||m.id===all));
  assert(!ids('role_default',['overview',basic,all],[[basic,true],[all,true]]).includes(basic));
@@ -20,6 +20,14 @@ test('section defaults deny and requires all dependency grants',()=>{
  assert(!ids('custom',[storeSales]).includes(storeSales));
  assert(ids('custom',['overview',storeSales]).includes(storeSales));
  assert(effectiveAccessIds('superadmin','role_default',new Map(),new Set()).includes(storeSales));
+});
+test('tenant-wide release is additive without replacing role defaults or custom access',()=>{
+ assert(ids('role_default',[],[],['packages']).includes('packages'));
+ assert(ids('role_default',[],[['packages',false]],['packages']).includes('packages'));
+ assert(ids('role_default',[],[],['overview_store_sales']).includes('overview_store_sales'));
+ assert(ids('role_default',[],[],['overview','overview_store_sales']).includes('overview_store_sales'));
+ assert(ids('custom',['design'],[],['packages']).includes('design'));
+ assert(ids('custom',['design'],[],['packages']).includes('packages'));
 });
 test('scoped board omits hidden names, sums, ranks and partial state',()=>{
  const board={currency:'MYR',status:'partial',updated:null,totalCents:150,pending:[{name:'Secret'}],shops:[{name:'Hidden',storeId:'h',salesCents:100,observed:true,rank:1},{name:'Mine',storeId:'m',salesCents:50,observed:true,rank:2},{name:'Secret',storeId:'s',salesCents:0,observed:false,rank:3}]};

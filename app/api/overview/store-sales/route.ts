@@ -11,7 +11,7 @@ export async function GET(request:Request){
   const [member]=await supabaseRest<Array<{id:number;tenant_id:string;role:'customer'|'manager'|'superadmin';active:boolean;module_access_mode:'custom'|'role_default';store_access_mode:'all'|'selected'}>>(`customer_users?select=id,tenant_id,role,active,module_access_mode,store_access_mode&email=eq.${encodeURIComponent(actor.email.toLowerCase())}&limit=1`);
   if(!member?.active)return json({error:'Store Daily Sales access required'},403);
   const [userRows,tenantRows]=member.role==='superadmin'?[[],[]]:await Promise.all([
-   supabaseRest<Array<{module_id:string;enabled:boolean}>>(`user_module_permissions?select=module_id,enabled&user_id=eq.${member.id}`),
+   supabaseRest<Array<{module_id:string;enabled:boolean;additive_grant:boolean}>>(`user_module_permissions?select=module_id,enabled,additive_grant&user_id=eq.${member.id}`),
    supabaseRest<Array<{module_id:string;enabled:boolean}>>(`tenant_module_permissions?select=module_id,enabled&tenant_id=eq.${encodeURIComponent(member.tenant_id)}`),
   ]);
   if(!effectivePermissionModules(member,tenantRows,userRows).includes('overview_store_sales'))return json({error:'Store Daily Sales access required'},403);

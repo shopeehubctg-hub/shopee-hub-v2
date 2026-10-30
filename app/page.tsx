@@ -12,6 +12,7 @@ import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
 import { DashboardLoading } from "./dashboard-loading";
 import { projectDriveFolders } from "./project-drive-folders";
 import { DashboardModuleBoundary, ModuleLoading } from "./dashboard-module-boundary";
+import { FeatureAnnouncementDialog } from "./feature-announcement-dialog";
 const PackageControl=lazy(()=>import("./package-control").then(module=>({default:module.PackageControl})));
 const PriceCalculator=lazy(()=>import("./price-calculator").then(module=>({default:module.PriceCalculator})));
 const DesignChecker=lazy(()=>import("./design-checker").then(module=>({default:module.DesignChecker})));
@@ -343,6 +344,7 @@ export default function Home() {
     {(loadError || data) && <a href="/login">Back to sign in</a>}
   </section></main>;
   return <main className={`app-shell${sidebarCollapsed?" sidebar-collapsed":""}${section==="advertising"&&allStoresSelected?" advertising-all-shell":""}`}>
+    <FeatureAnnouncementDialog />
     <aside className="side">
       <div className="logo"><img src="/shopee-hub-logo-transparent.png" alt="ShopeeHub"/><small>STORE COMMAND CENTER</small></div>
       <button className="sidebar-toggle" onClick={()=>setSidebarCollapsed(current=>!current)} aria-label={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"} title={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"}>{sidebarCollapsed?"›":"‹"}</button>

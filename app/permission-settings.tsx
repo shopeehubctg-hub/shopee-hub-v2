@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { StoreExchangeRateField } from "./store-exchange-rate-field";
 import { MARKET_CODES, MARKET_CONFIG, marketFromPlatform, type MarketCode } from "./markets";
 import { useFeePlans } from "./fee-plan-context";
-import { PORTAL_MODULES, OVERVIEW_LEADERBOARD_PERMISSION, OVERVIEW_STORE_SALES_PERMISSION, type PortalModuleId } from "./module-permissions";
+import { PORTAL_MODULES, OVERVIEW_LEADERBOARD_PERMISSION, OVERVIEW_STORE_SALES_PERMISSION, RELEASABLE_PERMISSION_IDS, type PortalModuleId } from "./module-permissions";
 import { AccountSetupFields, accountSetupError, emptyAccountSetup, accountSetupPayload, resetAccountSetupSelection, malaysiaMonth, type AccountSetupDraft } from "./store-account-setup-fields";
 
 type Props = { accountSetupPreview?:boolean; initialEnabledModules: PortalModuleId[]; onStoreChanged?: () => void };
@@ -88,6 +88,10 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
   const [editing, setEditing] = useState<PortalUser | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [releaseModule,setReleaseModule]=useState<PortalModuleId>("overview");
+  const [releaseOpen,setReleaseOpen]=useState(false);
+  const [releaseResult,setReleaseResult]=useState("");
+  const releaseRequest=useRef<string | null>(null);
   const [loadError, setLoadError] = useState("");
   const [userError, setUserError] = useState("");
   const [storeError, setStoreError] = useState("");
@@ -188,6 +192,20 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
       setMessage("Default client access updated.");
       await loadUsers();
     } else setMessage("Unable to save module visibility.");
+  }
+  async function releaseFeature(){
+    setSaving(true);setReleaseResult("");
+    if(!releaseRequest.current)releaseRequest.current=crypto.randomUUID();
+    try{
+      const response=await fetch("/api/admin/feature-release",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({moduleId:releaseModule,requestId:releaseRequest.current})});
+      const result=await response.json().catch(()=>null);
+      if(!response.ok)throw Error(result?.error??"Unable to release feature");
+      setReleaseOpen(false);
+      setReleaseResult(`Released to ${result.granted ?? 0} users · ${result.alreadyEnabled ?? 0} already had access${result.skipped?` · ${result.skipped} skipped`:""}.`);
+      releaseRequest.current=null;
+      await loadUsers();
+    }catch(error){setReleaseResult(error instanceof Error?error.message:"Unable to release feature");}
+    finally{setSaving(false);}
   }
   async function addUser() {
     setUserError("");
@@ -312,7 +330,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
       const payload = {
         id: editing.id, displayName: editing.displayName, active: editing.active,
         moduleAccessMode: isSuperAdmin ? editing.moduleAccessMode : "custom",
-        enabledModules: isSuperAdmin ? editing.enabledModules : editing.enabledModules.filter(id => access?.grantableModules.includes(id)),
+        enabledModules: (isSuperAdmin ? editing.enabledModules : editing.enabledModules.filter(id => access?.grantableModules.includes(id))).filter(id=>editing.moduleAccessMode==="custom"||!id.startsWith("overview_")),
         storeAccessMode: isSuperAdmin ? editing.storeAccessMode : "selected", storeIds: editing.storeIds,
         ...(isSuperAdmin ? { role: editing.role, canManagePermissions: editing.canManagePermissions } : {}),
         expectedVersion: editing.permissionsVersion,
@@ -466,6 +484,12 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
 
       {tab === "modules" && access?.canManageDefaults && (
         <>
+          {isSuperAdmin&&<section className="feature-release card">
+            <div><span>Release a feature</span><strong>Give every active user access in one step</strong><p>Existing store scope stays unchanged. Each user sees a one-time welcome message.</p></div>
+            <label>Feature<select value={releaseModule} onChange={event=>{setReleaseModule(event.target.value as PortalModuleId);releaseRequest.current=null;}}>{[...PORTAL_MODULES,OVERVIEW_LEADERBOARD_PERMISSION,OVERVIEW_STORE_SALES_PERMISSION].filter(item=>RELEASABLE_PERMISSION_IDS.includes(item.id)).map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+            <button type="button" onClick={()=>{setReleaseResult("");setReleaseOpen(true);}}>Release to everyone</button>
+            {releaseResult&&<p className="feature-release-result" role="status">{releaseResult}</p>}
+          </section>}
           <section className="permission-summary card">
             <div>
               <span>Default customer access</span>
@@ -533,6 +557,14 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
           </div>
         </>
       )}
+
+      {releaseOpen&&<div className="access-modal" role="dialog" aria-modal="true" aria-labelledby="feature-release-title">
+        <div className="access-editor card feature-release-confirm">
+          <div className="access-editor-head"><div><p className="kicker">CONFIRM RELEASE</p><h3 id="feature-release-title">Release this feature to everyone?</h3></div><button aria-label="Close" disabled={saving} onClick={()=>setReleaseOpen(false)}>×</button></div>
+          <p>This adds <b>{[...PORTAL_MODULES,OVERVIEW_LEADERBOARD_PERMISSION,OVERVIEW_STORE_SALES_PERMISSION].find(item=>item.id===releaseModule)?.label}</b> to every active non-Super Admin user. Their existing store access and other custom permissions stay unchanged.</p>
+          <div className="feature-release-actions"><button type="button" className="edit-access" disabled={saving} onClick={()=>setReleaseOpen(false)}>Cancel</button><button type="button" className="primary" disabled={saving} onClick={releaseFeature}>{saving?"Releasing…":"Confirm release"}</button></div>
+        </div>
+      </div>}
 
       {tab === "stores" && access?.canManageStores && (
         <>
