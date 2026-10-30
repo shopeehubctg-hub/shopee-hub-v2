@@ -1,5 +1,11 @@
 export type StoreSale={report_date:string;marketplace:string;currency:string;gross_revenue:string|number;canceled_orders:number;canceled_sales:string|number;synced_at:string};
-const cents=(v:unknown)=>{const s=String(v);if(!/^-?\d+(\.\d{1,2})?$/.test(s))throw Error('Invalid amount');const amount=Math.round(Number(s)*100);if(!Number.isSafeInteger(amount))throw Error('Invalid amount');return amount;};
+const cents=(v:unknown)=>{
+ const s=String(v);if(!/^-?\d+(\.\d{1,2})?$/.test(s))throw Error('Invalid amount');
+ const negative=s.startsWith('-'),[whole,fraction='']=(negative?s.slice(1):s).split('.');
+ const value=(BigInt(whole)*BigInt(100)+BigInt(fraction.padEnd(2,'0')))*(negative?-BigInt(1):BigInt(1));
+ if(value>BigInt(Number.MAX_SAFE_INTEGER)||value<BigInt(Number.MIN_SAFE_INTEGER))throw Error('Invalid amount');
+ return Number(value);
+};
 export function summarizeStoreSales(rows:StoreSale[],month:string){
  const seen=new Set<string>();let gross=0,canceled=0,orders=0;
  const days=[...rows].sort((a,b)=>a.report_date.localeCompare(b.report_date)).map(row=>{

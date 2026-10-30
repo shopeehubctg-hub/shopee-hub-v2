@@ -21,7 +21,7 @@ export async function GET(request:Request){
   const requested=params.get('month'),month=requested||latest?.report_date.slice(0,7)||today.slice(0,7);
   if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(month)||month>today.slice(0,7))return json({error:'Choose a valid month.'},400);
   const next=new Date(month+'-01T00:00:00Z');next.setUTCMonth(next.getUTCMonth()+1);
-  const rows=await supabaseRest<StoreSale[]>(`bigseller_store_daily?select=report_date,marketplace,currency,gross_revenue,canceled_orders,canceled_sales,synced_at&${bounds}&report_date=gte.${month}-01&report_date=lt.${next.toISOString().slice(0,10)}&report_date=lte.${today}&order=report_date.asc&limit=32`);
+  const rows=await supabaseRest<StoreSale[]>(`bigseller_store_daily?select=report_date,marketplace,currency,gross_revenue::text,canceled_orders,canceled_sales::text,synced_at&${bounds}&report_date=gte.${month}-01&report_date=lt.${next.toISOString().slice(0,10)}&report_date=lte.${today}&order=report_date.asc&limit=32`);
   if(rows.length>31)return json({error:'Store sales need review.'},503);
   return json({store:{id:stores[0].id,name:stores[0].display_name||stores[0].name},month,currency:'MYR',...summarizeStoreSales(rows,month)});
  }catch{return json({error:'Unable to load store sales. Please try again.'},503);}

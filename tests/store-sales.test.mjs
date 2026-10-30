@@ -18,3 +18,5 @@ test('store UI selected-store stale response abort, locked no-fetch, gaps, Daily
  const count=reads;await act(async()=>root.render(React.createElement(C,{storeId:'store-b',canView:false})));assert.equal(reads,count);assert.equal(document.querySelectorAll('[aria-label="Locked"]').length,1);assert.doesNotMatch(document.body.textContent,/100.10/);
  globalThis.fetch=async()=>({ok:false,json:async()=>({error:'Unable to load store sales.'})});await act(async()=>root.render(React.createElement(C,{storeId:'store-b',canView:true})));assert.match(document.querySelector('[role="alert"]').textContent,/Retry/);await act(async()=>root.unmount());dom.window.close();
 });
+
+test('decimal cents remain exact near safe integer limit and reject overflow',()=>{assert.equal(summarize([row('01','90071992547400.01')],'2026-10').totals.salesCents,9007199254740001);assert.throws(()=>summarize([row('01','90071992547409.92')],'2026-10'));assert.throws(()=>summarize([row('01','90071992547400.01'),row('02','100')],'2026-10'));});
