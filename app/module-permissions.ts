@@ -30,8 +30,8 @@ export function effectiveAccessIds(role:string,mode:string,tenant:Map<string,boo
  if(role==="superadmin")return [...ALL_PERMISSION_IDS];
  const granted=(id:string)=>additive.has(id)||(mode==="custom"&&custom.has(id));
  const modules:PortalModuleId[]=ALL_PORTAL_MODULE_IDS.filter(id=>additive.has(id)||(mode==="custom"?custom.has(id):id==="live_calendar"?tenant.get(id)===true:tenant.get(id)!==false));
- if(tenant.get("overview")!==false&&modules.includes("overview")&&granted("overview_leaderboard"))modules.push("overview_leaderboard");
+ if(modules.includes("overview")&&granted("overview_leaderboard"))modules.push("overview_leaderboard");
  if(modules.includes("overview_leaderboard")&&granted("overview_leaderboard_all_stores"))modules.push("overview_leaderboard_all_stores");
- if(tenant.get("overview")!==false&&modules.includes("overview")&&granted("overview_store_sales"))modules.push("overview_store_sales");
+ if(modules.includes("overview")&&granted("overview_store_sales"))modules.push("overview_store_sales");
  return modules;
 }

@@ -25,7 +25,7 @@ begin
  values(other_email,other_t,'superadmin',true,'role_default','all');
  insert into public.user_store_access(user_id,store_id,enabled) values(target_id,fixture_store_id,true),(default_id,fixture_store_id,true);
  insert into public.user_module_permissions(user_id,module_id,enabled) values(target_id,'overview',true);
- insert into public.tenant_module_permissions(tenant_id,module_id,enabled) values(t,'packages',false);
+ insert into public.tenant_module_permissions(tenant_id,module_id,enabled) values(t,'packages',false),(t,'overview',false);
 
  -- Owner-created test facts only. The server role must be read-only afterward.
  insert into public.bigseller_store_daily(tenant_id,store_id,bigseller_store_name,marketplace,report_date,currency,gross_revenue,canceled_orders,canceled_sales)
@@ -59,7 +59,8 @@ begin
  select count(*) into read_count from public.store_health_snapshots where id=health_id;
  if read_count<>1 then raise exception 'Service cannot read health fixture';end if;
 
- -- Normal saves accept all 13 IDs but preserve prerequisite validation and store scope.
+ -- A user's explicit custom access overrides role defaults, including a tenant
+ -- default that hides Overview from newly-created role-default accounts.
  body:=jsonb_build_object('displayName','Rollback customer','role','customer','active',true,
  'moduleAccessMode','custom','enabledModules',jsonb_build_array('overview','overview_leaderboard','overview_store_sales'),
  'storeAccessMode','selected','storeIds',jsonb_build_array(fixture_store_id),'canManagePermissions',false,

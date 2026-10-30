@@ -19,6 +19,7 @@ test('section defaults deny and requires all dependency grants',()=>{
  assert(!ids('role_default',['overview',storeSales]).includes(storeSales));
  assert(!ids('custom',[storeSales]).includes(storeSales));
  assert(ids('custom',['overview',storeSales]).includes(storeSales));
+ assert(ids('custom',['overview',storeSales],[['overview',false]]).includes(storeSales));
  assert(effectiveAccessIds('superadmin','role_default',new Map(),new Set()).includes(storeSales));
 });
 test('tenant-wide release is additive without replacing role defaults or custom access',()=>{

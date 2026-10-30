@@ -3,7 +3,7 @@ import {useEffect,useState,type CSSProperties} from 'react';
 import './overview-design.css';
 import {OverviewLiveLeaderboard} from './overview-live-leaderboard';
 type Row={report_date:string;synced_at:string;[key:string]:string|number|null};
-type Sales={month:string;latestDate:string|null;rows:Row[];sample:boolean};
+type Sales={month:string;latestDate:string|null;rows:Row[];sample:boolean;scope?:'company'|'assigned';storeCount?:number};
 const n=(v:unknown)=>v===null||v===undefined||v===''?null:Number.isFinite(Number(v))?Number(v):null;
 const money=(v:unknown)=>n(v)===null?'—':new Intl.NumberFormat('en-MY',{style:'currency',currency:'MYR',maximumFractionDigits:2}).format(n(v)!);
 const date=(s:string)=>new Date(`${s}T00:00:00Z`).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'});
@@ -22,7 +22,7 @@ export function OverviewSales({refreshKey=0,canView=false,canViewLeaderboard=can
  const progress=n(row?.target_progress_pct),gap=n(row?.sales_difference);
  if(!canView)return <div className="page sales-overview"><div className="page-title"><div><p className="kicker">OVERVIEW</p><h2>Sales Overview</h2><p className="sales-muted">Month to Date</p></div></div>{canViewLeaderboard&&<OverviewLiveLeaderboard canView refreshKey={refreshKey}/>}<p className="sales-muted">Sales data is restricted.</p><section className="metric-grid sales-metrics sales-mtd-metrics" aria-label="Locked sales summary">{['Month to Date','Monthly Target','Projected Month End'].map(title=><article className="metric" key={title}><span>{title}</span><strong className="sales-locked"><Lock/> ••••••</strong></article>)}</section><section className="card sales-locked-panel"><h3>Sales Trend</h3><div className="sales-locked" aria-label="Sales trend locked"><Lock/> ••••••</div></section><div className="sales-bottom">{['Platform Sales','Monthly Target'].map(title=><section className="card sales-locked-panel" key={title}><h3>{title}</h3><div className="sales-locked" aria-label={`${title} locked`}><Lock/> ••••••</div></section>)}</div>{!canViewLeaderboard&&<OverviewLiveLeaderboard canView={false} refreshKey={refreshKey}/>}</div>;
  return <div className="page sales-overview">
-  <div className="page-title"><div><p className="kicker">OVERVIEW</p><h2>Sales Overview</h2><p className="sales-muted">Company-wide sales · MYR</p></div><span className="sales-muted">Month to Date</span></div>
+  <div className="page-title"><div><p className="kicker">OVERVIEW</p><h2>Sales Overview</h2><p className="sales-muted">{data?.scope==='assigned'?`Your accessible stores · ${data.storeCount??0} stores · MYR`:'Company-wide sales · MYR'}</p></div><span className="sales-muted">Month to Date</span></div>
   {loading?<div className="card" role="status">Loading sales…</div>:error?<div className="card" role="alert"><p>{error}</p><button onClick={()=>setRetry(v=>v+1)}>Retry</button></div>:!row?<div className="card"><h3>No sales data</h3><p>No records are available for this month.</p></div>:<>
    {data?.sample&&<p className="sales-sample" role="status">Sample data · Staging preview only</p>}
    <div className="sales-toolbar"><span className="sales-muted">Through {date(report!)}</span><span className="sales-muted">Last updated {new Date(row.synced_at).toLocaleString('en-GB',{timeZone:'Asia/Kuala_Lumpur',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})} MYT</span></div>
