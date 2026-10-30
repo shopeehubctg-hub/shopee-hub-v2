@@ -1,5 +1,6 @@
 'use client';
 import {useEffect,useState} from 'react';
+import './overview-design.css';
 type Day={date:string;salesCents:number;canceledCents:number;canceledOrders:number;mtdCents:number};
 type Sales={store:{id:string;name:string};month:string;days:Day[];latest:string|null;coveredDays:number;elapsedDays:number;complete:boolean;totals:{salesCents:number;canceledCents:number;canceledOrders:number};updated:string|null};
 const money=(cents:number|null)=>cents===null?'—':new Intl.NumberFormat('en-MY',{style:'currency',currency:'MYR'}).format(cents/100);
