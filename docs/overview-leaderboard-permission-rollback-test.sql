@@ -1,6 +1,6 @@
 BEGIN;
 DO $$
-DECLARE a bigint;u bigint;d bigint;p jsonb;r jsonb;eff text[];v bigint;
+DECLARE a bigint;u bigint;d bigint;p jsonb;r jsonb;eff text[];v bigint;s text;
 BEGIN
  insert into public.customer_users(email,tenant_id,role,module_access_mode)values('leaderboard-owner-qc@example.invalid','j-packaging','superadmin','custom')returning id into a;
  insert into public.customer_users(email,tenant_id,role,module_access_mode,store_access_mode)values('leaderboard-user-qc@example.invalid','j-packaging','customer','role_default','selected')returning id into u;
@@ -14,18 +14,22 @@ BEGIN
  p:=p||jsonb_build_object('enabledModules',jsonb_build_array('overview','overview_leaderboard','overview_leaderboard_all_stores'),'expectedVersion',1,'requestId',gen_random_uuid());
  perform public.save_user_access('j-packaging','leaderboard-owner-qc@example.invalid',u,p);
  if not('overview_leaderboard_all_stores'=any(public.permission_effective_modules('j-packaging',u)))then raise exception 'all grant failed';end if;
+ select id into s from public.stores where tenant_id='j-packaging' order by id limit 1;
+ p:=p||jsonb_build_object('enabledModules',jsonb_build_array('overview','overview_store_sales'),'storeIds',jsonb_build_array(s),'expectedVersion',2,'requestId',gen_random_uuid());
+ perform public.save_user_access('j-packaging','leaderboard-owner-qc@example.invalid',u,p);
+ if not('overview_store_sales'=any(public.permission_effective_modules('j-packaging',u)))then raise exception 'store sales grant failed';end if;
  if public.permission_effective_modules('test-staging',u)<>array[]::text[]then raise exception 'tenant leak';end if;
  update public.customer_users set module_access_mode='role_default' where id=u;
  if 'overview_leaderboard'=any(public.permission_effective_modules('j-packaging',u))then raise exception 'stale custom leak';end if;
  update public.customer_users set module_access_mode='custom' where id=u;
- begin perform public.save_user_access('j-packaging','leaderboard-owner-qc@example.invalid',u,p||jsonb_build_object('enabledModules',jsonb_build_array('overview_leaderboard'),'expectedVersion',2,'requestId',gen_random_uuid()));raise exception 'missing Overview accepted';exception when others then if sqlerrm<>'PERMISSION_INVALID'then raise;end if;end;
- p:=p||jsonb_build_object('enabledModules',jsonb_build_array('overview'),'expectedVersion',2,'requestId',gen_random_uuid());
+ begin perform public.save_user_access('j-packaging','leaderboard-owner-qc@example.invalid',u,p||jsonb_build_object('enabledModules',jsonb_build_array('overview_store_sales'),'expectedVersion',3,'requestId',gen_random_uuid()));raise exception 'missing Overview accepted';exception when others then if sqlerrm<>'PERMISSION_INVALID'then raise;end if;end;
+ p:=p||jsonb_build_object('enabledModules',jsonb_build_array('overview'),'expectedVersion',3,'requestId',gen_random_uuid());
  perform public.save_user_access('j-packaging','leaderboard-owner-qc@example.invalid',u,p);
  if 'overview_leaderboard'=any(public.permission_effective_modules('j-packaging',u))then raise exception 'revoke failed';end if;
  insert into public.customer_users(email,tenant_id,role,module_access_mode,store_access_mode,can_manage_permissions)values('leaderboard-delegate-qc@example.invalid','j-packaging','manager','custom','selected',true)returning id into d;
  insert into public.user_module_permissions(user_id,module_id,enabled) select d,m,true from unnest(array['overview','overview_leaderboard'])m;
- begin perform public.save_user_access('j-packaging','leaderboard-delegate-qc@example.invalid',u,p||jsonb_build_object('enabledModules',jsonb_build_array('overview','overview_leaderboard','overview_leaderboard_all_stores'),'expectedVersion',3,'requestId',gen_random_uuid()));raise exception 'delegate broadened';exception when others then if sqlerrm<>'PERMISSION_SCOPE'then raise;end if;end;
+ begin perform public.save_user_access('j-packaging','leaderboard-delegate-qc@example.invalid',u,p||jsonb_build_object('enabledModules',jsonb_build_array('overview','overview_leaderboard','overview_leaderboard_all_stores'),'expectedVersion',4,'requestId',gen_random_uuid()));raise exception 'delegate broadened';exception when others then if sqlerrm<>'PERMISSION_SCOPE'then raise;end if;end;
  if not('overview_leaderboard_all_stores'=any(public.permission_effective_modules('j-packaging',a)))then raise exception 'SA missing';end if;
 END $$;
-SELECT 'PASS: grant, reload, default, dependency, revoke, scope, replay, stale, delegated and SA assertions' result;
+SELECT 'PASS: leaderboard and Store Daily Sales grant, reload, dependency, store scope, revoke, replay, stale, delegated and SA assertions' result;
 ROLLBACK;

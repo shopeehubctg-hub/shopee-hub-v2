@@ -4,7 +4,7 @@ import {build} from 'esbuild';
 async function load(path){const b=await build({entryPoints:[path],bundle:true,write:false,platform:'node',format:'esm'});return import(`data:text/javascript;base64,${Buffer.from(b.outputFiles[0].text).toString('base64')}`);}
 const {effectiveAccessIds,PORTAL_MODULES}=await load('app/module-permissions.ts');
 const {scopeLeaderboard}=await load('app/leaderboard-access-model.ts');
-const basic='overview_leaderboard',all='overview_leaderboard_all_stores';
+const basic='overview_leaderboard',all='overview_leaderboard_all_stores',storeSales='overview_store_sales';
 const ids=(mode,custom,tenant=[])=>effectiveAccessIds('customer',mode,new Map(tenant),new Set(custom));
 test('section defaults deny and requires all dependency grants',()=>{
  assert(!PORTAL_MODULES.some(m=>m.id===basic||m.id===all));
@@ -15,6 +15,11 @@ test('section defaults deny and requires all dependency grants',()=>{
  assert(!ids('custom',['overview',basic]).includes(all));
  assert(ids('custom',['overview',basic,all]).includes(all));
  assert(effectiveAccessIds('superadmin','role_default',new Map(),new Set()).includes(all));
+ assert(!PORTAL_MODULES.some(m=>m.id===storeSales));
+ assert(!ids('role_default',['overview',storeSales]).includes(storeSales));
+ assert(!ids('custom',[storeSales]).includes(storeSales));
+ assert(ids('custom',['overview',storeSales]).includes(storeSales));
+ assert(effectiveAccessIds('superadmin','role_default',new Map(),new Set()).includes(storeSales));
 });
 test('scoped board omits hidden names, sums, ranks and partial state',()=>{
  const board={currency:'MYR',status:'partial',updated:null,totalCents:150,pending:[{name:'Secret'}],shops:[{name:'Hidden',storeId:'h',salesCents:100,observed:true,rank:1},{name:'Mine',storeId:'m',salesCents:50,observed:true,rank:2},{name:'Secret',storeId:'s',salesCents:0,observed:false,rank:3}]};

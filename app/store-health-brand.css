@@ -1,0 +1,15 @@
+/* Shopee Hub brand palette: deep blue structure, coral emphasis, soft tonal cards. */
+.health-design {
+  --health-green: #0b405c;
+  --health-soft: #e9f3f8;
+  --health-lavender: #fff0ed;
+  --health-warm: #f7f9fb;
+}
+.health-design .health-design-hero {
+  background: linear-gradient(135deg, #0b405c 0%, #145b72 72%, #9e2c2c 145%);
+}
+.health-design .health-design-ring {
+  background: conic-gradient(#ee4d2d var(--coverage), #46778c 0);
+}
+.health-design .health-design-bar > span { background: #4d8198; }
+.health-design button:focus-visible { outline-color: #ee4d2d; }

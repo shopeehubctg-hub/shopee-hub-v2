@@ -8,13 +8,15 @@ CREATE OR REPLACE FUNCTION public.permission_effective_modules(p_tenant text, p_
 AS $function$
  select coalesce(array_agg(m.id order by m.id),array[]::text[])
  from public.customer_users u
- cross join unnest(array['overview','design','calculator','packages','advertising','orders','health','protection','live_calendar','actions','overview_leaderboard','overview_leaderboard_all_stores']) m(id)
+cross join unnest(array['overview','design','calculator','packages','advertising','orders','health','protection','live_calendar','actions','overview_leaderboard','overview_leaderboard_all_stores','overview_store_sales']) m(id)
  where u.id=p_user_id and u.tenant_id=p_tenant and (
    u.role='superadmin'
-   or case when m.id in ('overview_leaderboard','overview_leaderboard_all_stores') then
+   or case when m.id in ('overview_leaderboard','overview_leaderboard_all_stores','overview_store_sales') then
      u.module_access_mode='custom'
-     and exists(select 1 from public.user_module_permissions p where p.user_id=u.id and p.module_id='overview_leaderboard' and p.enabled)
      and exists(select 1 from public.user_module_permissions p where p.user_id=u.id and p.module_id='overview' and p.enabled)
+     and not exists(select 1 from public.tenant_module_permissions t where t.tenant_id=p_tenant and t.module_id='overview' and not t.enabled)
+     and (m.id='overview_store_sales' or exists(select 1 from public.user_module_permissions p where p.user_id=u.id and p.module_id='overview_leaderboard' and p.enabled))
+     and (m.id<>'overview_store_sales' or exists(select 1 from public.user_module_permissions p where p.user_id=u.id and p.module_id='overview_store_sales' and p.enabled))
      and (m.id<>'overview_leaderboard_all_stores' or exists(select 1 from public.user_module_permissions p where p.user_id=u.id and p.module_id='overview_leaderboard_all_stores' and p.enabled))
    when u.module_access_mode='custom' then
      exists(select 1 from public.user_module_permissions p
@@ -41,7 +43,7 @@ declare
  prior public.user_access_audit_log;v_request_id uuid;expected bigint;v_request_payload jsonb;result jsonb;
  actor_modules text[];target_modules text[];actor_stores text[];target_stores text[];
  selected_modules text[];selected_stores text[];before_value jsonb;after_value jsonb;
- ordinary text[]:=array['overview','design','calculator','packages','advertising','orders','health','protection','live_calendar','actions','overview_leaderboard','overview_leaderboard_all_stores'];
+ ordinary text[]:=array['overview','design','calculator','packages','advertising','orders','health','protection','live_calendar','actions','overview_leaderboard','overview_leaderboard_all_stores','overview_store_sales'];
 begin
  if p_tenant is null or p_actor is null or p_target_id is null then raise exception 'PERMISSION_INVALID';end if;
  -- All writers of user access use this tenant lock, followed by actor/target rows.
@@ -69,7 +71,7 @@ begin
  or coalesce(p_payload->>'requestId','')!~'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
  or jsonb_typeof(p_payload->'enabledModules') is distinct from 'array'
  or jsonb_typeof(p_payload->'storeIds') is distinct from 'array' then raise exception 'PERMISSION_INVALID';end if;
- if jsonb_array_length(p_payload->'enabledModules')>12 or jsonb_array_length(p_payload->'storeIds')>1000
+ if jsonb_array_length(p_payload->'enabledModules')>13 or jsonb_array_length(p_payload->'storeIds')>1000
  or exists(select 1 from jsonb_array_elements(p_payload->'enabledModules') v where jsonb_typeof(v) is distinct from 'string' or not((v#>>'{}')=any(ordinary)))
  or exists(select 1 from jsonb_array_elements(p_payload->'storeIds') v where jsonb_typeof(v) is distinct from 'string' or length(v#>>'{}') not between 1 and 160) then raise exception 'PERMISSION_INVALID';end if;
  select coalesce(array_agg(v order by v),array[]::text[]) into selected_modules from jsonb_array_elements_text(p_payload->'enabledModules') v;
@@ -81,6 +83,14 @@ begin
  if 'overview_leaderboard_all_stores'=any(selected_modules) and not('overview_leaderboard'=any(selected_modules)) then raise exception 'PERMISSION_INVALID';end if;
  if 'overview_leaderboard'=any(selected_modules) and
  (p_payload->>'moduleAccessMode'<>'custom' or not('overview'=any(selected_modules))) then
+  raise exception 'PERMISSION_INVALID';
+ end if;
+ if 'overview_store_sales'=any(selected_modules) and
+ (p_payload->>'moduleAccessMode'<>'custom' or not('overview'=any(selected_modules))) then
+  raise exception 'PERMISSION_INVALID';
+ end if;
+ if 'overview_store_sales'=any(selected_modules) and
+ (p_payload->>'storeAccessMode'<>'selected' or cardinality(selected_stores)=0) then
   raise exception 'PERMISSION_INVALID';
  end if;
 

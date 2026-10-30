@@ -2,6 +2,7 @@
 import {useEffect,useState,type CSSProperties} from 'react';
 import {HEALTH_METRICS,healthMetricText,type StoreHealthData,type StoreHealthRow} from './store-health-model';
 import './store-health-design.css';
+import './store-health-brand.css';
 const stateLabel=(state:StoreHealthRow['state'])=>({attention:'Needs attention',incomplete:'Incomplete',no_flags:'No flags'}[state]);
 const dateLabel=(date:string)=>new Intl.DateTimeFormat('en-MY',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'}).format(new Date(date+'T00:00:00Z'));
 function Coverage({available,total}:{available:number;total:number}){

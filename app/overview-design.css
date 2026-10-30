@@ -19,3 +19,11 @@
 @media(max-width:650px){.sales-overview .sales-mtd-metrics{grid-template-columns:minmax(0,1fr)!important}.sales-overview .overview-target-ring{flex-basis:88px}.sales-overview .overview-featured>div:first-child{flex-basis:180px}.sales-overview .overview-featured{gap:20px}}
 
 .sales-overview .sales-bottom .sales-table-wrap table{min-width:0!important;width:100%;table-layout:auto}.sales-overview .sales-bottom .sales-table-wrap th,.sales-overview .sales-bottom .sales-table-wrap td{padding:13px 8px}.sales-overview .sales-bottom .overview-share-track{width:42px;margin-right:6px}
+
+/* Shopee Hub brand palette: deep blue structure, coral emphasis, soft tonal cards. */
+.sales-overview{--overview-teal:#0b405c;--overview-mint:#e9f3f8;--overview-lilac:#fff0ed;--overview-warm:#f7f9fb}
+.sales-overview .overview-featured{background:linear-gradient(135deg,#0b405c 0%,#145b72 72%,#9e2c2c 145%)}
+.sales-overview .overview-target-ring{background:conic-gradient(#ee4d2d var(--target-progress),#46778c 0)}
+.sales-overview .sales-day .sales-bar-area i{background:#a9c6d3}
+.sales-overview .overview-share-track i{background:#4d8198}
+.sales-overview button:focus-visible{outline-color:#ee4d2d}
