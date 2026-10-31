@@ -1,0 +1,3 @@
+-- Intentionally empty. The compatible repair runs after
+-- 20261030143000_feature_release_notifications.sql, which introduces the
+-- additive_grant column used by the corrected permission function.
