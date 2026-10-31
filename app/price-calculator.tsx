@@ -135,7 +135,7 @@ export function PriceCalculator({ staging=false, storeId="", storeName="", produ
     setPackages(current=>[...current,{id:Math.max(0,...current.map(row=>row.id))+1,name:`Package ${String.fromCharCode(65+current.length)}`,facebookPrice:0,mainProductQuantity:"",markupRates:blankMarkups(),customerTargets:blankCustomerTargets()}]);
   }
   function packagePrefill(row:PackageRow, mode:ServiceMode, result:ReturnType<typeof calculateShopeePrice>, suggested:ReturnType<typeof calculateShopeePrice>, requestId=Date.now()) {
-    if (!row.name.trim() || !result.valid) return null;
+    if (!row.name.trim() || !result.valid || positive(row.facebookPrice) <= 0 || !Number.isFinite(result.requiredPrice) || Number(result.requiredPrice.toFixed(2)) <= 0) return null;
     const calculatorSettings:CalculatorSnapshot = {
       source:"Shopee Pricing Calculator",
       packageName:row.name,
