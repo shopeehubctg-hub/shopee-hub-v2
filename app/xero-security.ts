@@ -13,7 +13,9 @@ export function xeroConfig(env:NodeJS.ProcessEnv=process.env):XeroConfig|null {
  if(!env.XERO_CLIENT_ID||!env.XERO_CLIENT_SECRET||env.XERO_REDIRECT_URI!==redirectUri||!env.XERO_ORGANISATION_ID)return null;
  const encoded=env.XERO_TOKEN_KEY??'';const key=Buffer.from(encoded,'base64');
  if(key.length!==32||key.toString('base64')!==encoded)return null;
- if(!/^[0-9a-f-]{36}$/i.test(env.XERO_CLIENT_ID)||! /^[0-9a-f-]{36}$/i.test(env.XERO_ORGANISATION_ID))return null;
+ const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+ // Xero Web app client IDs are opaque hexadecimal credentials, distinct from app/tenant UUIDs.
+ if(!(/^[0-9a-f]{32}$/i.test(env.XERO_CLIENT_ID)||uuid.test(env.XERO_CLIENT_ID))||!uuid.test(env.XERO_ORGANISATION_ID))return null;
  return {clientId:env.XERO_CLIENT_ID,clientSecret:env.XERO_CLIENT_SECRET,redirectUri,key,organisationId:env.XERO_ORGANISATION_ID,environment:target};
 }
 export function randomXeroState(){return randomBytes(32).toString('base64url');}
