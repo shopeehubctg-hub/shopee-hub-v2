@@ -40,7 +40,7 @@ export function AccountXeroSettings({data,onSaved}:{data:AccountResponse;onSaved
  const targetSource=xero.targets??data.stores.map(row=>({unitKey:row.rosterKey??row.id,name:row.project||row.storeName,entity:row.entity??'',storeId:row.storeId,storeName:row.storeName}));
  const targets=targetSource.filter(row=>row.storeId&&row.entity?.trim()).map(row=>({key:row.unitKey,name:row.name,entity:row.entity}));
  const validTargets=new Set(targets.map(row=>row.key));
- const unresolved=xero.groups.filter(group=>group.status!=='mapped');
+ const unresolved=xero.groups.filter(group=>group.invoiceCount>0&&!['mapped','split'].includes(group.status));
  const exact=unresolved.filter(group=>group.status==='candidate'&&group.candidateUnitKeys.length<=1&&group.suggestedUnitKey&&validTargets.has(group.suggestedUnitKey));
  async function save(groups:AccountXeroGroup[],auto=false,invoiceId?:string){
   const mappings=groups.map(group=>({contactId:group.contactId,categoryId:group.categoryId,optionId:group.optionId,unitKey:auto?group.suggestedUnitKey:choices[invoiceId?`${group.groupKey}:${invoiceId}`:group.groupKey],effectiveMonth:data.invoiceMonth,expectedVersion:group.expectedVersion,...(invoiceId?{invoiceId}:{})}));
