@@ -48,7 +48,16 @@ export function AccountXeroSettings({data,onSaved}:{data:AccountResponse;onSaved
  },[xero?.configured,xero?.connected,data.invoiceMonth]);
 
  const [refreshPending,setRefreshPending]=useState(false);
- useEffect(()=>{setRefreshPending(false);setChoices({});replay.current=null;},[data]);
+ const awaitingSnapshot=useRef<AccountResponse|null>(null),lastVersions=useRef<string|null>(null);
+ useEffect(()=>{
+  const versions=JSON.stringify(data.xero?.groups.map(group=>[group.groupKey,group.expectedVersion]));
+  const changed=lastVersions.current!==null&&lastVersions.current!==versions;lastVersions.current=versions;
+  const savedReload=awaitingSnapshot.current!==null&&awaitingSnapshot.current!==data;
+  if(!changed&&!savedReload)return;
+  let current=true;
+  queueMicrotask(()=>{if(!current)return;awaitingSnapshot.current=null;setRefreshPending(false);setChoices({});replay.current=null;});
+  return()=>{current=false;};
+ },[data]);
  const working=busy||refreshPending;
  if(!xero)return null;
  const targetSource=xero.targets??data.stores.map(row=>({unitKey:row.rosterKey??row.id,name:row.project||row.storeName,entity:row.entity??'',storeId:row.storeId,storeName:row.storeName}));
@@ -60,7 +69,7 @@ export function AccountXeroSettings({data,onSaved}:{data:AccountResponse;onSaved
   const mappings=groups.map(group=>({contactId:group.contactId,categoryId:group.categoryId,optionId:group.optionId,unitKey:auto?group.suggestedUnitKey:choices[invoiceId?`${group.groupKey}:${invoiceId}`:group.groupKey],effectiveMonth:data.invoiceMonth,expectedVersion:group.expectedVersion,...(invoiceId?{invoiceId}:{})}));
   if(!mappings.length||mappings.some(row=>!row.unitKey||!validTargets.has(row.unitKey))){setError('Choose a client with a company name and linked store.');return;}
   const body={invoiceMonth:data.invoiceMonth,mappings},payload=JSON.stringify(body);if(replay.current?.payload!==payload)replay.current={payload,id:crypto.randomUUID()};
-  setBusy(true);setError('');setMessage('');try{const response=await fetch('/api/admin/account/xero-mapping',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,requestId:replay.current!.id})});const result=await response.json();if(!response.ok)throw Error(result.error||'Unable to save matching.');setChoices({});replay.current=null;setRefreshPending(true);setMessage('Client matching saved. Refreshing records…');onSaved();}catch(cause){setError(cause instanceof Error?cause.message:'Unable to save matching.');}finally{setBusy(false);}
+  setBusy(true);setError('');setMessage('');try{const response=await fetch('/api/admin/account/xero-mapping',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,requestId:replay.current!.id})});const result=await response.json();if(!response.ok)throw Error(result.error||'Unable to save matching.');setChoices({});replay.current=null;awaitingSnapshot.current=data;setRefreshPending(true);setMessage('Client matching saved. Refreshing records…');onSaved();}catch(cause){setError(cause instanceof Error?cause.message:'Unable to save matching.');}finally{setBusy(false);}
  }
  async function connect(){setBusy(true);setError('');try{const response=await fetch('/api/integrations/xero/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});const result=await response.json();if(!response.ok||typeof result.authorizeUrl!=='string')throw Error('Unable to connect. Please try again.');window.location.assign(result.authorizeUrl);}catch(cause){setError(cause instanceof Error?cause.message:'Unable to connect.');setBusy(false);}}
  async function sync(){setBusy(true);setError('');setMessage('');try{const response=await fetch('/api/integrations/xero/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({month:data.invoiceMonth})});const result=await response.json();if(!response.ok)throw Error(result.error||'Unable to sync.');setMessage('Accounting records updated.');onSaved();}catch(cause){setError(cause instanceof Error?cause.message:'Unable to sync.');}finally{setBusy(false);}}

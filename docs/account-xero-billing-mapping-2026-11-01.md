@@ -36,3 +36,11 @@ Actual Staging sync found40 Contact+Project source groups across53 October invoi
 Known ambiguous companies and unrecognised companies with multiple invoices must use per-invoice associations, never a company-level bulk allocation. The additive `source_invoice_id` column preserves existing associations and the original global source-group version sequence; no unique constraint is removed. Per-invoice effective associations take priority. Safe unique group defaults remain reusable; ambiguous old defaults are suppressed. Partial client totals remain labelled incomplete. Company-name punctuation is normalised for candidate detection, without fuzzy matching or arbitrary country/currency inference.
 
 Invoice matching displays source invoice numbers with original Xero deep-links so the operator can verify the billing project before selecting a canonical client. No unsupported financial fact is manufactured to complete a mapping.
+
+## Staging verification progress
+
+- Actual real UI saved19 exact source mappings plus one reviewed NOMOQ association:20 mappings,18 clients,20 matched invoices;33 source invoices intentionally unassigned. NOMOQ persists after reload: MYR831.70 invoiced,0.00 paid/applied,831.70 due.
+- Latest source snapshot changed as Xero receipts were updated: gross91,043.07; paid/applied46,191.07; credits760.66; selected-cohort due44,091.34; selected-month actualcash66,939.62. These are source-date observations, not static budget assumptions.
+- Database owner independently reconciled mapped plus unassigned values, validated scope/history and confirmed no duplicated financial rows, no ledger writes and identity-only anchors without fee/card/FX invention.
+- Full affected test run:105 PASS; TypeScript and targeted lint PASS. Original visible-page five-minute sync preserved with background/locked/unmount cleanup. Prior-day receipt values cannot be relabelled as today. Ordinary read polling preserves unsaved selections; saved/new-version reload resets choices before another write.
+- Initial visual HOLD findings (dialog position, Credits wording, tiny new-table type) were corrected and actual desktop screenshots retaken. Final UI/UX and function QC follow the final fixed Staging commit. Production remains untouched.

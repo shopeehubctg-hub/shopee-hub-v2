@@ -58,6 +58,7 @@ test('exact-match batch excludes incomplete targets, posts explicit replay-safe 
  await ui.act(()=>root.render(ui.element(ui.AccountXeroSettings,{data:split,onSaved:()=>refreshes++})));
  assert.equal([...document.querySelectorAll('button')].filter(button=>button.textContent==='Save match').length,0);assert.match(document.body.textContent,/WF-ONE/);assert.match(document.body.textContent,/MYR 200.00/);
  const chooser=document.querySelector('[aria-label="Client for invoice WF-ONE"]');await ui.act(()=>{chooser.value='r1';chooser.dispatchEvent(new Event('change',{bubbles:true}));});
+ await ui.act(()=>root.render(ui.element(ui.AccountXeroSettings,{data:{...split},onSaved:()=>refreshes++})));assert.equal(document.querySelector('[aria-label="Client for invoice WF-ONE"]').value,'r1','ordinary polling must preserve an unsaved selection');
  const invoiceSave=[...document.querySelectorAll('button')].find(button=>button.textContent==='Save invoice match');assert.equal(invoiceSave.disabled,false);await ui.act(()=>invoiceSave.dispatchEvent(new MouseEvent('click',{bubbles:true})));
  assert.equal(requests.at(-1).body.mappings[0].invoiceId,'inv-one');assert.equal(requests.at(-1).body.mappings[0].expectedVersion,'0');assert.equal(requests.at(-1).body.mappings[0].unitKey,'r1');
  assert.ok([...document.querySelectorAll('button')].filter(button=>button.textContent==='Save invoice match').every(button=>button.disabled));
