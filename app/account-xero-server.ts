@@ -23,7 +23,7 @@ export async function decorateAccountXero(account:AccountResponse,request:Reques
   account.xero={...empty,configured:true,connected:true,organisationName:connection.organisationName,
    status:!snapshot?'not_synced':projection.needsIdentitySync?'identity_sync_required':connection.status,
    lastSyncedAt:read.lastSyncedAt??connection.lastSyncedAt,lastError:connection.lastError,
-   groups:projection.groups,targets:projection.targets,sourceRunId:read.sourceRunId,
+   today:snapshot?.today,groups:projection.groups,targets:projection.targets,sourceRunId:read.sourceRunId,
    unmappedInvoiceCount:projection.unmappedInvoiceCount,unmappedTotals:projection.unmappedTotals,
    totals:report?.totals??[],collections:report?.collections??[],outstanding:report?.outstanding??[]};
  }catch{
