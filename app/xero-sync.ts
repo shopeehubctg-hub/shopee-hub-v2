@@ -18,7 +18,7 @@ export function normalizeXeroInvoices(raw:Record<string,unknown>[],payments:Reco
    if(categoryId===scope.categoryId){const matches=category.Options.filter(option=>option.Name===tracking.Option);if(!optionId&&matches.length===1)optionId=matches[0].TrackingOptionID;else if(optionId&&!category.Options.some(option=>option.TrackingOptionID===optionId&&option.Name===tracking.Option))optionId=undefined;}
    return {TrackingCategoryID:categoryId,TrackingOptionID:optionId};
   }):[]}))};
-  const contact=invoice.Contact as Record<string,unknown>|undefined;if(contact?.ContactID)result.Contact={ContactID:text(contact.ContactID)};
+  const contact=invoice.Contact as Record<string,unknown>|undefined;if(contact?.ContactID)result.Contact={ContactID:text(contact.ContactID).toLowerCase(),...(optionalText(contact.Name)?{Name:optionalText(contact.Name)}:{})};
   const linked=payments.filter(payment=>(payment.Invoice as Record<string,unknown>|undefined)?.InvoiceID===id);
   const embedded=Array.isArray(invoice.Payments)?invoice.Payments:[];
   // A paid invoice with no independently verified payment rows is unknown, never a false cash zero.
@@ -43,7 +43,7 @@ function monthRange(month:string){if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(month))th
 function rangeWhere(start:string,end:string){return `Date>=${dateTime(start)} AND Date<${dateTime(end)}`;}
 /** Compare only financially/materially relevant fields, not contacts' personal metadata. */
 function fingerprint(row:Record<string,unknown>,resource:'Invoices'|'Payments'){
- const value=resource==='Invoices'?{id:row.InvoiceID,type:row.Type,status:row.Status,currency:row.CurrencyCode,date:row.DateString??row.Date,due:row.DueDateString??row.DueDate,subtotal:row.SubTotal,tax:row.TotalTax,total:row.Total,paid:row.AmountPaid,dueAmount:row.AmountDue,credited:row.AmountCredited??'0',tracking:(Array.isArray(row.LineItems)?row.LineItems:[]).map(line=>line.Tracking??[])}:{id:row.PaymentID,invoice:(row.Invoice as Record<string,unknown>|undefined)?.InvoiceID,amount:row.Amount,status:row.Status,type:row.PaymentType,date:row.Date};
+ const value=resource==='Invoices'?{id:row.InvoiceID,type:row.Type,status:row.Status,currency:row.CurrencyCode,date:row.DateString??row.Date,due:row.DueDateString??row.DueDate,subtotal:row.SubTotal,tax:row.TotalTax,total:row.Total,paid:row.AmountPaid,dueAmount:row.AmountDue,credited:row.AmountCredited??'0',contactId:(row.Contact as Record<string,unknown>|undefined)?.ContactID,companyName:(row.Contact as Record<string,unknown>|undefined)?.Name,tracking:(Array.isArray(row.LineItems)?row.LineItems:[]).map(line=>line.Tracking??[])}:{id:row.PaymentID,invoice:(row.Invoice as Record<string,unknown>|undefined)?.InvoiceID,amount:row.Amount,status:row.Status,type:row.PaymentType,date:row.Date};
  function canonical(input:unknown):unknown{if(Array.isArray(input))return input.map(canonical);if(input&&typeof input==='object')return Object.fromEntries(Object.entries(input).sort(([a],[b])=>a.localeCompare(b)).map(([key,item])=>[key,canonical(item)]));return input;}
  return JSON.stringify(canonical(value));
 }
@@ -91,5 +91,15 @@ export async function collectXeroSnapshot(tokens:XeroTokens,config:XeroConfig,mo
  const invoices=await inPhase('source_validation',()=>normalizeXeroInvoices([...invoiceRows.values()],[...paymentRows.values()],categories,scope,{month,today}).filter(invoice=>invoice.LineItems.some(line=>(line.Tracking??[]).some(tracking=>tracking.TrackingCategoryID===scope.categoryId&&tracking.TrackingOptionID&&approved.has(tracking.TrackingOptionID)))));
  const report=await inPhase('report_validation',()=>buildXeroReport(invoices,scope,month,today));
  // Coverage is intermediate only. Retain no raw responses or unrelated department documents.
- return {month,today,scope,report};
+ const companies=new Map<string,{contactId:string;companyName:string;categoryId:string;optionId:string;project:string}>();
+ for(const invoice of invoices){
+  const row=report.rows.find(item=>item.invoiceId===invoice.InvoiceID&&item.state==='eligible');
+  // Source company labels are matching evidence only; no contacts API or personal metadata is retained.
+  if(!row||!row.project||!invoice.Contact?.ContactID||!invoice.Contact.Name)continue;
+  const option=scope.options.find(item=>item.project===row.project);if(!option)continue;
+  const identity={contactId:invoice.Contact.ContactID,companyName:invoice.Contact.Name,categoryId:scope.categoryId,optionId:option.id,project:option.project};
+  const key=identity.contactId+':'+identity.optionId;const prior=companies.get(key);
+  if(prior&&prior.companyName!==identity.companyName)throw Error('XERO_UNION_CONFLICT');companies.set(key,identity);
+ }
+ return {month,today,scope,report,companies:[...companies.values()]};
 }

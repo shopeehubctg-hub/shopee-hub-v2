@@ -1,3 +1,4 @@
+import {decorateAccountXero} from '../../../account-xero-server';
 import { bnmServiceRate, bnmMarketServiceRate } from '../../../account-fx-source';
 import { canonicalStoreId } from '../../../live-calendar-model';
 import { getChatGPTUser } from '../../../chatgpt-auth';
@@ -51,7 +52,7 @@ export async function GET(request:Request) {
           if(rate&&rate.policy==='bnm-service-average'&&rate.verified===true&&Boolean(rate.reference)&&rate.currency===currency&&rate.quotationUnit===1&&rate.serviceMonth===previousMonth(invoiceMonth))for(const row of targets)row.previewServiceFxRate=rate;
         }),
       ]);
-      return decorated;
+      return decorateAccountXero(decorated,request);
     };
     try {
       const [cycles,terms,assessments,invoices,receipts,allocations]=await Promise.all([
