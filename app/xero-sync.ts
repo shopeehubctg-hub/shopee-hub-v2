@@ -28,12 +28,15 @@ export function normalizeXeroInvoices(raw:Record<string,unknown>[],payments:Reco
  });
 }
 async function allPages(tokens:XeroTokens,org:string,resource:'Invoices'|'Payments',fetcher:typeof fetch){const all:Record<string,unknown>[]=[];const ids=new Set<string>();for(let page=1;page<=20;page++){const rows=await xeroReadPage(tokens,org,resource,{page:String(page),pageSize:'100',...(resource==='Invoices'?{where:'Type=="ACCREC"',Statuses:'AUTHORISED,PAID',summaryOnly:'false'}:{})},fetcher);for(const row of rows){const id=text(row[resource==='Invoices'?'InvoiceID':'PaymentID']);if(ids.has(id))throw Error('XERO_PAGINATION_CHANGED');ids.add(id);all.push(row);}if(rows.length<100)return all;}throw Error('XERO_SYNC_LIMIT');}
+type SyncPhase='tracking_read'|'scope_validation'|'invoice_read'|'payment_read'|'source_validation'|'report_validation';
+async function inPhase<T>(phase:SyncPhase,operation:()=>Promise<T>|T):Promise<T>{try{return await operation();}catch(error){if(error instanceof Error)Object.defineProperty(error,'xeroPhase',{value:phase,configurable:true});throw error;}}
 export async function collectXeroSnapshot(tokens:XeroTokens,config:XeroConfig,month:string,today:string,fetcher:typeof fetch=fetch){
- const categories=xeroCategories(await xeroReadPage(tokens,config.organisationId,'TrackingCategories',{},fetcher));const scope=bootstrapXeroScope(categories);
- const [rawInvoices,payments]=await Promise.all([allPages(tokens,config.organisationId,'Invoices',fetcher),allPages(tokens,config.organisationId,'Payments',fetcher)]);
+ const categories=await inPhase('tracking_read',async()=>xeroCategories(await xeroReadPage(tokens,config.organisationId,'TrackingCategories',{},fetcher)));
+ const scope=await inPhase('scope_validation',()=>bootstrapXeroScope(categories));
+ const [rawInvoices,payments]=await Promise.all([inPhase('invoice_read',()=>allPages(tokens,config.organisationId,'Invoices',fetcher)),inPhase('payment_read',()=>allPages(tokens,config.organisationId,'Payments',fetcher))]);
  const approved=new Set(scope.options.map(option=>option.id));
- const invoices=normalizeXeroInvoices(rawInvoices,payments,categories,scope).filter(invoice=>invoice.LineItems.some(line=>(line.Tracking??[]).some(tracking=>tracking.TrackingCategoryID===scope.categoryId&&tracking.TrackingOptionID&&approved.has(tracking.TrackingOptionID))));
- const report=buildXeroReport(invoices,scope,month,today);
+ const invoices=await inPhase('source_validation',()=>normalizeXeroInvoices(rawInvoices,payments,categories,scope).filter(invoice=>invoice.LineItems.some(line=>(line.Tracking??[]).some(tracking=>tracking.TrackingCategoryID===scope.categoryId&&tracking.TrackingOptionID&&approved.has(tracking.TrackingOptionID)))));
+ const report=await inPhase('report_validation',()=>buildXeroReport(invoices,scope,month,today));
  // Never retain raw Xero responses or unrelated department documents.
  return {month,today,scope,report};
 }
