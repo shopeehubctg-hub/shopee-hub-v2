@@ -1,0 +1,5 @@
+.account-panel .account-country-filter{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding:0 19px 12px}
+.account-panel .account-country-filter label{color:var(--muted);font-size:11px;font-weight:800}
+.account-panel .account-country-filter select{min-height:36px;max-width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 10px;background:#fff;color:var(--ink);font:inherit;font-size:12px}
+.account-panel .account-country-filter select:focus-visible{outline:2px solid var(--red);outline-offset:3px}
+.account-panel .account-market-section>.account-empty{padding-top:12px;padding-bottom:15px}

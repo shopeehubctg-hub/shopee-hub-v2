@@ -1,0 +1,18 @@
+.account-security-panel{background:var(--surface,#fff);border:1px solid #d7e1e8;border-radius:16px;padding:24px;margin-bottom:24px;max-width:100%}
+.account-security-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.account-security-heading h2{margin:4px 0 12px;font-size:1.4rem}
+.account-security-panel p{line-height:1.5}
+.account-security-form{display:grid;gap:12px;max-width:440px;margin:16px 0}
+.account-security-form h3{margin:0}
+.account-security-form label,.account-approval-queue label{display:grid;gap:6px;font-weight:600}
+.account-security-form input,.account-approval-queue input{width:100%;padding:10px 12px;border:1px solid #aebec9;border-radius:8px}
+.account-security-panel button{border:1px solid #1e596f;background:#1e596f;color:#fff;border-radius:8px;padding:9px 14px;cursor:pointer}
+.account-security-panel button:disabled{opacity:.55;cursor:not-allowed}
+.account-security-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.account-security-error{color:#a72222}
+.account-security-notice{color:#17634f}
+.account-approval-queue{border-top:1px solid #d7e1e8;margin-top:22px;padding-top:18px}
+.account-approval-queue ul{list-style:none;margin:14px 0 0;padding:0}
+.account-approval-queue li{display:flex;justify-content:space-between;gap:16px;border-top:1px solid #e3eaee;padding:14px 0}
+.account-approval-queue li span{display:block;color:#52616b;margin-top:4px}
+@media(max-width:650px){.account-approval-queue li,.account-security-heading{display:block}.account-security-heading button{margin-bottom:8px}}

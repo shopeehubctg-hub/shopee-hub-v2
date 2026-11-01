@@ -1,14 +1,63 @@
 # BD Dashboard project rules
 
+## Repository, environments and release authority
+- This repository has one long-lived Production branch (`main`) and one long-lived integration branch (`staging`). Production is https://shopee-hub-v2-260731.vercel.app/ and may be deployed only from `main` after a GitHub pull request is merged. Never deploy Production from a local checkout, worktree, feature branch or `staging`, and never bypass `main`.
+- The single user-facing Staging entry is https://shopee-hub-v2-260731-git-cod-e05b8d-shopeehubctg-5199s-projects.vercel.app/ . Do not give reviewers a different per-deployment URL. Staging must use only the independent Supabase project `ubjfuveoqbvouryldqfu`; Production uses `zwnmonnbmqncwoytdigd`.
+- Never share Production database/Auth credentials, sessions, signed imports, API keys or Google Sheet writes with Staging. Do not copy login passwords, sessions, keys, customer accounts, raw audit payloads or sensitive links into Staging. No reverse or automatic Staging/Production replication is authorized.
+- Vercel Production must remain connected to `main` and deploy automatically after the approved PR merge. A successful Preview or task completion is not a Production release.
+
+## Short-lived feature branches and overlap control
+- Before editing, read this file, inspect open pull requests and active feature branches, fetch the latest `origin/main`, and identify the modules and shared files affected by the request.
+- Create one short-lived branch from the latest `origin/main` for each coherent feature or fix. Use names such as `codex/package-list-filter`, `codex/overview-profit-metrics` or `fix/permission-save-error`. Do not reuse an old branch and do not mix unrelated modules in one branch.
+- Feature branches are temporary delivery vehicles, not permanent module branches. After an approved PR is merged, Production is verified healthy, and the user explicitly approves deletion, remove the remote branch, local branch and associated worktree. The merged code remains in `main` and the PR history.
+- If two contributors need to edit the same module or shared files, do not develop from independent stale baselines. Put the work into a module integration queue: finish and merge the first change, update the next branch from the new `origin/main`, resolve conflicts, and rerun its full affected checks before Staging.
+- Package & Pricing changes use a single Package integration queue. The same serial rule applies to Overview, Permission Settings, shared Store identity/selector code, shared layout, authentication and database contracts.
+- Never force-push a shared branch, overwrite another contributor's unreviewed work, or claim that separate worktrees prevent logical conflicts. Worktrees isolate files locally; the merge queue controls overlapping product changes.
+
+## Required delivery gates
+- The mandatory order is: feature branch from current `origin/main` → automated checks → fixed Staging → actual UI/UX review and explicit PASS → final function QC and explicit PASS → user authorization for Production → GitHub PR → merge queue → merge into `main` → Vercel automatic Production deployment → Production smoke test → release notes.
+- Static code review, passing tests, task creation, a commit, a Preview deployment or a successful build does not count as visual acceptance, function QC or completed delivery.
+- UI/UX review must inspect the real Staging page for Dashboard design consistency, readable hierarchy, compact spacing, responsive behavior, loading/empty/error states, clear actions and absence of internal-only wording.
+- Function QC must test the normal path, failure and retry paths, refresh/relogin behavior, Super Admin versus ordinary users, module permission and store scope, All Stores versus individual stores, persisted reload, empty/API failure states, and regression risk to linked modules.
+- Before opening or merging a PR, update the branch from current `origin/main`, resolve conflicts without discarding either approved change, and rerun the affected checks. Use the merge queue; do not merge two overlapping module changes concurrently.
+- Every handoff must report the feature branch, affected modules, tests, fixed Staging URL, UI/UX result, function QC result, Database Structure result when applicable, PR, Production commit/deployment, release notes, known risks and remaining work. Do not fabricate evidence or status.
+
+## Delete approval — user instruction, 28 October 2026
+- Before any agent performs any Delete, first explain the exact objects and effects and obtain the user's explicit approval for that deletion. This includes store/package/Rate Card removal, soft archives, database records/tables, files and cleanup of agent-created test records. Do not infer deletion approval from a request to optimize or publish. Mock tests and transaction rollback verification may be used without deleting existing data. All sub agents must follow this rule.
+
+## Current Store/Account activation
+- On 28 October 2026 the user explicitly authorized connecting Store + Account setup to Supabase and releasing the completed changes. The previous UI-only deferral is lifted for this functionality. Use one atomic Store/setup write, a persistent shared Rate Card version catalog and existing billing-unit version records. This does not authorize fabricated income, invoices/payments, or unrelated schema cleanup.
+- The Database Structure owner reviews every new database-dependent feature before schema work. Follow docs/database-structure-management.md for ownership, tenant access, versioning, indexes and redundancy review. Reuse canonical store IDs and existing tables before adding a table; retain history and separate catalog data from legitimate immutable assignment snapshots.
+
 ## Typography
+- Noto Sans is the exclusive UI typeface. Keep root next/font and --font-noto-sans.
 
-- Noto Sans is the permanent and exclusive UI typeface for every Dashboard version.
-- Load it through the root `next/font` configuration so deployed builds self-host it; never rely only on a device-installed font.
-- Do not replace Noto Sans, add another UI font, or remove `--font-noto-sans` unless the user explicitly changes this rule.
-- New components, controls, and headings must inherit `--font-noto-sans`.
+## Dashboard design consistency
+- All modules must use the Dashboard's shared typography, colour tokens, heading scale, buttons, forms and spacing. Scope module styling; do not introduce a separate visual brand for Account.
+- Account follows the Xero reference's information hierarchy: concise financial overview, compact billing list, then record details. Keep infrequent fee-plan configuration in secondary settings and use the same monthly-rate state in the list and editor.
+- Account billing policy confirmed by the user: Invoice Month is based on the preceding month's Service Period. Show this once above billing records, and hide individual Service Period fields. Statement month remains the fee-base report reference; a reference month does not prove a report has been imported. Do not backfill stored dates as part of UI-only work.
+- User-confirmed MY billing PDF defaults begin with Invoice Month 2026-10. Internal NEW tiers use each billing project's own monthly Shopee Sales; never aggregate projects by Entity. Only the >=RM200,000 tier has the RM4,000 cap. Keep source assignments as UI preview defaults until database activation is authorized.
+- SG billing preview uses SGD source sales converted to MYR before tier selection and bills fees in MYR. Internal FX is fixed MYR3.2 per SGD1. Bonlife uses BNM monthly average for the preceding Service Period, never the Invoice Month or a live spot rate. Berlanco SG and GOHERB SG also use fixed MYR3.2 per SGD1, confirmed by the user. Preserve exchange-rate evidence in locked previews; never relabel existing ledger currency or manufacture MYR income.
+- Rate Card updates must record the effective Invoice Month, preserve earlier month assignments and locked history, and use the same assignment logic for individual and bulk edits. Bulk selection must have a clear scope and never silently update hidden rows or partially apply an invalid batch.
 
-## Advertising data
+## Staging
+- The user-facing Staging entry stays https://shopee-hub-v2-260731-git-cod-e05b8d-shopeehubctg-5199s-projects.vercel.app/ . Keep section query parameters as needed.
+- Integrate only the queued release candidate into the long-lived `staging` branch for this entry. Do not revive or depend on deleted historical branches, and do not force-push `staging` while another review is active.
+- Keep a visible record of which feature branch and commit the fixed Staging entry currently represents. If a second change needs Staging, queue it until the active review finishes or explicitly combine the candidates and repeat UI/UX plus function QC for the combined result.
+- Staging, actual UI/UX PASS, final function QC PASS and explicit user Production authorization are all required before the PR can merge into `main`. Code tests alone are not UI acceptance.
 
-- Use the FullAd daily records in Supabase for advertising performance. Read ad balances only from the separate `AdBalance` Google Sheets tab, with validated `Date`, `Store Name`, and `Ad Balance (RM)` headers and recent dates. The FullAd `Spend` and `Ad Balance (RM)` columns are not balance sources for the dashboard.
-- Keep Shopee Open Platform API integration paused. Do not add Shopee API requests or restore the `/api/shopee/advertising` route until the user explicitly asks to resume that integration.
-- Do not show internal source names such as FullAd or API details in the customer Dashboard.
+- Monthly Rate cells show the assigned Rate Card name only; rate percentages, FX, preview labels and scheduling details belong inside the editor. Deleting a Rate Card removes it from available choices while retaining existing assignments and historical versions.
+
+## Linked features
+- For store/account changes, review Add/Edit Store, current Store Selector identity, permissions, Account rate-card versions/FX, and related Package/Advertising inputs together. Use shared models rather than independent copies of fee rules or currency policy.
+- Add Store Account Setup uses the shared active Rate Cards and records their exact version/effective Invoice Month. Country/client-type changes clear incompatible card and FX selection while preserving company and month. SG sales currency remains SGD; billing/tiers/caps are MYR.
+- The v2 store/account setup payload includes card identity, MYR rule (including per-tier caps), client type and FX policy. It must not go through the legacy store RPC that cannot retain these fields. Database activation was authorized on 28 October 2026. Capability-gated v2 writes persist the whole setup atomically; missing capability still fails closed without a partial store.
+- Packages Grid/List use the same filtered data, actions, permissions and Fulfillment selection. Status and duration filters combine; changing filters clears export selection, while changing only the view retains it. Bound rendered rows in both views.
+- Package duration follows Normal Day pricing, not an open Campaign range. Manual End changes status to Expired while retaining the preceding version's duration classification.
+- Package samples are presentation-only, Super Admin-only on the fixed Staging hostname. Keep them separate from loaded records; hide mutation/Fulfillment actions, label the mode, and never seed them into Supabase or Google Sheets.
+- Account persistence is now authorized. Production and fixed Staging use capability-gated atomic Account setup; preserve the store-only API for legacy callers. Account-bearing payloads must never fall through to store-only persistence or create partial records.
+- Package markets use app/markets.ts: MY/MYR, SG/SGD, TH/THB, PH/PHP. All four support independent manual prices, recurring events, history and drafts. Use the owning store's country for lifecycle/End dates, not the first price market. Preserve legacy explicit markets when old rows retain a default MYR currency.
+- Production and fixed Staging Store creation support Account setup for all four markets when the v2 capability is present; never downgrade an Account-bearing request to store-only persistence. Do not infer Rate Cards: user selects an active MYR card and exact month-effective version. FX follows the explicitly confirmed TH/PH policy below. Live Calendar TH/PH activation remains separate because its deployed time_zone CHECK currently permits only MY/SG zones.
+- User confirmed new TH/PH stores use Bank Negara monthly average FX. Resolve the preceding Service Period for the selected Invoice Month; display normalized MYR per 1 THB/PHP from the official data.gov.my monthly CSV. Do not freeze the onboarding number, divide the normalized series by 100, or fall back to spot/stale/month-mismatched rates. Existing SG fixed-3.2 and Bonlife policies remain separate.
+- Account billing records support MY/SG/TH/PH country sections. Separate the store's sales currency/country from immutable ledger currency: never relabel stored income because its store is in another country. Add real canonical TH/PH tenant stores only as pending billing units with unknown amounts; do not manufacture invoices, receipts, companies or default Rate Cards. TH/PH MYR fee previews require BNM evidence for the exact source currency, quotation unit and preceding Service Month. Fixed MYR fees do not require source sales or FX. Manual amount/locked calculation previews remain session-only; card catalog and selected assignments persist with explicit save.
+- Package Country combines with status, duration and search in both Grid and List. Narrow displayed price/date lines to that country, retain the full package for edit and actions, and clear selection/details on country changes. Package actions still apply to the whole package; preserve permission and read-only sample guards.

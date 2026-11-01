@@ -1,0 +1,1256 @@
+{
+  "tenantId": "j-packaging",
+  "invoiceMonth": "2026-10",
+  "statementMonth": "2026-09",
+  "generatedAt": "2026-10-06T12:32:35.624158+08:00",
+  "rows": [
+    {
+      "id": "roster-2026-10-my-2",
+      "entity": "AM FOUND GROUP",
+      "market": "MY",
+      "project": "NOMOQ",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0026",
+          "username": "nomoq.os",
+          "storeId": null,
+          "storeName": "NomoQ Malaysia",
+          "projectId": "P0030"
+        }
+      ],
+      "sourceRow": 2,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-3",
+      "entity": "CTG4U DRSMILE WHITENING SDN BHD",
+      "market": "MY",
+      "project": "DRSMILE",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0009",
+          "username": "drsmilewhitening.os",
+          "storeId": null,
+          "storeName": "Dr Smile Whitening",
+          "projectId": "P0008"
+        }
+      ],
+      "sourceRow": 3,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-4",
+      "entity": "CTG4U ECOWELLNESS SDN BHD",
+      "market": "MY",
+      "project": "ECOPLUS",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0010",
+          "username": "ecoplus.os",
+          "storeId": null,
+          "storeName": "Eco Plus by Naturelish",
+          "projectId": "P0009"
+        }
+      ],
+      "sourceRow": 4,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-5",
+      "entity": "CTG4U FUNFFY SDN BHD",
+      "market": "MY",
+      "project": "FUNFFY",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0102",
+          "username": "funffy_my",
+          "storeId": null,
+          "storeName": "Funffy Malaysia",
+          "projectId": "P0048"
+        }
+      ],
+      "sourceRow": 5,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-6",
+      "entity": "CTG4U ILADY SDN BHD",
+      "market": "MY",
+      "project": "ILADY",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0011",
+          "username": "ilady.haircare",
+          "storeId": null,
+          "storeName": "I Lady Haircare",
+          "projectId": "P0012"
+        }
+      ],
+      "sourceRow": 6,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-7",
+      "entity": "CTG4U JEEROUL SDN BHD",
+      "market": "MY",
+      "project": "JEEROUL",
+      "termsVersion": "NEW",
+      "mappingStatus": "missing",
+      "mappingReason": "Store candidate found; username and billing mapping need confirmation.",
+      "candidates": [
+        {
+          "mappingId": "",
+          "username": "",
+          "storeId": "shopee-jeeroul-by-ctg4u",
+          "storeName": "Jeeroul by CTG4u"
+        }
+      ],
+      "sourceRow": 7,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-8",
+      "entity": "CTG4U M PLUS SKINPRO SDN BHD",
+      "market": "MY",
+      "project": "M PLUS",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0017",
+          "username": "mplus.hq",
+          "storeId": null,
+          "storeName": "M+ SkinPro HQ",
+          "projectId": "P0020"
+        }
+      ],
+      "sourceRow": 8,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-9",
+      "entity": "CTG4U MINFINITY SDN. BHD.",
+      "market": "MY",
+      "project": "KATA MARINE",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0014",
+          "username": "kata_skincare",
+          "storeId": null,
+          "storeName": "KATA Marine Malaysia",
+          "projectId": "P0017"
+        }
+      ],
+      "sourceRow": 9,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-10",
+      "entity": "CTG4U RICEBOW SDN BHD",
+      "market": "MY",
+      "project": "MIZINO CHOCOLATE",
+      "termsVersion": "NEW",
+      "mappingStatus": "missing",
+      "mappingReason": "Store mapping missing; confirm username and store.",
+      "candidates": [],
+      "sourceRow": 10,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-11",
+      "entity": "CTG4U SCALE HOLDING SDN BHD",
+      "market": "MY",
+      "project": "SCALE STORY",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0028",
+          "username": "scalestory.official",
+          "storeId": null,
+          "storeName": "Scale Story Official Store",
+          "projectId": "P0034"
+        }
+      ],
+      "sourceRow": 11,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-12",
+      "entity": "CTG4U SCALEGEM SDN BHD",
+      "market": "MY",
+      "project": "SCALEGEM",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0027",
+          "username": "scalegem_malaysia",
+          "storeId": null,
+          "storeName": "Scale Gem",
+          "projectId": "P0033"
+        }
+      ],
+      "sourceRow": 12,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-13",
+      "entity": "CTG4U TGC SDN BHD",
+      "market": "MY",
+      "project": "TGC",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0101",
+          "username": "tgc_my",
+          "storeId": null,
+          "storeName": "TGC Malaysia",
+          "projectId": "P0047"
+        }
+      ],
+      "sourceRow": 13,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-14",
+      "entity": "CTG4U WELLNESS SDN BHD",
+      "market": "MY",
+      "project": "MASTERNEV",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0018",
+          "username": "masternerv.os",
+          "storeId": null,
+          "storeName": "Master Nerv Official Store",
+          "projectId": "P0021"
+        }
+      ],
+      "sourceRow": 14,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-15",
+      "entity": "CTG4U WELLNESS SDN BHD",
+      "market": "MY",
+      "project": "KIDSAIE",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0006",
+          "username": "biotech.os",
+          "storeId": null,
+          "storeName": "BioTech by Swissmed",
+          "projectId": "P0004"
+        }
+      ],
+      "sourceRow": 15,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-16",
+      "entity": "CTG4U WELLNESS SDN BHD",
+      "market": "MY",
+      "project": "BEYOUTE",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0005",
+          "username": "beyoute.os",
+          "storeId": null,
+          "storeName": "Beyoute Official Store",
+          "projectId": "P0003"
+        }
+      ],
+      "sourceRow": 16,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-17",
+      "entity": "CTG4U WELLNESS SDN BHD",
+      "market": "MY",
+      "project": "MCS",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0019",
+          "username": "mcsmalaysia",
+          "storeId": null,
+          "storeName": "MCS Malaysia",
+          "projectId": "P0022"
+        }
+      ],
+      "sourceRow": 17,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-18",
+      "entity": "CTG4U WELLNESS SDN BHD",
+      "market": "MY",
+      "project": "MIZINO PLACENTA",
+      "termsVersion": "NEW",
+      "mappingStatus": "ambiguous",
+      "mappingReason": "Shared store with Placenta and Slimpro; allocation required.",
+      "candidates": [
+        {
+          "mappingId": "MAP0021",
+          "username": "mizino.premium",
+          "storeId": null,
+          "storeName": "Mizino Premium",
+          "projectId": "P0025"
+        },
+        {
+          "mappingId": "MAP0022",
+          "username": "mizino.premium",
+          "storeId": null,
+          "storeName": "Mizino Premium",
+          "projectId": "P0026"
+        }
+      ],
+      "sourceRow": 18,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-19",
+      "entity": "CTG4U WELLNESS SDN BHD",
+      "market": "MY",
+      "project": "CTG4U MALAYSIA",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0008",
+          "username": "ctg4u_malaysia",
+          "storeId": null,
+          "storeName": "CTG4U Malaysia",
+          "projectId": "P0041"
+        }
+      ],
+      "sourceRow": 19,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-20",
+      "entity": "CTG4U ZEERO SKINCARE SDN BHD",
+      "market": "MY",
+      "project": "ZEERO SKINCARE",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0030",
+          "username": "zeero_skincare",
+          "storeId": null,
+          "storeName": "Zeero Skincare Official",
+          "projectId": "P0037"
+        }
+      ],
+      "sourceRow": 20,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-21",
+      "entity": "GO DELIFOOD SDN BHD",
+      "market": "MY",
+      "project": "SUPU",
+      "termsVersion": "NEW",
+      "mappingStatus": "missing",
+      "mappingReason": "Store candidate found; username and billing mapping need confirmation.",
+      "candidates": [
+        {
+          "mappingId": "",
+          "username": "",
+          "storeId": "shopee-supu",
+          "storeName": "Supu"
+        }
+      ],
+      "sourceRow": 21,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-22",
+      "entity": "GOLD WAVES MARKETING SDN BHD",
+      "market": "MY",
+      "project": "AGEPROS",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0004",
+          "username": "agepros.os",
+          "storeId": null,
+          "storeName": "AgePros By Swissmed",
+          "projectId": "P0001"
+        }
+      ],
+      "sourceRow": 22,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-23",
+      "entity": "GOLD WAVES MARKETING SDN BHD",
+      "market": "MY",
+      "project": "URO 360",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0032",
+          "username": "uro360_my",
+          "storeId": null,
+          "storeName": "Uro360 by CTG4u",
+          "projectId": "P0040"
+        }
+      ],
+      "sourceRow": 23,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-24",
+      "entity": "GOLD WAVES MARKETING SDN BHD",
+      "market": "MY",
+      "project": "LIVACT",
+      "termsVersion": "NEW",
+      "mappingStatus": "ambiguous",
+      "mappingReason": "Multiple store candidates; confirm billing allocation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0015",
+          "username": "livactmalaysia",
+          "storeId": null,
+          "storeName": "LivAct By Naturelish",
+          "projectId": "P0018"
+        },
+        {
+          "mappingId": "MAP0016",
+          "username": "livact.os",
+          "storeId": null,
+          "storeName": "LivAct Official Store",
+          "projectId": "P0018"
+        }
+      ],
+      "sourceRow": 24,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-25",
+      "entity": "JOURISH WELLNESS & NUTRITION SDN BHD",
+      "market": "MY",
+      "project": "JOURISH",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0012",
+          "username": "jourishwellness",
+          "storeId": null,
+          "storeName": "Jourish Natural Wellness",
+          "projectId": "P0015"
+        }
+      ],
+      "sourceRow": 25,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-26",
+      "entity": "NATURELISH HEALTHCARE SDN BHD",
+      "market": "MY",
+      "project": "BUGUCARE",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0007",
+          "username": "bugucare.os",
+          "storeId": null,
+          "storeName": "Bugucare By Naturelish",
+          "projectId": "P0028"
+        }
+      ],
+      "sourceRow": 26,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-27",
+      "entity": "NATURELISH HEALTHCARE SDN BHD",
+      "market": "MY",
+      "project": "ISOKAE",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0095",
+          "username": "isokae_my",
+          "storeId": null,
+          "storeName": "Naturelish Isokae by CTG4u",
+          "projectId": "P0044"
+        }
+      ],
+      "sourceRow": 27,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-28",
+      "entity": "NATURELISH HEALTHCARE SDN BHD",
+      "market": "MY",
+      "project": "HUMEAL",
+      "termsVersion": "NEW",
+      "mappingStatus": "missing",
+      "mappingReason": "Store mapping missing; confirm username and store.",
+      "candidates": [],
+      "sourceRow": 28,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-29",
+      "entity": "NUAN NUAN SDN BHD",
+      "market": "MY",
+      "project": "MOESIE",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0023",
+          "username": "moesie.my",
+          "storeId": null,
+          "storeName": "Moesie",
+          "projectId": "P0039"
+        }
+      ],
+      "sourceRow": 29,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-30",
+      "entity": "OASIS CTG ALLIANCE SDN BHD",
+      "market": "MY",
+      "project": "NINOKO",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0025",
+          "username": "ninoko_childhood_guardian",
+          "storeId": null,
+          "storeName": "NINOKO Official Store",
+          "projectId": "P0029"
+        }
+      ],
+      "sourceRow": 30,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-31",
+      "entity": "OASIS CTG ALLIANCE SDN BHD",
+      "market": "MY",
+      "project": "RECOVIT",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0024",
+          "username": "naturelish.recovit",
+          "storeId": null,
+          "storeName": "Naturelish Recovit by CTG4u",
+          "projectId": "P0027"
+        }
+      ],
+      "sourceRow": 31,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-32",
+      "entity": "OASIS CTG ALLIANCE SDN BHD",
+      "market": "MY",
+      "project": "MFORMULA",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0020",
+          "username": "mformula_official",
+          "storeId": null,
+          "storeName": "MFormula Official",
+          "projectId": "P0023"
+        }
+      ],
+      "sourceRow": 32,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-33",
+      "entity": "SKINDAE SDN BHD",
+      "market": "MY",
+      "project": "SKINDAE",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0029",
+          "username": "skindae.os",
+          "storeId": null,
+          "storeName": "SkinDae MY",
+          "projectId": "P0035"
+        }
+      ],
+      "sourceRow": 33,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-34",
+      "entity": "YUAN CHUAN TANG CTG4U SDN BHD",
+      "market": "MY",
+      "project": "YCT",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0031",
+          "username": "yct.herbal",
+          "storeId": null,
+          "storeName": "Yuan Chuan Tang Herbal by CTG4u",
+          "projectId": "P0038"
+        }
+      ],
+      "sourceRow": 34,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-35",
+      "entity": "BONLIFE (M) SDN BHD",
+      "market": "MY",
+      "project": "GOHERB",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0002",
+          "username": "go_herb",
+          "storeId": null,
+          "storeName": "GoHerb Official Store",
+          "projectId": "P0010"
+        }
+      ],
+      "sourceRow": 35,
+      "internalExternal": "EXTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-36",
+      "entity": "VGROUP TRADING SDN BHD",
+      "market": "MY",
+      "project": "Berlanco Beauty Official",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0065",
+          "username": "berlanco.beauty",
+          "storeId": null,
+          "storeName": "Berlanco Beauty Official",
+          "projectId": "P0002"
+        }
+      ],
+      "sourceRow": 36,
+      "internalExternal": "EXTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-37",
+      "entity": "BONLIFE (M) SDN BHD",
+      "market": "MY",
+      "project": "Bonlife Official Store",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0067",
+          "username": "bonlife.os",
+          "storeId": null,
+          "storeName": "Bonlife Official Store",
+          "projectId": "P0005"
+        }
+      ],
+      "sourceRow": 37,
+      "internalExternal": "EXTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-38",
+      "entity": "COCONICS SDN BHD",
+      "market": "MY",
+      "project": "Daionica Official Store",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0069",
+          "username": "daionica.os",
+          "storeId": null,
+          "storeName": "Daionica Official Store",
+          "projectId": "P0006"
+        }
+      ],
+      "sourceRow": 38,
+      "internalExternal": "EXTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-39",
+      "entity": "DANCOLY PARIS (M) SDN BHD",
+      "market": "MY",
+      "project": "Dancoly Paris HQ",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0070",
+          "username": "dancolyparis.hq",
+          "storeId": null,
+          "storeName": "Dancoly Paris HQ",
+          "projectId": "P0007"
+        }
+      ],
+      "sourceRow": 39,
+      "internalExternal": "EXTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-40",
+      "entity": "MIZINO MARKETING SDN BHD",
+      "market": "MY",
+      "project": "MIX ENZYME",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0003",
+          "username": "mizino.os",
+          "storeId": null,
+          "storeName": "Mizino Official Store",
+          "projectId": "P0024"
+        }
+      ],
+      "sourceRow": 40,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-41",
+      "entity": "PAW PAWS OFFICIAL SHOP",
+      "market": "MY",
+      "project": "PAW PAWs Official",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0075",
+          "username": "pawpawspet.os",
+          "storeId": null,
+          "storeName": "PAW PAWs Official",
+          "projectId": "P0031"
+        }
+      ],
+      "sourceRow": 41,
+      "internalExternal": "EXTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-42",
+      "entity": "PETAVIT SDN BHD",
+      "market": "MY",
+      "project": "Petavit",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0076",
+          "username": "petavit.os",
+          "storeId": null,
+          "storeName": "Petavit",
+          "projectId": "P0032"
+        }
+      ],
+      "sourceRow": 42,
+      "internalExternal": "EXTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-43",
+      "entity": "WINSENSE GROUP SDN BHD",
+      "market": "MY",
+      "project": "Winsense",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0077",
+          "username": "wsc.skincare",
+          "storeId": null,
+          "storeName": "Winsense",
+          "projectId": "P0036"
+        }
+      ],
+      "sourceRow": 43,
+      "internalExternal": "EXTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-44",
+      "entity": "LEGEND HAIR MANAGEMENT",
+      "market": "MY",
+      "project": "Hair Factory Official",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0071",
+          "username": "hairfactory.official",
+          "storeId": null,
+          "storeName": "Hair Factory Official",
+          "projectId": "P0011"
+        }
+      ],
+      "sourceRow": 44,
+      "internalExternal": "EXTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-45",
+      "entity": "FIROY PRINTING AGENCY",
+      "market": "MY",
+      "project": "J Packaging",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0072",
+          "username": "jpackaging.os",
+          "storeId": null,
+          "storeName": "J Packaging",
+          "projectId": "P0013"
+        }
+      ],
+      "sourceRow": 45,
+      "internalExternal": "EXTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-my-46",
+      "entity": "JEN MOM NATURAA SDN BHD",
+      "market": "MY",
+      "project": "Jen Mommy Essential Oil",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0073",
+          "username": "jenmommy.official",
+          "storeId": null,
+          "storeName": "Jen Mommy Essential Oil",
+          "projectId": "P0014"
+        }
+      ],
+      "sourceRow": 46,
+      "internalExternal": "EXTERNAL",
+      "sourceTab": "SHOPEE MY (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-sg-2",
+      "entity": "VGROUP TRADING SDN BHD",
+      "market": "SG",
+      "project": "BERLANCO SG",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0066",
+          "username": "berlancobeauty.sg",
+          "storeId": null,
+          "storeName": "Berlanco SG",
+          "projectId": "P0002"
+        }
+      ],
+      "sourceRow": 2,
+      "internalExternal": "EXTERNAL",
+      "sourceTab": "SHOPEE SG (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-sg-3",
+      "entity": "BONLIFE (M) SDN BHD",
+      "market": "SG",
+      "project": "BONLIFE SG",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0068",
+          "username": "bonlife.sg",
+          "storeId": null,
+          "storeName": "Bonlife Singapore",
+          "projectId": "P0005"
+        }
+      ],
+      "sourceRow": 3,
+      "internalExternal": "EXTERNAL",
+      "sourceTab": "SHOPEE SG (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-sg-4",
+      "entity": "CTG4U DRSMILE WHITENING SDN BHD",
+      "market": "SG",
+      "project": "DRSMILE SG",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0034",
+          "username": "drsmilewhitening.sg",
+          "storeId": null,
+          "storeName": "Dr Smile Whitening SG",
+          "projectId": "P0008"
+        }
+      ],
+      "sourceRow": 4,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE SG (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-sg-5",
+      "entity": "BONLIFE (M) SDN BHD",
+      "market": "SG",
+      "project": "GOHERB SG",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0001",
+          "username": "go_herb.sg",
+          "storeId": null,
+          "storeName": "Go Herb Singapore",
+          "projectId": "P0010"
+        }
+      ],
+      "sourceRow": 5,
+      "internalExternal": "EXTERNAL",
+      "sourceTab": "SHOPEE SG (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-sg-6",
+      "entity": "CTG4U ILADY SDN BHD",
+      "market": "SG",
+      "project": "ILADY SG",
+      "termsVersion": "OLD",
+      "mappingStatus": "ambiguous",
+      "mappingReason": "Multiple store candidates; confirm billing allocation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0035",
+          "username": "iladyhaircare.sg",
+          "storeId": null,
+          "storeName": "I Lady Haircare SG",
+          "projectId": "P0012"
+        },
+        {
+          "mappingId": "MAP0036",
+          "username": "ilady.sg",
+          "storeId": null,
+          "storeName": "iLady SG",
+          "projectId": "P0012"
+        }
+      ],
+      "sourceRow": 6,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE SG (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-sg-7",
+      "entity": "CTG4U MINFINITY SDN. BHD.",
+      "market": "SG",
+      "project": "KATA MARINE",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0037",
+          "username": "kata.os.sg",
+          "storeId": null,
+          "storeName": "KATA Singapore",
+          "projectId": "P0017"
+        }
+      ],
+      "sourceRow": 7,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE SG (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-sg-8",
+      "entity": "CTG4U WELLNESS SDN BHD",
+      "market": "SG",
+      "project": "MCS SG",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0040",
+          "username": "mcs_skincare.sg",
+          "storeId": null,
+          "storeName": "MCS Singapore",
+          "projectId": "P0022"
+        }
+      ],
+      "sourceRow": 8,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE SG (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-sg-9",
+      "entity": "OASIS CTG ALLIANCE SDN BHD",
+      "market": "SG",
+      "project": "MFORMULA SG",
+      "termsVersion": "OLD",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0038",
+          "username": "mformula.os.sg",
+          "storeId": null,
+          "storeName": "M Formula SG",
+          "projectId": "P0023"
+        }
+      ],
+      "sourceRow": 9,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE SG (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-sg-10",
+      "entity": "NUAN NUAN SDN BHD",
+      "market": "SG",
+      "project": "MOESIE SG",
+      "termsVersion": "NEW",
+      "mappingStatus": "missing",
+      "mappingReason": "Store mapping missing; confirm username and store.",
+      "candidates": [],
+      "sourceRow": 10,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE SG (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-sg-11",
+      "entity": "OASIS CTG ALLIANCE SDN BHD",
+      "market": "SG",
+      "project": "NINOKO SG",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0045",
+          "username": "ncxlrz.sg",
+          "storeId": null,
+          "storeName": "Ninoko",
+          "projectId": "P0029"
+        }
+      ],
+      "sourceRow": 11,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE SG (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-sg-12",
+      "entity": "CTG4U SCALE HOLDING SDN BHD",
+      "market": "SG",
+      "project": "SCALE STORY SG",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0041",
+          "username": "scalestory.os.sg",
+          "storeId": null,
+          "storeName": "Scale Story SG",
+          "projectId": "P0034"
+        }
+      ],
+      "sourceRow": 12,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE SG (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-sg-13",
+      "entity": "SKINDAE SDN BHD",
+      "market": "SG",
+      "project": "SKINDAE SG",
+      "termsVersion": "NEW",
+      "mappingStatus": "candidate",
+      "mappingReason": "Store candidate found; billing identity needs confirmation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0042",
+          "username": "skindae.os.sg",
+          "storeId": null,
+          "storeName": "SkinDae SG",
+          "projectId": "P0035"
+        }
+      ],
+      "sourceRow": 13,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE SG (JOLIN YONG)"
+    },
+    {
+      "id": "roster-2026-10-sg-14",
+      "entity": "CTG4U ZEERO SKINCARE SDN BHD",
+      "market": "SG",
+      "project": "ZEERO SKINCARE",
+      "termsVersion": "NEW",
+      "mappingStatus": "ambiguous",
+      "mappingReason": "Multiple store candidates; confirm billing allocation.",
+      "candidates": [
+        {
+          "mappingId": "MAP0043",
+          "username": "zeeroskincarezz.sg",
+          "storeId": null,
+          "storeName": "Zeero SG",
+          "projectId": "P0037"
+        },
+        {
+          "mappingId": "MAP0044",
+          "username": "zeero_skincare.sg",
+          "storeId": null,
+          "storeName": "Zeero Skincare SG",
+          "projectId": "P0037"
+        }
+      ],
+      "sourceRow": 14,
+      "internalExternal": "INTERNAL",
+      "sourceTab": "SHOPEE SG (JOLIN YONG)"
+    }
+  ],
+  "sources": [
+    {
+      "file": "WISDOM FACTORY DEPARTMENT BILLING-0c7fde2a-8c7a-4999-9188-b139b953c4c8.xlsx",
+      "sha256": "172d18297057a61d94506e48aa29dddc4a3ca45c3af613ee006dcd73e8ef9d11"
+    },
+    {
+      "file": "Shopee Hub Master Directory Framework-46563d62-140e-46d5-a743-50539feeca8d.xlsx",
+      "sha256": "ec1b6542a75be1d461c797ef38d8e877a7d96c39eabd230bca230b2a2ede11ce"
+    }
+  ],
+  "excluded": [
+    {
+      "tab": "SHOPEE MY (JOLIN YONG)",
+      "row": 47,
+      "project": "(AFFILIATE)",
+      "reason": "Affiliate billing, not a Shopee store"
+    }
+  ],
+  "mappingPolicy": "Historical candidates only. No financial store binding is confirmed.",
+  "dashboardCandidateEvidence": {
+    "verifiedAt": "2026-10-06",
+    "tenantId": "j-packaging",
+    "storeIds": [
+      "shopee-jeeroul-by-ctg4u",
+      "shopee-supu"
+    ],
+    "method": "Read-only stores lookup plus existing Dashboard references; directory IDs and usernames remain unknown."
+  }
+}

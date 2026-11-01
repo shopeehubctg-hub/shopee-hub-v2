@@ -1,10 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { PackageControl } from "./package-control";
-import { PriceCalculator } from "./price-calculator";
-import { DesignChecker } from "./design-checker";
-import { FakeSellerReport, type FakeSellerCase } from "./fake-seller-report";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import type { FakeSellerCase } from "./fake-seller-report";
 import type { PackagePrefill } from "./calculator-types";
 import { storeSnapshots } from "./store-snapshots";
 import { buildAdvertisingFunds, buildTopUpAction, formatRinggit } from "./advertising-model.js";
@@ -12,15 +9,26 @@ import { aggregateSelectedAdRows, selectAdRows, selectedAdDateFor } from "./ad-p
 import { hasCurrentTopUpInputs, malaysiaDate } from "./ad-balance-validation.js";
 import type { ProjectProductProfile } from "./product-catalog";
 import { PORTAL_MODULES, type PortalModuleId } from "./module-permissions";
-import { PermissionSettings } from "./permission-settings";
 import { DashboardLoading } from "./dashboard-loading";
 import { projectDriveFolders } from "./project-drive-folders";
+import { DashboardModuleBoundary, ModuleLoading } from "./dashboard-module-boundary";
+import { FeatureAnnouncementDialog } from "./feature-announcement-dialog";
+const PackageControl=lazy(()=>import("./package-control").then(module=>({default:module.PackageControl})));
+const PriceCalculator=lazy(()=>import("./price-calculator").then(module=>({default:module.PriceCalculator})));
+const DesignChecker=lazy(()=>import("./design-checker").then(module=>({default:module.DesignChecker})));
+const FakeSellerReport=lazy(()=>import("./fake-seller-report").then(module=>({default:module.FakeSellerReport})));
+const PermissionSettings=lazy(()=>import("./permission-settings").then(module=>({default:module.PermissionSettings})));
+const LiveCalendar=lazy(()=>import("./live-calendar").then(module=>({default:module.LiveCalendar})));
+const AccountPanel=lazy(()=>import("./account-panel").then(module=>({default:module.AccountPanel})));
+const StoreHealth=lazy(()=>import("./store-health").then(module=>({default:module.StoreHealth})));
+const OverviewStoreSales=lazy(()=>import("./overview-store-sales").then(module=>({default:module.OverviewStoreSales})));
+const OverviewSales=lazy(()=>import("./overview-sales").then(module=>({default:module.OverviewSales})));
+const SNAPSHOT_SECTIONS=new Set(["overview","advertising","actions","calculator","orders","health","protection"]);
 
-type Store = { id: string; name: string; platform: string; contacts: { project: string; href: string }[]; driveLink?: string | null };
+type Store = { id: string; name: string; sourceName?: string; platform: string; contacts: { project: string; href: string; driveLink?: string }[]; storeGroupLink?: string | null; driveLink?: string | null };
 type ManagementAction = { actionDate: string; category: string; title: string; detail: string };
 type CoFundVoucher = { id:number; campaignName:string; campaignDate:string|null; campaignStartAt:string|null; campaignEndAt:string|null; voucherName:string; discountAmount:number; currency:string; quantity:number };
-type VoucherPreset = { store:string; normal:number; campaign:number; available:true };
-type DashboardResponse = { stores: Store[]; selectedStoreId: string | null; snapshot: { payload: any; importedAt: string } | null; adBalance: { balance:number; balanceDate:string; sourceUpdatedAt:string|null; syncStatus:string; topUpOwner?:string | null } | null; adPerformance?:DailyAd[]; adPerformanceUpdatedAt?:string|null; adTopUpOverview?:AdTopUpOverview|null; actions?: ManagementAction[]; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; voucherPreset?:VoucherPreset|null; access?:{ role:string; enabledModules:PortalModuleId[]; clientEnabledModules:PortalModuleId[]; canManagePermissions:boolean } };
+type DashboardResponse = { environment?:"staging"|"production"|"local"; stores: Store[]; selectedStoreId: string | null; snapshot: { payload: any; importedAt: string } | null; adBalance: { balance:number; balanceDate:string; sourceUpdatedAt:string|null; syncStatus:string; topUpOwner?:string | null } | null; adPerformance?:DailyAd[]; adPerformanceUpdatedAt?:string|null; adTopUpOverview?:AdTopUpOverview|null; actions?: ManagementAction[]; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; access?:{ role:string; enabledModules:PortalModuleId[]; clientEnabledModules:PortalModuleId[]; canManagePermissions:boolean } };
 type ClientAction = { title: string; client: string; due: string; type: string; action: string; href?: string; message?: string; generated?: boolean };
 type DailyAd = { date:string; store:string; storeIds?:string[]; spend:number; sales:number; roas:number; views:number; clicks:number; ctr:number; conversion:number; sold:number; acos:number };
 type AdTopUpOverview = { totalStoreCount:number; assessedStoreCount:number; needsTopUp:{storeId:string;storeName:string;recommendedTopUp:number|null;actionLabel:string;ownerGroup:"shopee_hub"|"client";balance:number;runwayDays:number|null;reasons:string[];balanceDate:string;performanceDate:string}[]; needsAttention:{storeId:string;storeName:string;balance:number;balanceDate:string;performanceDate:string|null;ownerGroup:"shopee_hub"|"client"}[] };
@@ -42,9 +50,15 @@ const actionFallback = [
   { title:"Join CoFund", client:"J Packaging", due:"Today", type:"Campaign", action:"Review" },
   { title:"待批准广告预算 RM 800", client:"J Packaging", due:"19 Jul", type:"Urgent", action:"Approve" },
 ];
-function driveActionsForStore(store: Store | null | undefined): ClientAction[] {
+function driveActionsForStore(store: Store | null | undefined,allowStaticFallback=true): ClientAction[] {
   if (!store) return [];
-  const folders = projectDriveFolders[store.name];
+  const direct = store.contacts.filter(contact=>contact.driveLink).map(contact=>({
+    title:`${contact.project} Drive`,client:store.name,due:"Available now",type:"Drive",action:"Open Drive",href:contact.driveLink,
+  }));
+  if (direct.length) return direct;
+  if (store.driveLink) return [{title:"Store Drive",client:store.name,due:"Available now",type:"Drive",action:"Open Drive",href:store.driveLink}];
+  if(!allowStaticFallback)return [];
+  const folders = projectDriveFolders[store.sourceName ?? store.name];
   if (!folders) return [];
   return [
     {
@@ -98,15 +112,32 @@ function managementActionToClientAction(action: ManagementAction, client: string
   };
 }
 
+function startLoadTiming(requestKind:"bootstrap"|"module",section:string,storeId:string){
+  if(new URLSearchParams(window.location.search).get("debugLoad")!=="1")return ()=>{};
+  const startMs=performance.now();
+  return (success:boolean,cancelled:boolean)=>{
+    const endMs=performance.now();
+    console.info(JSON.stringify({event:"dashboard.load",requestKind,section,storeId,startMs,endMs,durationMs:endMs-startMs,success:success&&!cancelled,cancelled}));
+  };
+}
+
 export default function Home() {
-  const [requestedSection, setSection] = useState("overview");
+  const [requestedSection, setRequestedSection] = useState("overview");
+  const [stagingPreview,setStagingPreview] = useState(false);
   const [sidebarCollapsed,setSidebarCollapsed] = useState(false);
-  const [data, setData] = useState<(DashboardResponse & { user: { email:string } }) | null>(null);
+  const [shellData, setShellData] = useState<(DashboardResponse & { user: { email:string } }) | null>(null);
+  const [dataRevision,setDataRevision]=useState(0);
+  const revisionCounter=useRef(0);
+  const forceModuleRefresh=useRef<{revision:number;scope?:string}|null>(null);
+  const [moduleRetry,setModuleRetry]=useState(0);
+  const [moduleResult,setModuleResult]=useState<{key:string;data?:DashboardResponse;error?:string}|null>(null);
+  const bootstrapController=useRef<AbortController|null>(null);
+  const moduleSequence=useRef(0);
   const [loadError, setLoadError] = useState("");
   const loadSequence = useRef(0);
-  const allowedSections = data?.access?.enabledModules ?? [];
-  const section = (requestedSection === "permissions" ? data?.access?.canManagePermissions : allowedSections.includes(requestedSection as PortalModuleId))
-    ? requestedSection : allowedSections[0] ?? (data?.access?.canManagePermissions ? "permissions" : "");
+  const allowedSections = shellData?.access?.enabledModules ?? [];
+  const section = (requestedSection === "account" ? shellData?.access?.role === "superadmin" : requestedSection === "permissions" ? shellData?.access?.canManagePermissions : allowedSections.includes(requestedSection as PortalModuleId))
+    ? requestedSection : allowedSections[0] ?? (shellData?.access?.canManagePermissions ? "permissions" : "");
   const [storeId, setStoreId] = useState("");
   const [storeSelectionMade,setStoreSelectionMade] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -116,30 +147,56 @@ export default function Home() {
   const [adRangeStart, setAdRangeStart] = useState("");
   const [adRangeEnd, setAdRangeEnd] = useState("");
   const [packagePrefills, setPackagePrefills] = useState<PackagePrefill[]>([]);
+  const [packageDraftKey, setPackageDraftKey] = useState("");
   const [standalonePackageCreate, setStandalonePackageCreate] = useState(false);
 
-  async function load(id?: string) {
+  useEffect(()=>{
+    if (standalonePackageCreate && requestedSection === "packages") window.scrollTo({top:0});
+  },[standalonePackageCreate,requestedSection]);
+
+  const moduleKey=`${section}:${storeId}:${dataRevision}:${moduleRetry}`;
+  const salesOverview=section==="overview";
+  const needsModuleData=SNAPSHOT_SECTIONS.has(section)&&!salesOverview&&section!=="health";
+  const currentModule=moduleResult?.key===moduleKey?moduleResult:null;
+  const moduleReady=!needsModuleData||Boolean(currentModule?.data);
+  const data=shellData?(currentModule?.data?{...shellData,...currentModule.data}:shellData):null;
+
+  async function load(id?: string,refresh=false) {
+    bootstrapController.current?.abort();
+    const controller=new AbortController();
+    bootstrapController.current=controller;
     const sequence = ++loadSequence.current;
+    const finishTiming=startLoadTiming("bootstrap","bootstrap",id??"default");
+    let success=false;
     setLoading(true);
     setLoadError("");
     try {
-      const response = await fetch(`/api/dashboard${id ? `?storeId=${encodeURIComponent(id)}` : ""}`, { cache:"no-store" });
+      const response = await fetch(`/api/dashboard?section=bootstrap${id ? `&storeId=${encodeURIComponent(id)}` : ""}`, { cache:"no-store",signal:controller.signal });
       if (sequence !== loadSequence.current) return;
       if (response.status === 401) { window.location.replace("/login"); return; }
       if (!response.ok) throw new Error(response.status === 403 ? "Your account does not have access to this dashboard or store." : "Unable to load your dashboard. Please try again.");
       const next = await response.json();
       if (sequence !== loadSequence.current) return;
       if (!next.access || !Array.isArray(next.access.enabledModules) || !next.user?.email || !Array.isArray(next.stores)) throw new Error("Unable to verify your dashboard access. Please try again.");
-      setData(next); setStoreId(next.selectedStoreId ?? next.stores?.[0]?.id ?? "");
+      if(window.location.hostname==="shopee-hub-v2-260731-git-cod-e05b8d-shopeehubctg-5199s-projects.vercel.app"&&next.environment!=="staging")throw new Error("Unable to verify the Staging environment. Please try again.");
+      const nextRevision=++revisionCounter.current;
+      forceModuleRefresh.current=refresh?{revision:nextRevision}:null;
+      setShellData(next); setStoreId(next.selectedStoreId ?? next.stores?.[0]?.id ?? "");setDataRevision(nextRevision);
+      success=true;
     } catch (error) {
-      if (sequence !== loadSequence.current) return;
-      setData(null);
+      if (sequence !== loadSequence.current||controller.signal.aborted) return;
+      setShellData(null);
       setLoadError(error instanceof Error ? error.message : "Unable to load your dashboard. Please try again.");
-    } finally { if (sequence === loadSequence.current) setLoading(false); }
+    } finally {
+      finishTiming(success,controller.signal.aborted||sequence!==loadSequence.current);
+      if (sequence === loadSequence.current) setLoading(false);
+    }
   }
   useEffect(() => {
+    setStagingPreview(window.location.hostname==="shopee-hub-v2-260731-git-cod-e05b8d-shopeehubctg-5199s-projects.vercel.app");
     const params = new URLSearchParams(window.location.search);
-    if (params.get("section") === "permissions") setSection("permissions");
+    const initialSection=params.get("section");
+    if(initialSection&&(PORTAL_MODULES.some(module=>module.id===initialSection)||["account","permissions"].includes(initialSection)))setSection(initialSection);
     const draftKey = params.get("packageDraft");
     if (params.get("section") === "packages") setSection("packages");
     if (draftKey) {
@@ -148,30 +205,100 @@ export default function Home() {
         if (saved) {
           const draft = JSON.parse(saved) as { prefills:PackagePrefill[]; storeId?:string };
           setPackagePrefills(draft.prefills ?? []);
+          setPackageDraftKey(draftKey);
           setStandalonePackageCreate(true);
           setStoreSelectionMade(true);
-          window.localStorage.removeItem(`package-draft:${draftKey}`);
           load(draft.storeId && draft.storeId !== "all" ? draft.storeId : undefined);
-          return;
+          return ()=>{bootstrapController.current?.abort();++loadSequence.current;};
         }
       } catch {
         // Fall back to the regular Packages page if the transferred draft is unavailable.
       }
     }
-    load();
+    void load();
+    return ()=>{bootstrapController.current?.abort();++loadSequence.current;};
   }, []);
 
+  useEffect(()=>{
+    if(!shellData||!section||!needsModuleData||!storeId)return;
+    const expectedEnvironment=shellData.environment;
+    const refreshIntent=forceModuleRefresh.current;
+    const refreshScope=`${section}:${storeId}`;
+    const forceRefresh=Boolean(refreshIntent?.revision===dataRevision&&(!refreshIntent.scope||refreshIntent.scope===refreshScope));
+    if(forceRefresh&&refreshIntent)refreshIntent.scope=refreshScope;
+    const controller=new AbortController();
+    const sequence=++moduleSequence.current;
+    async function loadModule(){
+      const finishTiming=startLoadTiming("module",section,storeId);
+      let success=false;
+      try{
+        const response=await fetch(`/api/dashboard?section=${encodeURIComponent(section)}&storeId=${encodeURIComponent(storeId)}${forceRefresh?"&refresh=1":""}`,{cache:"no-store",signal:controller.signal});
+        if(controller.signal.aborted||sequence!==moduleSequence.current)return;
+        if(response.status===401){window.location.replace("/login");return;}
+        if(!response.ok)throw Error(response.status===403?"Your account does not have access to this module or store.":"Unable to load this module. Please try again.");
+        const next=await response.json();
+        if(controller.signal.aborted||sequence!==moduleSequence.current)return;
+        if(!next.access||!Array.isArray(next.access.enabledModules)||!next.user?.email||!Array.isArray(next.stores)||next.selectedStoreId!==storeId||(expectedEnvironment&&next.environment!==expectedEnvironment))throw Error("Unable to verify this module's store data. Please try again.");
+        setModuleResult({key:moduleKey,data:next});
+        success=true;
+      }catch(error){
+        if(!controller.signal.aborted&&sequence===moduleSequence.current)setModuleResult({key:moduleKey,error:error instanceof Error?error.message:"Unable to load this module."});
+      }finally{
+        finishTiming(success,controller.signal.aborted||sequence!==moduleSequence.current);
+        if(forceRefresh&&!controller.signal.aborted&&forceModuleRefresh.current===refreshIntent)forceModuleRefresh.current=null;
+      }
+    }
+    void loadModule();
+    return ()=>controller.abort();
+  },[shellData,section,storeId,needsModuleData,moduleKey,dataRevision]);
+
+  function permitBatchLeave(){return window.dispatchEvent(new Event("package-batch-leave",{cancelable:true}));}
+  function setSection(id:string){if(id!==requestedSection&&!permitBatchLeave())return;setRequestedSection(id);}
+  function selectStore(id:string){
+    if(id!==storeId&&!permitBatchLeave())return;
+    bootstrapController.current?.abort();++loadSequence.current;setLoading(false);
+    setStoreSelectionMade(true);setStoreId(id);
+  }
+
   function openPackageDraft(prefills:PackagePrefill[]) {
+    if (!storeId || storeId === "all") throw new Error("Please select a store before creating packages.");
+    if (!allowedSections.includes("packages")) throw new Error("Your account needs access to Packages & Pricing. Please contact your administrator.");
     const draftKey = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    window.localStorage.setItem(`package-draft:${draftKey}`, JSON.stringify({ prefills, storeId }));
-    window.open(`${window.location.pathname}?section=packages&packageDraft=${encodeURIComponent(draftKey)}`, "_blank", "noopener,noreferrer");
+    const draftUrl = `${window.location.pathname}?section=packages&packageDraft=${encodeURIComponent(draftKey)}`;
+    let stored = false;
+    try {
+      window.localStorage.setItem(`package-draft:${draftKey}`, JSON.stringify({ prefills, storeId }));
+      stored = true;
+    } catch { /* Keep the batch in memory when browser storage is unavailable. */ }
+    if (stored) {
+      try {
+        // Open a same-origin blank tab first: noopener itself returns null even
+        // when a tab opens, so it cannot tell us whether the popup was blocked.
+        const tab = window.open("", "_blank");
+        if (tab) {
+          tab.opener = null;
+          tab.location.replace(draftUrl);
+          return;
+        }
+      } catch { /* Browser popup policies must not prevent package creation. */ }
+    }
+    if (stored) {
+      try { window.history.replaceState(window.history.state,"",draftUrl); } catch { /* In-memory navigation remains available. */ }
+    }
+    setPackagePrefills(prefills);
+    setPackageDraftKey(stored ? draftKey : "");
+    setStandalonePackageCreate(true);
+    setStoreSelectionMade(true);
+    setSection("packages");
   }
   const allStoresSelected = storeId === "all";
   const store = allStoresSelected ? null : (data?.stores.find(s => s.id === storeId) ?? data?.stores[0]);
-  const staticSnapshot = store ? storeSnapshots[store.name] : null;
+  const isStaging=stagingPreview||shellData?.environment==="staging";
+  const staticSnapshot = !isStaging&&store ? storeSnapshots[store.sourceName ?? store.name] : null;
   const live = data?.snapshot?.payload ?? staticSnapshot ?? {};
-  const noSample = Boolean(live.noSample);
-  const overview = Array.isArray(live.overview) ? live.overview : overviewFallback;
+  const noSample = isStaging||Boolean(live.noSample);
+  const stagingSnapshotUnavailable=section!=="health"&&!salesOverview&&isStaging&&((!data?.snapshot&&["overview","orders","health","protection"].includes(section))||(section==="protection"&&(!Array.isArray(live.fakeSellerCases)||!live.fakeSellerCases.length)));
+  const overview = Array.isArray(live.overview) ? live.overview : isStaging?overviewFallback.map(([label])=>[label,"暂无数据",""]):overviewFallback;
   const adsBase = data?.adPerformance?.length ? { ...unavailableAdvertising, ...(live.advertising ?? {}) } : unavailableAdvertising;
   const relevantDailyAds = data?.adPerformance ?? [];
   const availableAdDates = [...new Set(relevantDailyAds.map(row=>row.date))].sort((a,b)=>b.localeCompare(a));
@@ -218,7 +345,7 @@ export default function Home() {
   const topUpBalanceDates = formatAdDateSpan(topUpRows.map(item=>item.balanceDate));
   const topUpPerformanceDates = formatAdDateSpan(topUpRows.map(item=>item.performanceDate));
   const orders = Array.isArray(live.orders) ? live.orders : (noSample ? [] : ordersFallback);
-  const driveActions = driveActionsForStore(store);
+  const driveActions = driveActionsForStore(store,!isStaging);
   const importedClientActions = data?.actions?.map(action=>managementActionToClientAction(action, store?.name ?? "Selected store")) ?? [];
   const clientActions = Array.isArray(live.clientActions) ? live.clientActions : importedClientActions;
   const adFunds = buildAdvertisingFunds(ads);
@@ -230,11 +357,12 @@ export default function Home() {
   const target = live.target;
   const losses = live.losses;
   const orderSummary = live.orderSummary;
-  const fakeSellerCases = Array.isArray(live.fakeSellerCases) ? live.fakeSellerCases as FakeSellerCase[] : undefined;
+  const fakeSellerCases = Array.isArray(live.fakeSellerCases) ? live.fakeSellerCases as FakeSellerCase[] : isStaging?[]:undefined;
   const nav = useMemo(() => {
     const allowed = new Set(data?.access?.enabledModules ?? []);
-    const items: (readonly [string, string])[] = PORTAL_MODULES.filter(({ id }) => allowed.has(id)).map(({ id, label }) => [id, label] as const);
-    if (data?.access?.canManagePermissions) items.push(["permissions", "Permission settings"] as const);
+    const items: (readonly [string, string])[] = PORTAL_MODULES.filter(({ id }) => allowed.has(id)).map(({ id, label }) => [id, id === "packages" ? "Packages & Pricing" : label] as const);
+    if (data?.access?.role === "superadmin") items.push(["account", "Account"] as const);
+    if (data?.access?.canManagePermissions) items.push(["permissions", "Permission Settings"] as const);
     return items;
   }, [data?.access]);
   if (!data && !loadError) return <DashboardLoading />;
@@ -246,39 +374,46 @@ export default function Home() {
     {(loadError || data) && <a href="/login">Back to sign in</a>}
   </section></main>;
   return <main className={`app-shell${sidebarCollapsed?" sidebar-collapsed":""}${section==="advertising"&&allStoresSelected?" advertising-all-shell":""}`}>
+    <FeatureAnnouncementDialog />
     <aside className="side">
       <div className="logo"><img src="/shopee-hub-logo-transparent.png" alt="ShopeeHub"/><small>STORE COMMAND CENTER</small></div>
       <button className="sidebar-toggle" onClick={()=>setSidebarCollapsed(current=>!current)} aria-label={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"} title={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"}>{sidebarCollapsed?"›":"‹"}</button>
       <nav>{nav.map(([id,label]) => <button key={id} className={section===id?"active":""} onClick={()=>setSection(id)}><span>{label.slice(0,1)}</span>{label}</button>)}</nav>
-      <div className="fleet contact-card"><p>Contact Shopee Hub Specialist</p><strong>{allStoresSelected ? "Select a project" : (store?.contacts.length ? store.name : "Link unavailable")}</strong><div>{!allStoresSelected && store?.contacts.map(contact=><a key={contact.href} href={contact.href} target="_blank" rel="noopener noreferrer" title={contact.project}>{store.contacts.length > 1 ? contact.project : "Contact"} →</a>)}</div></div>
+      <div className="fleet contact-card"><p>Contact Shopee Hub Specialist</p><strong>{allStoresSelected ? "Select a project" : (store?.contacts.length ? store.name : "Link unavailable")}</strong><div>{!allStoresSelected && store?.contacts.map(contact=><a key={contact.href} href={contact.href} target="_blank" rel="noopener noreferrer" title={contact.project}>{store.contacts.length > 1 ? contact.project : "Contact"} →</a>)}{!allStoresSelected && store?.storeGroupLink && <a href={store.storeGroupLink} target="_blank" rel="noopener noreferrer">Store group →</a>}</div></div>
       <p className="access">{data.access?.role === "superadmin" ? "Super Admin access" : "Private access"}<br/><b>{data.user.email}</b></p>
     </aside>
 
     <section className="workspace">
       <header className="header">
-        <div><h1>{section==="packages"&&!storeSelectionMade?"No Store Selected":allStoresSelected ? "All Stores" : (store?.name ?? "J Packaging")}</h1></div>
-        <div className="toolbar">
-          <label>Store<select value={section==="packages"&&!storeSelectionMade?"":storeId} onChange={e=>{setStoreSelectionMade(true);setStoreId(e.target.value);load(e.target.value)}}><option value="" disabled>Select a Store</option><option value="all">All Stores</option>{data?.stores.map(s=><option key={s.id} value={s.id}>{s.name} · {s.platform.replace("Shopee ", "")}</option>) ?? <option value="j-packaging-shopee">J Packaging · MY</option>}</select></label>
-          <button onClick={()=>load(storeId)} disabled={loading}>{loading?"Updating…":"Update data"}</button>
-        </div>
+        <div><p className="kicker">{section==="account"?"SHOPEE HUB":"SHOPEE HUB PERFORMANCE"}{isStaging&&<span data-environment="staging"> · STAGING</span>}</p><h1>{section==="account"?"Account":section==="packages"&&!storeSelectionMade?"No Store Selected":allStoresSelected ? "All Stores" : (store?.name ?? (isStaging?"Selected Store":"J Packaging"))}</h1></div>
+        {section!=="account"&&<div className="toolbar">
+          <label>Store<select value={section==="packages"&&!storeSelectionMade?"":storeId} onChange={event=>selectStore(event.target.value)}><option value="" disabled>Select a Store</option><option value="all">All Stores</option>{data?.stores.map(s=><option key={s.id} value={s.id}>{s.name} · {s.platform.replace("Shopee ", "")}</option>) ?? <option value="j-packaging-shopee">J Packaging · MY</option>}</select></label>
+          <button onClick={()=>load(storeId,true)} disabled={loading}>{loading?"Updating…":"Update data"}</button>
+        </div>}
       </header>
-      {section==="overview" && <div className="page">
-        <div className="page-title"><div><h2>Overview</h2></div><div className="warning-pill">{importantWarningCount} important warnings</div></div>
+
+      <DashboardModuleBoundary key={section}><Suspense fallback={<ModuleLoading/>}>
+      {needsModuleData&&!storeId?<div className="card" role="status">No stores are available. Select or add a store to view this module.</div>:!moduleReady?(currentModule?.error?<div className="card" role="alert"><p>{currentModule.error}</p><button type="button" onClick={()=>setModuleRetry(value=>value+1)}>Retry module</button></div>:<ModuleLoading/>):stagingSnapshotUnavailable?<div className="card" role="status"><h2>No data</h2><p>No Staging snapshot is available for this store.</p></div>:<>
+      {salesOverview && (allStoresSelected ? <OverviewSales refreshKey={dataRevision} canView={shellData?.access?.role==="superadmin"||shellData?.access?.enabledModules.includes("overview_store_sales")} canViewLeaderboard={shellData?.access?.role==="superadmin"||shellData?.access?.enabledModules.includes("overview_leaderboard")}/> : <OverviewStoreSales key={storeId} storeId={storeId} refreshKey={dataRevision} canView={shellData?.access?.role==="superadmin"||shellData?.access?.enabledModules.includes("overview_store_sales")}/>)}
+      {section==="overview" && !salesOverview && <div className="page">
+        <div className="page-title"><div><p className="kicker">OVERVIEW</p><h2>Business Pulse</h2></div><div className="warning-pill">{importantWarningCount} important warnings</div></div>
         <section className="owner-brief"><div><span>今日重点</span><strong>{adFunds.needsTopUp ? `Ad Balance ${formatRinggit(adFunds.balance)} · Top-up ${formatRinggit(adFunds.recommendedTopUp)}` : `${warningOrders.length} orders need attention`}</strong><small>{adFunds.syncStatus === "delayed" ? "Advertising data delayed" : (adFunds.needsTopUp ? (adFunds.topUpOwner === "shopee_hub" ? "Managed by Shopee Hub" : "Action required") : "Ads healthy")}</small></div><button onClick={()=>setSection(adFunds.needsTopUp?"advertising":"orders")}>View →</button></section>
         <section className="metric-grid">{overview.map((m:any)=><article className="metric" key={m[0]}><span>{m[0]}</span><strong>{m[1]}</strong><em>{m[2]}</em></article>)}</section>
         <section className="overview-grid">
-          <article className="card target"><div className="card-head"><div><h3>Monthly target</h3><strong className="target-goal">{target?.goal ?? "RM 120,000"}</strong></div><strong>{target?.rate == null && noSample ? "暂无数据" : `${target?.rate ?? 68.4}%`}</strong></div><div className="progress"><i style={{width:`${target?.rate ?? (noSample ? 0 : 68.4)}%`}}/></div><div className="split"><span>Achieved <b>{target?.achieved ?? (noSample ? "暂无数据" : "RM 82,080")}</b></span><span>Projected month end <b>{target?.projected ?? (noSample ? "暂无数据" : "RM 126,430")}</b></span></div></article>
-          <article className="card losses"><h3>Order losses</h3><div><span>Cancelled orders<b>{losses?.cancelledOrders ?? (noSample ? "暂无数据" : 28)}</b><small>{losses?.cancelledAmount ?? (noSample ? "暂无数据" : "RM 1,486.20")}</small></span><span>Refund orders<b>{losses?.refundOrders ?? (noSample ? "暂无数据" : 9)}</b><small>{losses?.refundAmount ?? (noSample ? "暂无数据" : "RM 422.60")}</small></span></div></article>
-          <article className="card alerts detailed-alerts"><div className="card-head"><div><h3>Order alerts</h3></div><b>{warningOrders.length}</b></div><div className="warning-metrics"><span><b>{orders.filter((o:any)=>o.status==="Expired").length}</b> Expired orders</span><span><b>{orders.filter((o:any)=>o.status==="Urgent").length}</b> Urgent orders</span><span><b>0</b> Penalty points</span></div><div className="warning-orders">{warningOrders.map((o:any)=><div className="warning-order" key={o.id}><span className={`badge ${o.status.toLowerCase()}`}>{o.status}</span><div><b>{o.id}</b><small>{o.buyer} · {o.product}</small></div><div><b>{o.value}</b><small>Order {o.time}</small></div><div><b>{o.expire}</b><small>{o.status==="Expired"?"Expired":"Time left: "+o.left}</small></div></div>)}</div></article>
-          <article className="card action-summary"><div className="card-head"><div><h3>Client actions</h3></div><b>{visibleClientActions.length}</b></div><div className="chips"><span>{generatedTopUpAction ? `Top-up ${formatRinggit(adFunds.recommendedTopUp)}` : "Ads healthy"}</span><span>{adFunds.topUpOwner === "shopee_hub" ? "Managed by Shopee Hub" : "Client action"}</span></div><button onClick={()=>setSection("actions")}>Open action center →</button></article>
+          <article className="card target"><div className="card-head"><div><p className="kicker">MONTHLY TARGET</p><h3>{target?.goal ?? (noSample?"暂无数据":"RM 120,000")}</h3></div><strong>{target?.rate == null && noSample ? "暂无数据" : `${target?.rate ?? 68.4}%`}</strong></div><div className="progress"><i style={{width:`${target?.rate ?? (noSample ? 0 : 68.4)}%`}}/></div><div className="split"><span>Achieved <b>{target?.achieved ?? (noSample ? "暂无数据" : "RM 82,080")}</b></span><span>Projected month end <b>{target?.projected ?? (noSample ? "暂无数据" : "RM 126,430")}</b></span></div></article>
+          <article className="card losses"><p className="kicker">ORDER LOSSES</p><div><span>Cancelled orders<b>{losses?.cancelledOrders ?? (noSample ? "暂无数据" : 28)}</b><small>{losses?.cancelledAmount ?? (noSample ? "暂无数据" : "RM 1,486.20")}</small></span><span>Refund orders<b>{losses?.refundOrders ?? (noSample ? "暂无数据" : 9)}</b><small>{losses?.refundAmount ?? (noSample ? "暂无数据" : "RM 422.60")}</small></span></div></article>
+          <article className="card alerts detailed-alerts"><div className="card-head"><div><p className="kicker">IMPORTANT WARNINGS</p><h3>Requires immediate attention</h3></div><b>{warningOrders.length}</b></div><div className="warning-metrics"><span><b>{orders.filter((o:any)=>o.status==="Expired").length}</b> Expired orders</span><span><b>{orders.filter((o:any)=>o.status==="Urgent").length}</b> Urgent orders</span><span><b>{isStaging?"暂无数据":0}</b> Penalty points</span></div><div className="warning-orders">{warningOrders.map((o:any)=><div className="warning-order" key={o.id}><span className={`badge ${o.status.toLowerCase()}`}>{o.status}</span><div><b>{o.id}</b><small>{o.buyer} · {o.product}</small></div><div><b>{o.value}</b><small>Order {o.time}</small></div><div><b>{o.expire}</b><small>{o.status==="Expired"?"Expired":"Time left: "+o.left}</small></div></div>)}</div></article>
+          <article className="card action-summary"><div className="card-head"><div><p className="kicker">CLIENT ACTION CENTER</p><h3>Waiting on client</h3></div><b>{visibleClientActions.length}</b></div><div className="chips"><span>{generatedTopUpAction ? `Top-up ${formatRinggit(adFunds.recommendedTopUp)}` : "Ads healthy"}</span><span>{adFunds.topUpOwner === "shopee_hub" ? "Managed by Shopee Hub" : "Client action"}</span></div><button onClick={()=>setSection("actions")}>Open action center →</button></article>
         </section>
       </div>}
 
-      {section==="packages" && <div className="page"><PackageControl storeId={storeSelectionMade?storeId:""} storeName={!storeSelectionMade?"No Store Selected":allStoresSelected?"All Accessible Stores":(store?.name ?? "Selected Store")} prefills={packagePrefills} standaloneCreate={standalonePackageCreate} onPrefillsAccepted={()=>setPackagePrefills([])} /></div>}
-      {section==="calculator" && <div className="page calculator-page" aria-label="Price Calculator"><PriceCalculator storeName={allStoresSelected?"":(store?.name??"")} productProfile={allStoresSelected?null:data?.productProfile} coFundVouchers={allStoresSelected?[]:data?.coFundVouchers} voucherPreset={allStoresSelected?null:data?.voucherPreset} onCreatePackage={prefill=>openPackageDraft([prefill])} onCreatePackages={openPackageDraft} /></div>}
-      {section==="design" && <div className="page"><DesignChecker storeId={storeId}/></div>}
+      {section==="packages" && <div className="page"><PackageControl staging={isStaging} storePlatform={store?.platform} allowSamplePreview={data.access?.role==="superadmin"} storeId={storeSelectionMade?storeId:""} storeName={!storeSelectionMade?"No Store Selected":allStoresSelected?"All Accessible Stores":(store?.name ?? "Selected Store")} prefills={packagePrefills} standaloneCreate={standalonePackageCreate} draftStorageKey={packageDraftKey ? `package-draft:${packageDraftKey}` : undefined} onPrefillsAccepted={()=>setPackagePrefills([])} /></div>}
+      {section==="calculator" && <div className="page" aria-label="Price Calculator"><PriceCalculator staging={isStaging} storeId={allStoresSelected?"":store?.id??""} storeName={allStoresSelected?"":(store?.name??"")} productProfile={allStoresSelected?null:data?.productProfile} coFundVouchers={allStoresSelected?[]:data?.coFundVouchers} onCreatePackage={prefill=>openPackageDraft([prefill])} onCreatePackages={openPackageDraft} /></div>}
+      {section==="design" && <div className="page"><DesignChecker key={storeId} storeId={storeId}/></div>}
       {section==="protection" && <div className="page"><FakeSellerReport storeName={store?.name ?? "Selected store"} allStores={allStoresSelected} cases={fakeSellerCases}/></div>}
-      {section==="permissions" && data?.access?.canManagePermissions && <div className="page"><PermissionSettings initialEnabledModules={data.access.clientEnabledModules}/></div>}
+      {section==="permissions" && data?.access?.canManagePermissions && <div className="page"><PermissionSettings accountSetupPreview initialEnabledModules={data.access.clientEnabledModules} onStoreChanged={()=>load(storeId && storeId!=="all" ? storeId : undefined,true)}/></div>}
+      {section==="account" && data?.access?.role==="superadmin" && <div className="page"><AccountPanel /></div>}
+      {section==="live_calendar" && <div className="page"><LiveCalendar key={storeId} initialStoreId={storeId} initialView={data.access?.role==="superadmin"?"month":"list"}/></div>}
 
       {section==="advertising" && <div className="page"><div className="page-title ad-page-title"><div><h2>Advertising</h2></div><div className="ad-period-controls"><label><span>View by</span><select aria-label="Advertising period type" value={adPeriodMode} onChange={event=>setAdPeriodMode(event.target.value as "mtd"|"month"|"date"|"range")}><option value="mtd">Month to date</option><option value="month">Month</option><option value="date">Date</option><option value="range">Custom range</option></select></label>{adPeriodMode === "month" && <label><span>Month</span><input aria-label="Advertising month" type="month" value={selectedAdMonth} min={availableAdMonths[availableAdMonths.length-1]} max={availableAdMonths[0]} onChange={event=>setAdMonth(event.target.value)}/></label>}{adPeriodMode === "date" && <label><span>Date</span><input aria-label="Advertising date" type="date" value={selectedAdDate} min={earliestAdDate} max={availableAdDates[0]} onChange={event=>setAdDate(event.target.value)} disabled={!availableAdDates.length}/></label>}{adPeriodMode === "range" && <><label><span>From</span><input aria-label="Advertising range start" type="date" value={selectedRangeStart} min={earliestAdDate} max={selectedRangeEnd} onChange={event=>setAdRangeStart(event.target.value)}/></label><label><span>To</span><input aria-label="Advertising range end" type="date" value={selectedRangeEnd} min={selectedRangeStart} max={availableAdDates[0]} onChange={event=>setAdRangeEnd(event.target.value)}/></label></>}</div></div>
         {allStoresSelected && <section className="ad-total-overview" aria-label="All Stores advertising overview">
@@ -340,11 +475,13 @@ export default function Home() {
         {!allStoresSelected && <section className="campaign-section" aria-label="Individual Ads"><div className="campaign-heading"><div><h3>Individual ads</h3></div></div><div className="card individual-ads-empty" role="status"><p>Individual ad data is temporarily unavailable.</p></div></section>}
       </div>}
 
-      {section==="orders" && <div className="page"><div className="page-title"><div><h2>Orders & inventory</h2></div></div><section className="metric-grid three"><article className="metric"><span>Today’s Orders</span><strong>{orderSummary?.today ?? (noSample ? "暂无数据" : 98)}</strong></article><article className="metric warn"><span>Expiring Today</span><strong>{orderSummary?.expiringToday ?? (noSample ? "暂无数据" : 7)}</strong></article><article className="metric danger"><span>Expired</span><strong>{orderSummary?.expired ?? (noSample ? "暂无数据" : 2)}</strong></article></section><div className="card table-card"><table><thead><tr><th>Order</th><th>Buyer</th><th>Product</th><th>Order Time</th><th>Order Value</th><th>Expire Time</th><th>Time Left</th><th>Status</th></tr></thead><tbody>{orders.map((o:any)=><tr key={o.id}><td><b>{o.id}</b></td><td>{o.buyer}</td><td>{o.product}</td><td>{o.time}</td><td>{o.value}</td><td>{o.expire}</td><td>{o.left}</td><td><span className={`badge ${o.status.toLowerCase()}`}>{o.status}</span></td></tr>)}{noSample && !orders.length && <tr><td colSpan={8}>暂无数据</td></tr>}</tbody></table></div></div>}
+      {section==="orders" && <div className="page"><div className="page-title"><div><p className="kicker">ORDERS & INVENTORY</p><h2>Today’s orders & deadlines</h2></div></div><section className="metric-grid three"><article className="metric"><span>Today’s Orders</span><strong>{orderSummary?.today ?? (noSample ? "暂无数据" : 98)}</strong></article><article className="metric warn"><span>Expiring Today</span><strong>{orderSummary?.expiringToday ?? (noSample ? "暂无数据" : 7)}</strong></article><article className="metric danger"><span>Expired</span><strong>{orderSummary?.expired ?? (noSample ? "暂无数据" : 2)}</strong></article></section><div className="card table-card"><table><thead><tr><th>Order</th><th>Buyer</th><th>Product</th><th>Order Time</th><th>Order Value</th><th>Expire Time</th><th>Time Left</th><th>Status</th></tr></thead><tbody>{orders.map((o:any)=><tr key={o.id}><td><b>{o.id}</b></td><td>{o.buyer}</td><td>{o.product}</td><td>{o.time}</td><td>{o.value}</td><td>{o.expire}</td><td>{o.left}</td><td><span className={`badge ${o.status.toLowerCase()}`}>{o.status}</span></td></tr>)}{noSample && !orders.length && <tr><td colSpan={8}>暂无数据</td></tr>}</tbody></table></div></div>}
 
-      {section==="health" && noSample ? <div className="page"><div className="page-title"><div><h2>Store health</h2></div></div><article className="card"><h3>暂无数据</h3><p>本次来源没有提供 Mizino Premium 的店铺健康指标。</p></article></div> : section==="health" && <div className="page"><div className="page-title"><div><h2>Store health</h2></div><span className="health-status">Healthy</span></div><section className="metric-grid"><article className="metric"><span>Reviews</span><strong>4,286</strong><em>+182 this month</em></article><article className="metric danger"><span>Bad Reviews</span><strong>37</strong><em>0.86%</em></article><article className="metric"><span>Buyer Overall Rating</span><strong>4.92 / 5</strong></article><article className="metric"><span>Penalty Points</span><strong>0</strong><em>Normal</em></article></section><section className="health-grid"><article className="card reviews"><h3>Ratings</h3>{[["5 stars",88],["4 stars",9],["1–3 stars",3]].map(r=><div key={r[0]}><span>{r[0]}</span><i><b style={{width:`${r[1]}%`}}/></i><strong>{r[1]}%</strong></div>)}</article><article className="card quality"><h3>Service quality</h3>{[["Fast Handover Rate","96.8%"],["Chat Satisfaction","94.2%"],["Response Rate","98.1%"],["Late Shipment Rate","1.2%"]].map(r=><div key={r[0]}><span>{r[0]}</span><strong>{r[1]}</strong></div>)}</article><article className="card violations"><h3>Listing violations</h3><strong>0</strong><span>No active listing violations</span></article></section></div>}
+      {section==="health" && <StoreHealth key={storeId} storeId={storeId} refreshKey={dataRevision} canView={shellData?.access?.role==="superadmin"}/>}
 
-      {section==="actions" && <div className="page"><div className="page-title"><div><h2>Client actions</h2></div><span className="warning-pill">{visibleClientActions.length} open items</span></div>{adFunds.topUpOwner === "shopee_hub" && adFunds.needsTopUp && <div className="managed-note">Top-up {formatRinggit(adFunds.recommendedTopUp)} · Managed by Shopee Hub</div>}{visibleClientActions.length ? <div className="action-list">{visibleClientActions.map((a:any)=><article className="card action" key={a.title}><div className={`type ${a.type.toLowerCase()}`}>{a.type.slice(0,1)}</div><div><span className="category">{a.type}</span><h3>{a.title}</h3><p>{a.client} · Due {a.due}</p>{a.message&&<p className="action-message">{a.message}</p>}</div>{a.href?<a className="action-link" href={a.href} target="_blank" rel="noopener noreferrer">{a.action}</a>:<button>{a.action}</button>}</article>)}</div> : <article className="card empty-actions"><h3>No client action needed</h3><p>当前没有需要客户处理的事项。</p></article>}</div>}
+      {section==="actions" && <div className="page"><div className="page-title"><div><p className="kicker">CLIENT ACTION CENTER</p><h2>What we need from the client</h2></div><span className="warning-pill">{visibleClientActions.length} open items</span></div>{adFunds.topUpOwner === "shopee_hub" && adFunds.needsTopUp && <div className="managed-note">Top-up {formatRinggit(adFunds.recommendedTopUp)} · Managed by Shopee Hub</div>}{visibleClientActions.length ? <div className="action-list">{visibleClientActions.map((a:any)=><article className="card action" key={a.title}><div className={`type ${a.type.toLowerCase()}`}>{a.type.slice(0,1)}</div><div><span className="category">{a.type}</span><h3>{a.title}</h3><p>{a.client} · Due {a.due}</p>{a.message&&<p className="action-message">{a.message}</p>}</div>{a.href?<a className="action-link" href={a.href} target="_blank" rel="noopener noreferrer">{a.action}</a>:<button>{a.action}</button>}</article>)}</div> : <article className="card empty-actions"><h3>No client action needed</h3><p>当前没有需要客户处理的事项。</p></article>}</div>}
+      </>}
+      </Suspense></DashboardModuleBoundary>
       <footer>Shopee Hub · Private command center</footer>
     </section>
   </main>;

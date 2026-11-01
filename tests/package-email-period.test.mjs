@@ -1,0 +1,12 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const context=vm.createContext({Utilities:{formatDate:(date,zone,pattern)=>{assert.equal(zone,'Asia/Kuala_Lumpur');assert.equal(pattern,'yyyy-MM-dd HH:mm');return new Date(date.getTime()+8*3600000).toISOString().slice(0,16).replace('T',' ');}}});
+vm.runInContext(readFileSync('integrations/PackageEmailNotifications.gs','utf8'),context);
+const lines=(s,e)=>Array.from(context.packageEmailPeriods_(s,e));
+test('real multiple Campaign dates are paired before grouping',()=>assert.deepEqual(lines('Non-Campaign 2026-10-01 | Campaign 2026-10-08 | Campaign 2026-10-14 | Campaign 2026-10-24','Non-Campaign 2026-10-31 | Campaign 2026-10-10 | Campaign 2026-10-15 | Campaign 2026-10-25'),['Non-Campaign Period: 2026-10-01 ~ 2026-10-31','Campaign 1 Period: 2026-10-08 ~ 2026-10-10','Campaign 2 Period: 2026-10-14 ~ 2026-10-15','Campaign 3 Period: 2026-10-24 ~ 2026-10-25']));
+test('same-day dates and duplicate ranges stay compact',()=>assert.deepEqual(lines('Campaign 2026-10-08 | Campaign 2026-10-08 | Non-Campaign 2026-10-01','Campaign 2026-10-08 | Campaign 2026-10-08 | Non-Campaign 2026-10-31'),['Non-Campaign Period: 2026-10-01 ~ 2026-10-31','Campaign Period: 2026-10-08']));
+test('identical periods combine with explicit shared label',()=>assert.deepEqual(lines('Non-Campaign 2026-10-01 | Campaign 2026-10-01','Non-Campaign 2026-10-31 | Campaign 2026-10-31'),['Package Period: 2026-10-01 ~ 2026-10-31（Campaign & Non-Campaign 相同）']));
+test('unmatched dates fall back without inventing a pairing',()=>assert.match(lines('Non-Campaign 2026-10-01','Campaign 2026-10-31')[0],/^开始日期：/));
+test('UTC timestamps convert to Malaysia including next-day rollover',()=>{assert.equal(context.packageEmailTime_('2026-09-29T09:01:39.077Z'),'2026-09-29 17:01（马来西亚时间）');assert.equal(context.packageEmailTime_('2026-09-29T20:01:39.077Z'),'2026-09-30 04:01（马来西亚时间）');assert.equal(context.packageEmailTime_('2026-09-29 13:12'),'2026-09-29 13:12');});

@@ -109,7 +109,7 @@ export function maximumCoFundVoucher(vouchers, now = new Date()) {
       if (!voucher?.campaignStartAt || !voucher?.campaignEndAt) return false;
       const startTime = new Date(voucher.campaignStartAt).getTime();
       const endTime = new Date(voucher.campaignEndAt).getTime();
-      return Number.isFinite(startTime) && Number.isFinite(endTime) && startTime <= endTime && endTime >= currentTime;
+      return Number.isFinite(startTime) && Number.isFinite(endTime) && startTime <= currentTime && currentTime <= endTime;
     })
     .sort((left,right)=>(Number(right?.discountAmount)||0)-(Number(left?.discountAmount)||0))[0] ?? null;
 }

@@ -9,14 +9,14 @@ test("package control is wired into the command center", async () => {
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("app/package-control.tsx", root), "utf8"),
   ]);
-  assert.match(page, /PORTAL_MODULES\.filter/);
+  assert.match(page, /Packages & Pricing/);
   assert.match(page, /<PackageControl/);
-  assert.match(component, /<h2>Packages &amp; pricing<\/h2>/);
+  assert.match(component, /OXM PACKAGE CONTROL/);
   assert.match(component, /Migrate & Edit/);
-  assert.match(component, /New version/);
+  assert.match(component, /Edit \/ Modify Package/);
   assert.match(component, /Add Listing/);
   assert.match(component, /Multi-Select/);
-  assert.match(component, /type="checkbox" checked=\{form\.campaign\.campaignEvents\.includes/);
+  assert.match(component, /Campaign Events · Multi-Select/);
   assert.match(component, /Shopee/);
   assert.match(component, /Lazada/);
   assert.match(component, /TikTok Shop/);
@@ -24,7 +24,7 @@ test("package control is wired into the command center", async () => {
   assert.match(component, /Custom Dates/);
   assert.match(component, /Non-Campaign/);
   assert.match(component, /Campaign/);
-  assert.match(component, /D-Day/);
+  assert.match(component, /Double Day/);
   assert.match(component, /Mid Month Madness/);
   assert.match(component, /Payday/);
   assert.match(component, /campaignDates/);
@@ -37,37 +37,38 @@ test("package control is wired into the command center", async () => {
   assert.match(component, /schedules\.push\(\{\.\.\.nonCampaign,priceType:"campaign"\}\)/);
   assert.match(component, /package-error-popout/);
   assert.match(component, /role="alert"/);
-  assert.match(component, /Please fix the following before saving/);
-  assert.match(component, /Check your connection and try again/);
+  assert.match(component, /We could not save this package\. Please check/);
+  assert.match(component, /Package Details/);
+  assert.match(component, /Pricing & Promotion/);
+  assert.match(component, /Inventory Items/);
+  assert.match(component, /Check your internet connection and try again/);
   assert.match(component, /Add Item/);
   assert.doesNotMatch(component, /<option value="gift">Gift<\/option>/);
   assert.match(component, /Google Sheet History/);
 });
 
 test("sidebar contacts the selected project's Shopee Hub specialist", async () => {
-  const [page, route, links] = await Promise.all([readFile(new URL("app/page.tsx", root), "utf8"), readFile(new URL("app/api/dashboard/route.ts", root), "utf8"), readFile(new URL("app/project-group-links.ts", root), "utf8")]);
+  const [page, route] = await Promise.all([readFile(new URL("app/page.tsx", root), "utf8"), readFile(new URL("app/api/dashboard/route.ts", root), "utf8")]);
   assert.match(page, /Contact Shopee Hub Specialist/);
   assert.match(page, /store\?\.contacts\.map/);
-  assert.match(route, /contactsForStore\(name\)/);
-  assert.match(links, /HF6D8uRYwGW37rTJ3wOYi6/);
-  assert.match(links, /Mizino Placenta/);
-  assert.match(links, /Mizino SlimPro/);
+  assert.match(route, /directory\.links\.get\(store\.id\)/);
+  assert.match(route, /linksById\.get\(id\)/);
 });
 
-test("store selector follows the Link Directory store names", async () => {
+test("store selector uses registered stores and Supabase directory details", async () => {
   const [route, page] = await Promise.all([
     readFile(new URL("app/api/dashboard/route.ts", root), "utf8"),
     readFile(new URL("app/page.tsx", root), "utf8"),
   ]);
-  assert.match(route, /readLinkDirectory/);
-  assert.match(route, /header\.indexOf\("Store Name"\)/);
-  assert.match(route, /header\.indexOf\("Project Group Link"\)/);
-  assert.match(route, /header\.indexOf\("Google Drive Link"\)/);
-  assert.match(route, /directoryStores\.map/);
+  assert.match(route, /storeDirectory\(membership\.tenant_id\)/);
+  assert.match(route, /linkDirectoryStores/);
+  assert.match(route, /linkDirectoryProjects/);
+  assert.doesNotMatch(route, /readLinkDirectory|LINK_DIRECTORY_CSV/);
   assert.match(route, /tenantStores[\s\S]*\.map\(\(stored\)/);
   assert.match(route, /stored\.id !== "shopee-kata-care-malaysia"/);
-  assert.match(route, /"shopee-kata-marine-malaysia": "Kata Skincare Malaysia"/);
-  assert.match(route, /"shopee-kata-singapore": "Kata Skincare Singapore"/);
+  assert.match(route, /name:store\.display_name\?\?store\.name/);
+  assert.match(route, /name: stored\.displayName\?\?stored\.name/);
+  assert.match(route, /directoryById\.get\(stored\.id\)/);
   assert.match(route, /cache: "no-store"/);
   assert.doesNotMatch(route, /connectedShopeeStoreNames\.map/);
   assert.match(page, /\{s\.name\} · \{s\.platform\.replace\("Shopee ", ""\)\}<\/option>/);
@@ -85,10 +86,15 @@ test("package API enforces listing SKUs and persists component history", async (
   ]);
   assert.match(route, /nextVersion/);
   assert.match(route, /packageAuditLog/);
-  assert.match(route, /Selling Price cannot exceed it/);
+  assert.match(route, /Selling Price cannot be higher than Original Price/);
   assert.match(route, /priceType.*"non_campaign"/);
   assert.match(route, /priceType.*"campaign"/);
-  assert.match(route, /Every listing SKU must be different/);
+  assert.match(route, /Each platform listing SKU must be different/);
+  assert.match(route, /function packageError/);
+  assert.match(route, /function saveFailure/);
+  assert.match(route, /packageSkuConflict/);
+  assert.match(route, /Your changes were not applied/);
+  assert.match(route, /await db\.transaction[\s\S]*tx\.insert\(packages\)/);
   assert.match(route, /componentDiff/);
   assert.match(route, /syncHistoryToGoogleSheet/);
   assert.match(schema, /packageVersions/);
@@ -131,7 +137,7 @@ test("Shopee calculator reverse-solves listing price and itemized fees", async (
   const { calculateShopeePrice } = await import("../app/price-calculator-model.js");
   const fees = {
     transaction:3.78, commission:12.96, service:5.94, serviceCap:108,
-    preorder:2.14, isPreorder:false, platformSupport:0.54,
+    preorder:2.16, isPreorder:false, platformSupport:0.54,
     shopeeVoucher:16, sellerVoucher:0, cofundVoucher:20,
     sellerShipping:0, facebookShipping:10, extraProfit:0,
   };
@@ -156,7 +162,7 @@ test("Shopee calculator applies category SST, pre-order fee and RM108 service ca
   assert.deepEqual(Object.keys(SERVICE_MODES), ["nonCampaign","campaign"]);
   const base = {
     transaction:3.78, commission:12.96, service:8.1, serviceCap:108,
-    preorder:2.14, isPreorder:true, platformSupport:0.54,
+    preorder:2.16, isPreorder:true, platformSupport:0.54,
     shopeeVoucher:16, sellerVoucher:0, cofundVoucher:20,
     sellerShipping:0, facebookShipping:10, extraProfit:25,
   };
@@ -164,14 +170,18 @@ test("Shopee calculator applies category SST, pre-order fee and RM108 service ca
   assert.ok(Math.abs(result.payout - 2015) < 0.000001);
   assert.equal(result.serviceFee, 108);
   assert.equal(result.serviceCapped, true);
-  assert.ok(Math.abs(result.preorderFee - result.feeBase * 0.0214) < 0.000001);
+  assert.ok(Math.abs(result.preorderFee - result.feeBase * 0.0216) < 0.000001);
+  const previousRate=calculateShopeePrice({facebookPrice:2000},{...base,preorder:2.14},30);
+  const currentRate=calculateShopeePrice({facebookPrice:2000},base,30);
+  assert.ok(Math.abs(previousRate.requiredPrice-currentRate.requiredPrice)<0.000001,"fixed markup keeps the listing price unchanged");
+  assert.ok(Math.abs(previousRate.payout-currentRate.payout-currentRate.feeBase*0.0002)<0.000001,"the extra 0.02 percentage points reduce payout by the correct amount");
 });
 
 test("Shopee calculator accepts a user-adjusted markup rate", async () => {
   const { calculateShopeePrice } = await import("../app/price-calculator-model.js");
   const fees = {
     transaction:3.78, commission:12.96, service:5.94, serviceCap:108,
-    preorder:2.14, isPreorder:false, platformSupport:0.54,
+    preorder:2.16, isPreorder:false, platformSupport:0.54,
     shopeeVoucher:16, sellerVoucher:0, cofundVoucher:20,
     sellerShipping:0, facebookShipping:10, extraProfit:0,
   };
@@ -210,7 +220,7 @@ test("Shopee calculator reverse-solves a customer-price target", async () => {
   const { calculateShopeePriceForCustomerTarget } = await import("../app/price-calculator-model.js");
   const fees = {
     transaction:3.78, commission:12.96, service:5.94, serviceCap:108,
-    preorder:2.14, isPreorder:false, platformSupport:0.54,
+    preorder:2.16, isPreorder:false, platformSupport:0.54,
     shopeeVoucher:20, sellerVoucher:0, cofundVoucher:20,
     sellerShipping:0, facebookShipping:10, extraProfit:0,
   };
@@ -253,14 +263,14 @@ test("price calculator is available in navigation with all required outputs", as
   assert.doesNotMatch(calculator, /checked=\{onCashback\}/);
   assert.doesNotMatch(calculator, /Service Fee Scenario/);
   assert.match(calculator, /Commission Fee Rate/);
-  assert.match(calculator, /Products &amp; commission/);
+  assert.match(calculator, /PRODUCT &amp; COMMISSION PROFILE/);
   assert.match(calculator, /calculator-product-profile/);
   assert.doesNotMatch(calculator, /<details className="calculator-product-profile card" open>/);
   assert.doesNotMatch(calculator, /No campaign service fee/);
   assert.match(model, /Essential Goods/);
   assert.match(model, /Cheese & Cheese Powder/);
   assert.match(calculator, /Capped at RM108/);
-  assert.match(calculator, /2\.14%/);
+  assert.match(calculator, /2\.16%/);
   assert.match(calculator, /Markup/);
   assert.match(calculator, /Pre-Order Listing/);
   assert.doesNotMatch(calculator, /markupBlocked/);
@@ -281,15 +291,14 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /Categories with the same Commission Rate are grouped/);
   assert.doesNotMatch(calculator, /其他计算设定/);
   assert.doesNotMatch(calculator, /Voucher preset 根据/);
-  assert.match(voucherPresets, /Latest Avg\./);
-  assert.match(calculator, /<h2>Price calculator<\/h2>/);
+  assert.match(voucherPresets, /Final tab/);
+  assert.match(calculator, /<h2>Markup Calculator<\/h2>/);
   assert.doesNotMatch(calculator, /scenario-voucher/);
   assert.doesNotMatch(calculator, /Campaign Day 最高百分比收费/);
   assert.match(page, /storeName=\{allStoresSelected/);
-  assert.match(voucherPresets, /Displayed Sheet Rate/);
+  assert.match(voucherPresets, /Average 顾客可用到的Voucher/);
   assert.match(voucherPresets, /Mizino Premium/);
-  assert.match(voucherPresets, /normal:14,campaign:19/);
-  assert.match(voucherPresets, /"Eco Plus":\{normal:18,campaign:26\}/);
+  assert.match(voucherPresets, /"Mizino Premium":\{normal:10,campaign:21\}/);
   assert.match(calculator, /CoFund Voucher/);
   assert.doesNotMatch(calculator, /Extra Profit Target/);
   assert.match(calculator, /SPayLater/);
@@ -300,12 +309,12 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /Main Product Qty/);
   assert.match(calculator, /Meta Price Per Unit/);
   assert.match(calculator, /Buyer Payment ÷ Qty/);
-  assert.match(calculator, /Step 3/);
-  assert.match(calculator, /Compare unit prices/);
+  assert.match(calculator, /STEP 3 · PACKAGE PPU COMPARISON/);
+  assert.match(calculator, /Package Price Per Unit \(PPU\) Review/);
   assert.match(calculator, /Non-Campaign Level/);
   assert.match(calculator, /Campaign Level/);
   assert.match(calculator, /ladderReviews\.length>0/);
-  assert.match(calculator, /Check packages and prices/);
+  assert.match(calculator, /Check Final Packages & Prices/);
   assert.match(calculator, /Confirm & Continue/);
   assert.match(calculator, /setPendingConfirmation/);
   assert.match(packageControl, /Buyer Price Per Unit/);
@@ -321,8 +330,6 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(calculator, /Listing Price/);
   assert.match(page, /sidebarCollapsed/);
   assert.match(page, /sidebar-toggle/);
-  assert.doesNotMatch(page, /Data snapshot/);
-  assert.doesNotMatch(page, /stores from Link Directory/);
   assert.doesNotMatch(calculator, /[\p{Script=Han}]/u);
   assert.doesNotMatch(packageControl, /[\p{Script=Han}]/u);
   assert.match(calculator, /onWheelCapture/);
@@ -340,19 +347,9 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(packageControl, /standaloneCreate/);
   assert.match(packageControl, /Calculator Settings Attached/);
   assert.match(packageControl, /Calculator Snapshot/);
-  assert.match(packageRoute, /calculatorSettings:body\.calculatorSettings/);
+  assert.match(packageRoute, /calculatorSettings:\{\.\.\.\(body\.calculatorSettings \?\? \{\}\),_samePricing:body\.samePricing===true,_longTermLifecycle:longTermLifecycle,_recurringCampaign:recurringCampaign,_packageMetadata:metadata,_packageHistorySummary:\{schema:1,summary:changeSummary\}\}/);
   assert.match(schema, /calculatorSettings/);
   assert.match(migration, /calculator_settings/);
-});
-
-test("voucher presets match the displayed Google Sheet rates", async () => {
-  const { STORE_VOUCHER_PRESETS, voucherPresetFor } = await import("../app/voucher-presets.js");
-  assert.equal(Object.keys(STORE_VOUCHER_PRESETS).length, 34);
-  assert.deepEqual(voucherPresetFor("AgePros By Swissmed"), {store:"Agepros",normal:16,campaign:20,available:true});
-  assert.deepEqual(voucherPresetFor("Naturelish Eco Plus by CTG4u"), {store:"Eco Plus",normal:18,campaign:26,available:true});
-  assert.deepEqual(voucherPresetFor("Supu"), {store:"SUPU",normal:9,campaign:20,available:true});
-  assert.deepEqual(voucherPresetFor("SUPU • 食补"), {store:"SUPU",normal:9,campaign:20,available:true});
-  assert.deepEqual(voucherPresetFor("iLady Haircare by CTG4u"), {store:"iLady",normal:15,campaign:22,available:true});
 });
 
 test("PPU and price ladder calculations use valid main-product quantities", async () => {

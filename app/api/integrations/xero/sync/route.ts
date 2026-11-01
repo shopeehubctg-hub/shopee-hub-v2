@@ -1,0 +1,15 @@
+import {randomUUID} from 'node:crypto';
+import {malaysiaDate} from '../../../../account-ledger';
+import {xeroActor,xeroFailure,xeroUnavailable,xeroHeaders} from '../../../../xero-server';
+import {readXeroConnection,currentXeroTokens,xeroRpc} from '../../../../xero-store';
+import {collectXeroSnapshot} from '../../../../xero-sync';
+import {XeroRemoteError} from '../../../../xero-client';
+export async function POST(request:Request){let run:{runId:string;leaseId:string;startedAt:string}|null=null;let actor:Awaited<ReturnType<typeof xeroActor>>|null=null;try{
+ actor=await xeroActor(request,true);if(actor instanceof Response)return actor;if(!actor.config)return xeroUnavailable();
+ if(!request.headers.get('content-type')?.startsWith('application/json'))return Response.json({error:'A JSON request is required.'},{status:400,headers:xeroHeaders});const raw=await request.text();if(raw.length>500)return Response.json({error:'Invalid sync request.'},{status:400,headers:xeroHeaders});let body:Record<string,unknown>;try{body=JSON.parse(raw);}catch{return Response.json({error:'Invalid sync request.'},{status:400,headers:xeroHeaders});}const month=body?.month;if(typeof month!=='string'||!/^20\d{2}-(0[1-9]|1[0-2])$/.test(month))return Response.json({error:'Choose a valid invoice month.'},{status:400,headers:xeroHeaders});
+ const stored=await readXeroConnection(actor,actor.config);if(!stored.connection)return Response.json({error:'Connect Xero first.'},{status:409,headers:xeroHeaders});
+ const claim=await xeroRpc<{claimed:boolean;runId:string;leaseId:string;startedAt:string}>(actor,'xero_sync_claim',{p_environment:actor.config.environment,p_request_id:randomUUID()});if(!claim.claimed)return Response.json({error:'A sync is already running. Try again shortly.'},{status:409,headers:xeroHeaders});run=claim;
+ const tokens=await currentXeroTokens(actor,actor.config,stored);const snapshot=await collectXeroSnapshot(tokens,actor.config,month,malaysiaDate());const result=await xeroRpc(actor,'xero_sync_complete',{p_environment:actor.config.environment,p_run_id:run.runId,p_lease_id:run.leaseId,p_snapshot:snapshot,p_watermark:run.startedAt});return Response.json({synced:true,...result as object},{headers:xeroHeaders});
+ }catch(error){const remote=error instanceof XeroRemoteError?error:null;if(run&&actor&&!(actor instanceof Response)&&actor.config){try{await xeroRpc(actor,'xero_sync_fail',{p_environment:actor.config.environment,p_run_id:run.runId,p_lease_id:run.leaseId,p_error_code:remote?.code??'sync_failed',p_retry_after:remote?.retryAfter??0});}catch{/* Preserve the last successful snapshot even if recording failure is unavailable. */}}
+ if(remote?.code==='reconnect')return Response.json({error:'Reconnect Xero from Account to continue.'},{status:409,headers:xeroHeaders});
+ if(remote?.code==='rate_limited')return Response.json({error:'Xero is busy. Retry after the waiting period.'},{status:429,headers:{...xeroHeaders,'Retry-After':String(remote.retryAfter)}});return xeroFailure();}}

@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 const SESSION_COOKIE = "shopee_hub_portal_session";
-const STAGING_BYPASS_EMAIL = "shopeehub.ctg@gmail.com";
 const PUBLIC_PAGES = new Set([
   "/login",
   "/forgot-password",
@@ -14,8 +13,9 @@ const PUBLIC_AUTH_APIS = new Set([
   "/api/auth/recover",
   "/api/auth/password",
   "/api/auth/session",
+  // This endpoint validates a time-limited HMAC in its route handler.
+  "/api/packages/sync-pending",
 ]);
-const PUBLIC_ASSETS = new Set(["/shopee-hub-logo-transparent.png"]);
 
 function decodeBase64Url(value: string) {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
@@ -58,25 +58,7 @@ async function hasValidSession(request: NextRequest) {
 
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
-  const isStaging =
-    process.env.VERCEL_ENV === "preview" &&
-    process.env.VERCEL_GIT_COMMIT_REF === "staging";
-  if (isStaging) {
-    if (pathname === "/login") {
-      const returnTo = request.nextUrl.searchParams.get("returnTo");
-      const destination =
-        returnTo?.startsWith("/") && !returnTo.startsWith("//")
-          ? new URL(returnTo, request.url)
-          : new URL("/", request.url);
-      return NextResponse.redirect(destination);
-    }
-    const requestHeaders = new Headers(request.headers);
-    requestHeaders.set("x-shopee-hub-staging-user", STAGING_BYPASS_EMAIL);
-    return NextResponse.next({
-      request: { headers: requestHeaders },
-    });
-  }
-  if (PUBLIC_PAGES.has(pathname) || PUBLIC_AUTH_APIS.has(pathname) || PUBLIC_ASSETS.has(pathname)) {
+  if (PUBLIC_PAGES.has(pathname) || PUBLIC_AUTH_APIS.has(pathname)) {
     return NextResponse.next();
   }
   if (await hasValidSession(request)) return NextResponse.next();
@@ -95,6 +77,6 @@ export async function proxy(request: NextRequest) {
   return NextResponse.redirect(loginUrl);
 }
 
-export const proxyConfig = {
+export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)"],
 };

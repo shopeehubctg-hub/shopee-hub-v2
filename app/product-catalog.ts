@@ -24,6 +24,7 @@ const sourceAliases:Record<string,string> = {
   "KATA Marine Malaysia":"Kata Skincare Malaysia",
   "KATA Care Malaysia":"KATA Care Malaysia",
   "SkinDae Official Store":"SkinDae MY by CTG4u",
+  "Supu":"SUPU • 食补",
   "Zeero MY":"Zeero Skincare Official",
 };
 

@@ -1,10 +1,12 @@
 import { sql } from "drizzle-orm";
+import { MARKET_CODES } from "../app/markets";
 import {
   bigint,
   bigserial,
   boolean,
   check,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -12,7 +14,9 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
   uniqueIndex,
+  uuid,
 } from "drizzle-orm/pg-core";
 
 const createdAt = () => timestamp("created_at", { withTimezone:true, mode:"string" }).notNull().defaultNow();
@@ -28,6 +32,8 @@ export const customerUsers = pgTable("customer_users", {
   role:text("role", { enum:["customer","manager","superadmin"] }).notNull().default("customer"),
   moduleAccessMode:text("module_access_mode", { enum:["role_default","custom"] }).notNull().default("role_default"),
   storeAccessMode:text("store_access_mode", { enum:["all","selected"] }).notNull().default("all"),
+  canManagePermissions:boolean("can_manage_permissions").notNull().default(false),
+  permissionsVersion:bigint("permissions_version", { mode:"number" }).notNull().default(0),
   createdAt:createdAt(),
 }, table=>[uniqueIndex("customer_user_email_idx").on(sql`lower(${table.email})`),index("customer_users_tenant_id_idx").on(table.tenantId)]);
 
@@ -47,20 +53,75 @@ export const userModulePermissions = pgTable("user_module_permissions", {
   id:bigserial("id", { mode:"number" }).primaryKey(),
   userId:bigint("user_id", { mode:"number" }).notNull().references(()=>customerUsers.id,{onDelete:"cascade"}),
   moduleId:text("module_id").notNull(), enabled:boolean("enabled").notNull().default(true),
+  additiveGrant:boolean("additive_grant").notNull().default(false),
   updatedAt:timestamp("updated_at", { withTimezone:true, mode:"string" }).notNull().defaultNow(),
 }, table=>[uniqueIndex("user_module_permission_idx").on(table.userId,table.moduleId),index("user_module_permissions_user_idx").on(table.userId)]);
 
 export const stores = pgTable("stores", {
   id:text("id").primaryKey(), tenantId:text("tenant_id").notNull().references(()=>tenants.id), name:text("name").notNull(),
-  platform:text("platform").notNull().default("Shopee"), bigSellerName:text("bigseller_name").notNull(), createdAt:createdAt(),
-}, table=>[index("stores_tenant_id_idx").on(table.tenantId)]);
+  displayName:text("display_name"), platform:text("platform").notNull().default("Shopee"), bigSellerName:text("bigseller_name").notNull(), createdAt:createdAt(),
+}, table=>[index("stores_tenant_id_idx").on(table.tenantId),unique("stores_tenant_id_id_key").on(table.tenantId,table.id)]);
+
+export const liveSessions = pgTable("live_sessions", {
+  id:uuid("id").primaryKey().defaultRandom(),
+  tenantId:text("tenant_id").notNull().references(()=>tenants.id),
+  storeId:text("store_id").notNull(), title:text("title").notNull().default("Live session"),
+  startAt:timestamp("start_at",{withTimezone:true,mode:"string"}).notNull(),
+  endAt:timestamp("end_at",{withTimezone:true,mode:"string"}).notNull(),
+  timeZone:text("time_zone",{enum:["Asia/Kuala_Lumpur","Asia/Singapore"]}).notNull(),
+  status:text("status",{enum:["scheduled","cancelled"]}).notNull().default("scheduled"),
+  internalNote:text("internal_note"), createdBy:text("created_by").notNull(), updatedBy:text("updated_by").notNull(),
+  createdAt:createdAt(), updatedAt:timestamp("updated_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),
+},table=>[
+  foreignKey({name:"live_sessions_store_fk",columns:[table.tenantId,table.storeId],foreignColumns:[stores.tenantId,stores.id]}),
+  check("live_sessions_time_check",sql`${table.endAt} > ${table.startAt}`),
+  index("live_sessions_tenant_store_start_idx").on(table.tenantId,table.storeId,table.startAt),
+  index("live_sessions_tenant_time_idx").on(table.tenantId,table.startAt),
+]);
+
+export const liveSessionAudit = pgTable("live_session_audit", {
+  id:bigint("id",{mode:"number"}).primaryKey().generatedAlwaysAsIdentity(),
+  sessionId:uuid("session_id").notNull().references(()=>liveSessions.id), tenantId:text("tenant_id").notNull(),
+  action:text("action",{enum:["created","updated","cancelled"]}).notNull(), actorEmail:text("actor_email").notNull(),
+  previousValue:jsonb("previous_value"), currentValue:jsonb("current_value").notNull(),
+  changedAt:timestamp("changed_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),
+});
 
 export const userStoreAccess = pgTable("user_store_access", {
   id:bigserial("id", { mode:"number" }).primaryKey(),
   userId:bigint("user_id", { mode:"number" }).notNull().references(()=>customerUsers.id,{onDelete:"cascade"}),
   storeId:text("store_id").notNull().references(()=>stores.id,{onDelete:"cascade"}),
+  enabled:boolean("enabled").notNull().default(true),
   createdAt:createdAt(),
 }, table=>[uniqueIndex("user_store_access_idx").on(table.userId,table.storeId),index("user_store_access_user_idx").on(table.userId)]);
+
+// Permission lifecycle and exact request replay; commercial Account audit is separate.
+export const userAccessAuditLog = pgTable("user_access_audit_log", {
+  id:uuid("id").primaryKey().defaultRandom(),
+  tenantId:text("tenant_id").notNull().references(()=>tenants.id),
+  actorUserId:bigint("actor_user_id",{mode:"number"}).notNull().references(()=>customerUsers.id),
+  targetUserId:bigint("target_user_id",{mode:"number"}).notNull().references(()=>customerUsers.id),
+  actorEmail:text("actor_email").notNull(),requestId:uuid("request_id").notNull(),
+  requestPayload:jsonb("request_payload").$type<Record<string,unknown>>().notNull(),
+  beforeValue:jsonb("before_value").$type<Record<string,unknown>>().notNull(),
+  afterValue:jsonb("after_value").$type<Record<string,unknown>>().notNull(),
+  result:jsonb("result").$type<Record<string,unknown>>().notNull(),createdAt:createdAt(),
+},table=>[
+  unique("user_access_audit_log_tenant_id_request_id_key").on(table.tenantId,table.requestId),
+  index("user_access_audit_target_idx").on(table.targetUserId,table.tenantId,table.createdAt.desc()),
+  index("user_access_audit_actor_idx").on(table.actorUserId),
+]);
+
+export const featureGrantNotifications = pgTable("feature_grant_notifications", {
+  id:bigserial("id",{mode:"number"}).primaryKey(), tenantId:text("tenant_id").notNull().references(()=>tenants.id),
+  userId:bigint("user_id",{mode:"number"}).notNull().references(()=>customerUsers.id,{onDelete:"cascade"}),
+  moduleId:text("module_id").notNull(), auditId:uuid("audit_id").notNull().references(()=>userAccessAuditLog.id),
+  grantedAt:timestamp("granted_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),
+  acknowledgedAt:timestamp("acknowledged_at",{withTimezone:true,mode:"string"}),
+},table=>[
+  uniqueIndex("feature_grant_notifications_audit_module_idx").on(table.auditId,table.moduleId),
+  index("feature_grant_notifications_pending_idx").on(table.tenantId,table.userId,table.acknowledgedAt,table.grantedAt),
+]);
 
 export const dashboardSnapshots = pgTable("dashboard_snapshots", {
   id:bigserial("id", { mode:"number" }).primaryKey(), tenantId:text("tenant_id").notNull().references(()=>tenants.id),
@@ -84,23 +145,29 @@ export const managementActions = pgTable("management_actions", {
 
 export const inventorySkus = pgTable("inventory_skus", {
   id:text("id").primaryKey(), tenantId:text("tenant_id").notNull().references(()=>tenants.id), sku:text("sku").notNull(),
+  storeId:text("store_id").notNull(),
   name:text("name").notNull(), source:text("source").notNull().default("OXM"), active:boolean("active").notNull().default(true),
   syncedAt:timestamp("synced_at", { withTimezone:true, mode:"string" }).notNull().defaultNow(),
-}, table=>[uniqueIndex("inventory_sku_tenant_idx").on(table.tenantId,table.sku)]);
+}, table=>[
+  uniqueIndex("inventory_sku_project_key").on(table.tenantId,table.storeId,sql`lower(btrim(${table.sku}))`),
+  unique("inventory_skus_tenant_store_id_key").on(table.tenantId,table.storeId,table.id),
+  foreignKey({name:"inventory_skus_tenant_store_fk",columns:[table.tenantId,table.storeId],foreignColumns:[stores.tenantId,stores.id]}),
+]);
 
 export const packages = pgTable("packages", {
   id:text("id").primaryKey(), tenantId:text("tenant_id").notNull().references(()=>tenants.id), storeId:text("store_id").notNull().references(()=>stores.id),
   packageSku:text("package_sku").notNull(), name:text("name").notNull(), channel:text("channel").notNull().default("Shopee"),
   market:text("market").notNull().default("MY"), status:text("status", { enum:["draft","review","approved","scheduled","active","expired"] }).notNull().default("draft"),
   createdBy:text("created_by").notNull(), createdAt:createdAt(), updatedAt:timestamp("updated_at", { withTimezone:true, mode:"string" }).notNull().defaultNow(),
-}, table=>[uniqueIndex("package_sku_store_idx").on(table.storeId,table.packageSku),index("packages_tenant_id_idx").on(table.tenantId)]);
+  deletedAt:timestamp("deleted_at", { withTimezone:true, mode:"string" }), deletedBy:text("deleted_by"),
+}, table=>[uniqueIndex("package_sku_store_idx").on(table.storeId,table.packageSku).where(sql`${table.deletedAt} is null`),index("packages_tenant_id_idx").on(table.tenantId)]);
 
 type Component={inventorySku:string;name:string;quantity:number;kind:"product"|"gift"};
 export const packageVersions = pgTable("package_versions", {
   id:text("id").primaryKey(), packageId:text("package_id").notNull().references(()=>packages.id), version:integer("version").notNull(),
   components:jsonb("components").$type<Component[]>().notNull(), promotionType:text("promotion_type", { enum:["monthly","custom"] }).notNull().default("monthly"),
   addedComponents:jsonb("added_components").$type<Component[]>().notNull().default([]), removedComponents:jsonb("removed_components").$type<Component[]>().notNull().default([]),
-  sheetSyncStatus:text("sheet_sync_status", { enum:["pending","synced","failed"] }).notNull().default("pending"), calculatorSettings:jsonb("calculator_settings").$type<Record<string,unknown>|null>(),
+  sheetSyncStatus:text("sheet_sync_status", { enum:["not_sent","pending","synced","failed"] }).notNull().default("not_sent"), calculatorSettings:jsonb("calculator_settings").$type<Record<string,unknown>|null>(),
   changeNote:text("change_note").notNull().default("Initial version"), effectiveFrom:date("effective_from", { mode:"string" }).notNull(), effectiveTo:date("effective_to", { mode:"string" }),
   createdBy:text("created_by").notNull(), createdAt:createdAt(),
 }, table=>[uniqueIndex("package_version_idx").on(table.packageId,table.version)]);
@@ -112,7 +179,7 @@ export const packagePlatformSkus = pgTable("package_platform_skus", {
 
 export const packagePrices = pgTable("package_prices", {
   id:text("id").primaryKey(), packageId:text("package_id").notNull().references(()=>packages.id), versionId:text("version_id").notNull().references(()=>packageVersions.id),
-  currency:text("currency").notNull().default("MYR"), market:text("market", { enum:["MY","SG"] }).notNull().default("MY"), priceType:text("price_type", { enum:["non_campaign","campaign"] }).notNull().default("campaign"),
+  currency:text("currency").notNull().default("MYR"), market:text("market", { enum:MARKET_CODES }).notNull().default("MY"), priceType:text("price_type", { enum:["non_campaign","campaign"] }).notNull().default("campaign"),
   promotionType:text("promotion_type", { enum:["monthly","custom"] }).notNull().default("custom"), originalPrice:bigint("original_price", { mode:"number" }).notNull(), sellingPrice:bigint("selling_price", { mode:"number" }).notNull(),
   effectiveFrom:date("effective_from", { mode:"string" }).notNull(), effectiveTo:date("effective_to", { mode:"string" }), createdBy:text("created_by").notNull(), createdAt:createdAt(),
 }, table=>[uniqueIndex("package_price_version_market_type_period_idx").on(table.versionId,table.market,table.priceType,table.effectiveFrom,table.effectiveTo),index("package_prices_package_id_idx").on(table.packageId)]);
@@ -139,8 +206,8 @@ export const linkDirectoryStores = pgTable("link_directory_stores", {
   adsTopUpOwner:text("ads_top_up_owner", {enum:["Client","Client Approval","Shopee Hub"]}),
   storeGroupLink:text("store_group_link"),
   googleDriveLink:text("google_drive_link"),
-  sourceSheetId:text("source_sheet_id").notNull(),
-  sourceTab:text("source_tab").notNull().default("WhatsApp Group"),
+  sourceSheetId:text("source_sheet_id"),
+  sourceTab:text("source_tab").notNull().default("Dashboard"),
   syncedAt:timestamp("synced_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),
 },table=>[uniqueIndex("link_directory_store_name_idx").on(table.tenantId,table.storeName)]);
 
@@ -149,6 +216,7 @@ export const linkDirectoryProjects = pgTable("link_directory_projects", {
   storeId:text("store_id").notNull().references(()=>linkDirectoryStores.storeId,{onDelete:"cascade"}),
   projectName:text("project_name").notNull(),
   projectGroupLink:text("project_group_link").notNull(),
+  googleDriveLink:text("google_drive_link"),
   createdAt:createdAt(),
 },table=>[uniqueIndex("link_directory_project_idx").on(table.storeId,table.projectName),index("link_directory_projects_store_id_idx").on(table.storeId)]);
 
@@ -167,21 +235,6 @@ export const projectProductCatalog = pgTable("project_product_catalog", {
   uniqueIndex("project_product_catalog_shop_item_idx").on(table.sourceShopName,table.itemId),
   index("project_product_catalog_shop_main_idx").on(table.sourceShopName,table.mainProduct),
 ]);
-
-export const storeVoucherPresets = pgTable("store_voucher_presets", {
-  storeId:text("store_id").primaryKey().references(()=>stores.id,{onDelete:"cascade"}),
-  tenantId:text("tenant_id").notNull().references(()=>tenants.id,{onDelete:"cascade"}),
-  sourceStoreName:text("source_store_name").notNull(),
-  nonCampaignAverage:numeric("non_campaign_average",{precision:5,scale:2,mode:"number"}).notNull(),
-  campaignAverage:numeric("campaign_average",{precision:5,scale:2,mode:"number"}).notNull(),
-  nonCampaignRate:numeric("non_campaign_rate",{precision:5,scale:2,mode:"number"}).notNull(),
-  campaignRate:numeric("campaign_rate",{precision:5,scale:2,mode:"number"}).notNull(),
-  sourceSheetId:text("source_sheet_id").notNull(),
-  sourceTab:text("source_tab").notNull().default("Final"),
-  sourceRow:integer("source_row").notNull(),
-  sourceUpdatedAt:timestamp("source_updated_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),
-  updatedAt:timestamp("updated_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),
-},table=>[index("store_voucher_presets_tenant_id_idx").on(table.tenantId)]);
 
 export const coFundVouchers = pgTable("co_fund_vouchers", {
   id:bigserial("id", {mode:"number"}).primaryKey(),

@@ -44,3 +44,4 @@ tsconfig.tsbuildinfo
 /work/
 /.sites-git/
 /*.tar.gz
+supabase/.temp/
