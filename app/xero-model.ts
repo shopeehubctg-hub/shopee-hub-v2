@@ -22,7 +22,9 @@ export function bootstrapXeroScope(categories:Array<{TrackingCategoryID:string;N
   if(matches.length!==1)throw Error('Projects category must resolve uniquely');
   const category=matches[0];
   const options=XERO_PROJECT_NAMES.map(project=>{
-    const rows=category.Options.filter(o=>normalized(o.Name)===normalized(project));
+    // Explicit operator-verified spelling alias; runtime authorisation still uses the returned IDs.
+    const allowedNames=project==='Tik Tok Hub'?new Set(['tik tok hub','tiktok hub']):new Set([normalized(project)]);
+    const rows=category.Options.filter(o=>allowedNames.has(normalized(o.Name)));
     if(rows.length!==1)throw Error(`Project must resolve uniquely: ${project}`);
     return {id:rows[0].TrackingOptionID,project};
   });
