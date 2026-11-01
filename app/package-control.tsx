@@ -25,6 +25,13 @@ type PriceSchedule = {
   market:MarketName; priceType:PriceType; originalPrice:number; sellingPrice:number;
   promotionType:"monthly"|"custom"; effectiveFrom:string; effectiveTo:string|null;
 };
+// Display order is independent of database insertion order; never reorder saved data.
+function orderedPriceSchedules(schedules:PriceSchedule[]):PriceSchedule[] {
+  return [...schedules].sort((a,b)=>MARKET_CODES.indexOf(a.market)-MARKET_CODES.indexOf(b.market)
+    || Number(a.priceType==="campaign")-Number(b.priceType==="campaign")
+    || a.effectiveFrom.localeCompare(b.effectiveFrom)
+    || (a.effectiveTo??"9999-12-31").localeCompare(b.effectiveTo??"9999-12-31"));
+}
 type PriceScheduleInput = Omit<PriceSchedule,"originalPrice"|"sellingPrice"> & { originalPrice:string; sellingPrice:string };
 type CampaignPeriod = { effectiveFrom:string; effectiveTo:string; originalFrom?:string; originalTo?:string };
 type RecurringEventDraft = Omit<RecurringCampaignEvent,"prices"> & {prices:Partial<Record<MarketName,{originalPrice:string;sellingPrice:string}>>};
@@ -951,13 +958,13 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
   }
   function renderActions(item:PackageItem) { if(sampleMode)return <div className="package-card-foot"><button type="button" onClick={()=>toggleHistory(item)}>{openHistory===item.id?"Hide History":"View History"}</button></div>; return (<div className="package-card-foot"><span>{item.components.length} Inventory SKU Lines</span><button onClick={()=>toggleHistory(item)} aria-label={`${openHistory===item.id?"Hide":"View"} history for ${item.name}`}>{openHistory===item.id?"Hide History":"View History"}</button>{item.status==="draft"&&source==="database"&&<button onClick={()=>publishDraft(item)} disabled={saving} aria-label={`Create package ${item.name}`}>Create Package</button>}{item.pendingVersion&&source==="database"&&<button onClick={()=>retrySheetSync(item)} disabled={saving} aria-label={`Retry Google Sheet sync for ${item.name} version ${item.pendingVersion}`}>Retry Sheet Sync</button>}{!(item.pendingVersion&&source==="database")&&<button onClick={()=>startVersion(item)} disabled={saving} aria-label={`${item.status==="draft"?"Edit draft":source==="database"?"Edit package":"Migrate and edit"} ${item.name}`}>{item.status==="draft"&&source==="database"?"Edit Draft":source==="database"?"Edit / Modify":"Migrate & Edit"}</button>}{source==="database"&&item.status==="active"&&<button onClick={()=>endPackage(item)} disabled={saving||Boolean(item.pendingVersion)||item.sheetSyncStatus!=="synced"} className="package-end" aria-label={`End package ${item.name}`}>End Package</button>}{canDelete&&source==="database"&&<button onClick={()=>deletePackage(item)} disabled={saving} className="package-delete" aria-label={`Remove package ${item.name}`}>Remove Package</button>}</div>); }
   function renderListPrices(item:PackageItem,market:MarketName) {
-    const schedules=item.priceSchedules?.filter(line=>line.market===market)??[];
+    const schedules=orderedPriceSchedules(item.priceSchedules?.filter(line=>line.market===market)??[]);
     const hasRecurringPrice=Boolean(item.recurringCampaign?.events.some(event=>event.prices[market]));
     return <>{schedules.length?schedules.map((line,index)=><div className="package-sheet-price" key={`${line.priceType}-${index}`}><span>{line.priceType==="non_campaign"?"Normal":"Campaign"}</span><strong>{money(line.sellingPrice,market)}</strong><small>Original {money(line.originalPrice,market)}</small><small>{displayDate(line.effectiveFrom)} → {line.effectiveTo?displayDate(line.effectiveTo):"Ongoing"}</small></div>):!item.priceSchedules?.length&&!hasRecurringPrice&&item.market===market?<div className="package-sheet-price"><span>{item.currentPriceLabel??"Price"}</span><strong>{money(item.sellingPrice,market,source==="database")}</strong><small>Original {money(item.originalPrice,market,source==="database")}</small></div>:hasRecurringPrice?null:"—"}
     {item.recurringCampaign?.events.map(event=>{const price=event.prices[market];return price?<div className="package-sheet-price" key={event.id}><span>{recurringEventLabels[event.id]} · Every month</span><strong>{money(price.sellingPrice,market)}</strong><small>Original {money(price.originalPrice,market)}</small></div>:null;})}</>;
   }
   function renderListDates(item:PackageItem) {
-    return <>{item.priceSchedules?.length?item.priceSchedules.filter(line=>countryFilter==="all"||line.market===countryFilter).map((line,index)=><div key={index}><b>{line.market} {line.priceType==="non_campaign"?"Normal":"Campaign"}</b><span>{displayDate(line.effectiveFrom)} → {line.effectiveTo?displayDate(line.effectiveTo):"Ongoing"}</span></div>):<div>{displayDate(item.effectiveFrom)} → {item.effectiveTo===null?"Ongoing":item.effectiveTo?displayDate(item.effectiveTo):"Not recorded"}</div>}
+    return <>{item.priceSchedules?.length?orderedPriceSchedules(item.priceSchedules.filter(line=>countryFilter==="all"||line.market===countryFilter)).map((line,index)=><div key={index}><b>{line.market} {line.priceType==="non_campaign"?"Normal":"Campaign"}</b><span>{displayDate(line.effectiveFrom)} → {line.effectiveTo?displayDate(line.effectiveTo):"Ongoing"}</span></div>):<div>{displayDate(item.effectiveFrom)} → {item.effectiveTo===null?"Ongoing":item.effectiveTo?displayDate(item.effectiveTo):"Not recorded"}</div>}
       {item.recurringCampaign&&<div><b>Monthly campaign</b><span>{displayDate(item.recurringCampaign.startDate)} → {item.recurringCampaign.endDate?displayDate(item.recurringCampaign.endDate):"Ongoing"}</span></div>}</>;
   }
 

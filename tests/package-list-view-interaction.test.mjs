@@ -16,7 +16,7 @@ test('Grid and spreadsheet List share filters, bounded rows, selection, history 
  for(const [key,value] of Object.entries(values))Object.defineProperty(globalThis,key,{configurable:true,writable:true,value});
  const schedule=(market,type,end)=>({market,priceType:type,originalPrice:100,sellingPrice:market==='MY'?90:30,promotionType:'custom',effectiveFrom:'2026-10-01',effectiveTo:end});
  const base=(id,extra={})=>({id,name:id,storeId:'store',storeName:'Test Store',packageSku:`SKU-${id}`,market:'MY',status:'active',version:1,promotionType:'custom',originalPrice:10000,sellingPrice:9000,effectiveFrom:'2026-10-01',effectiveTo:'2026-10-31',components:[{inventorySku:'INV',name:'Product',quantity:2,kind:'product'}],platforms:[{platform:'Shopee',packageSku:`SKU-${id}`}],sheetSyncStatus:'synced',...extra});
- const packages=[base('Long',{priceSchedules:[schedule('MY','non_campaign',null),schedule('SG','non_campaign',null)]}),base('Monthly',{priceSchedules:[schedule('MY','non_campaign','2026-10-31'),schedule('MY','campaign',null)]}),base('Campaign only',{priceSchedules:[schedule('MY','campaign',null)]}),base('Legacy',{effectiveTo:null}),base('Unknown',{effectiveTo:undefined}),base('Pending',{pendingVersion:2}),base('Draft',{status:'draft'}),base('Scheduled',{status:'scheduled'}),...Array.from({length:30},(_,i)=>base(`Extra ${i}`))];
+ const packages=[base('Long',{priceSchedules:[schedule('MY','non_campaign',null),schedule('SG','non_campaign',null)]}),base('Monthly',{priceSchedules:[schedule('SG','campaign',null),schedule('MY','campaign',null),schedule('PH','campaign',null),schedule('TH','campaign',null),schedule('PH','non_campaign','2026-10-31'),schedule('MY','non_campaign','2026-10-31'),schedule('TH','non_campaign','2026-10-31'),schedule('SG','non_campaign','2026-10-31')]}),base('Campaign only',{priceSchedules:[schedule('MY','campaign',null)]}),base('Legacy',{effectiveTo:null}),base('Unknown',{effectiveTo:undefined}),base('Pending',{pendingVersion:2}),base('Draft',{status:'draft'}),base('Scheduled',{status:'scheduled'}),...Array.from({length:30},(_,i)=>base(`Extra ${i}`))];
  const writes=[];
  globalThis.fetch=async(url,options={})=>{if(options.method){writes.push({url,body:JSON.parse(options.body)});return {ok:true,json:async()=>({packageCount:1,rowCount:1,signature:'s'})};}return {ok:true,json:async()=>({source:'database',canExportKits:true,canDelete:true,packages})};};
  dom.window.confirm=()=>false;
@@ -34,6 +34,16 @@ test('Grid and spreadsheet List share filters, bounded rows, selection, history 
  assert.equal(named('Select Long for fulfillment sheet').checked,true);
  assert.match(doc.querySelector('.package-sheet').textContent,/RM 90.00/);assert.match(doc.querySelector('.package-sheet').textContent,/S\$ 30.00/);
  assert.ok(!doc.querySelector('.package-sheet th').textContent.includes('Store'));
+ // Database insertion order must not decide the Normal/Campaign display order.
+ const monthlyRow=[...doc.querySelectorAll('.package-sheet tbody>tr')].find(row=>row.querySelector('strong')?.textContent==='Monthly');
+ for(const cell of monthlyRow.querySelectorAll('td')){
+  const labels=[...cell.querySelectorAll('.package-sheet-price>span')].map(n=>n.textContent);
+  if(labels.length)assert.deepEqual(labels,['Normal','Campaign']);
+ }
+ assert.deepEqual([...monthlyRow.querySelectorAll('.package-sheet-dates b')].map(n=>n.textContent),['MY Normal','MY Campaign','SG Normal','SG Campaign','TH Normal','TH Campaign','PH Normal','PH Campaign']);
+ assert.equal(packages[1].priceSchedules[0].market,'SG');
+ assert.equal(packages[1].priceSchedules[0].priceType,'campaign','rendering must not mutate saved schedules');
+
  await act(async()=>named('View history for Long').click());assert.ok(doc.querySelector('.version-history'));
  await act(async()=>named('View details for Long').click());assert.match(doc.querySelector('.package-sheet-detail').textContent,/Product/);
  assert.equal(named('End package Pending').disabled,true);assert.equal(named('Select Pending for fulfillment sheet').disabled,true);assert.equal(named('Edit package Pending'),null);assert.ok(named('Retry Google Sheet sync for Pending version 2'));assert.ok(named('Create package Draft'));
