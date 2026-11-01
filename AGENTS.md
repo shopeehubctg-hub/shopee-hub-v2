@@ -1,5 +1,27 @@
 # BD Dashboard project rules
 
+## Repository, environments and release authority
+- This repository has one long-lived Production branch (`main`) and one long-lived integration branch (`staging`). Production is https://shopee-hub-v2-260731.vercel.app/ and may be deployed only from `main` after a GitHub pull request is merged. Never deploy Production from a local checkout, worktree, feature branch or `staging`, and never bypass `main`.
+- The single user-facing Staging entry is https://shopee-hub-v2-260731-git-cod-e05b8d-shopeehubctg-5199s-projects.vercel.app/ . Do not give reviewers a different per-deployment URL. Staging must use only the independent Supabase project `ubjfuveoqbvouryldqfu`; Production uses `zwnmonnbmqncwoytdigd`.
+- Never share Production database/Auth credentials, sessions, signed imports, API keys or Google Sheet writes with Staging. Do not copy login passwords, sessions, keys, customer accounts, raw audit payloads or sensitive links into Staging. No reverse or automatic Staging/Production replication is authorized.
+- Vercel Production must remain connected to `main` and deploy automatically after the approved PR merge. A successful Preview or task completion is not a Production release.
+
+## Short-lived feature branches and overlap control
+- Before editing, read this file, inspect open pull requests and active feature branches, fetch the latest `origin/main`, and identify the modules and shared files affected by the request.
+- Create one short-lived branch from the latest `origin/main` for each coherent feature or fix. Use names such as `codex/package-list-filter`, `codex/overview-profit-metrics` or `fix/permission-save-error`. Do not reuse an old branch and do not mix unrelated modules in one branch.
+- Feature branches are temporary delivery vehicles, not permanent module branches. After an approved PR is merged, Production is verified healthy, and the user explicitly approves deletion, remove the remote branch, local branch and associated worktree. The merged code remains in `main` and the PR history.
+- If two contributors need to edit the same module or shared files, do not develop from independent stale baselines. Put the work into a module integration queue: finish and merge the first change, update the next branch from the new `origin/main`, resolve conflicts, and rerun its full affected checks before Staging.
+- Package & Pricing changes use a single Package integration queue. The same serial rule applies to Overview, Permission Settings, shared Store identity/selector code, shared layout, authentication and database contracts.
+- Never force-push a shared branch, overwrite another contributor's unreviewed work, or claim that separate worktrees prevent logical conflicts. Worktrees isolate files locally; the merge queue controls overlapping product changes.
+
+## Required delivery gates
+- The mandatory order is: feature branch from current `origin/main` → automated checks → fixed Staging → actual UI/UX review and explicit PASS → final function QC and explicit PASS → user authorization for Production → GitHub PR → merge queue → merge into `main` → Vercel automatic Production deployment → Production smoke test → release notes.
+- Static code review, passing tests, task creation, a commit, a Preview deployment or a successful build does not count as visual acceptance, function QC or completed delivery.
+- UI/UX review must inspect the real Staging page for Dashboard design consistency, readable hierarchy, compact spacing, responsive behavior, loading/empty/error states, clear actions and absence of internal-only wording.
+- Function QC must test the normal path, failure and retry paths, refresh/relogin behavior, Super Admin versus ordinary users, module permission and store scope, All Stores versus individual stores, persisted reload, empty/API failure states, and regression risk to linked modules.
+- Before opening or merging a PR, update the branch from current `origin/main`, resolve conflicts without discarding either approved change, and rerun the affected checks. Use the merge queue; do not merge two overlapping module changes concurrently.
+- Every handoff must report the feature branch, affected modules, tests, fixed Staging URL, UI/UX result, function QC result, Database Structure result when applicable, PR, Production commit/deployment, release notes, known risks and remaining work. Do not fabricate evidence or status.
+
 ## Delete approval — user instruction, 28 October 2026
 - Before any agent performs any Delete, first explain the exact objects and effects and obtain the user's explicit approval for that deletion. This includes store/package/Rate Card removal, soft archives, database records/tables, files and cleanup of agent-created test records. Do not infer deletion approval from a request to optimize or publish. Mock tests and transaction rollback verification may be used without deleting existing data. All sub agents must follow this rule.
 
@@ -20,8 +42,9 @@
 
 ## Staging
 - The user-facing Staging entry stays https://shopee-hub-v2-260731-git-cod-e05b8d-shopeehubctg-5199s-projects.vercel.app/ . Keep section query parameters as needed.
-- Update the existing codex/account-income-module preview branch for this entry. Never send a new per-deployment URL as the review entry.
-- Staging, actual UI/UX PASS, then final function QC PASS, then user-authorized Production. Code tests alone are not UI acceptance.
+- Integrate only the queued release candidate into the long-lived `staging` branch for this entry. Do not revive or depend on deleted historical branches, and do not force-push `staging` while another review is active.
+- Keep a visible record of which feature branch and commit the fixed Staging entry currently represents. If a second change needs Staging, queue it until the active review finishes or explicitly combine the candidates and repeat UI/UX plus function QC for the combined result.
+- Staging, actual UI/UX PASS, final function QC PASS and explicit user Production authorization are all required before the PR can merge into `main`. Code tests alone are not UI acceptance.
 
 - Monthly Rate cells show the assigned Rate Card name only; rate percentages, FX, preview labels and scheduling details belong inside the editor. Deleting a Rate Card removes it from available choices while retaining existing assignments and historical versions.
 
