@@ -18,6 +18,10 @@ test('reviewed canonical targets remain selectable when the legacy row has no st
  const data=fixture();data.stores[0].storeId=null;data.xero.targets=[{unitKey:'r1',name:'Store SG',entity:'Company One',storeName:'SG shop',storeId:'canonical-store'},{unitKey:'r2',name:'Ambiguous',entity:'Company Two',storeName:'Unknown',storeId:null}];
  const html=ui.renderToStaticMarkup(ui.element(ui.AccountXeroSettings,{data,onSaved:()=>{}}));assert.match(html,/value="r1"/);assert.doesNotMatch(html,/value="r2"/);assert.match(html,/Apply 1 exact matches/);
 });
+test('settings render an explicit Malaysian sync time without leaking internal errors',()=>{
+ const data=fixture();data.xero.lastSyncedAt='2026-11-01T01:00:00Z';data.xero.lastError='DB_INTERNAL_PRIVATE_STACK';
+ const html=ui.renderToStaticMarkup(ui.element(ui.AccountXeroSettings,{data,onSaved:()=>{}}));assert.match(html,/MYT/);assert.match(html,/Accounting sync needs attention/);assert.doesNotMatch(html,/DB_INTERNAL_PRIVATE_STACK/);
+});
 test('exact-match batch excludes incomplete targets, posts explicit replay-safe mapping and refreshes only after success',async()=>{
  const dom=new JSDOM('<div id="root"></div>',{url:'https://stage.test'});const saved=new Map();for(const key of ['window','document','navigator','HTMLElement','Event','MouseEvent']){saved.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value:dom.window[key],configurable:true});}globalThis.IS_REACT_ACT_ENVIRONMENT=true;
  const oldFetch=globalThis.fetch,requests=[];let calls=0,refreshes=0;globalThis.fetch=async(url,init)=>{requests.push({url,body:JSON.parse(init.body)});calls++;return {ok:calls>1,json:async()=>calls>1?{ok:true}:{error:'Temporary sync error'}};};
@@ -27,5 +31,9 @@ test('exact-match batch excludes incomplete targets, posts explicit replay-safe 
  const apply=[...document.querySelectorAll('button')].find(b=>b.textContent==='Apply 1 exact matches');assert.ok(apply);
  await ui.act(()=>apply.dispatchEvent(new MouseEvent('click',{bubbles:true})));assert.equal(refreshes,0);assert.match(document.querySelector('[role="alert"]').textContent,/Temporary/);
  await ui.act(()=>apply.dispatchEvent(new MouseEvent('click',{bubbles:true})));assert.equal(refreshes,1);assert.equal(requests.length,2);assert.equal(requests[0].body.requestId,requests[1].body.requestId);assert.equal(requests[0].url,'/api/admin/account/xero-mapping');assert.deepEqual(requests[0].body.mappings,[{contactId:'c1',categoryId:'cat',optionId:'op1',unitKey:'r1',effectiveMonth:'2026-10',expectedVersion:'0'}]);
+ dom.window.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
+ const row={...fixture().stores[0],xeroActuals:{invoices:[{invoiceId:'i1',invoiceNumber:'INV-1',currency:'MYR',project:'Shopee Hub Internal',gross:'108.00',amountPaid:'40.00',amountDue:'68.00',date:'2026-10-01'}]}};
+ await ui.act(()=>root.render(ui.element(ui.XeroInvoiceDetails,{row})));await ui.act(()=>document.querySelector('.account-xero-invoice-open').dispatchEvent(new MouseEvent('click',{bubbles:true})));
+ const dialog=document.querySelector('dialog');assert.equal(dialog.parentElement,document.body);assert.match(dialog.textContent,/Project/);assert.match(dialog.textContent,/Shopee Hub Internal/);assert.match(dialog.textContent,/INV-1/);
  }finally{await ui.act(()=>root.unmount());dom.window.close();globalThis.fetch=oldFetch;for(const [key,descriptor]of saved){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete globalThis[key];}delete globalThis.IS_REACT_ACT_ENVIRONMENT;}
 });
