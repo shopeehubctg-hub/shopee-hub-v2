@@ -28,11 +28,25 @@ export function AccountXeroSummary({data}:{data:AccountResponse}){
  const xero=data.xero;if(!xero?.configured)return null;
  const currencies=[...new Set([...xero.totals.map(t=>t.currency),...xero.collections.map(t=>t.currency)])];
  if(!currencies.length)return <p className="account-notice" role="status">{xero.lastError?'Accounting sync needs attention. Open Accounting settings.':xero.connected?'No synced invoices for this month.':'Connect Xero in Accounting settings to see invoices and receipts.'}</p>;
- return <section className="account-finance-overview" aria-label="Income by currency">{currencies.map(currency=>{const total=xero.totals.find(t=>t.currency===currency),cash=xero.collections.find(t=>t.currency===currency);return <section className="account-summary-market" key={currency} aria-label={`${currency} income overview`}><h3>{currency} income</h3><div className="account-overview-metrics">{[{label:'Cash received today',value:cash?.todayCollected,period:data.today},{label:'Cash received',value:cash?.monthCollected,period:data.invoiceMonth},{label:'Invoiced',value:total?.gross,period:data.invoiceMonth},{label:'Outstanding',value:total?.amountDue,period:`Invoices in ${data.invoiceMonth}`}].map(metric=><article className="metric" key={metric.label}><span>{metric.label}</span><strong>{xeroDisplayMoney(metric.value,currency)}</strong><small>{metric.period}</small></article>)}</div></section>;})}</section>;
+ return <section className="account-finance-overview" aria-label="Income by currency">{currencies.map(currency=>{const total=xero.totals.find(t=>t.currency===currency),cash=xero.collections.find(t=>t.currency===currency);return <section className="account-summary-market" key={currency} aria-label={`${currency} income overview`}><h3>{currency} income</h3><div className="account-overview-metrics">{[{label:'Cash received today',value:(!xero.today||xero.today===data.today)?cash?.todayCollected:null,period:data.today},{label:'Cash received',value:cash?.monthCollected,period:data.invoiceMonth},{label:'Invoiced',value:total?.gross,period:data.invoiceMonth},{label:'Outstanding',value:total?.amountDue,period:`Invoices in ${data.invoiceMonth}`}].map(metric=><article className="metric" key={metric.label}><span>{metric.label}</span><strong>{xeroDisplayMoney(metric.value,currency)}</strong><small>{metric.period}</small></article>)}</div></section>;})}</section>;
 }
 export function AccountXeroSettings({data,onSaved}:{data:AccountResponse;onSaved:()=>void}){
  const xero=data.xero;const [choices,setChoices]=useState<Record<string,string>>({}),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
  const replay=useRef<{payload:string;id:string}|null>(null);
+ const savedCallback=useRef(onSaved),workingRef=useRef(false);
+ useEffect(()=>{savedCallback.current=onSaved;workingRef.current=busy;},[onSaved,busy]);
+ // Preserve the existing visible-page five-minute source refresh after moving Xero into settings.
+ useEffect(()=>{
+  if(!xero?.configured||!xero.connected)return;
+  const abort=new AbortController();let inFlight=false;
+  const timer=window.setInterval(async()=>{
+   if(document.visibilityState!=='visible'||workingRef.current||inFlight)return;
+   inFlight=true;
+   try{const response=await fetch('/api/integrations/xero/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({month:data.invoiceMonth}),signal:abort.signal});if(response.ok&&!abort.signal.aborted)savedCallback.current();}catch{/* Keep the last complete snapshot; manual sync exposes actionable errors. */}finally{inFlight=false;}
+  },300_000);
+  return()=>{abort.abort();window.clearInterval(timer);};
+ },[xero?.configured,xero?.connected,data.invoiceMonth]);
+
  const [refreshPending,setRefreshPending]=useState(false);
  useEffect(()=>{setRefreshPending(false);setChoices({});replay.current=null;},[data]);
  const working=busy||refreshPending;
