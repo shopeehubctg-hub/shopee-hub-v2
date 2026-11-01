@@ -6,7 +6,7 @@ const rosterSource=readFileSync('app/account-roster.ts','utf8').replace("import 
 const rosterCompiled=execFileSync('node_modules/.bin/esbuild',['--bundle','--format=esm','--platform=node','--target=node20','--loader=ts'],{input:rosterSource});
 globalThis.__appendMarketStores=(await import(`data:text/javascript;base64,${rosterCompiled.toString('base64')}`)).appendAccountMarketStores;
 let source=readFileSync('app/api/admin/account/route.ts','utf8');
-source=source.replace(/import \{ bnmServiceRate, bnmMarketServiceRate \}[^;]+;/,"const bnmServiceRate=async(month)=>globalThis.__bnm?.(month);const bnmMarketServiceRate=async(month,currency)=>globalThis.__bnmMarket?.(month,currency);")
+source=source.replace(/import \{ accountSecurityGate \}[^;]+;/,"const accountSecurityGate=async()=>null;").replace(/import \{decorateAccountXero\}[^;]+;/,"const decorateAccountXero=async(account)=>account;").replace(/import \{ bnmServiceRate, bnmMarketServiceRate \}[^;]+;/,"const bnmServiceRate=async(month)=>globalThis.__bnm?.(month);const bnmMarketServiceRate=async(month,currency)=>globalThis.__bnmMarket?.(month,currency);")
 .replace(/import \{ getChatGPTUser \}[^;]+;/,"const getChatGPTUser=async()=>globalThis.__actor;")
 .replace(/import \{ supabaseRest \}[^;]+;/,"async function supabaseRest<T>(path:string):Promise<T> { return globalThis.__rest(path); }")
 .replace(/import \{ accountRosterFallback, mergeAccountRoster, appendAccountMarketStores \}[^;]+;/,"const accountRosterFallback=(...args)=>globalThis.__fallback?.(...args)??null; const mergeAccountRoster=(account,roster)=>account;const appendAccountMarketStores=(...args)=>globalThis.__appendMarketStores(...args);")

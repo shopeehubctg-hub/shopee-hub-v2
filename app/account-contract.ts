@@ -1,3 +1,4 @@
+import type {AccountXeroActuals,AccountXeroGroup,AccountXeroTarget} from './account-xero-model';
 import type {MarketCode} from './markets';
 export type AccountCurrency = "MYR" | "SGD" | "THB" | "PHP";
 /** Exact decimal string; never coerce monetary ledger values to floating point. */
@@ -23,6 +24,7 @@ export type AccountStoreRow = {
   calculatedFee?: null; calculationStatus?: 'pending_rule' | 'pending_statement';
   servicePeriodStart: string | null; servicePeriodEnd: string | null;
   status: "pending_source" | "pending_mapping" | "pending_terms" | "pending_statement" | "assessed" | "invoiced";
+  xeroActuals?:AccountXeroActuals;
   expectedNetFee: AccountMoney | null; billed: AccountMoney | null;
   collected: AccountMoney | null; outstanding: AccountMoney | null;
 };
@@ -38,6 +40,7 @@ export type AccountResponse = {
   status: "ready" | "not_configured"; updatedAt: string | null;
   rosterUpdatedAt?: string;
   settingsAvailable?: boolean; storeOptions?: Array<{id:string;name:string;platform:string}>;
+  xero?:AccountXeroStatus;
   summaries: AccountCurrencySummary[]; stores: AccountStoreRow[];
 };
 export type AccountFeeRule = {
@@ -47,3 +50,12 @@ export type AccountFeeRule = {
   tiers?: Array<{from:string;percent:string;cap?:string}>; minimum?:string; cap?:string;
 };
 export type AccountSettingsHistory = { action:'fee_rule'; version:string; effectiveMonth:string; rule:AccountFeeRule|null; storeId:string|null; changedAt:string };
+
+export type AccountXeroStatus={
+ configured:boolean;connected:boolean;organisationName?:string;status:string;lastSyncedAt?:string|null;lastError?:string|null;
+ month:string;groups:AccountXeroGroup[];targets?:AccountXeroTarget[];sourceRunId?:string|null;unmappedInvoiceCount:number;
+ unmappedTotals:Array<{currency:string;invoiced:string;received:string;outstanding:string;tax?:string;credits?:string}>;
+ totals:Array<{currency:string;gross:string;amountPaid:string;amountDue:string;tax:string;amountCredited:string}>;
+ collections:Array<{currency:string;monthCollected:string|null;todayCollected:string|null}>;
+ outstanding:Array<{currency:string;amountDue:string}>;
+};
