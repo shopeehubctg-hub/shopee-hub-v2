@@ -8,6 +8,9 @@ export type XeroInvoiceInput = {
   Contact?:{ContactID?:string;Name?:string};Date?:string;DueDate?:string;
   SubTotal:string;TotalTax:string;Total:string;AmountPaid:string;AmountDue:string;AmountCredited?:string;
   LineItems:Array<{LineItemID?:string;Description?:string;Tracking?:Tracking[]}>;
+  /** Internal collection coverage; not persisted in report JSON. */
+  PaymentsComplete?:boolean;
+  PeriodPaymentsComplete?:{month:string;today:string};
   Payments?:Array<{PaymentID:string;Amount:string;Status?:string;PaymentType?:string;Date?:string}>;
 };
 export function xeroMoney(value:string):bigint {
@@ -62,7 +65,7 @@ export function classifyXeroInvoice(invoice:XeroInvoiceInput,scope:XeroProjectSc
     cash+=xeroMoney(payment.Amount);
   }
   if(cash>paid)throw Error('Cash receipts exceed invoice AmountPaid');
-  return {...base,state:'eligible' as const,reason:null,project:[...projects][0],subtotal:xeroDecimal(subtotal),tax:xeroDecimal(tax),gross:xeroDecimal(gross),amountPaid:xeroDecimal(paid),amountDue:xeroDecimal(due),amountCredited:xeroDecimal(credited),cashReceived:invoice.Payments===undefined?null:xeroDecimal(cash),date:invoice.Date??null,dueDate:invoice.DueDate??null};
+  return {...base,state:'eligible' as const,reason:null,project:[...projects][0],subtotal:xeroDecimal(subtotal),tax:xeroDecimal(tax),gross:xeroDecimal(gross),amountPaid:xeroDecimal(paid),amountDue:xeroDecimal(due),amountCredited:xeroDecimal(credited),cashReceived:invoice.Payments===undefined||invoice.PaymentsComplete===false?null:xeroDecimal(cash),date:invoice.Date??null,dueDate:invoice.DueDate??null};
 }
 export function summarizeXeroInvoices(invoices:XeroInvoiceInput[],scope:XeroProjectScope){
   const ids=new Set<string>();const rows=invoices.map(invoice=>{if(ids.has(invoice.InvoiceID))throw Error('Duplicate InvoiceID');ids.add(invoice.InvoiceID);return classifyXeroInvoice(invoice,scope);});
@@ -87,7 +90,8 @@ export function buildXeroReport(invoices:XeroInvoiceInput[],scope:XeroProjectSco
  for(let index=0;index<invoices.length;index++){
   const input=invoices[index],row=all.rows[index];if(row.state!=='eligible')continue;
   const value=cash.get(row.currency)??{month:BigInt(0),today:BigInt(0),known:true};
-  if(input.Payments===undefined)value.known=false;
+  const periodKnown=input.PeriodPaymentsComplete?.month===month&&input.PeriodPaymentsComplete.today===today;
+  if(input.Payments===undefined||input.PaymentsComplete===false&&!periodKnown)value.known=false;
   for(const p of input.Payments??[]){
    if(ids.has(p.PaymentID))throw Error('Duplicate PaymentID across invoices');ids.add(p.PaymentID);
    if(p.Status!=='AUTHORISED'||p.PaymentType!=='ACCRECPAYMENT')continue;
@@ -96,8 +100,10 @@ export function buildXeroReport(invoices:XeroInvoiceInput[],scope:XeroProjectSco
   }
   cash.set(row.currency,value);
  }
- return {...report,rows:report.rows.filter(r=>r.state!=='excluded'),month,today,payments,invoiceCount:report.rows.filter(r=>r.state==='eligible').length,pendingCount:report.rows.filter(r=>r.state==='pending').length,
+ const displayRows=report.rows.filter(row=>row.state!=='excluded');const displayIds=new Set(displayRows.map(row=>row.invoiceId));
+ for(const row of all.rows){if(row.state==='pending'&&!displayIds.has(row.invoiceId)){displayRows.push(row);displayIds.add(row.invoiceId);}}
+ return {...report,rows:displayRows,month,today,payments,invoiceCount:report.rows.filter(r=>r.state==='eligible').length,pendingCount:displayRows.filter(r=>r.state==='pending').length,
   collections:[...cash].map(([currency,c])=>({currency,monthCollected:c.known?xeroDecimal(c.month):null,todayCollected:c.known?xeroDecimal(c.today):null})),
   outstanding:all.totals.map(t=>({currency:t.currency,amountDue:t.amountDue})),
-  invoices:report.rows.filter(r=>r.state!=='excluded').map(r=>({...r,xeroUrl:`https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=${encodeURIComponent(r.invoiceId)}`}))};
+  invoices:displayRows.map(r=>({...r,xeroUrl:`https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=${encodeURIComponent(r.invoiceId)}`}))};
 }
