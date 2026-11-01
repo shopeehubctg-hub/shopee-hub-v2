@@ -11,6 +11,7 @@ import { RateCell, RecordDetails } from "./account-settings-ui";
 
 import { billingRowsMatching, visibleSelection, useFeePlans, useFeePreviewState } from "./fee-plan-context";
 import { FeePlansPreview } from "./fee-plans-preview";
+import { XeroPanel } from "./xero-panel";
 import { AccountSecurityPanel } from "./account-security-panel";
 import { useAccountSecurity } from "./account-security-context";
 
@@ -108,6 +109,7 @@ export function AccountPanel() {
   return <div className="account-panel account-refined" aria-busy={loading}>
     {securityEnabled && <AccountSecurityPanel />}
     <header className="page-title account-page-title" aria-label="Account controls"><div className="account-page-controls"><label>Invoice month<input aria-label="Invoice month" type="month" value={invoiceMonth} onInput={event=>changeInvoiceMonth(event.currentTarget.value)} onChange={event=>changeInvoiceMonth(event.currentTarget.value)}/></label><button type="button" disabled={loading} onClick={()=>{setLoading(true);setRefreshKey(value=>value+1);}}>Refresh</button></div></header>
+    <XeroPanel month={invoiceMonth}/>
     <p className="account-invoice-remark">Invoice month is based on the previous month’s service period.</p>
     {error && <div className="account-notice error" role="alert">{error}</div>}
     {loading && <div className="account-notice" role="status">Loading Account…</div>}
