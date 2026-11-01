@@ -28,3 +28,11 @@ Feature branch `codex/account-xero-billing-mapping` starts from current main and
 Fixed Staging: https://shopee-hub-v2-260731-git-cod-e05b8d-shopeehubctg-5199s-projects.vercel.app/?section=account
 
 Actual UI/UX review, then final functional QC, are required after deployment. Tests alone are not acceptance. No Production merge or release is authorised by this document.
+
+## Actual data discovery and invoice overrides
+
+Actual Staging sync found40 Contact+Project source groups across53 October invoices.19 uniquely verified company matches were saved through the real UI, covering17 billing clients and19 invoices. The remaining34 invoices require review, including companies that bill several different stores.
+
+Known ambiguous companies and unrecognised companies with multiple invoices must use per-invoice associations, never a company-level bulk allocation. The additive `source_invoice_id` column preserves existing associations and the original global source-group version sequence; no unique constraint is removed. Per-invoice effective associations take priority. Safe unique group defaults remain reusable; ambiguous old defaults are suppressed. Partial client totals remain labelled incomplete. Company-name punctuation is normalised for candidate detection, without fuzzy matching or arbitrary country/currency inference.
+
+Invoice matching displays source invoice numbers with original Xero deep-links so the operator can verify the billing project before selecting a canonical client. No unsupported financial fact is manufactured to complete a mapping.

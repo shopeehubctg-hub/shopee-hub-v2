@@ -4,7 +4,7 @@ const source=ts.transpileModule(readFileSync('app/api/admin/account/xero-mapping
 const exports={};new Function('require','exports',source)(name=>name==='../route'?{GET:async()=>{reads++;onRead?.();return Response.json(account)}}:name.endsWith('xero-server')?{xeroActor:async()=>actor,xeroHeaders:{'Cache-Control':'private, no-store'},xeroUnavailable:()=>new Response('',{status:503})}:name.endsWith('xero-store')?{xeroRpc:async(_actor,name,args)=>{writes.push({name,args});return {}}}:name.endsWith('supabase-rest')?{supabaseRest:async path=>{requestReads++;assert.match(path,/account_store_requests\?select=request_payload&tenant_id=eq.tenant&request_id=eq./);return prior;}}: (()=>{throw Error(name)})(),exports);
 const uuid=n=>`10000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
 const binding={contactId:uuid(1),categoryId:uuid(2),optionId:uuid(3),unitKey:'unit',effectiveMonth:'2026-10',expectedVersion:'0'};
-function setup(){writes=[];prior=[];reads=0;requestReads=0;onRead=null;actor={tenantId:'tenant',actorEmail:'admin@example.invalid',config:{environment:'staging'}};account={storeOptions:[{id:'shop',name:'Shop',platform:'Shopee MY'}],stores:[{id:'unit',rosterKey:'unit',entity:'Company',project:'Project',market:'MY',storeId:'shop',currency:'MYR',latestSettingsVersion:'0'}],xero:{connected:true,status:'connected',sourceRunId:uuid(4),groups:[{...binding}]}};}
+function setup(){writes=[];prior=[];reads=0;requestReads=0;onRead=null;actor={tenantId:'tenant',actorEmail:'admin@example.invalid',config:{environment:'staging'}};account={storeOptions:[{id:'shop',name:'Shop',platform:'Shopee MY'}],stores:[{id:'unit',rosterKey:'unit',entity:'Company',project:'Project',market:'MY',storeId:'shop',currency:'MYR',latestSettingsVersion:'0'}],xero:{connected:true,status:'connected',sourceRunId:uuid(4),groups:[{...binding,candidateUnitKeys:[],invoiceChoices:[]}]}};}
 function request(items=[binding],extra={}){return new Request('https://stage.test/api/admin/account/xero-mapping',{method:'POST',headers:{origin:'https://stage.test','content-type':'application/json'},body:JSON.stringify({requestId:uuid(9),mappings:items,...extra})});}
 test('mapping delegates one atomic batch with server-owned target identity and selected source month',async()=>{setup();const response=await exports.POST(request());assert.equal(response.status,200);assert.equal(writes.length,1);assert.equal(writes[0].args.p_invoice_month,'2026-10-01');assert.equal(writes[0].args.p_source_run_id,uuid(4));assert.equal(writes[0].args.p_bindings[0].targetSeed.entity,'Company');assert.equal(writes[0].args.p_bindings[0].targetExpectedVersion,'0');});
 test('no writes for foreign target/source, duplicate bindings, stale version or mixed effective months',async()=>{for(const items of [[{...binding,unitKey:'foreign'}],[{...binding,contactId:uuid(8)}],[binding,binding],[{...binding,expectedVersion:'3'}],[binding,{...binding,contactId:uuid(8),effectiveMonth:'2026-11'}]]){setup();assert.ok((await exports.POST(request(items))).status>=400);assert.equal(writes.length,0);}});
@@ -44,4 +44,26 @@ test('missing, ambiguous or stale stores require mapping before any save',async(
   account.stores[0].candidates=mode==='none'?[]:mode==='ambiguous'?[{storeId:'shop'},{storeId:'second'}]:[{storeId:'foreign'}];
   const response=await exports.POST(request());assert.equal(response.status,409,mode);assert.match((await response.json()).error,/Store mapping required/);assert.equal(writes.length,0);
  }
+});
+
+test('ambiguous company requires invoice overrides and may map separate invoices to separate clients in one baseline batch',async()=>{
+ setup();account.stores.push({...account.stores[0],id:'unit2',rosterKey:'unit2'});account.xero.groups[0].candidateUnitKeys=['unit','unit2'];account.xero.groups[0].invoiceChoices=[{invoiceId:uuid(11)},{invoiceId:uuid(12)}];
+ const denied=await exports.POST(request());assert.equal(denied.status,409);assert.match((await denied.json()).error,/each invoice/);assert.equal(writes.length,0);
+ const response=await exports.POST(request([{...binding,invoiceId:uuid(11)},{...binding,invoiceId:uuid(12),unitKey:'unit2'}]));assert.equal(response.status,200);assert.equal(writes.length,1);assert.equal(writes[0].args.p_bindings.length,2);assert.deepEqual(writes[0].args.p_bindings.map(item=>[item.invoiceId,item.rosterKey,item.expectedVersion]),[[uuid(11),'unit','0'],[uuid(12),'unit2','0']]);
+});
+test('invoice override cannot select an invoice from another Contact/Project and duplicate invoice intent is rejected',async()=>{
+ for(const items of [[{...binding,invoiceId:uuid(99)}],[{...binding,invoiceId:uuid(11)},{...binding,invoiceId:uuid(11),unitKey:'other'}],[{...binding,invoiceId:'not-an-id'}]]){
+  setup();account.xero.groups[0].invoiceChoices=[{invoiceId:uuid(11)}];assert.ok((await exports.POST(request(items))).status>=400);assert.equal(writes.length,0);
+ }
+});
+test('invoice override exact retry preserves its ID and changed invoice intent conflicts',async()=>{
+ setup();account.xero.groups[0].invoiceChoices=[{invoiceId:uuid(11)},{invoiceId:uuid(12)}];const chosen={...binding,invoiceId:uuid(11)};assert.equal((await exports.POST(request([chosen]))).status,200);const original=writes[0].args;
+ prior=[{request_payload:{mode:'xero-billing-mappings',actor:actor.actorEmail,environment:'staging',sourceRunId:original.p_source_run_id,invoiceMonth:original.p_invoice_month,bindings:original.p_bindings}}];account.xero.groups[0].expectedVersion='1';
+ assert.equal((await exports.POST(request([chosen]))).status,200);assert.deepEqual(writes[1].args,original);assert.equal((await exports.POST(request([{...binding,invoiceId:uuid(12)}]))).status,409);assert.equal(writes.length,2);
+});
+
+test('unrecognized multi-invoice company requires invoiceId even when no exact client candidate exists',async()=>{
+ setup();account.xero.groups[0].candidateUnitKeys=[];account.xero.groups[0].invoiceCount=3;account.xero.groups[0].invoiceChoices=[{invoiceId:uuid(11)},{invoiceId:uuid(12)},{invoiceId:uuid(13)}];
+ const response=await exports.POST(request());assert.equal(response.status,409);assert.match((await response.json()).error,/each invoice/);assert.equal(writes.length,0);
+ assert.equal((await exports.POST(request([{...binding,invoiceId:uuid(11)}]))).status,200);assert.equal(writes[0].args.p_bindings[0].invoiceId,uuid(11));
 });

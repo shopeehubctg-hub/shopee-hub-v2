@@ -3,16 +3,17 @@ import {XERO_PROJECT_NAMES,xeroMoney,xeroDecimal,type XeroProjectName,type XeroP
 
 export type AccountXeroCompany={contactId:string;companyName:string;categoryId:string;optionId:string;project:XeroProjectName};
 /** Tenant, connection and organisation are checked by the server before calling this pure model. */
-export type AccountXeroMappingVersion={contactId:string;categoryId:string;optionId:string;unitKey:string;effectiveMonth:string;version:string};
+export type AccountXeroMappingVersion={contactId:string;categoryId:string;optionId:string;unitKey:string;effectiveMonth:string;version:string;invoiceId?:string|null};
 export type AccountXeroInvoice={invoiceId:string;invoiceNumber:string|null;contactId:string|null;project:XeroProjectName|null;currency:string;state:string;reason?:string|null;gross?:string;amountPaid?:string;amountDue?:string;tax?:string;amountCredited?:string;date?:string|null;dueDate?:string|null;xeroUrl?:string};
 export type AccountXeroSnapshot={month:string;today?:string;scope:XeroProjectScope;companies?:AccountXeroCompany[];report:{rows:AccountXeroInvoice[];pendingCount?:number}};
 export type AccountXeroCurrency={currency:string;invoiced:string;received:string;outstanding:string;tax:string;credits:string};
 export type AccountXeroActuals={status:'mapped'|'unmapped'|'pending'|'not_synced'|'conflict';invoiceMonth:string;lastSyncedAt:string|null;byCurrency:AccountXeroCurrency[];invoices:AccountXeroInvoice[]};
-export type AccountXeroGroup={groupKey:string;contactId:string;categoryId:string;optionId:string;project:XeroProjectName;companyName:string|null;status:'mapped'|'candidate'|'ambiguous'|'missing'|'conflict';mappedUnitKey:string|null;suggestedUnitKey:string|null;candidateUnitKeys:string[];expectedVersion:string;appliedVersion:string|null;effectiveMonth:string|null;invoiceCount:number};
+export type AccountXeroInvoiceChoice={invoiceId:string;invoiceNumber:string|null;currency:string;invoiced:string;received:string;outstanding:string;tax:string;credits:string;date:string|null;dueDate:string|null;xeroUrl:string;mappedUnitKey:string|null;appliedVersion:string|null;effectiveMonth:string|null;status:'mapped'|'missing'|'conflict'};
+export type AccountXeroGroup={groupKey:string;contactId:string;categoryId:string;optionId:string;project:XeroProjectName;companyName:string|null;status:'mapped'|'candidate'|'ambiguous'|'missing'|'conflict'|'partial'|'split';mappedUnitKey:string|null;suggestedUnitKey:string|null;candidateUnitKeys:string[];expectedVersion:string;appliedVersion:string|null;effectiveMonth:string|null;invoiceCount:number;mappedInvoiceCount:number;invoiceChoices:AccountXeroInvoiceChoice[]};
 export type AccountXeroTarget={unitKey:string;name:string;entity:string;storeName:string;storeId:string|null};
 function canonicalId(value:string){return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)?value.toLowerCase():value;}
 export function xeroSourceKey(contactId:string,categoryId:string,optionId:string){return JSON.stringify([contactId,categoryId,optionId].map(canonicalId));}
-function normalized(value:string|undefined|null){return (value??'').normalize('NFKC').trim().replace(/\s+/gu,' ').toLowerCase();}
+function normalized(value:string|undefined|null){return (value??'').normalize('NFKC').toLowerCase().replace(/[\p{P}\s]+/gu,'');}
 function validMonth(value:string){return /^20\d{2}-(0[1-9]|1[0-2])$/.test(value);}
 function monthOf(value:string|null|undefined){if(!value)return null;const legacy=/^\/Date\((\d+)(?:[+-]\d+)?\)\/$/.exec(value);if(legacy)return new Date(Number(legacy[1])).toISOString().slice(0,7);return /^20\d{2}-(0[1-9]|1[0-2])-\d{2}/.test(value)?value.slice(0,7):null;}
 export function accountXeroTargets(rows:AccountStoreRow[]):AccountXeroTarget[]{
@@ -49,12 +50,12 @@ export function buildAccountXeroProjection({rows,snapshot,mappings,month,lastSyn
  const ensure=(contactId:string,optionId:string,project:XeroProjectName)=>{
   contactId=canonicalId(contactId);optionId=canonicalId(optionId);
   const key=xeroSourceKey(contactId,scope.categoryId,optionId);let group=groups.get(key);
-  if(!group){group={groupKey:key,contactId,categoryId:scope.categoryId,optionId,project,companyName:companies.get(key)?.companyName??null,status:'missing',mappedUnitKey:null,suggestedUnitKey:null,candidateUnitKeys:[],expectedVersion:'0',appliedVersion:null,effectiveMonth:null,invoiceCount:0};groups.set(key,group);}return group;
+  if(!group){group={groupKey:key,contactId,categoryId:scope.categoryId,optionId,project,companyName:companies.get(key)?.companyName??null,status:'missing',mappedUnitKey:null,suggestedUnitKey:null,candidateUnitKeys:[],expectedVersion:'0',appliedVersion:null,effectiveMonth:null,invoiceCount:0,mappedInvoiceCount:0,invoiceChoices:[]};groups.set(key,group);}return group;
  };
  for(const company of companies.values())ensure(company.contactId,company.optionId,company.project);
  const invoiceIds=new Set<string>();let pending=false;const unassigned:AccountXeroInvoice[]=[];
  for(const invoice of snapshot.report.rows){
-  if(!invoice.invoiceId||invoiceIds.has(invoice.invoiceId))throw Error('Duplicate invoice ID');invoiceIds.add(invoice.invoiceId);
+  if(!invoice.invoiceId||invoiceIds.has(canonicalId(invoice.invoiceId)))throw Error('Duplicate invoice ID');invoiceIds.add(canonicalId(invoice.invoiceId));
   if(invoice.state==='pending'){pending=true;continue;}if(invoice.state!=='eligible')continue;
   if(monthOf(invoice.date)!==month)throw Error('Wrong invoice month');
   const optionId=invoice.project&&projectOptions.get(invoice.project);
@@ -65,31 +66,41 @@ export function buildAccountXeroProjection({rows,snapshot,mappings,month,lastSyn
  }
  const versionsByKey=new Map<string,AccountXeroMappingVersion[]>();
  for(const mapping of mappings){
+  if(mapping.invoiceId!==undefined&&mapping.invoiceId!==null&&(!mapping.invoiceId||typeof mapping.invoiceId!=='string'))throw Error('Invalid invoice override');
   if(!mapping.contactId||canonicalId(mapping.categoryId)!==scope.categoryId||!scope.options.some(option=>option.id===canonicalId(mapping.optionId))||!validMonth(mapping.effectiveMonth)||!/^\d{1,18}$/.test(mapping.version)||BigInt(mapping.version)<BigInt(1))throw Error('Invalid mapping version');
   const key=xeroSourceKey(mapping.contactId,mapping.categoryId,mapping.optionId),versions=versionsByKey.get(key)??[];
   if(versions.some(version=>version.version===mapping.version))throw Error('Duplicate mapping version');versions.push(mapping);versionsByKey.set(key,versions);
   const option=scope.options.find(option=>option.id===canonicalId(mapping.optionId))!;ensure(mapping.contactId,mapping.optionId,option.project);
  }
+ const assigned=new Map<string,AccountXeroInvoice[]>();
+ const appliedFor=(versions:AccountXeroMappingVersion[],invoiceId:string|null)=>versions.filter(version=>version.effectiveMonth<=month&&(version.invoiceId?canonicalId(version.invoiceId):null)===invoiceId).sort((a,b)=>b.effectiveMonth.localeCompare(a.effectiveMonth)||(BigInt(a.version)>BigInt(b.version)?-1:1))[0];
  for(const group of groups.values()){
   const versions=versionsByKey.get(group.groupKey)??[];
   const latest=[...versions].sort((a,b)=>BigInt(a.version)>BigInt(b.version)?-1:1)[0];group.expectedVersion=latest?.version??'0';
-  const applicable=versions.filter(version=>version.effectiveMonth<=month).sort((a,b)=>b.effectiveMonth.localeCompare(a.effectiveMonth)||(BigInt(a.version)>BigInt(b.version)?-1:1));
-  const applied=applicable[0];
-  if(applied){group.appliedVersion=applied.version;group.effectiveMonth=applied.effectiveMonth;if(targetByKey.has(applied.unitKey)){group.status='mapped';group.mappedUnitKey=applied.unitKey;}else group.status='conflict';}
-  else if(group.companyName){
-   const name=normalized(group.companyName);group.candidateUnitKeys=targets.filter(target=>[target.entity,target.name,target.storeName].some(value=>Boolean(value)&&normalized(value)===name)).map(target=>target.unitKey);
-   if(group.candidateUnitKeys.length===1){group.status='candidate';group.suggestedUnitKey=group.candidateUnitKeys[0];}else if(group.candidateUnitKeys.length>1)group.status='ambiguous';
-  }
- }
- const assigned=new Map<string,AccountXeroInvoice[]>();
- for(const group of groups.values()){
+  if(group.companyName){const name=normalized(group.companyName);group.candidateUnitKeys=targets.filter(target=>Boolean(name)&&[target.entity,target.name,target.storeName].some(value=>Boolean(value)&&normalized(value)===name)).map(target=>target.unitKey);}
+  if(group.candidateUnitKeys.length===1){group.status='candidate';group.suggestedUnitKey=group.candidateUnitKeys[0];}else if(group.candidateUnitKeys.length>1)group.status='ambiguous';
+  const groupDefault=appliedFor(versions,null);
+  // Shared or unrecognized multi-invoice companies require evidence for each invoice.
+  const requiresInvoices=group.candidateUnitKeys.length>1||group.invoiceCount>1&&group.candidateUnitKeys.length!==1;
+  const allowedDefault=requiresInvoices?undefined:groupDefault;
+  group.appliedVersion=allowedDefault?.version??null;group.effectiveMonth=allowedDefault?.effectiveMonth??null;
   const invoices=groupInvoices.get(group.groupKey)??[];
-  if(group.status==='mapped'&&group.mappedUnitKey){const list=assigned.get(group.mappedUnitKey)??[];list.push(...invoices);assigned.set(group.mappedUnitKey,list);}
-  else unassigned.push(...invoices);
+  for(const invoice of invoices){
+   const applied=appliedFor(versions,canonicalId(invoice.invoiceId))??allowedDefault;
+   const unitKey=applied&&targetByKey.has(applied.unitKey)?applied.unitKey:null;
+   const choice:AccountXeroInvoiceChoice={invoiceId:invoice.invoiceId,invoiceNumber:invoice.invoiceNumber,currency:invoice.currency,invoiced:invoice.gross!,received:invoice.amountPaid!,outstanding:invoice.amountDue!,tax:invoice.tax!,credits:invoice.amountCredited??'0',date:invoice.date??null,dueDate:invoice.dueDate??null,xeroUrl:`https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=${encodeURIComponent(invoice.invoiceId)}`,mappedUnitKey:unitKey,appliedVersion:applied?.version??null,effectiveMonth:applied?.effectiveMonth??null,status:unitKey?'mapped':applied?'conflict':'missing'};
+   group.invoiceChoices.push(choice);
+   if(unitKey){const list=assigned.get(unitKey)??[];list.push(invoice);assigned.set(unitKey,list);group.mappedInvoiceCount++;}else unassigned.push(invoice);
+  }
+  const mappedKeys=[...new Set(group.invoiceChoices.flatMap(choice=>choice.mappedUnitKey?[choice.mappedUnitKey]:[]))];
+  if(invoices.length&&group.mappedInvoiceCount===invoices.length){group.status=mappedKeys.length===1?'mapped':'split';group.mappedUnitKey=mappedKeys.length===1?mappedKeys[0]:null;}
+  else if(group.mappedInvoiceCount){group.status='partial';}
+  else if(group.invoiceChoices.some(choice=>choice.status==='conflict'))group.status='conflict';
+  else if(!invoices.length&&allowedDefault){if(targetByKey.has(allowedDefault.unitKey)){group.status='mapped';group.mappedUnitKey=allowedDefault.unitKey;}else group.status='conflict';}
  }
  for(const target of targets){
-  const related=[...groups.values()].filter(group=>group.mappedUnitKey===target.unitKey||group.candidateUnitKeys.includes(target.unitKey));
-  const invoices=assigned.get(target.unitKey)??[];const mapped=related.some(group=>group.status==='mapped');const incomplete=related.some(group=>group.status!=='mapped'&&group.invoiceCount>0);
+  const related=[...groups.values()].filter(group=>group.mappedUnitKey===target.unitKey||group.invoiceChoices.some(choice=>choice.mappedUnitKey===target.unitKey)||(group.mappedInvoiceCount<group.invoiceCount||['candidate','ambiguous','missing'].includes(group.status))&&group.candidateUnitKeys.includes(target.unitKey));
+  const invoices=assigned.get(target.unitKey)??[];const mapped=invoices.length>0||related.some(group=>group.status==='mapped'&&group.mappedUnitKey===target.unitKey);const incomplete=related.some(group=>group.mappedInvoiceCount<group.invoiceCount);
   byUnit[target.unitKey]={status:related.some(group=>group.status==='conflict')?'conflict':pending||mapped&&incomplete?'pending':mapped?'mapped':related.length?'unmapped':'not_synced',invoiceMonth:month,lastSyncedAt,byCurrency:totals(invoices),invoices:invoices.map(invoice=>({...invoice,xeroUrl:`https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=${encodeURIComponent(invoice.invoiceId)}`}))};
  }
  return {groups:[...groups.values()].sort((a,b)=>(a.companyName??a.contactId).localeCompare(b.companyName??b.contactId)||a.project.localeCompare(b.project)),targets,byUnit,unmappedInvoiceCount:unassigned.length,unmappedTotals:totals(unassigned),needsIdentitySync:snapshot.companies===undefined};
