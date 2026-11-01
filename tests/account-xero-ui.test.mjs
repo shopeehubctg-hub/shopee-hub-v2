@@ -22,6 +22,21 @@ test('settings render an explicit Malaysian sync time without leaking internal e
  const data=fixture();data.xero.lastSyncedAt='2026-11-01T01:00:00Z';data.xero.lastError='DB_INTERNAL_PRIVATE_STACK';
  const html=ui.renderToStaticMarkup(ui.element(ui.AccountXeroSettings,{data,onSaved:()=>{}}));assert.match(html,/MYT/);assert.match(html,/Accounting sync needs attention/);assert.doesNotMatch(html,/DB_INTERNAL_PRIVATE_STACK/);
 });
+test('batch exact matches expose each eligible proposal before approval',()=>{
+ const html=ui.renderToStaticMarkup(ui.element(ui.AccountXeroSettings,{data:fixture(),onSaved:()=>{}}));
+ assert.match(html,/Suggested: Store SG/);assert.doesNotMatch(html,/Suggested: Incomplete/);assert.match(html,/Apply 1 exact matches/);
+});
+test('disabled integration has no source summary and cannot connect; configured failure stays unknown',()=>{
+ const data=fixture();data.xero.configured=false;data.xero.connected=false;
+ assert.equal(ui.renderToStaticMarkup(ui.element(ui.AccountXeroSummary,{data})), '');
+ const settings=ui.renderToStaticMarkup(ui.element(ui.AccountXeroSettings,{data,onSaved:()=>{}}));assert.match(settings,/disabled=""[^>]*>Connect Xero/);assert.match(settings,/Xero setup is unavailable/);
+ data.xero.configured=true;data.xero.totals=[];data.xero.collections=[];data.xero.lastError='private';data.summaries=[{currency:'MYR',billed:'999.00'}];
+ const html=ui.renderToStaticMarkup(ui.element(ui.AccountXeroSummary,{data}));assert.match(html,/Accounting sync needs attention/);assert.doesNotMatch(html,/999|private/);
+});
+test('unknown company with several invoices requires individual invoice matching',()=>{
+ const data=fixture();data.xero.groups=[{...data.xero.groups[0],status:'missing',candidateUnitKeys:[],suggestedUnitKey:null,invoiceCount:2,mappedInvoiceCount:0,invoiceChoices:[{invoiceId:'unknown-one',invoiceNumber:'UNKNOWN-1',currency:'MYR',invoiced:'100.00',status:'missing'},{invoiceId:'unknown-two',invoiceNumber:'UNKNOWN-2',currency:'MYR',invoiced:'200.00',status:'missing'}]}];
+ const html=ui.renderToStaticMarkup(ui.element(ui.AccountXeroSettings,{data,onSaved:()=>{}}));assert.doesNotMatch(html,/>Save match</);assert.match(html,/Client for invoice UNKNOWN-1/);assert.match(html,/Client for invoice UNKNOWN-2/);
+});
 test('exact-match batch excludes incomplete targets, posts explicit replay-safe mapping and refreshes only after success',async()=>{
  const dom=new JSDOM('<div id="root"></div>',{url:'https://stage.test'});const saved=new Map();for(const key of ['window','document','navigator','HTMLElement','Event','MouseEvent']){saved.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value:dom.window[key],configurable:true});}globalThis.IS_REACT_ACT_ENVIRONMENT=true;
  const oldFetch=globalThis.fetch,requests=[];let calls=0,refreshes=0;globalThis.fetch=async(url,init)=>{requests.push({url,body:JSON.parse(init.body)});calls++;return {ok:calls>1,json:async()=>calls>1?{ok:true}:{error:'Temporary sync error'}};};
@@ -35,5 +50,12 @@ test('exact-match batch excludes incomplete targets, posts explicit replay-safe 
  const row={...fixture().stores[0],xeroActuals:{invoices:[{invoiceId:'i1',invoiceNumber:'INV-1',currency:'MYR',project:'Shopee Hub Internal',gross:'108.00',amountPaid:'40.00',amountDue:'68.00',date:'2026-10-01'}]}};
  await ui.act(()=>root.render(ui.element(ui.XeroInvoiceDetails,{row})));await ui.act(()=>document.querySelector('.account-xero-invoice-open').dispatchEvent(new MouseEvent('click',{bubbles:true})));
  const dialog=document.querySelector('dialog');assert.equal(dialog.parentElement,document.body);assert.match(dialog.textContent,/Project/);assert.match(dialog.textContent,/Shopee Hub Internal/);assert.match(dialog.textContent,/INV-1/);
+ const split=fixture();split.stores[1].storeId='s2';split.xero.groups=[{...split.xero.groups[0],status:'ambiguous',suggestedUnitKey:null,candidateUnitKeys:['r1','r2'],invoiceCount:2,mappedInvoiceCount:0,invoiceChoices:[{invoiceId:'inv-one',invoiceNumber:'WF-ONE',currency:'MYR',invoiced:'100.00',date:'2026-10-01',mappedUnitKey:null,status:'missing'},{invoiceId:'inv-two',invoiceNumber:'WF-TWO',currency:'MYR',invoiced:'200.00',date:'2026-10-02',mappedUnitKey:null,status:'missing'}]}];
+ await ui.act(()=>root.render(ui.element(ui.AccountXeroSettings,{data:split,onSaved:()=>refreshes++})));
+ assert.equal([...document.querySelectorAll('button')].filter(button=>button.textContent==='Save match').length,0);assert.match(document.body.textContent,/WF-ONE/);assert.match(document.body.textContent,/MYR 200.00/);
+ const chooser=document.querySelector('[aria-label="Client for invoice WF-ONE"]');await ui.act(()=>{chooser.value='r1';chooser.dispatchEvent(new Event('change',{bubbles:true}));});
+ const invoiceSave=[...document.querySelectorAll('button')].find(button=>button.textContent==='Save invoice match');assert.equal(invoiceSave.disabled,false);await ui.act(()=>invoiceSave.dispatchEvent(new MouseEvent('click',{bubbles:true})));
+ assert.equal(requests.at(-1).body.mappings[0].invoiceId,'inv-one');assert.equal(requests.at(-1).body.mappings[0].expectedVersion,'0');assert.equal(requests.at(-1).body.mappings[0].unitKey,'r1');
+ assert.ok([...document.querySelectorAll('button')].filter(button=>button.textContent==='Save invoice match').every(button=>button.disabled));
  }finally{await ui.act(()=>root.unmount());dom.window.close();globalThis.fetch=oldFetch;for(const [key,descriptor]of saved){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete globalThis[key];}delete globalThis.IS_REACT_ACT_ENVIRONMENT;}
 });

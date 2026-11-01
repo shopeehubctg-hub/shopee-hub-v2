@@ -3,7 +3,7 @@ import type {AccountResponse,AccountXeroStatus} from './account-contract';
 import {buildAccountXeroProjection,type AccountXeroMappingVersion,type AccountXeroSnapshot} from './account-xero-model';
 import {xeroActor} from './xero-server';
 import {readXeroConnection,xeroRpc} from './xero-store';
-export type BillingMappingRead={sourceRunId:string|null;lastSyncedAt?:string|null;snapshot?:AccountXeroSnapshot|null;mappings:Array<{contactId:string;categoryId:string;optionId:string;rosterKey:string;version:string;effectiveMonth:string;targetUnitVersion:string}>};
+export type BillingMappingRead={sourceRunId:string|null;lastSyncedAt?:string|null;snapshot?:AccountXeroSnapshot|null;mappings:Array<{invoiceId?:string|null;contactId:string;categoryId:string;optionId:string;rosterKey:string;version:string;effectiveMonth:string;targetUnitVersion:string}>};
 export async function decorateAccountXero(account:AccountResponse,request:Request):Promise<AccountResponse>{
  const empty:AccountXeroStatus={configured:false,connected:false,status:'not_configured',month:account.invoiceMonth,groups:[],unmappedInvoiceCount:0,unmappedTotals:[],totals:[],collections:[],outstanding:[]};
  try{

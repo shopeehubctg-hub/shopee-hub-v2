@@ -17,13 +17,14 @@ export async function POST(request:Request){
   if(typeof month!=='string'||!/^20\d{2}-(0[1-9]|1[0-2])$/.test(month))return Response.json({error:'Choose a valid invoice month.'},{status:400,headers:xeroHeaders});
   const seen=new Set<string>();
   for(const item of body.mappings){
-   if(!item||typeof item!=='object'||Array.isArray(item)||!['contactId','categoryId','optionId'].every(key=>typeof item[key]==='string'&&uuid.test(item[key]))||typeof item.unitKey!=='string'||typeof item.expectedVersion!=='string'||!version.test(item.expectedVersion)||item.effectiveMonth!==month) return Response.json({error:'Check the billing client and invoice month.'},{status:400,headers:xeroHeaders});
-   const key=JSON.stringify([item.contactId,item.categoryId,item.optionId]);if(seen.has(key))return Response.json({error:'Choose one billing client per source.'},{status:400,headers:xeroHeaders});seen.add(key);
+   if(!item||typeof item!=='object'||Array.isArray(item)||!['contactId','categoryId','optionId'].every(key=>typeof item[key]==='string'&&uuid.test(item[key]))||typeof item.unitKey!=='string'||typeof item.expectedVersion!=='string'||!version.test(item.expectedVersion)||item.effectiveMonth!==month||(item.invoiceId!==undefined&&item.invoiceId!==null&&(typeof item.invoiceId!=='string'||!uuid.test(item.invoiceId)))) return Response.json({error:'Check the billing client and invoice month.'},{status:400,headers:xeroHeaders});
+   const key=JSON.stringify([item.contactId.toLowerCase(),item.categoryId.toLowerCase(),item.optionId.toLowerCase(),item.invoiceId?.toLowerCase()??null]);if(seen.has(key))return Response.json({error:'Choose one billing client per source.'},{status:400,headers:xeroHeaders});seen.add(key);
   }
   // Replay is checked before current-version/source reads: a committed save advances both.
   // Only compare the caller's stable intent; the original server-owned source/target evidence
   // is passed back to the RPC, which revalidates the session and its exact saved payload.
-  const intent=(bindings:Array<Record<string,unknown>>,stored=false)=>bindings.map(item=>({contactId:item.contactId,categoryId:item.categoryId,optionId:item.optionId,unitKey:stored?item.rosterKey:item.unitKey,effectiveMonth:month,expectedVersion:item.expectedVersion})).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  const canonicalId=(value:unknown)=>typeof value==='string'?value.toLowerCase():value;
+  const intent=(bindings:Array<Record<string,unknown>>,stored=false)=>bindings.map(item=>({contactId:canonicalId(item.contactId),categoryId:canonicalId(item.categoryId),optionId:canonicalId(item.optionId),invoiceId:canonicalId(item.invoiceId??null),unitKey:stored?item.rosterKey:item.unitKey,effectiveMonth:month,expectedVersion:item.expectedVersion})).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)));
   const replay=async():Promise<Response|null>=>{
    const prior=await supabaseRest<Array<{request_payload:Record<string,unknown>}>>(`account_store_requests?select=request_payload&tenant_id=eq.${encodeURIComponent(actor.tenantId)}&request_id=eq.${encodeURIComponent(body.requestId as string)}&limit=1`);
    if(!prior.length)return null;
@@ -39,14 +40,17 @@ export async function POST(request:Request){
   if(!account.xero?.connected||!account.xero.sourceRunId||account.xero.status==='identity_sync_required'||account.xero.status==='unavailable'){const raced=await replay();return raced??Response.json({error:'Sync accounting data before saving mappings.'},{status:409,headers:xeroHeaders});}
   const bindings=[];
   for(const item of body.mappings){
-   const group=account.xero.groups.find(row=>row.contactId===item.contactId&&row.categoryId===item.categoryId&&row.optionId===item.optionId);
+   const group=account.xero.groups.find(row=>row.contactId.toLowerCase()===item.contactId.toLowerCase()&&row.categoryId.toLowerCase()===item.categoryId.toLowerCase()&&row.optionId.toLowerCase()===item.optionId.toLowerCase());
    const unit=account.stores.find(row=>(row.rosterKey??row.id)===item.unitKey);
    if(!group||!unit||!unit.market||!unit.entity||group.expectedVersion!==item.expectedVersion){const raced=await replay();return raced??Response.json({error:'Account changed. Refresh and check the mapping.'},{status:409,headers:xeroHeaders});}
+   const invoiceId=typeof item.invoiceId==='string'?item.invoiceId.toLowerCase():null;
+   if(invoiceId&&!group.invoiceChoices?.some(invoice=>invoice.invoiceId.toLowerCase()===invoiceId))return Response.json({error:'Choose an invoice from this company and project.'},{status:400,headers:xeroHeaders});
+   if(!invoiceId&&(group.candidateUnitKeys.length>1||group.invoiceCount>1&&group.candidateUnitKeys.length!==1))return Response.json({error:'This company needs invoice-level mapping. Map each invoice separately.'},{status:409,headers:xeroHeaders});
    const liveIds=new Set((account.storeOptions??[]).map(store=>store.id));
    const candidates=[...new Set((unit.candidates??[]).flatMap(candidate=>candidate.storeId&&liveIds.has(candidate.storeId)?[candidate.storeId]:[]))];
    const storeId=unit.storeId?(liveIds.has(unit.storeId)?unit.storeId:null):candidates.length===1?candidates[0]:null;
    if(!storeId){const raced=await replay();return raced??Response.json({error:'Store mapping required. Choose a store for this billing client first.'},{status:409,headers:xeroHeaders});}
-   bindings.push({contactId:item.contactId,categoryId:item.categoryId,optionId:item.optionId,rosterKey:item.unitKey,expectedVersion:item.expectedVersion,targetExpectedVersion:unit.latestSettingsVersion??'0',targetSeed:{project:unit.project,entity:unit.entity,currency:unit.currency,market:unit.market,storeId}});
+   bindings.push({contactId:item.contactId,categoryId:item.categoryId,optionId:item.optionId,...(invoiceId?{invoiceId}:{}),rosterKey:item.unitKey,expectedVersion:item.expectedVersion,targetExpectedVersion:unit.latestSettingsVersion??'0',targetSeed:{project:unit.project,entity:unit.entity,currency:unit.currency,market:unit.market,storeId}});
   }
   const result=await xeroRpc(actor,'xero_billing_mappings_save',{p_environment:actor.config.environment,p_source_run_id:account.xero.sourceRunId,p_invoice_month:month+'-01',p_bindings:bindings,p_request_id:body.requestId});
   return Response.json({saved:true,result},{headers:xeroHeaders});

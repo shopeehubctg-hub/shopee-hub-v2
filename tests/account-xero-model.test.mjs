@@ -87,3 +87,25 @@ test('one audited live store candidate is a target proposal only; distinct candi
  assert.equal(run({rows:[row('a',{storeId:null,candidates:[candidate,{...candidate,storeId:'other'}]})]}).targets[0].storeId,null);
  assert.equal(run({rows:[row('a',{storeId:'saved-store',candidates:[candidate]})]}).targets[0].storeId,'saved-store');
 });
+
+test('ambiguous same-company invoices split to different clients only through explicit invoice overrides',()=>{
+ const rows=[row('a'),row('b',{entity:'Company a'})],data=snapshot([invoice('i1'),invoice('i2',{gross:'50',tax:'0',amountPaid:'0',amountDue:'50',amountCredited:'0'})]);
+ const broad=run({rows,snapshot:data,mappings:[mapping()]});assert.equal(broad.groups[0].status,'ambiguous');assert.equal(broad.unmappedInvoiceCount,2);assert.deepEqual(broad.byUnit.a.byCurrency,[]);
+ const partial=run({rows,snapshot:data,mappings:[mapping({invoiceId:'i1'})]});assert.equal(partial.groups[0].status,'partial');assert.equal(partial.groups[0].mappedInvoiceCount,1);assert.equal(partial.byUnit.a.status,'pending');assert.equal(partial.unmappedInvoiceCount,1);
+ const result=run({rows,snapshot:data,mappings:[mapping({invoiceId:'i1'}),mapping({invoiceId:'i2',unitKey:'b',version:'2'})]});assert.equal(result.groups[0].status,'split');assert.equal(result.groups[0].expectedVersion,'2');assert.equal(result.groups[0].mappedInvoiceCount,2);assert.equal(result.unmappedInvoiceCount,0);assert.equal(result.byUnit.a.byCurrency[0].invoiced,'108.00');assert.equal(result.byUnit.b.byCurrency[0].invoiced,'50.00');assert.equal(result.byUnit.a.status,'mapped');assert.equal(result.byUnit.b.status,'mapped');assert.deepEqual(result.groups[0].invoiceChoices.map(choice=>[choice.invoiceId,choice.mappedUnitKey]),[['i1','a'],['i2','b']]);
+});
+test('invoice override wins over group default without double counting and future overrides do not rewrite selected month',()=>{
+ const data=snapshot([invoice('i1'),invoice('i2')]),rows=[row('a'),row('b')];const mappings=[mapping(),mapping({invoiceId:'i1',unitKey:'b',version:'2'}),mapping({invoiceId:'i1',unitKey:'a',version:'3',effectiveMonth:'2026-11'})];
+ const result=run({rows,snapshot:data,mappings});assert.equal(result.groups[0].expectedVersion,'3');assert.equal(result.groups[0].status,'split');assert.equal(result.byUnit.a.invoices.length,1);assert.equal(result.byUnit.b.invoices.length,1);assert.equal(result.byUnit.a.invoices[0].invoiceId,'i2');assert.equal(result.byUnit.b.invoices[0].invoiceId,'i1');assert.equal(result.groups[0].invoiceChoices[0].appliedVersion,'2');assert.equal(result.unmappedInvoiceCount,0);
+});
+test('punctuation-normalized legal names reveal ambiguous clients without removing legal suffixes or using fuzzy matches',()=>{
+ const rows=[row('bonlife',{entity:'BONLIFE(M)SDNBHD'}),row('goherb',{entity:'Bonlife (M) Sdn Bhd.'})];const data=snapshot([invoice()],[company({companyName:'BONLIFE (M) SDN. BHD.'})]);const result=run({rows,snapshot:data,mappings:[mapping({unitKey:'bonlife'})]});assert.equal(result.groups[0].status,'ambiguous');assert.deepEqual(result.groups[0].candidateUnitKeys,['bonlife','goherb']);assert.deepEqual(result.byUnit.bonlife.byCurrency,[]);
+ assert.equal(run({rows:[row('a',{entity:'DRSMILE SDN BHD'})],snapshot:snapshot([invoice()],[company({companyName:'Drsmile Sdn.Bhd.'})])}).groups[0].status,'candidate');
+ assert.equal(run({rows:[row('a',{entity:'BONLIFE'})],snapshot:data}).groups[0].status,'missing');
+});
+
+test('unrecognized company with several invoices cannot use a whole-company mapping',()=>{
+ const data=snapshot([invoice('i1'),invoice('i2'),invoice('i3')],[company({companyName:'Unrecognized company'})]);
+ const broad=run({snapshot:data,mappings:[mapping()]});assert.equal(broad.groups[0].candidateUnitKeys.length,0);assert.equal(broad.unmappedInvoiceCount,3);assert.deepEqual(broad.byUnit.a.byCurrency,[]);
+ const scoped=run({snapshot:data,mappings:[mapping(),mapping({invoiceId:'i1',version:'2'})]});assert.equal(scoped.groups[0].status,'partial');assert.equal(scoped.byUnit.a.invoices.length,1);assert.equal(scoped.byUnit.a.byCurrency[0].invoiced,'108.00');assert.equal(scoped.unmappedInvoiceCount,2);
+});
