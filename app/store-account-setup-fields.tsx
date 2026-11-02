@@ -7,7 +7,7 @@ import {accountPlanFields,accountRateSummary,availableAccountRateCards,changeAcc
 export {accountSetupError,accountSetupPayload,emptyAccountSetup,feeRuleFromDraft,malaysiaMonth,resetAccountSetupSelection} from './store-account-setup-model';
 export type {AccountSetupDraft,AccountSetupPayload} from './store-account-setup-model';
 
-export function AccountSetupFields({draft,market,update}:{draft:AccountSetupDraft;market:StoreMarket;update:(patch:Partial<AccountSetupDraft>)=>void}){
+export function AccountSetupFields({draft,market,update,registeredNamesAvailable=false}:{registeredNamesAvailable?:boolean;draft:AccountSetupDraft;market:StoreMarket;update:(patch:Partial<AccountSetupDraft>)=>void}){
  const {plans,persistent,catalogStatus,catalogError,refreshPlans}=useFeePlans();const [customOpen,setCustomOpen]=useState(false);
  const cards=availableAccountRateCards(plans,draft);const selected=cards.find(card=>card.id===draft.planId&&card.version===draft.planVersion);
  const updateCustom=(patch:Partial<AccountSetupDraft>)=>update({...patch,planId:'custom',planVersion:null});
@@ -15,7 +15,8 @@ export function AccountSetupFields({draft,market,update}:{draft:AccountSetupDraf
  const customRule=feeRuleFromDraft(draft,market);
  return <fieldset className="account-rate-fields">
   <legend>Account setup</legend>
-  <label className="account-field-wide">Company name<input maxLength={240} required value={draft.legalEntity} onChange={event=>update({legalEntity:event.currentTarget.value})}/></label>
+  <label>Registered Name (Platform)<input maxLength={240} required value={draft.legalEntity} onChange={event=>update({legalEntity:event.currentTarget.value})}/></label>
+  <label>Registered Name (Billing)<input maxLength={240} value={draft.billingEntity??''} disabled={!registeredNamesAvailable} onChange={event=>update({billingEntity:event.currentTarget.value})}/></label>
   <label>Effective Invoice Month<input aria-label="Account Effective Invoice Month" name="accountEffectiveInvoiceMonth" type="month" min={malaysiaMonth()} required value={draft.effectiveMonth} onInput={event=>monthChanged(event.currentTarget.value)} onChange={event=>monthChanged(event.currentTarget.value)}/></label>
   <label>Client type<select aria-label="Account client type" value={draft.clientType} onChange={event=>{setCustomOpen(false);update(resetAccountSetupSelection(draft,market,event.currentTarget.value as AccountSetupDraft['clientType']));}} required><option value="">Choose client type</option><option>Internal</option><option>External</option></select></label>
   <label className="account-field-wide">Rate card<select aria-label="Account rate card" value={draft.planId==='custom'?'custom':selected?.id??''} disabled={!draft.clientType} onChange={event=>{setCustomOpen(false);update(selectAccountRateCard(draft,event.currentTarget.value,plans));}} required><option value="">Choose rate card</option>{draft.planId==='custom'&&<option value="custom">Custom rate</option>}{cards.map(card=><option value={card.id} key={card.id}>{card.name} · v{card.version}</option>)}</select></label>
