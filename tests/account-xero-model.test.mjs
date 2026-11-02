@@ -135,3 +135,13 @@ test('saved invoice-specific choice can confirm one of ambiguous countries but g
 });
 
 test('contradictory MY and SG markers never choose a country by precedence',()=>{const rows=[row('my',{storeName:'DRSMILE',market:'MY'}),row('sg',{storeName:'DRSMILE',market:'SG'})];for(const label of ['DRSMILE MY SG','DRSMILE SG MY']){const result=run({rows,snapshot:snapshot([invoice('i1',{storeNames:[label]})])});assert.equal(result.groups[0].invoiceChoices[0].storeEvidence.state,'ambiguous');assert.equal(result.groups[0].invoiceChoices[0].suggestedUnitKey,null);assert.equal(result.unmappedInvoiceCount,1);}});
+
+test('BONLIFE alias considers canonical SG Client label even when SG store display differs',()=>{const rows=[row('my',{project:'BONLIFE',storeName:'Bonlife Official Store',market:'MY'}),row('sg',{project:'BONLIFE SG',storeName:'Bonlife Singapore Shop',market:'SG'})];const data=snapshot([invoice('i1',{storeNames:['BONLIFE']})]);const result=run({rows,snapshot:data});assert.equal(result.groups[0].invoiceChoices[0].storeEvidence.state,'ambiguous');assert.equal(result.groups[0].invoiceChoices[0].suggestedUnitKey,null);const manual=run({rows,snapshot:data,mappings:[mapping({invoiceId:'i1',unitKey:'my'})]});assert.equal(manual.byUnit.my.invoices.length,1);});
+
+test('canonical source aliases match exactly while collisions remain ambiguous and unrelated aliases cannot leak',()=>{
+ const rows=[row('a',{storeAliases:['ECOPLUS OFFICIAL (PACKXPERT)']}),row('b',{storeAliases:['OTHER STORE']})];
+ const exact=run({rows,snapshot:snapshot([invoice('i1',{storeNames:['Ecoplus Official (Packxpert)']})])});assert.equal(exact.groups[0].invoiceChoices[0].suggestedUnitKey,'a');
+ const noSubstring=run({rows,snapshot:snapshot([invoice('i1',{storeNames:['ECOPLUS']})])});assert.equal(noSubstring.groups[0].invoiceChoices[0].suggestedUnitKey,null);
+ const collision=run({rows:[...rows,row('sg',{market:'SG',storeAliases:['ECOPLUS OFFICIAL (PACKXPERT)']})],snapshot:snapshot([invoice('i1',{storeNames:['ECOPLUS OFFICIAL (PACKXPERT)']})])});assert.equal(collision.groups[0].invoiceChoices[0].storeEvidence.state,'ambiguous');
+ assert.deepEqual(exact.targets.find(target=>target.unitKey==='b').storeAliases,['OTHER STORE']);
+});

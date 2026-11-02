@@ -13,7 +13,7 @@ export type AccountStoreRow = {
   previewMarketFxEligible?: boolean;
   previewRateDefaultsEligible?: boolean;
   previewServiceFxRate?: {serviceMonth:string;rate:string;policy:'bnm-service-average';verified:true;reference:string;currency?:AccountCurrency;quotationUnit?:1};
-  entity?: string; billingEntity?:string|null; market?: MarketCode; termsVersion?: "NEW" | "OLD";
+  entity?: string; billingEntity?:string|null; storeAliases?:string[]; market?: MarketCode; termsVersion?: "NEW" | "OLD";
   mappingStatus?: "resolved" | "candidate" | "ambiguous" | "missing"; mappingReason?: string;
   candidates?: AccountMappingCandidate[];
   latestSettingsVersion?: string; appliedSettingsVersion?: string | null; settingsEffectiveMonth?: string | null;
