@@ -17,7 +17,7 @@ beforeEach(()=>{
   globalThis.__permissionRest=async(path,options)=>{
     if(options?.method==='POST'&&path==='rpc/save_user_access'){state.writes.push({path,body:JSON.parse(options.body)});if(state.rpcError)throw Error(state.rpcError);return {saved:true};}
     if(options?.method==='POST'&&path==='customer_users'){state.writes.push({path,body:JSON.parse(options.body)});return;}
-    assert.equal(options?.method===undefined||path==='rpc/account_store_setup_v2_available',true,`Unexpected mutation: ${path}`);
+    assert.equal(options?.method===undefined||['rpc/account_store_setup_v2_available','rpc/account_registered_names_available'].includes(path),true,`Unexpected mutation: ${path}`);
     state.reads.push(path);
     if(path.startsWith('customer_users?')){const email=path.match(/&email=eq\.([^&]+)/)?.[1];return email?state.users.filter(u=>u.email===decodeURIComponent(email)):state.users;}
     if(path.startsWith('tenants?'))return [{active:state.tenantActive}];
@@ -26,7 +26,7 @@ beforeEach(()=>{
     if(path.startsWith('stores?'))return state.stores;
     if(path.startsWith('user_store_access?')){assert.match(path,/enabled=eq.true/);const id=Number(path.match(/&user_id=eq\.(\d+)/)?.[1]);return state.assignments.filter(row=>!id||row.user_id===id);}
     if(path.startsWith('account_billing_unit_versions?'))return [];
-    if(path==='rpc/account_store_setup_v2_available')return true;
+    if(path==='rpc/account_store_setup_v2_available')return true;if(path==='rpc/account_registered_names_available')return true;
     throw Error(`Unexpected path ${path}`);
   };
 });
@@ -58,4 +58,9 @@ test('Delegate cannot create a privileged role; duplicate login does not touch e
   globalThis.__permissionActor={email:'delegate@test.local'};
   assert.equal((await POST(request({email:'new@test.local',role:'superadmin'}))).status,403);
   assert.equal((await POST(request({email:'client@test.local',role:'customer'}))).status,409);assert.equal(state.writes.length,0);
+});
+
+test('Store metadata exposes distinct saved Platform and Billing names without replacing either',async()=>{
+ const original=globalThis.__permissionRest;globalThis.__permissionRest=async(path,options)=>path.startsWith('account_billing_unit_versions?')?[{roster_key:'store:store-a',legal_entity:'Platform Company',billing_registered_name:'Billing Company',change_action:'company',version:'2',store_id:'store-a',effective_month:'2026-10-01'}]:original(path,options);
+ const response=await GET();assert.equal(response.status,200);const data=await response.json();assert.equal(data.accountRegisteredNamesAvailable,true);const unit=data.stores.find(store=>store.id==='store-a').accountUnit;assert.equal(unit.legalEntity,'Platform Company');assert.equal(unit.billingEntity,'Billing Company');
 });

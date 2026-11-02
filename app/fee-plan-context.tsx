@@ -113,7 +113,7 @@ export function useMonthlyFeePreview(row:AccountStoreRow,month:string){const {pl
 
 export type RateCardApplyCommand={requestId:string;unitKeys:string[];clientType:ClientType;planId:string;planVersion:number;effectiveMonth:string;changedAt:string;previewAmount?:string};
 export type RateCardApplyAudit={fingerprint:string;requestId:string;batchId:string;effectiveMonth:string;clientType:ClientType;plan:FeePlan;changedAt:string;targets:Array<{unitKey:string;unitName:string;priorPlan:{id:string;name:string;version:number}|null}>};
-export function billingRowsMatching(rows:AccountStoreRow[],query:string){const term=query.trim().toLocaleLowerCase();return rows.filter(row=>[row.project,row.storeName,row.entity,...(row.candidates??[]).flatMap(candidate=>[candidate.username,candidate.storeName])].filter(Boolean).join(' ').toLocaleLowerCase().includes(term));}
+export function billingRowsMatching(rows:AccountStoreRow[],query:string){const term=query.trim().toLocaleLowerCase();return rows.filter(row=>[row.project,row.storeName,row.entity,row.billingEntity,...(row.candidates??[]).flatMap(candidate=>[candidate.username,candidate.storeName])].filter(Boolean).join(' ').toLocaleLowerCase().includes(term));}
 export function visibleSelection(rows:AccountStoreRow[],selected:string[]){const keys=new Set(rows.map(row=>row.rosterKey??row.id));return [...new Set(selected)].filter(key=>keys.has(key));}
 /** Validate the entire batch before creating a new session-memory value. Never touches ledger or locks. */
 export function applyRateCardPreview(memory:Record<string,unknown>,rows:AccountStoreRow[],plans:FeePlan[],command:RateCardApplyCommand,data:PreviewRateSource=emptyRateSource):Record<string,unknown>{

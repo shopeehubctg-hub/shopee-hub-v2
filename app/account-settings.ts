@@ -1,4 +1,6 @@
 import 'server-only';
+import {optionalBillingName} from './registered-names';
+import {registeredNamesAvailable} from './registered-names-server';
 import roster from './account-roster-data.json';
 import { getChatGPTUser } from './chatgpt-auth';
 import { accountSecurityGate } from './account-security-server';
@@ -21,7 +23,7 @@ export async function saveAccountSetting(request:Request,action:'mapping'|'fee_r
     const raw=await request.text();if(raw.length>20000)return Response.json({error:'Fee rule is too large'},{status:400});
     let body:Record<string,unknown>;try{body=JSON.parse(raw);}catch{return Response.json({error:'Invalid save request'},{status:400});}
     if(!body||typeof body!=='object'||Array.isArray(body))return Response.json({error:'Invalid save request'},{status:400});
-    let unit:{id:string;project:string;entity:string;market:string}|undefined=roster.rows.find(row=>row.id===body.rosterKey);
+    let unit:{id:string;project:string;entity:string;market:string;candidates?:Array<{storeId:string|null}>}|undefined=roster.rows.find(row=>row.id===body.rosterKey);
     if(!unit && typeof body.rosterKey==='string' && body.rosterKey.startsWith('store:')) {
       const id=body.rosterKey.slice(6);
       if(canonicalStoreId(id)===id) {
@@ -45,6 +47,21 @@ export async function saveAccountSetting(request:Request,action:'mapping'|'fee_r
       entity=body.entity.trim();
     } else {
       try{rule=validateFeeRule(body.rule,currency);}catch(error){return Response.json({error:error instanceof Error?error.message:'Invalid fee rule'},{status:400});}
+    }
+    if(action==='company'&&Object.prototype.hasOwnProperty.call(body,'billingEntity')){
+      let billingEntity:string|null;try{billingEntity=optionalBillingName(body.billingEntity);}catch(error){return Response.json({error:error instanceof Error?error.message:'Check Registered Name (Billing).'},{status:400});}
+      if(!await registeredNamesAvailable())return Response.json({error:'Registered names are not configured in this environment.'},{status:503});
+      let namesCurrency=currency;
+      if(BigInt(body.expectedVersion)>BigInt(0)){
+        const current=await supabaseRest<Array<{currency:string;version:string}>>(`account_billing_unit_versions?select=currency,version::text&tenant_id=eq.${encodeURIComponent(member.tenant_id)}&roster_key=eq.${encodeURIComponent(unit.id)}&order=version.desc&limit=1`);
+        if(current.length!==1||!['MYR','SGD','THB','PHP'].includes(current[0].currency))return Response.json({error:'This project changed. Refresh Account and try again.'},{status:409});
+        namesCurrency=current[0].currency as typeof currency;
+      }
+      const candidateIds=[...new Set((unit.candidates??[]).flatMap(candidate=>candidate.storeId&&canonicalStoreId(candidate.storeId)===candidate.storeId?[candidate.storeId]:[]))];
+      const proposed=BigInt(body.expectedVersion)===BigInt(0)?(unit.id.startsWith('store:')?unit.id.slice(6):candidateIds.length===1?candidateIds[0]:null):null;
+      const known=proposed?await supabaseRest<Array<{id:string}>>(`stores?select=id&tenant_id=eq.${encodeURIComponent(member.tenant_id)}&id=eq.${encodeURIComponent(proposed)}&limit=1`):[];
+      const result=await supabaseRest<{version:string;legalEntity:string;billingEntity:string|null}>('rpc/account_save_registered_names',{method:'POST',body:JSON.stringify({p_tenant:member.tenant_id,p_actor:actor.email.toLowerCase(),p_roster_key:unit.id,p_roster_project:unit.project,p_platform_name:entity,p_billing_name:billingEntity,p_currency:namesCurrency,p_effective_month:`${body.effectiveMonth}-01`,p_store_id:known[0]?.id??null,p_expected_version:body.expectedVersion,p_request_id:body.requestId})});
+      return Response.json({saved:true,...result});
     }
     const result=await supabaseRest<{version:string}>('rpc/account_save_billing_unit_version',{method:'POST',body:JSON.stringify({
       p_tenant:member.tenant_id,p_actor:actor.email.toLowerCase(),p_roster_key:unit.id,p_roster_project:unit.project,p_entity:entity||unit.project,

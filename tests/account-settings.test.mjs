@@ -23,3 +23,9 @@ test('setup creates a store billing unit with company, mapping and rate; later c
 });
 
 test('ledger-backed billing rows without market remain visible in country sections',()=>{const data=account('2026-10');data.stores.push({id:'real-term',rosterKey:'real-unit',currency:'SGD',market:undefined,expectedNetFee:'10.00',billed:'10.00',collected:'0.00',outstanding:'10.00'});const result=applyAccountSettings(data,[],new Map());assert.equal(result.stores[0].market,'SG');assert.equal(result.stores[0].billed,'10.00');});
+
+test('registered Billing name resolves as of invoice month independently of Platform and never creates fee or cash',()=>{
+ const setup={...version(1,'2026-10','company','store',null),legal_entity:'Platform October',billing_registered_name:null};const november={...version(2,'2026-11','company','store',null),legal_entity:'Platform November',billing_registered_name:'Billing November'};const laterRule={...version(3,'2026-11','fee_rule','store',rule),legal_entity:'Stale copied Platform',billing_registered_name:'Stale copied Billing'};
+ const october=applyAccountSettings(account('2026-10'),[setup,november,laterRule],new Map()).stores[0];assert.equal(october.entity,'Platform October');assert.equal(october.billingEntity,null);assert.equal(october.billed,null);
+ const next=applyAccountSettings(account('2026-11'),[setup,november,laterRule],new Map()).stores[0];assert.equal(next.entity,'Platform November');assert.equal(next.billingEntity,'Billing November');assert.equal(next.billed,null);assert.equal(next.rateRule.fixedAmount,'100.00');
+});
