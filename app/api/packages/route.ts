@@ -1,6 +1,7 @@
 import {deploymentTarget} from "../../deployment-isolation";
 import {MARKET_CONFIG,isMarket,priceMarket,marketFromPlatform,type MarketCode} from '../../markets';
 import { packageDurationType } from '../../package-duration';
+import {changedPackageStart} from '../../package-start-date-policy';
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { getDb } from "../../../db";
 import {
@@ -66,6 +67,8 @@ function packageError(section:PackageErrorSection,error:string,status=400,code?:
 
 function saveFailure(error:unknown) {
   const databaseError=error as DatabaseError;
+  if(databaseError.code==="PACKAGE_START_LOCKED")return packageError("Pricing & Promotion",databaseError.message,409,databaseError.code);
+  if(databaseError.code==="PACKAGE_VERSION_STALE")return packageError("Saving",databaseError.message,409,databaseError.code);
   if(databaseError.code==="PRICING_EVIDENCE")return packageError("Pricing & Promotion",databaseError.message,409);
   const code=databaseError?.code ?? "unknown";
   const constraint=databaseError?.constraint_name ?? databaseError?.constraint ?? "";
@@ -273,6 +276,7 @@ export async function GET(request: Request) {
           ? packageLifecycleStatus(versionPrices,version?.calculatorSettings,today)
           : row.status,
         storeName:storeNames.get(row.storeId) ?? "Accessible Store",
+        storePlatform:scopedStores.find(store=>store.id===row.storeId)?.platform,
         packageSku:currentPlatforms[0]?.packageSku ?? row.packageSku,
         platforms:currentPlatforms,
         version:version?.version ?? 1,
@@ -555,6 +559,15 @@ async function savePackage(request: Request) {
     : "配套资料修改（历史比较资料不足）";
   const captureReplay=await db.transaction(async tx => {
     if(catalogEnabled)await lockInventoryCatalog(tx,membership.tenantId);
+    if(requestedPackageId){
+      const [locked]=await tx.select().from(packages).where(and(eq(packages.id,packageId),eq(packages.tenantId,membership.tenantId),isNull(packages.deletedAt))).for("update").limit(1);
+      const [latest]=locked?await tx.select().from(packageVersions).where(eq(packageVersions.packageId,packageId)).orderBy(desc(packageVersions.version)).limit(1):[];
+      if(!locked||locked.storeId!==body.storeId||!latest||latest.id!==previousVersion?.id||body.expectedVersion!==undefined&&body.expectedVersion!==latest.version||mode==='draft'&&!['draft','review'].includes(locked.status))
+        throw Object.assign(new Error('This package changed after you opened it. Refresh the list and review the latest version before saving.'),{code:'PACKAGE_VERSION_STALE'});
+      const persisted=await tx.select().from(packagePrices).where(and(eq(packagePrices.packageId,packageId),eq(packagePrices.versionId,latest.id)));
+      const message=changedPackageStart(persisted,schedules,locked.status,marketToday(storeMarket));
+      if(message)throw Object.assign(new Error(message),{code:'PACKAGE_START_LOCKED'});
+    }
     if(verifyCaptureRequest){
       const [prior]=await tx.select().from(packages).where(eq(packages.id,packageId)).limit(1);
       if(prior){

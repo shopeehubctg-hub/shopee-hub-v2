@@ -186,7 +186,7 @@ test('new package saves selected Normal months and Campaign events as separate p
   for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,navigator:dom.window.navigator,HTMLElement:dom.window.HTMLElement,Event:dom.window.Event,MouseEvent:dom.window.MouseEvent})) Object.defineProperty(globalThis,key,{configurable:true,writable:true,value});
   globalThis.IS_REACT_ACT_ENVIRONMENT=true;
   let saved;
-  globalThis.fetch=async (_url,options={})=>options.method==='POST'?(saved=JSON.parse(options.body),{ok:true,json:async()=>({packageId:'new-1',version:1,status:'active'})}):{ok:true,json:async()=>({source:'database',packages:[]})};
+  globalThis.fetch=async (_url,options={})=>options.method==='POST'?(saved=JSON.parse(options.body),{ok:true,json:async()=>({packageId:'new-1',version:1,status:'active'})}):{ok:true,json:async()=>({source:'database',packages:[],products:[]})};
   const {createRoot}=await import('react-dom/client');
   const root=createRoot(dom.window.document.getElementById('root'));
   const setValue=async(input,value)=>{
@@ -200,7 +200,7 @@ test('new package saves selected Normal months and Campaign events as separate p
   const click=async node=>{assert.ok(node,'expected button or checkbox');await act(async()=>node.dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true})));};
   try{
     await act(async()=>root.render(React.createElement(PackageControl,{storeId:'store-1',storeName:'Test Store'})));
-    await click([...dom.window.document.querySelectorAll('button')].find(node=>node.textContent==='+ New Package'));
+    await click([...dom.window.document.querySelectorAll('button')].find(node=>node.textContent==='Create Single Package'));
     await setValue(dom.window.document.querySelector('input[placeholder="Customer-Facing Package Name"]'),'Multi-month test');
     await setValue(dom.window.document.querySelector('.listing-skus input'),'MULTI-MONTH-SKU');
     const prices=[...dom.window.document.querySelectorAll('.market-price-grid input')];
@@ -212,8 +212,10 @@ test('new package saves selected Normal months and Campaign events as separate p
     await click(cards[0].querySelectorAll('input[type="checkbox"]')[1]);
     await click(cards[0].querySelectorAll('input[type="checkbox"]')[2]);
     await click(cards[1].querySelectorAll('input[type="checkbox"]')[0]);
-    await setValue(dom.window.document.querySelector('.component-row input[placeholder="OXM Inventory SKU"]'),'ITEM-1');
-    await setValue(dom.window.document.querySelector('.component-row input[placeholder="Item Name"]'),'Item');
+    await act(async()=>dom.window.document.querySelector('[aria-label="Search Product / Inventory SKU 1"]').focus());
+    await click(dom.window.document.querySelector('.inventory-add-product'));
+    await setValue(dom.window.document.querySelector('[aria-label="New Inventory SKU 1"]'),'ITEM-1');
+    await setValue(dom.window.document.querySelector('[aria-label="Product Name 1"]'),'Item');
     await click([...dom.window.document.querySelectorAll('.form-actions button')].find(node=>node.textContent==='Save Draft'));
     assert.ok(saved,'package should submit');
     assert.deepEqual(saved.priceSchedules.filter(line=>line.priceType==='non_campaign').map(line=>line.effectiveFrom),['2026-10-01','2026-11-01','2026-12-01']);

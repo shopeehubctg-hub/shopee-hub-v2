@@ -135,3 +135,34 @@ test('Concurrent Production publish never claims synced while the first real She
  try{const r=await second;assert.equal(r.status,503);const data=await r.json();assert.equal(data.ok,false);assert.equal(data.savedAsDraft,true);assert.equal(data.sheetSyncStatus,'pending');}finally{release();}
  assert.equal((await first).status,201);assert.equal(s.packages.length,1);assert.equal(s.inventory.length,1);assert.equal(s.deliveries.length,1);assert.equal(s.versions[0].sheetSyncStatus,'synced');assert.equal((await POST(request(body))).status,200);
 });
+
+test('published Start Date guard is atomic, allows End Date edits, future/draft changes, and rejects stale edits after End',async()=>{
+ const RealDate=globalThis.Date;
+ globalThis.Date=class extends RealDate{constructor(...args){super(...(args.length?args:['2026-11-02T04:00:00Z']));}static now(){return new RealDate('2026-11-02T04:00:00Z').getTime();}};
+ try{
+  let s=fixture('MY');const body={...payload(['MY','SG','TH','PH']),mode:'publish'};
+  assert.equal((await POST(request(body))).status,201);
+  const id=s.packages[0].id,before=structuredClone([s.versions,s.prices,s.audit,s.inventory]);
+  let response=await POST(request({...body,packageId:id,expectedVersion:1,priceSchedules:body.priceSchedules.map(p=>({...p,effectiveFrom:'2026-11-01'}))}));
+  assert.equal(response.status,409,await response.clone().text());assert.equal((await response.json()).code,'PACKAGE_START_LOCKED');
+  assert.deepEqual([s.versions,s.prices,s.audit,s.inventory],before);
+  response=await POST(request({...body,packageId:id,expectedVersion:1,priceSchedules:body.priceSchedules.map(p=>({...p,effectiveTo:'2026-12-31'}))}));
+  assert.equal(response.status,201,await response.clone().text());assert.equal(s.versions.length,2);assert.equal(s.prices[0].effectiveTo,'2030-12-31');
+  response=await POST(request({...body,packageId:id,expectedVersion:1}));assert.equal(response.status,409);
+  assert.equal((await patch({action:'end',packageId:id,expectedVersion:2})).status,200);
+  assert.equal((await POST(request({...body,packageId:id,expectedVersion:2}))).status,409);assert.equal(s.versions.length,3);
+  // Recheck latest inside the transaction, even when the client omitted expectedVersion.
+  const transaction=s.db.transaction;s.db.transaction=async fn=>{s.versions.push({...s.versions.at(-1),id:'concurrent-version',version:4});return transaction(fn);};
+  response=await POST(request({...body,packageId:id}));assert.equal(response.status,409);assert.equal((await response.json()).code,'PACKAGE_VERSION_STALE');assert.equal(s.versions.length,4);
+  for(const mode of ['draft','publish']){
+   s=fixture('MY');const future={...payload(['MY']),mode,priceSchedules:payload(['MY']).priceSchedules.map(p=>({...p,effectiveFrom:'2026-12-01'}))};
+   assert.equal((await POST(request(future))).status,201);
+   response=await POST(request({...future,packageId:s.packages[0].id,expectedVersion:1,priceSchedules:future.priceSchedules.map(p=>({...p,effectiveFrom:'2026-12-02'}))}));assert.equal(response.status,201,await response.clone().text());
+  }
+ }finally{globalThis.Date=RealDate;}
+});
+
+test('Start Date boundary uses the owning TH/PH store, not the first MY price card',async()=>{
+ const RealDate=globalThis.Date;globalThis.Date=class extends RealDate{constructor(...args){super(...(args.length?args:['2026-11-01T16:30:00Z']));}static now(){return new RealDate('2026-11-01T16:30:00Z').getTime();}};
+ try{for(const market of ['TH','PH']){const s=fixture(market);const body={...payload(['MY','SG']),mode:'publish',priceSchedules:payload(['MY','SG']).priceSchedules.map(p=>({...p,effectiveFrom:'2026-11-02'}))};assert.equal((await POST(request(body))).status,201);const response=await POST(request({...body,packageId:s.packages[0].id,expectedVersion:1,priceSchedules:body.priceSchedules.map(p=>({...p,effectiveFrom:'2026-11-03'}))}));assert.equal(response.status,market==='TH'?201:409,await response.clone().text());}}finally{globalThis.Date=RealDate;}
+});

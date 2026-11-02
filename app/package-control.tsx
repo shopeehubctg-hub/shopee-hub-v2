@@ -1,4 +1,5 @@
 "use client";
+import {changedPackageStart,startedPackageDates} from "./package-start-date-policy";
 import {duplicateInventory,MAX_INVENTORY_ITEMS,inventoryLinesUnchanged} from "./inventory-items";
 import {PricingEvidencePanel} from "./pricing-evidence-panel";
 import type {PricingEvidence} from "./pricing-evidence";
@@ -43,7 +44,7 @@ type HistoryLine = PackageHistorySnapshot & {
   calculatorSettings?:CalculatorHistorySettings|null;
 };
 export type PackageItem = {
-  id:string; storeId:string; storeName?:string; packageSku:string; name:string; market:string; status:string; version:number;
+  id:string; storeId:string; storeName?:string; storePlatform?:string; packageSku:string; name:string; market:string; status:string; version:number;
   pendingVersion?:number|null; durationType?:"long_term"|"monthly";
   promotionType:"monthly"|"custom"; originalPrice:number; sellingPrice:number; effectiveFrom:string; effectiveTo?:string|null;
   components:ComponentLine[]; savedComponents?:ComponentLine[]; platforms:PlatformLine[]; sheetSyncStatus?:"not_sent"|"pending"|"synced"|"failed"; history?:HistoryLine[]; historyLoaded?:boolean; samePricing?:boolean;
@@ -221,7 +222,11 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
   const [editingPackageId,setEditingPackageId] = useState<string|null>(null);
   const [editingDraft,setEditingDraft] = useState(false);
   const [editingVersion,setEditingVersion] = useState<number|null>(null);
-  const [editingStore,setEditingStore] = useState<{id:string;name:string}|null>(null);
+  const [editingStore,setEditingStore] = useState<{id:string;name:string;platform?:string}|null>(null);
+  const [savedDateOrigin,setSavedDateOrigin]=useState<{prices:PriceSchedule[];status:string}|null>(null);
+  const startedDates=startedPackageDates(savedDateOrigin?.prices??[],savedDateOrigin?.status??"draft",marketDate(marketFromPlatform(editingStore?.platform??storePlatform)));
+  const lockedStart=(type:PriceType)=>[...startedDates].filter(([key])=>key.endsWith(":"+type)).map(([,start])=>start).sort()[0];
+  const normalStart=lockedStart("non_campaign"),campaignStart=lockedStart("campaign");
   const [openHistory,setOpenHistory] = useState<string|null>(null);
   const historyOpenId=useRef<string|null>(null);
   const [packageEnvironment,setPackageEnvironment]=useState(staging?"staging":"production");
@@ -487,6 +492,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
     setEditingDraft(false);
     setEditingVersion(null);
     setEditingStore(null);
+    setSavedDateOrigin(null);
     setForm(blankForm(marketFromPlatform(storePlatform)));
     setComponents([blankLine()]);
     setPriceAdjustmentReason("");
@@ -572,12 +578,12 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
   }
 
   function activateRecurringCampaign() {
-    setForm(current=>({...current,campaignLongTerm:true,campaign:{...current.campaign,promotionType:"custom",campaignEvents:current.campaign.campaignEvents.length?current.campaign.campaignEvents:["dday","mid_month","payday"],effectiveFrom:campaignPeriods[0]?.effectiveFrom||current.campaign.effectiveFrom||monthDates(current.campaign.promotionMonth).from,effectiveTo:""}}));
+    setForm(current=>({...current,campaignLongTerm:true,campaign:{...current.campaign,promotionType:"custom",campaignEvents:current.campaign.campaignEvents.length?current.campaign.campaignEvents:["dday","mid_month","payday"],effectiveFrom:campaignStart||campaignPeriods.map(period=>period.effectiveFrom).sort()[0]||current.campaign.effectiveFrom||monthDates(current.campaign.promotionMonth).from,effectiveTo:""}}));
   }
 
   function recurringCampaignEditor() {
     return <div className="recurring-campaign-editor">
-      <div className="date-fields"><label>Start Date<input type="date" value={form.campaign.effectiveFrom} onChange={event=>setForm(current=>({...current,campaign:{...current.campaign,effectiveFrom:event.target.value}}))}/></label><span>Ongoing every month</span></div>
+      <div className="date-fields"><label>Start Date<input type="date" disabled={Boolean(campaignStart)} value={form.campaign.effectiveFrom} onChange={event=>setForm(current=>({...current,campaign:{...current.campaign,effectiveFrom:event.target.value}}))}/></label><span>Ongoing every month</span></div>
       <fieldset className="recurring-event-options"><legend>Campaign Events · Multi-Select</legend>{recurringEvents.map(event=>{
         const selected=form.campaign.campaignEvents.includes(event.id);
         return <label className={`recurring-event${selected?" selected":""}`} key={event.id}><input type="checkbox" checked={selected} onChange={()=>setForm(current=>({...current,campaign:{...current.campaign,campaignEvents:selected?current.campaign.campaignEvents.filter(id=>id!==event.id):[...current.campaign.campaignEvents,event.id]}}))}/><b>{recurringEventLabels[event.id]}</b></label>;
@@ -590,7 +596,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
     const events:CampaignEvent[]=["dday","mid_month","payday"];
     const labels:Record<CampaignEvent,string>={dday:"Double Day",mid_month:"Mid Month Madness",payday:"Payday"};
     const addSelectedMonth=(month:string)=>{
-      if(!month||campaignMonths.includes(month))return;
+      if(!month||campaignMonths.includes(month)||campaignStart&&month<campaignStart.slice(0,7))return;
       setCampaignMonths(current=>[...current,month].sort());
       if(form.nonCampaign.promotionType==="monthly"&&!form.longTerm)setNonCampaignMonths(current=>current.includes(month)?current:[...current,month].sort());
       else if(!form.longTerm){
@@ -607,16 +613,17 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
       addSelectedMonth(next);
     };
     return <div className="campaign-date-controls campaign-month-editor">
-      <label>Add a Campaign month<input type="month" value="" onChange={event=>addSelectedMonth(event.target.value)}/></label>
+      <label>Add a Campaign month<input type="month" min={campaignStart?.slice(0,7)} value="" onChange={event=>addSelectedMonth(event.target.value)}/></label>
+      {campaignPeriods.length===1&&!campaignEventForDates(campaignPeriods[0].effectiveFrom,campaignPeriods[0].effectiveTo)&&<div className="date-fields"><label>Start Date<input type="date" disabled={Boolean(campaignStart)} value={campaignPeriods[0].effectiveFrom} onChange={event=>setCampaignPeriods(current=>current.map(line=>({...line,effectiveFrom:event.target.value})))}/></label><label>End Date<input type="date" min={campaignPeriods[0].effectiveFrom} value={campaignPeriods[0].effectiveTo} onChange={event=>setCampaignPeriods(current=>current.map(line=>({...line,effectiveTo:event.target.value})))}/></label></div>}
       {campaignMonths.map(month=>{
         const monthPeriods=campaignPeriods.filter(period=>period.effectiveFrom.slice(0,7)===month);
         const monthName=new Date(month+"-01T00:00:00Z").toLocaleString("en-US",{month:"long",year:"numeric",timeZone:"UTC"});
         return <div className="campaign-month-card" key={month}>
-          <div className="campaign-month-head"><strong>{monthName}</strong><button type="button" onClick={()=>{setCampaignMonths(current=>current.filter(value=>value!==month));setCampaignPeriods(current=>current.filter(period=>period.effectiveFrom.slice(0,7)!==month));}} aria-label={"Remove "+month+" Campaign month"}>Remove month</button></div>
+          <div className="campaign-month-head"><strong>{monthName}</strong><button type="button" onClick={()=>{setCampaignMonths(current=>current.filter(value=>value!==month));setCampaignPeriods(current=>current.filter(period=>period.effectiveFrom.slice(0,7)!==month));}} disabled={Boolean(campaignStart&&month===campaignStart.slice(0,7))} aria-label={"Remove "+month+" Campaign month"}>Remove month</button></div>
           <fieldset><legend>Campaign Events · Multi-Select</legend>{events.map(event=>{
             const dates=campaignDates(month,event);
             const selected=monthPeriods.some(period=>period.effectiveFrom===dates.from&&period.effectiveTo===dates.to);
-            return <label key={event} className={selected?"selected":""}><input type="checkbox" checked={selected} onChange={()=>setCampaignPeriods(current=>selected?current.filter(period=>!(period.effectiveFrom===dates.from&&period.effectiveTo===dates.to)):[...current.filter(period=>campaignEventForDates(period.effectiveFrom,period.effectiveTo)||!(period.effectiveFrom.slice(0,7)===month||period.effectiveFrom<=dates.to&&dates.from<=period.effectiveTo)),{effectiveFrom:dates.from,effectiveTo:dates.to}])}/><span><b>{labels[event]}</b></span></label>;
+            return <label key={event} className={selected?"selected":""}><input type="checkbox" checked={selected} disabled={Boolean(campaignStart&&dates.from<=campaignStart)} onChange={()=>setCampaignPeriods(current=>selected?current.filter(period=>!(period.effectiveFrom===dates.from&&period.effectiveTo===dates.to)):[...current.filter(period=>campaignEventForDates(period.effectiveFrom,period.effectiveTo)||!(period.effectiveFrom.slice(0,7)===month||period.effectiveFrom<=dates.to&&dates.from<=period.effectiveTo)),{effectiveFrom:dates.from,effectiveTo:dates.to}])}/><span><b>{labels[event]}</b></span></label>;
           })}</fieldset>
         </div>;
       })}
@@ -640,8 +647,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
       if (editingPackageId) {
         const retained=originalCampaignSchedules.current.filter(line=>line.market===market);
         if (form.samePricing) {
-          if (originalRecurringCampaign.current) schedules.push({...nonCampaign,priceType:"campaign"});
-          else if (retained.length) retained.forEach(line=>schedules.push({...line,originalPrice:campaignOriginal,sellingPrice:campaignSelling}));
+          if (retained.length) retained.forEach(line=>schedules.push({...line,originalPrice:campaignOriginal,sellingPrice:campaignSelling}));
           else normalLines.forEach(line=>schedules.push({...line,priceType:"campaign"}));
           return;
         }
@@ -674,6 +680,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
   function validateForm() {
     const errors:FormError[]=[];
     const addError=(section:FormSection,message:string)=>errors.push({section,message});
+    if(savedDateOrigin){const changed=changedPackageStart(savedDateOrigin.prices,priceSchedules(),savedDateOrigin.status,marketDate(marketFromPlatform(editingStore?.platform??storePlatform)));if(changed)addError("Pricing & Promotion",changed);}
     if (!form.name.trim()) addError("Package Details","Enter a package name.");
     if (!form.markets.length) addError("Package Details","Select at least one selling market.");
     if (!platforms.length) addError("Package Details","Select at least one sales platform.");
@@ -890,6 +897,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
     const legacyMarket=isMarket(item.market)?item.market:"MY";
     const fallbackSchedule=(priceType:PriceType):PriceSchedule=>({market:legacyMarket,priceType,originalPrice:stored?item.originalPrice/100:item.originalPrice,sellingPrice:stored?item.sellingPrice/100:item.sellingPrice,promotionType:item.promotionType,effectiveFrom:item.effectiveFrom,effectiveTo:item.effectiveTo??null});
     const sourceSchedules=storedSchedules.length?storedSchedules:[fallbackSchedule("non_campaign"),fallbackSchedule("campaign")];
+    setSavedDateOrigin(stored?{prices:sourceSchedules,status:item.status}:null);
     const sourceMarkets=MARKET_CODES.filter(market=>sourceSchedules.some(line=>line.market===market)||item.recurringCampaign?.events.some(event=>event.prices[market]));
     const schedules=sourceMarkets.flatMap(market=>{
       const available=sourceSchedules.filter(line=>line.market===market);
@@ -922,11 +930,11 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
     setCampaignMonths([...new Set(finiteCampaignPeriods.map(period=>period.effectiveFrom.slice(0,7)).filter(Boolean))].sort());
     setEditingPackageId(stored ? item.id : null);
     setEditingVersion(stored ? item.version : null);
-    setEditingStore({id:item.storeId,name:item.storeName??storeName});
+    setEditingStore({id:item.storeId,name:item.storeName??storeName,platform:item.storePlatform??storePlatform});
     setForm({
       name:item.name,markets,samePricing,longTerm:sourceSchedules.some(line=>line.priceType==="non_campaign"&&line.effectiveTo==null),campaignLongTerm:Boolean(item.recurringCampaign)||sourceSchedules.some(line=>line.priceType==="campaign"&&line.effectiveTo==null),
-      nonCampaign:{promotionType:nc.promotionType,promotionMonth:nc.promotionType==="monthly"?nc.effectiveFrom.slice(0,7):"",effectiveFrom:nc.effectiveFrom,effectiveTo:nc.effectiveTo??""},
-      campaign:{promotionType:"custom",promotionMonth:campaign.effectiveFrom.slice(0,7),campaignEvents:item.recurringCampaign?.events.map(event=>event.id)??[...new Set(sourceSchedules.filter(line=>line.priceType==="campaign").map(line=>campaignEventForDates(line.effectiveFrom,line.effectiveTo??"")).filter((event):event is CampaignEvent=>event!==null))],effectiveFrom:item.recurringCampaign?.startDate??campaign.effectiveFrom,effectiveTo:item.recurringCampaign?.endDate??campaign.effectiveTo??""},
+      nonCampaign:{promotionType:nc.promotionType,promotionMonth:nc.promotionType==="monthly"?sourceSchedules.filter(line=>line.priceType==="non_campaign").map(line=>line.effectiveFrom).sort()[0]?.slice(0,7)??"":"",effectiveFrom:sourceSchedules.filter(line=>line.priceType==="non_campaign").map(line=>line.effectiveFrom).sort()[0]??nc.effectiveFrom,effectiveTo:sourceSchedules.filter(line=>line.priceType==="non_campaign").map(line=>line.effectiveTo??"").sort().at(-1)??""},
+      campaign:{promotionType:"custom",promotionMonth:campaign.effectiveFrom.slice(0,7),campaignEvents:item.recurringCampaign?.events.map(event=>event.id)??[...new Set(sourceSchedules.filter(line=>line.priceType==="campaign").map(line=>campaignEventForDates(line.effectiveFrom,line.effectiveTo??"")).filter((event):event is CampaignEvent=>event!==null))],effectiveFrom:item.recurringCampaign?.startDate??sourceSchedules.filter(line=>line.priceType==="campaign").map(line=>line.effectiveFrom).sort()[0]??campaign.effectiveFrom,effectiveTo:item.recurringCampaign?.endDate??campaign.effectiveTo??""},
       prices:Object.fromEntries(MARKET_CODES.map(market=>{const normal=priceFor(market,"non_campaign");const campaign=item.recurringCampaign?.events.find(event=>event.prices[market])?.prices[market]??priceFor(market,"campaign");return [market,{nonCampaignOriginal:String(normal?.originalPrice??""),nonCampaignSelling:String(normal?.sellingPrice??""),campaignOriginal:String(campaign?.originalPrice??""),campaignSelling:String(campaign?.sellingPrice??"")}];})) as Record<MarketName,MarketPrices>,
       changeNote:stored ? `Changes from Version ${item.version}` : "Migrated from Fulfillment Sheet",
     });
@@ -1064,10 +1072,12 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
         {([['nonCampaign','Non-Campaign'],['campaign','Campaign']] as const).map(([periodKey,title])=>{
           if (periodKey==="campaign"&&form.samePricing) return null;
           const period=form[periodKey];
+          const startLocked=periodKey==="nonCampaign"?normalStart:campaignStart;
           return <div className={`scenario-editor ${periodKey}`} key={periodKey}>
-            <div className="scenario-editor-head"><div><b>{title}</b><span>{title==="Campaign"?"Campaign Day Price & Dates":"Always-On Price & Dates"}</span></div>{periodKey==="nonCampaign"&&<div className="promotion-toggle" role="group" aria-label="Non-Campaign duration"><button type="button" className={!form.longTerm&&period.promotionType==="monthly"?"active":""} aria-pressed={!form.longTerm&&period.promotionType==="monthly"} onClick={()=>{const month=form.nonCampaign.promotionMonth||form.nonCampaign.effectiveFrom.slice(0,7);if(month)setNonCampaignMonths(current=>current.length?current:[month]);setForm(current=>{const dates=monthDates(month);return {...current,longTerm:false,nonCampaign:{...current.nonCampaign,promotionType:"monthly",promotionMonth:month,effectiveFrom:dates.from,effectiveTo:dates.to}}});}}>Full Month</button><button type="button" className={!form.longTerm&&period.promotionType==="custom"?"active":""} aria-pressed={!form.longTerm&&period.promotionType==="custom"} onClick={()=>setForm(current=>({...current,longTerm:false,nonCampaign:{...current.nonCampaign,promotionType:"custom"}}))}>Custom Dates</button><button type="button" className={form.longTerm?"active":""} aria-pressed={form.longTerm} onClick={()=>setForm(current=>({...current,longTerm:true,nonCampaign:{...current.nonCampaign,promotionType:"custom",effectiveFrom:current.nonCampaign.effectiveFrom||monthDates(current.nonCampaign.promotionMonth).from,effectiveTo:""}}))}>Long-term Package</button></div>}</div>
-            {periodKey==="campaign"&&<div className="promotion-toggle campaign-duration" role="group" aria-label="Campaign duration"><button type="button" className={!form.campaignLongTerm?"active":""} aria-pressed={!form.campaignLongTerm} onClick={()=>{setForm(current=>({...current,campaignLongTerm:false}));if(editingPackageId){const month=form.campaign.effectiveFrom.slice(0,7);setCampaignMonths(current=>current.length?current:month?[month]:[]);setCampaignPeriods(current=>current.length&&current[0].effectiveTo?current:[]);}}}>Campaign Dates</button><button type="button" className={form.campaignLongTerm?"active":""} aria-pressed={form.campaignLongTerm} onClick={activateRecurringCampaign}>Long-term Package</button></div>}
+            <div className="scenario-editor-head"><div><b>{title}</b><span>{title==="Campaign"?"Campaign Day Price & Dates":"Always-On Price & Dates"}</span></div>{periodKey==="nonCampaign"&&<div className="promotion-toggle" role="group" aria-label="Non-Campaign duration"><button type="button" disabled={Boolean(normalStart&&(form.nonCampaign.promotionType!=="monthly"||form.longTerm))} className={!form.longTerm&&period.promotionType==="monthly"?"active":""} aria-pressed={!form.longTerm&&period.promotionType==="monthly"} onClick={()=>{const month=form.nonCampaign.promotionMonth||form.nonCampaign.effectiveFrom.slice(0,7);if(month)setNonCampaignMonths(current=>current.length?current:[month]);setForm(current=>{const dates=monthDates(month);return {...current,longTerm:false,nonCampaign:{...current.nonCampaign,promotionType:"monthly",promotionMonth:month,effectiveFrom:dates.from,effectiveTo:dates.to}}});}}>Full Month</button><button type="button" className={!form.longTerm&&period.promotionType==="custom"?"active":""} aria-pressed={!form.longTerm&&period.promotionType==="custom"} onClick={()=>setForm(current=>({...current,longTerm:false,nonCampaign:{...current.nonCampaign,promotionType:"custom"}}))}>Custom Dates</button><button type="button" className={form.longTerm?"active":""} aria-pressed={form.longTerm} onClick={()=>setForm(current=>({...current,longTerm:true,nonCampaign:{...current.nonCampaign,promotionType:"custom",effectiveFrom:current.nonCampaign.effectiveFrom||monthDates(current.nonCampaign.promotionMonth).from,effectiveTo:""}}))}>Long-term Package</button></div>}</div>
+            {periodKey==="campaign"&&<div className="promotion-toggle campaign-duration" role="group" aria-label="Campaign duration"><button type="button" className={!form.campaignLongTerm?"active":""} aria-pressed={!form.campaignLongTerm} disabled={Boolean(campaignStart&&form.campaignLongTerm)} onClick={()=>{setForm(current=>({...current,campaignLongTerm:false}));if(editingPackageId){const month=form.campaign.effectiveFrom.slice(0,7);setCampaignMonths(current=>current.length?current:month?[month]:[]);setCampaignPeriods(current=>current.length&&current[0].effectiveTo?current:[]);}}}>Campaign Dates</button><button type="button" className={form.campaignLongTerm?"active":""} aria-pressed={form.campaignLongTerm} onClick={activateRecurringCampaign}>Long-term Package</button></div>}
             {periodKey==="campaign"&&editingPackageId&&!form.campaignLongTerm&&<div className="same-pricing-note">Choose Campaign events for each month, or add a month to extend this package. Existing Campaign dates stay unchanged until you select an event; selecting one replaces the saved custom date range. New events use the Campaign price shown for each market{form.samePricing?" (matching the Non-Campaign price)":""}.</div>}
+            {startLocked&&<p className="package-edit-note">This {title} period has started. The Start Date is locked; you can change the End Date.</p>}
             <div className="scenario-body"><div className="market-price-grid">{form.markets.map(market=>{
               const prefix=periodKey==="campaign"?"campaign":"nonCampaign";
               const originalKey=`${prefix}Original` as keyof typeof form.prices.MY;
@@ -1075,7 +1085,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
               const same=Boolean(form.prices[market][originalKey])&&Number(form.prices[market][originalKey])===Number(form.prices[market][sellingKey]);
               return <div className={`market-price-card ${same?"same-price-warning":""}`} key={market}><strong>{market} <small>{MARKET_CONFIG[market].symbol}</small></strong><label>Original Price <em>*</em><input required type="number" min="0.01" step="0.01" value={form.prices[market][originalKey]} onChange={event=>updatePrice(market,originalKey,event.target.value)}/></label><label>Selling Price<input required type="number" min="0.01" step="0.01" value={form.prices[market][sellingKey]} onChange={event=>updatePrice(market,sellingKey,event.target.value)}/></label>{same&&<div className="same-price-alert">⚠️ Original Price equals Selling Price — please double-check.</div>}</div>;
             })}</div>
-            {periodKey==="campaign"?(form.campaignLongTerm?recurringCampaignEditor():finiteCampaignEditor()):form.longTerm?<div className="date-fields"><label>Start Date<input type="date" value={period.effectiveFrom} onChange={event=>setForm({...form,nonCampaign:{...form.nonCampaign,effectiveFrom:event.target.value}})}/></label><span>End Date: Ongoing</span></div>:period.promotionType==="monthly"?<div className="normal-month-editor"><label>Add a Normal Day month<input type="month" value="" onChange={event=>{const month=event.target.value;if(!month||nonCampaignMonths.includes(month))return;setNonCampaignMonths(current=>[...current,month].sort());const dates=monthDates(month);setForm(current=>({...current,nonCampaign:{...current.nonCampaign,promotionMonth:month,effectiveFrom:dates.from,effectiveTo:dates.to}}));}}/></label><div className="selected-months">{nonCampaignMonths.map(month=><span key={month}>{shortMonthLabel(month)} <button type="button" onClick={()=>setNonCampaignMonths(current=>current.filter(value=>value!==month))} aria-label={`Remove ${shortMonthLabel(month)} Normal Day month`}>×</button></span>)}</div></div>:<div className="date-fields"><label>Start Date<input type="date" value={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveFrom:event.target.value}})}/></label><label>End Date<input type="date" value={period.effectiveTo} min={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveTo:event.target.value}})}/></label></div>}
+            {periodKey==="campaign"?(form.campaignLongTerm?recurringCampaignEditor():finiteCampaignEditor()):form.longTerm?<div className="date-fields"><label>Start Date<input type="date" disabled={Boolean(normalStart)} value={period.effectiveFrom} onChange={event=>setForm({...form,nonCampaign:{...form.nonCampaign,effectiveFrom:event.target.value}})}/></label><span>End Date: Ongoing</span>{editingPackageId&&<button type="button" onClick={()=>setForm(current=>({...current,longTerm:false,nonCampaign:{...current.nonCampaign,promotionType:"custom",effectiveTo:marketDate(marketFromPlatform(editingStore?.platform??storePlatform))<current.nonCampaign.effectiveFrom?current.nonCampaign.effectiveFrom:marketDate(marketFromPlatform(editingStore?.platform??storePlatform))}}))}>Set End Date</button>}</div>:period.promotionType==="monthly"?<div className="normal-month-editor"><label>Add a Normal Day month<input type="month" min={normalStart?.slice(0,7)} value="" onChange={event=>{const month=event.target.value;if(!month||nonCampaignMonths.includes(month)||normalStart&&month<normalStart.slice(0,7))return;setNonCampaignMonths(current=>[...current,month].sort());const dates=monthDates(month);setForm(current=>({...current,nonCampaign:{...current.nonCampaign,promotionMonth:month,effectiveFrom:normalStart||dates.from,effectiveTo:dates.to}}));}}/></label><div className="selected-months">{nonCampaignMonths.map(month=><span key={month}>{shortMonthLabel(month)} <button type="button" onClick={()=>setNonCampaignMonths(current=>current.filter(value=>value!==month))} disabled={Boolean(normalStart&&month===normalStart.slice(0,7))} aria-label={`Remove ${shortMonthLabel(month)} Normal Day month`}>×</button></span>)}</div></div>:<div className="date-fields"><label>Start Date<input type="date" disabled={Boolean(normalStart)} value={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveFrom:event.target.value}})}/></label><label>End Date<input type="date" value={period.effectiveTo} min={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveTo:event.target.value}})}/></label></div>}
             </div>
           </div>;
         })}
