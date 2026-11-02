@@ -16,6 +16,7 @@ test('Edit keeps started origins read-only, offers End Date, and leaves future/d
  const line=(type,start,end=null)=>({market:'MY',priceType:type,originalPrice:120,sellingPrice:90,promotionType:'custom',effectiveFrom:start,effectiveTo:end});
  const base=(id,start,status='active',platform='Shopee MY')=>({id,name:id,storeId:'store',storeName:'Test Store',storePlatform:platform,packageSku:id,market:'MY',status,version:1,promotionType:'custom',originalPrice:12000,sellingPrice:9000,effectiveFrom:start,effectiveTo:null,components:[{inventorySku:'ITEM',name:'Item',quantity:1,kind:'product'}],platforms:[{platform:'Shopee',packageSku:id}],sheetSyncStatus:'synced',samePricing:false,priceSchedules:[line('non_campaign',start),line('campaign',start)]});
  const packages=[base('Started','2026-10-01'),base('Future','2026-12-01','scheduled'),base('Draft','2026-10-01','draft'),base('TH boundary','2026-11-02','scheduled','Shopee TH'),base('MY boundary','2026-11-02','active')];
+ packages.find(p=>p.id==='Future').priceSchedules.forEach(p=>p.effectiveTo='2026-12-31');
  globalThis.fetch=async()=>({ok:true,json:async()=>({source:'database',canCreate:true,canDelete:false,canExportKits:false,packages})});
  const {createRoot}=await import('react-dom/client'),root=createRoot(document.getElementById('root')),doc=document;
  const click=async(text,scope=doc)=>{const b=[...scope.querySelectorAll('button')].find(b=>b.textContent===text);assert.ok(b,text);await act(async()=>b.click());};
@@ -26,7 +27,7 @@ test('Edit keeps started origins read-only, offers End Date, and leaves future/d
   await open('Started');assert.equal(starts().length,2);assert.ok(starts().every(x=>x.disabled));
   const normal=doc.querySelector('.scenario-editor.nonCampaign');await click('Set End Date',normal);
   assert.equal(normal.querySelector('input[type="date"]').disabled,true);assert.equal([...normal.querySelectorAll('input[type="date"]')][1].disabled,false);assert.equal([...normal.querySelectorAll('input[type="date"]')][0].value,'2026-10-01');
-  await click('Cancel');await open('Future');assert.ok(starts().every(x=>!x.disabled));await click('Cancel');
+  await click('Cancel');await open('Future');assert.equal(starts().length,2);assert.ok(starts().every(x=>!x.disabled));await click('Cancel');
   await open('Draft');assert.ok(starts().every(x=>!x.disabled));await click('Cancel');
   // All Stores uses each row's owning store, even though all price cards are MY.
   await act(async()=>root.render(React.createElement(PackageControl,{storeId:'all',storeName:'All Stores'})));

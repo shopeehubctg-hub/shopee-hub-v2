@@ -614,7 +614,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
     };
     return <div className="campaign-date-controls campaign-month-editor">
       <label>Add a Campaign month<input type="month" min={campaignStart?.slice(0,7)} value="" onChange={event=>addSelectedMonth(event.target.value)}/></label>
-      {campaignStart&&campaignPeriods.length===1&&!campaignEventForDates(campaignPeriods[0].effectiveFrom,campaignPeriods[0].effectiveTo)&&<div className="date-fields"><label>Start Date<input type="date" disabled value={campaignStart}/></label><label>End Date<input type="date" min={campaignStart} value={campaignPeriods[0].effectiveTo} onChange={event=>setCampaignPeriods(current=>current.map(line=>({...line,effectiveTo:event.target.value})))}/></label></div>}
+      {campaignPeriods.length===1&&!campaignEventForDates(campaignPeriods[0].effectiveFrom,campaignPeriods[0].effectiveTo)&&<div className="date-fields"><label>Start Date<input type="date" disabled={Boolean(campaignStart)} value={campaignPeriods[0].effectiveFrom} onChange={event=>setCampaignPeriods(current=>current.map(line=>({...line,effectiveFrom:event.target.value})))}/></label><label>End Date<input type="date" min={campaignPeriods[0].effectiveFrom} value={campaignPeriods[0].effectiveTo} onChange={event=>setCampaignPeriods(current=>current.map(line=>({...line,effectiveTo:event.target.value})))}/></label></div>}
       {campaignMonths.map(month=>{
         const monthPeriods=campaignPeriods.filter(period=>period.effectiveFrom.slice(0,7)===month);
         const monthName=new Date(month+"-01T00:00:00Z").toLocaleString("en-US",{month:"long",year:"numeric",timeZone:"UTC"});
