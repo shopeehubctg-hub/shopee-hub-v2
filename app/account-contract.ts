@@ -13,7 +13,7 @@ export type AccountStoreRow = {
   previewMarketFxEligible?: boolean;
   previewRateDefaultsEligible?: boolean;
   previewServiceFxRate?: {serviceMonth:string;rate:string;policy:'bnm-service-average';verified:true;reference:string;currency?:AccountCurrency;quotationUnit?:1};
-  entity?: string; market?: MarketCode; termsVersion?: "NEW" | "OLD";
+  entity?: string; billingEntity?:string|null; market?: MarketCode; termsVersion?: "NEW" | "OLD";
   mappingStatus?: "resolved" | "candidate" | "ambiguous" | "missing"; mappingReason?: string;
   candidates?: AccountMappingCandidate[];
   latestSettingsVersion?: string; appliedSettingsVersion?: string | null; settingsEffectiveMonth?: string | null;
@@ -39,7 +39,7 @@ export type AccountResponse = {
   invoiceMonth: string; statementMonth: string; today: string; timezone: "Asia/Kuala_Lumpur";
   status: "ready" | "not_configured"; updatedAt: string | null;
   rosterUpdatedAt?: string;
-  settingsAvailable?: boolean; storeOptions?: Array<{id:string;name:string;platform:string}>;
+  settingsAvailable?: boolean; registeredNamesAvailable?:boolean; storeOptions?: Array<{id:string;name:string;platform:string}>;
   xero?:AccountXeroStatus;
   summaries: AccountCurrencySummary[]; stores: AccountStoreRow[];
 };

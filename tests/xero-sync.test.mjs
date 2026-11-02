@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import ts from 'typescript';
 function module(path,imports){const source=ts.transpileModule(readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;const exports={};new Function('require','exports',source)(name=>{if(name==='server-only')return {};for(const [key,value]of Object.entries(imports))if(name.endsWith(key))return value;throw Error(name);},exports);return exports;}
-const model=module('app/xero-model.ts',{});let reader;const sync=module('app/xero-sync.ts',{'xero-model':model,'xero-client':{xeroReadPage:(...args)=>reader(...args)}});
+const model=module('app/xero-model.ts',{});let reader;const sync=module('app/xero-sync.ts',{'xero-model':model,'xero-store-name-evidence':module('app/xero-store-name-evidence.ts',{}),'xero-client':{xeroReadPage:(...args)=>reader(...args)}});
 const categories=[{TrackingCategoryID:'category',Name:'Projects',Options:model.XERO_PROJECT_NAMES.map((Name,index)=>({TrackingOptionID:`option${index}`,Name}))}];const scope=model.bootstrapXeroScope(categories);
 const invoice=(patch={})=>({InvoiceID:'invoice',InvoiceNumber:'INV-1',Type:'ACCREC',Status:'AUTHORISED',CurrencyCode:'MYR',DateString:'2026-10-01',SubTotal:'100.00',TotalTax:'0',Total:'100',AmountPaid:'25',AmountDue:'75',AmountCredited:'0',LineItems:[{Tracking:[{TrackingCategoryID:'category',Name:'Projects',Option:'Shopee Hub'}]}],Payments:[{PaymentID:'payment',Amount:'25'}],...patch});
 const payment={PaymentID:'payment',Invoice:{InvoiceID:'invoice'},Amount:'25.00',Status:'AUTHORISED',PaymentType:'ACCRECPAYMENT',Date:'2026-10-02'};
@@ -21,4 +21,15 @@ test('company matching evidence retains only approved invoice company identity, 
  reader=async(_tokens,_org,resource)=>{if(resource==='TrackingCategories')return categories;if(resource==='Payments')return [];return [invoice({InvoiceID:uuidId(1),AmountPaid:'0',AmountDue:'100',Contact:{ContactID:uuidId(20),Name:'Example Company',EmailAddress:'private@example.test',BankAccountDetails:'private-bank'},Payments:[]}),invoice({InvoiceID:uuidId(2),AmountPaid:'0',AmountDue:'100',Contact:{ContactID:uuidId(21),Name:'Other Department'},LineItems:[{Tracking:[{TrackingCategoryID:'category',Option:'Other Department'}]}],Payments:[]})];};
  const result=await sync.collectXeroSnapshot({}, {organisationId:'org'},'2026-10','2026-10-20');
  assert.deepEqual(result.companies,[{contactId:uuidId(20),companyName:'Example Company',categoryId:'category',optionId:'option0',project:'Shopee Hub'}]);assert.doesNotMatch(JSON.stringify(result),/private@example|private-bank|Other Department/);
+});
+
+test('approved invoice snapshots store only mirrored extracted store labels, never descriptions',async()=>{
+ const Description='Private service content\nSTORE NAME: BONLIFE\nPICKUP: private address';
+ reader=async(_tokens,_org,resource)=>resource==='TrackingCategories'?categories:resource==='Payments'?[]:[invoice({InvoiceID:uuidId(1),AmountPaid:'0',AmountDue:'100',Payments:[],LineItems:[{Description,Tracking:[{TrackingCategoryID:'category',Option:'Shopee Hub'}]}]}),invoice({InvoiceID:uuidId(2),AmountPaid:'0',AmountDue:'100',Payments:[],LineItems:[{Description:'STORE NAME: OUTSIDE',Tracking:[{TrackingCategoryID:'category',Option:'Other'}]}]})];
+ const result=await sync.collectXeroSnapshot({}, {organisationId:'org'},'2026-10','2026-10-20');
+ assert.deepEqual(result.report.rows[0].storeNames,['BONLIFE']);assert.deepEqual(result.report.invoices[0].storeNames,['BONLIFE']);assert.doesNotMatch(JSON.stringify(result),/Private service|private address|OUTSIDE|Description/);
+});
+test('union reads reject changed store labels while ignoring unrelated description prose',async()=>{
+ let invoiceRead=0;reader=async(_tokens,_org,resource)=>{if(resource==='TrackingCategories')return categories;if(resource==='Payments')return [];invoiceRead++;return [invoice({InvoiceID:uuidId(1),AmountPaid:'0',AmountDue:'100',Payments:[],LineItems:[{Description:'STORE NAME: '+(invoiceRead===1?'BONLIFE':'Other Store'),Tracking:[{TrackingCategoryID:'category',Option:'Shopee Hub'}]}]})];};
+ await assert.rejects(sync.collectXeroSnapshot({}, {organisationId:'org'},'2026-10','2026-10-20'),/UNION_CONFLICT/);
 });

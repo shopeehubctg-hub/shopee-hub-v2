@@ -36,3 +36,14 @@ The earlier unconfigured results above are historical. The user later explicitly
 - Actual project list filter tested: Tik Tok Hub showed only its two October invoice rows and one payment; all-four-project summary stayed explicitly labelled.
 - Complete Xero suite rerun:49 tests PASS,0 failures.
 - Connected-state UI review HOLD: financial/date columns wrap, dates expose ISO timestamps, long invoice list needs compact sticky headings. Correction is in progress; no connected-state final QC or Production approval claimed.
+
+## Connected-state desktop acceptance
+
+- Final fixed Stage candidate `b2f9a64adaafc93bb0ff696d5960ed57e8147797`, deployment `dpl_4mzztgqpiEtQD1qp8TxKn7mJBSnY` Ready. Fixedalias metadata verified to this commit. Concurrent Package candidate `1b8c1236111616af256540e75247d32602cca975` preserved as first parent; no overwrite.
+- UI/UX owner desktop PASS after actual screenshot review: `/private/tmp/xero-compact-table-stage-20261101.png`; additional internal-scroll screenshot `/private/tmp/xero-sticky-table-stage-20261101.png`. Six columns, short dates, single-line grouped amounts and sticky headings verified. Mobile not certified.
+- Latest50 Xero tests pass. TypeScript and targeted lint pass. Real payment37-row disclosure expands and displays prior-month invoice receipts on their October payment dates.
+- Functional owner final QC is pending separately; no Production release authorised.
+
+### Final functional result
+
+Functional QC owner PASS for connected Staging scope after desktop UI/UX PASS: independent50/50 tests, access/security, period completeness, filter behavior, payment detail, persisted refresh and supplied actual Stage snapshot evidence. Residual limitation: no independent source-export recalculation of every Xero figure; today/all-open aggregates were matched to persisted snapshot output. Production untouched.

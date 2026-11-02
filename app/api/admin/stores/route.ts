@@ -1,3 +1,5 @@
+import {optionalBillingName} from "../../../registered-names";
+import {registeredNamesAvailable} from "../../../registered-names-server";
 import { POST as legacyCreateStore, PATCH as legacyUpdateStore } from "./legacy";
 import { permissionManagement } from "../../../permission-management";
 import { supabaseRest } from "../../../supabase-rest";
@@ -42,7 +44,7 @@ function sameOrigin(request: Request) {
 export async function POST(request: Request) {
   if (!sameOrigin(request)) return Response.json({ error: "Request origin is not allowed" }, { status: 403 });
   const candidate=await request.clone().json().catch(()=>null);
-  const accountBearing=Boolean(candidate&&typeof candidate==="object"&&!Array.isArray(candidate)&&["accountSetup","legalEntity","feeRule","effectiveMonth","accountRosterKey","expectedAccountVersion"].some(key=>key in candidate));
+  const accountBearing=Boolean(candidate&&typeof candidate==="object"&&!Array.isArray(candidate)&&["accountSetup","legalEntity","billingEntity","feeRule","effectiveMonth","accountRosterKey","expectedAccountVersion"].some(key=>key in candidate));
   if(accountBearing){const accountGate=await accountSecurityGate();if(accountGate)return accountGate;}
   const auth=await permissionManagement(request);
   if("error" in auth)return auth.error;
@@ -60,6 +62,7 @@ export async function POST(request: Request) {
   let setup;
   try { setup = parseStoreAccountSetup(body.accountSetup, body.market); }
   catch (error) { return Response.json({ error: error instanceof Error ? error.message : "Invalid Account setup" }, { status: 400 }); }
+  if(body.accountSetup&&typeof body.accountSetup==='object'&&'billingEntity' in body.accountSetup){try{if(!await registeredNamesAvailable())return Response.json({error:'Registered names are not configured in this environment. No store was saved.'},{status:503});}catch{return Response.json({error:'Unable to verify registered names. No store was saved.'},{status:503});}}
   const id = proposedStoreId(name);
   const finalSourceName = sourceName || name;
   try {
@@ -71,14 +74,14 @@ export async function POST(request: Request) {
       }),
     });
     return Response.json({ store: { id: result.id, name, display_name: null, bigseller_name: finalSourceName, platform: `Shopee ${body.market}`,
-      ...details.value, accountUnit: { rosterKey: `store:${id}`, legalEntity: setup.legalEntity, latestVersion: result.version }, accountUnitCount: 1 } }, { status: 201 });
+      ...details.value, accountUnit: { rosterKey: `store:${id}`, legalEntity: setup.legalEntity,billingEntity:setup.billingEntity??null, latestVersion: result.version }, accountUnitCount: 1 } }, { status: 201 });
   } catch (error) { return rpcFailure(error); }
 }
 
 export async function PATCH(request: Request) {
   if (!sameOrigin(request)) return Response.json({ error: "Request origin is not allowed" }, { status: 403 });
   const candidate=await request.clone().json().catch(()=>null);
-  const accountBearing=Boolean(candidate&&typeof candidate==="object"&&!Array.isArray(candidate)&&["accountSetup","legalEntity","feeRule","effectiveMonth","accountRosterKey","expectedAccountVersion"].some(key=>key in candidate));
+  const accountBearing=Boolean(candidate&&typeof candidate==="object"&&!Array.isArray(candidate)&&["accountSetup","legalEntity","billingEntity","feeRule","effectiveMonth","accountRosterKey","expectedAccountVersion"].some(key=>key in candidate));
   if(accountBearing){const accountGate=await accountSecurityGate();if(accountGate)return accountGate;}
   const auth=await permissionManagement(request);
   if("error" in auth)return auth.error;
@@ -100,8 +103,15 @@ export async function PATCH(request: Request) {
   if (entity !== null && (!entity || entity.length > 240 || !validMonth(body?.effectiveMonth)
     || typeof body.accountRosterKey !== "string" || typeof body.expectedAccountVersion !== "string" || !/^\d{1,18}$/.test(body.expectedAccountVersion)))
     return Response.json({ error: "Enter a legal company and current or future effective month; refresh Account if needed" }, { status: 400 });
+  const billingSupplied=Boolean(body&&Object.prototype.hasOwnProperty.call(body,'billingEntity'));
+  let billingEntity:string|null=null;
+  if(billingSupplied){
+    if(entity===null)return Response.json({error:'Enter Registered Name (Platform) and the effective invoice month before saving Billing name.'},{status:400});
+    try{billingEntity=optionalBillingName(body?.billingEntity);}catch(error){return Response.json({error:error instanceof Error?error.message:'Check Registered Name (Billing).'},{status:400});}
+    try{if(!await registeredNamesAvailable())return Response.json({error:'Registered names are not configured in this environment. No store was saved.'},{status:503});}catch{return Response.json({error:'Unable to verify registered names. No store was saved.'},{status:503});}
+  }
   const market = marketFromPlatform(target.platform);
-  const setup = entity === null ? null : { version: 2, legalEntity: entity, effectiveMonth: body?.effectiveMonth };
+  const setup = entity === null ? null : { version: 2, legalEntity: entity,...(billingSupplied?{billingEntity}:{}), effectiveMonth: body?.effectiveMonth };
   try {
     const result = await supabaseRest<{id:string;version:string|null}>("rpc/account_update_store_with_setup_v2", {
       method: "POST", body: JSON.stringify({
@@ -112,7 +122,13 @@ export async function PATCH(request: Request) {
         p_expected_version: entity === null ? null : body.expectedAccountVersion,
       }),
     });
+    let savedNames:{legal_entity:string;billing_registered_name:string|null}|undefined;
+    if(billingSupplied&&entity!==null){
+      if(!result.version||!/^\d{1,18}$/.test(result.version))throw Error('ACCOUNT_NAMES_READBACK_REQUIRED');
+      const versions=await supabaseRest<Array<{legal_entity:string;billing_registered_name:string|null}>>(`account_billing_unit_versions?select=legal_entity,billing_registered_name&tenant_id=eq.${encodeURIComponent(auth.member.tenant_id)}&roster_key=eq.${encodeURIComponent(String(body.accountRosterKey))}&version=eq.${encodeURIComponent(result.version)}&limit=1`);
+      if(versions.length!==1)throw Error('ACCOUNT_NAMES_READBACK_REQUIRED');savedNames=versions[0];
+    }
     return Response.json({ store: { ...target, name, display_name: name === target.name ? null : name,
-      ...details.value, ...(entity !== null ? { accountUnit: { rosterKey: body.accountRosterKey, legalEntity: entity, latestVersion: result.version }, accountUnitCount: 1 } : {}) } });
+      ...details.value, ...(entity !== null ? { accountUnit: { rosterKey: body.accountRosterKey, legalEntity: savedNames?.legal_entity??entity,...(savedNames?{billingEntity:savedNames.billing_registered_name}:{}), latestVersion: result.version }, accountUnitCount: 1 } : {}) } });
   } catch (error) { return rpcFailure(error); }
 }

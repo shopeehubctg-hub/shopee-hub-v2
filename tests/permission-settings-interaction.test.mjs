@@ -4,8 +4,8 @@ import {execFileSync} from 'node:child_process';
 
 const {JSDOM}=await import(process.env.BD_DOM_TEST_JSDOM??'jsdom');
 const source=`import React,{act} from 'react';import {createRoot} from 'react-dom/client';
-import {FeePlansProvider} from './app/fee-plan-context';import {PermissionSettings} from './app/permission-settings';
-export {React,act,createRoot};export const App=()=> <FeePlansProvider><PermissionSettings initialEnabledModules={[]}/></FeePlansProvider>;`;
+import {AccountSecurityProvider} from './app/account-security-context';import {FeePlansProvider} from './app/fee-plan-context';import {PermissionSettings} from './app/permission-settings';
+export {React,act,createRoot};export const App=()=> <AccountSecurityProvider enabled={false}><FeePlansProvider><PermissionSettings accountSetupPreview={true} initialEnabledModules={[]}/></FeePlansProvider></AccountSecurityProvider>;`;
 const compiled=execFileSync('node_modules/.bin/esbuild',['--bundle','--format=esm','--platform=node','--target=node22','--loader=tsx','--loader:.css=empty','--jsx=automatic'],{input:source,maxBuffer:10*1024*1024});
 const {React,act,createRoot,App}=await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 
@@ -15,6 +15,7 @@ const data=(superAdmin,overrides={})=>({users:[user()],stores:[{id:'shopee-one',
 
 async function withApp(fetchMock,run){
  const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'https://portal.test/'});
+ dom.window.HTMLElement.prototype.attachEvent=function(){};dom.window.HTMLElement.prototype.detachEvent=function(){};
  const keys=['window','document','navigator','HTMLElement','Event','MouseEvent','MessageChannel','requestAnimationFrame','IS_REACT_ACT_ENVIRONMENT'];
  const saved=new Map(keys.map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
  const NativeChannel=globalThis.MessageChannel;const channels=[];
@@ -40,7 +41,7 @@ test('Super Admin can independently grant Permission Settings; default is off',a
   await click(document.querySelector('.user-access-row .edit-access'));
   const toggle=[...document.querySelectorAll('.access-modal label')].find(label=>label.textContent.includes('Permission Settings'))?.querySelector('input');
   assert.ok(toggle);assert.equal(toggle.checked,false);
-  assert.equal(document.querySelectorAll('.access-check-grid.modules label').length,10);
+  assert.equal(document.querySelectorAll('.access-check-grid.modules label').length,12);
   await click(toggle);
   assert.equal(toggle.checked,true);
   await click([...document.querySelectorAll('.access-modal button')].find(button=>button.textContent.trim()==='Save user access'));
@@ -117,4 +118,15 @@ test('initial permissions request shows loading instead of zero users or prematu
   assert.doesNotMatch(document.body.textContent,/Loading permissions/);
   assert.match(document.body.textContent,/1 portal users/);
  });
+});
+
+test('Edit Store shows separate registered names and capability-gates billing input',async()=>{
+ const response=data(true);response.accountSettingsAvailable=true;response.accountRegisteredNamesAvailable=true;response.stores[0].accountUnit={rosterKey:'r1',legalEntity:'Platform Legal Co',billingEntity:'Billing Legal Co',latestVersion:'7'};
+ await withApp(async(url)=>{if(url==='/api/admin/users')return Response.json(response);throw Error('Unexpected '+url);},async({click})=>{
+ await click([...document.querySelectorAll('.access-tabs button')].find(button=>button.textContent.trim()==='Stores'));
+ await click([...document.querySelectorAll('button')].find(button=>button.textContent.trim()==='Edit store'));
+ const field=label=>[...document.querySelectorAll('.access-modal label')].find(node=>node.textContent.startsWith(label))?.querySelector('input');
+ assert.equal(field('Registered Name (Platform)').value,'Platform Legal Co');assert.equal(field('Registered Name (Billing)').value,'Billing Legal Co');assert.equal(field('Registered Name (Billing)').disabled,false);
+ });
+ response.accountRegisteredNamesAvailable=false;await withApp(async()=>Response.json(response),async({click})=>{await click([...document.querySelectorAll('.access-tabs button')].find(button=>button.textContent.trim()==='Stores'));await click([...document.querySelectorAll('button')].find(button=>button.textContent.trim()==='Edit store'));const billing=[...document.querySelectorAll('.access-modal label')].find(node=>node.textContent.startsWith('Registered Name (Billing)')).querySelector('input');assert.equal(billing.disabled,true);assert.equal(billing.value,'Billing Legal Co');});
 });

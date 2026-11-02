@@ -1,4 +1,5 @@
 import 'server-only';
+import {extractXeroStoreNames} from './xero-store-name-evidence';
 import {bootstrapXeroScope,buildXeroReport,type XeroInvoiceInput,type XeroProjectScope} from './xero-model';
 import {xeroReadPage,type XeroTokens} from './xero-client';
 import type {XeroConfig} from './xero-security';
@@ -13,7 +14,7 @@ export function normalizeXeroInvoices(raw:Record<string,unknown>[],payments:Reco
  const paymentIds=new Set<string>();for(const payment of payments){const id=text(payment.PaymentID);if(paymentIds.has(id))throw Error('XERO_DUPLICATE_PAYMENT');paymentIds.add(id);}
  return raw.map(invoice=>{
   const id=text(invoice.InvoiceID);const lines=Array.isArray(invoice.LineItems)?invoice.LineItems:[];
-  const result:XeroInvoiceInput={InvoiceID:id,InvoiceNumber:optionalText(invoice.InvoiceNumber),Type:text(invoice.Type),Status:text(invoice.Status),CurrencyCode:text(invoice.CurrencyCode),Date:optionalText(invoice.DateString??invoice.Date),DueDate:optionalText(invoice.DueDateString??invoice.DueDate),SubTotal:money(invoice.SubTotal),TotalTax:money(invoice.TotalTax),Total:money(invoice.Total),AmountPaid:money(invoice.AmountPaid),AmountDue:money(invoice.AmountDue),AmountCredited:money(invoice.AmountCredited??'0'),LineItems:lines.map(line=>({Tracking:Array.isArray(line.Tracking)?line.Tracking.map((tracking:Record<string,unknown>)=>{
+  const result:XeroInvoiceInput={InvoiceID:id,InvoiceNumber:optionalText(invoice.InvoiceNumber),Type:text(invoice.Type),Status:text(invoice.Status),CurrencyCode:text(invoice.CurrencyCode),Date:optionalText(invoice.DateString??invoice.Date),DueDate:optionalText(invoice.DueDateString??invoice.DueDate),SubTotal:money(invoice.SubTotal),TotalTax:money(invoice.TotalTax),Total:money(invoice.Total),AmountPaid:money(invoice.AmountPaid),AmountDue:money(invoice.AmountDue),AmountCredited:money(invoice.AmountCredited??'0'),LineItems:lines.map(line=>({...((typeof line.Description==='string')?{Description:line.Description}:{}),Tracking:Array.isArray(line.Tracking)?line.Tracking.map((tracking:Record<string,unknown>)=>{
    const categoryId=optionalText(tracking.TrackingCategoryID);let optionId=optionalText(tracking.TrackingOptionID);
    if(categoryId===scope.categoryId){const matches=category.Options.filter(option=>option.Name===tracking.Option);if(!optionId&&matches.length===1)optionId=matches[0].TrackingOptionID;else if(optionId&&!category.Options.some(option=>option.TrackingOptionID===optionId&&option.Name===tracking.Option))optionId=undefined;}
    return {TrackingCategoryID:categoryId,TrackingOptionID:optionId};
@@ -43,7 +44,7 @@ function monthRange(month:string){if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(month))th
 function rangeWhere(start:string,end:string){return `Date>=${dateTime(start)} AND Date<${dateTime(end)}`;}
 /** Compare only financially/materially relevant fields, not contacts' personal metadata. */
 function fingerprint(row:Record<string,unknown>,resource:'Invoices'|'Payments'){
- const value=resource==='Invoices'?{id:row.InvoiceID,type:row.Type,status:row.Status,currency:row.CurrencyCode,date:row.DateString??row.Date,due:row.DueDateString??row.DueDate,subtotal:row.SubTotal,tax:row.TotalTax,total:row.Total,paid:row.AmountPaid,dueAmount:row.AmountDue,credited:row.AmountCredited??'0',contactId:(row.Contact as Record<string,unknown>|undefined)?.ContactID,companyName:(row.Contact as Record<string,unknown>|undefined)?.Name,tracking:(Array.isArray(row.LineItems)?row.LineItems:[]).map(line=>line.Tracking??[])}:{id:row.PaymentID,invoice:(row.Invoice as Record<string,unknown>|undefined)?.InvoiceID,amount:row.Amount,status:row.Status,type:row.PaymentType,date:row.Date};
+ const value=resource==='Invoices'?{id:row.InvoiceID,type:row.Type,status:row.Status,currency:row.CurrencyCode,date:row.DateString??row.Date,due:row.DueDateString??row.DueDate,subtotal:row.SubTotal,tax:row.TotalTax,total:row.Total,paid:row.AmountPaid,dueAmount:row.AmountDue,credited:row.AmountCredited??'0',contactId:(row.Contact as Record<string,unknown>|undefined)?.ContactID,companyName:(row.Contact as Record<string,unknown>|undefined)?.Name,tracking:(Array.isArray(row.LineItems)?row.LineItems:[]).map(line=>line.Tracking??[]),storeNames:extractXeroStoreNames((Array.isArray(row.LineItems)?row.LineItems:[]).flatMap(line=>typeof line.Description==='string'?[line.Description]:[]))}:{id:row.PaymentID,invoice:(row.Invoice as Record<string,unknown>|undefined)?.InvoiceID,amount:row.Amount,status:row.Status,type:row.PaymentType,date:row.Date};
  function canonical(input:unknown):unknown{if(Array.isArray(input))return input.map(canonical);if(input&&typeof input==='object')return Object.fromEntries(Object.entries(input).sort(([a],[b])=>a.localeCompare(b)).map(([key,item])=>[key,canonical(item)]));return input;}
  return JSON.stringify(canonical(value));
 }
@@ -89,7 +90,10 @@ export async function collectXeroSnapshot(tokens:XeroTokens,config:XeroConfig,mo
  });
  const approved=new Set(scope.options.map(option=>option.id));
  const invoices=await inPhase('source_validation',()=>normalizeXeroInvoices([...invoiceRows.values()],[...paymentRows.values()],categories,scope,{month,today}).filter(invoice=>invoice.LineItems.some(line=>(line.Tracking??[]).some(tracking=>tracking.TrackingCategoryID===scope.categoryId&&tracking.TrackingOptionID&&approved.has(tracking.TrackingOptionID)))));
- const report=await inPhase('report_validation',()=>buildXeroReport(invoices,scope,month,today));
+ const baseReport=await inPhase('report_validation',()=>buildXeroReport(invoices,scope,month,today));
+ const namesByInvoice=new Map(invoices.map(invoice=>[invoice.InvoiceID,extractXeroStoreNames(invoice.LineItems.flatMap(line=>typeof line.Description==='string'?[line.Description]:[]))]));
+ const withStoreNames=<T extends {invoiceId:string;state:string}>(row:T)=>row.state==='eligible'?{...row,storeNames:namesByInvoice.get(row.invoiceId)??[]}:row;
+ const report={...baseReport,rows:baseReport.rows.map(withStoreNames),invoices:baseReport.invoices.map(withStoreNames)};
  // Coverage is intermediate only. Retain no raw responses or unrelated department documents.
  const companies=new Map<string,{contactId:string;companyName:string;categoryId:string;optionId:string;project:string}>();
  for(const invoice of invoices){

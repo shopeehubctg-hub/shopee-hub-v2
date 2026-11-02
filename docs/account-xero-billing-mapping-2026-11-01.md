@@ -44,3 +44,17 @@ Invoice matching displays source invoice numbers with original Xero deep-links s
 - Database owner independently reconciled mapped plus unassigned values, validated scope/history and confirmed no duplicated financial rows, no ledger writes and identity-only anchors without fee/card/FX invention.
 - Full affected test run:105 PASS; TypeScript and targeted lint PASS. Original visible-page five-minute sync preserved with background/locked/unmount cleanup. Prior-day receipt values cannot be relabelled as today. Ordinary read polling preserves unsaved selections; saved/new-version reload resets choices before another write.
 - Initial visual HOLD findings (dialog position, Credits wording, tiny new-table type) were corrected and actual desktop screenshots retaken. Final UI/UX and function QC follow the final fixed Staging commit. Production remains untouched.
+
+## Final fixed Staging candidate
+
+- Feature commit39365e642e0e401d9b8b730614b0ca073a4108c8; fixed Staging merge109e83801482de8cc7eacd83587cdf9fadf12e2a. Deployment dpl_BbAL1z3sZTcbS79k2qWDRoBoer66 Ready and fixed entry alias confirmed.
+- Actual desktop UI/UX owner explicit PASS for109e838: `/private/tmp/account-billing-final-candidate.png`, `/private/tmp/account-invoice-final-candidate.png`; matching layout additionally inspected in `/private/tmp/account-integrated-invoice-matching-final.png`. No mobile acceptance claimed.
+- Final function QC follows this UI gate; pending business decisions on33 unassigned invoices remain explicit, not treated as software-generated income or guessed store assignments.
+
+### Final acceptance
+
+Final Function QC owner explicit PASS after desktop UI/UX PASS for109e83801482de8cc7eacd83587cdf9fadf12e2a /dpl_BbAL1z3sZTcbS79k2qWDRoBoer66. Independent Node22 affected suite105/105 PASS; root TypeScript and targeted lint PASS. Actual browser draft-poll test preserved a selected but unsaved invoice mapping through a completed Refresh; draft was then cleared without Save. Actual bulk and reviewed manual saves persist across refresh.
+
+Final read-only DB check:20 source mappings,18 clients,20 mapped invoices,33 unassigned. Snapshot validator true; duplicate mapping versions0; identity-anchor fee/card/FX violations0; ledger writes0. Ordinary/foreign/locked rejection is automated-test coverage, not an ordinary-user live login. Per-invoice save is covered by actual transaction rollback SQL and UI mocked POST, without guessing an unknown live business assignment. Mobile is not certified.
+
+Fixed-entry health returned ready/staging/ubjfuveoqbvouryldqfu/databaseReachable=true. Remote main remainsd511d8bed6c11c3db5493d79336093eabde203a1; remote staging109e83801482de8cc7eacd83587cdf9fadf12e2a. No Production release or deletion occurred.

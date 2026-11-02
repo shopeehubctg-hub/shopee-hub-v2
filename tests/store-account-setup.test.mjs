@@ -55,3 +55,8 @@ test('TH/PH archived, removed or stale cards and missing required fields fail cl
  }
  assert.throws(()=>payload(selected,'VN'),/market/);
 });
+
+test('registered Platform alias is preserved and optional Billing survives resets without being inferred or cleared',()=>{
+ const selected=selectAccountRateCard({...initial(),billingEntity:' Billing   Company '},'internal-new',plans);const result=payload(selected);assert.equal(result.legalEntity,'Example entity');assert.equal(result.billingEntity,'Billing Company');const switched=resetAccountSetupSelection(selected,'SG');assert.equal(switched.billingEntity,' Billing   Company ');assert.equal(switched.legalEntity,'Example entity');
+ for(const billingEntity of ['',null,undefined])assert.equal(payload({...selected,billingEntity}).billingEntity,undefined);assert.throws(()=>payload({...selected,billingEntity:'x'.repeat(241)}),/Billing/);
+});

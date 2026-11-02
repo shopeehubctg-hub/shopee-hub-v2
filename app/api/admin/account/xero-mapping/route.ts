@@ -45,7 +45,7 @@ export async function POST(request:Request){
    if(!group||!unit||!unit.market||!unit.entity||group.expectedVersion!==item.expectedVersion){const raced=await replay();return raced??Response.json({error:'Account changed. Refresh and check the mapping.'},{status:409,headers:xeroHeaders});}
    const invoiceId=typeof item.invoiceId==='string'?item.invoiceId.toLowerCase():null;
    if(invoiceId&&!group.invoiceChoices?.some(invoice=>invoice.invoiceId.toLowerCase()===invoiceId))return Response.json({error:'Choose an invoice from this company and project.'},{status:400,headers:xeroHeaders});
-   if(!invoiceId&&(group.candidateUnitKeys.length>1||group.invoiceCount>1&&group.candidateUnitKeys.length!==1))return Response.json({error:'This company needs invoice-level mapping. Map each invoice separately.'},{status:409,headers:xeroHeaders});
+   if(!invoiceId&&(group.candidateUnitKeys.length>1||group.invoiceCount>1&&(group.candidateUnitKeys.length!==1||group.invoiceChoices.some(invoice=>invoice.storeEvidence&&invoice.storeEvidence.state!=='matched'))))return Response.json({error:'This company needs invoice-level mapping. Map each invoice separately.'},{status:409,headers:xeroHeaders});
    const liveIds=new Set((account.storeOptions??[]).map(store=>store.id));
    const candidates=[...new Set((unit.candidates??[]).flatMap(candidate=>candidate.storeId&&liveIds.has(candidate.storeId)?[candidate.storeId]:[]))];
    const storeId=unit.storeId?(liveIds.has(unit.storeId)?unit.storeId:null):candidates.length===1?candidates[0]:null;
