@@ -1,13 +1,9 @@
-# Fixed Staging candidate
+# Fixed Staging candidate — 2 November 2026
 
-1 November 2026 — Account mapping integration plus retained Package candidate.
+Integration base: 6213e0c7c4d772e354ebc848a1c0d9e385a4d5f2. Preserve the existing Xero/Account invoice amount disclosure and all earlier integrations. User authorized combining Package fixes with this Staging candidate.
 
-- Account feature: codex/account-xero-billing-mapping at 39365e642e0e401d9b8b730614b0ca073a4108c8.
-- Existing Package Normal-first candidate and original Xero integration retained; no shared branch overwrite.
-- Billing Records is primary. Stable source/group and invoice-level associations map to canonical billing clients with month-effective atomic history. Accounting connection/sync/matching is secondary.
-- Fixed entry: https://shopee-hub-v2-260731-git-cod-e05b8d-shopeehubctg-5199s-projects.vercel.app/
-- Independent Supabase ubjfuveoqbvouryldqfu only. Two additive mapping migrations and rollback suites PASS; Production untouched.
-- Actual UI:20 verified mappings,18 clients,33 invoices deliberately pending confirmation. No fake income/fees, deletion or arbitrary multi-store allocation.
-- Automated affected checks:105 PASS, TypeScript and targeted lint PASS.
-- Desktop UI/UX PASS captured on c9ebf4a layout; pending-state-only patch requires quick actual final-candidate recheck before final function QC. No mobile acceptance claimed.
-- Production PR/merge/release require user authorization and main-only automatic Vercel deployment. This task does not authorize Production.
+Package List Normal-before-Campaign: main PR #47, 7c03f2c8d562c60b861c32d9d95bf014c432d151; released and Production smoke passed.
+Package Start Date: codex/package-start-date-lock-20261102, e1f8b71c07d8d3fe43eeb8298818277d55b4ad08. No overlap in the four existing Package/test files against current main and Staging. Automated 57/57 PASS; TypeScript/webpack build PASS; Database Structure and guard review PASS, no migration. Actual combined Staging UI/UX and function QC pending; never treat this integration as Production acceptance.
+
+Fixed URL: https://shopee-hub-v2-260731-git-cod-e05b8d-shopeehubctg-5199s-projects.vercel.app/
+Independent DB: ubjfuveoqbvouryldqfu only. No Production auth/data replication.
