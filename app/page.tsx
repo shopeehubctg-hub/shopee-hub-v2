@@ -171,8 +171,13 @@ export default function Home() {
     setLoading(true);
     setLoadError("");
     try {
-      const response = await fetch(`/api/dashboard?section=bootstrap${id ? `&storeId=${encodeURIComponent(id)}` : ""}`, { cache:"no-store",signal:controller.signal });
+      let response = await fetch(`/api/dashboard?section=bootstrap${id ? `&storeId=${encodeURIComponent(id)}` : ""}`, { cache:"no-store",signal:controller.signal });
       if (sequence !== loadSequence.current) return;
+      if(response.status===403&&id&&id!=='all'){
+        setModuleResult(null);setShellData(null);setStoreSelectionMade(false);
+        response=await fetch('/api/dashboard?section=bootstrap',{cache:'no-store',signal:controller.signal});
+        if(sequence!==loadSequence.current)return;
+      }
       if (response.status === 401) { window.location.replace("/login"); return; }
       if (!response.ok) throw new Error(response.status === 403 ? "Your account does not have access to this dashboard or store." : "Unable to load your dashboard. Please try again.");
       const next = await response.json();
@@ -235,6 +240,7 @@ export default function Home() {
         const response=await fetch(`/api/dashboard?section=${encodeURIComponent(section)}&storeId=${encodeURIComponent(storeId)}${forceRefresh?"&refresh=1":""}`,{cache:"no-store",signal:controller.signal});
         if(controller.signal.aborted||sequence!==moduleSequence.current)return;
         if(response.status===401){window.location.replace("/login");return;}
+        if(response.status===403){setModuleResult(null);setShellData(null);setStoreSelectionMade(false);void load(undefined,true);return;}
         if(!response.ok)throw Error(response.status===403?"Your account does not have access to this module or store.":"Unable to load this module. Please try again.");
         const next=await response.json();
         if(controller.signal.aborted||sequence!==moduleSequence.current)return;

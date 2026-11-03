@@ -1,6 +1,6 @@
+import {restStoreAccessIds} from "../../../store-access";
 import {getChatGPTUser} from '../../../chatgpt-auth';
 import {effectivePermissionModules} from '../../../permission-management';
-import {canonicalStoreId} from '../../../live-calendar-model';
 import {supabaseRest} from '../../../supabase-rest';
 import {summarizeStoreSales,type StoreSale} from '../../../store-sales-model';
 export const dynamic='force-dynamic';
@@ -22,10 +22,7 @@ export async function GET(request:Request){
    supabaseRest<Array<{id:string;name:string;display_name:string|null}>>(`stores?select=id,name,display_name&tenant_id=eq.${tenant}&id=eq.${encodeURIComponent(storeId)}&limit=1`),
   ]);
   if(!tenants[0]?.active||!stores[0])return json({error:'Store access denied'},403);
-  if(member.role!=='superadmin'&&member.store_access_mode==='selected'){
-   const [assigned]=await supabaseRest<Array<{store_id:string}>>(`user_store_access?select=store_id&enabled=eq.true&user_id=eq.${member.id}&store_id=eq.${encodeURIComponent(storeId)}&limit=1`);
-   if(!assigned||canonicalStoreId(assigned.store_id)!==canonicalStoreId(storeId))return json({error:'Store access denied'},403);
-  }
+  if(!(await restStoreAccessIds(member)).has(storeId))return json({error:'Store access denied'},403);
   const bounds=`tenant_id=eq.${tenant}&store_id=eq.${encodeURIComponent(storeId)}`;
   const today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);
   const [latest]=await supabaseRest<Array<{report_date:string}>>(`bigseller_store_daily?select=report_date&${bounds}&report_date=lte.${today}&order=report_date.desc&limit=1`);

@@ -1,3 +1,4 @@
+import {dbStoreAccessIds} from "../../store-access";
 import {deploymentTarget} from "../../deployment-isolation";
 import {MARKET_CONFIG,isMarket,priceMarket,marketFromPlatform,type MarketCode} from '../../markets';
 import { packageDurationType } from '../../package-duration';
@@ -12,7 +13,6 @@ import {
   packages,
   packageVersions,
   stores,
-  userStoreAccess,
 } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { canAccessModule, canAccessStore } from "../../module-access";
@@ -195,14 +195,8 @@ export async function GET(request: Request) {
   }
   const tenantStores = await db.select({ id:stores.id, name:stores.name, displayName:stores.displayName,platform:stores.platform }).from(stores)
     .where(eq(stores.tenantId, membership.tenantId));
-  const assignedStoreRows = membership.role === "superadmin" || membership.storeAccessMode === "all"
-    ? []
-    : await db.select({ storeId:userStoreAccess.storeId }).from(userStoreAccess)
-      .where(and(eq(userStoreAccess.userId, membership.id),eq(userStoreAccess.enabled,true)));
-  const assignedStoreIds = new Set(assignedStoreRows.map(row => row.storeId));
-  const accessibleStores = tenantStores.filter(store =>
-    membership.role === "superadmin" || membership.storeAccessMode === "all" || assignedStoreIds.has(store.id),
-  );
+  const allowedStoreIds=await dbStoreAccessIds(db,membership);
+  const accessibleStores = tenantStores.filter(store=>allowedStoreIds.has(store.id));
   const scopedStores = storeId === "all"
     ? accessibleStores
     : accessibleStores.filter(store => store.id === storeId);

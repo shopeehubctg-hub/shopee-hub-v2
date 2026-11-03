@@ -1,9 +1,11 @@
 import "server-only";
 
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { getDb } from "../db";
-import { stores, tenantModulePermissions, userModulePermissions, userStoreAccess } from "../db/schema";
+import { tenantModulePermissions, userModulePermissions } from "../db/schema";
 import { effectiveAccessIds, type PortalModuleId } from "./module-permissions";
+
+import {dbStoreAccessIds} from "./store-access";
 
 type Database = Awaited<ReturnType<typeof getDb>>;
 
@@ -19,10 +21,5 @@ export async function canAccessModule(db: Database, membership: { id:number; ten
 
 export async function canAccessStore(db:Database,membership:{id:number;tenantId:string;role:"customer"|"manager"|"superadmin";active:boolean;storeAccessMode:"all"|"selected"},storeId:string){
   if(!membership.active||!storeId||storeId==="all")return false;
-  const [tenantStore]=await db.select({id:stores.id}).from(stores)
-    .where(and(eq(stores.id,storeId),eq(stores.tenantId,membership.tenantId))).limit(1);
-  if(!tenantStore)return false;
-  if(membership.role==="superadmin"||membership.storeAccessMode==="all")return true;
-  const [row]=await db.select({id:userStoreAccess.id}).from(userStoreAccess).where(and(eq(userStoreAccess.userId,membership.id),eq(userStoreAccess.storeId,storeId),eq(userStoreAccess.enabled,true))).limit(1);
-  return Boolean(row);
+  return (await dbStoreAccessIds(db,membership)).has(storeId);
 }

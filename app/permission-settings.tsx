@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { StoreStatusControl } from "./store-status-control";
 import { StoreExchangeRateField } from "./store-exchange-rate-field";
 import { MARKET_CODES, MARKET_CONFIG, marketFromPlatform, type MarketCode } from "./markets";
 import { useFeePlans } from "./fee-plan-context";
@@ -18,7 +19,7 @@ type StoreLinks = {
   adsTopUpOwner: AdsTopUpOwner | "";
 };
 type StoreDraft = StoreLinks & { name: string; market: MarketCode };
-type Store = { id: string; name: string; platform: string; bigseller_name?: string; accountUnit?: { rosterKey: string; legalEntity: string; billingEntity?: string | null; latestVersion: string } | null; accountUnitCount?: number } & Partial<StoreLinks>;
+type Store = { id: string; name: string; serviceStatus?: "active"|"inactive"|"ended"; platform: string; bigseller_name?: string; accountUnit?: { rosterKey: string; legalEntity: string; billingEntity?: string | null; latestVersion: string } | null; accountUnitCount?: number } & Partial<StoreLinks>;
 const emptyStoreDraft = (): StoreDraft => ({ name: "", market: "MY", projectLinks: [], storeGroupLink: "", googleDriveLink: "", adsTopUpOwner: "" });
 
 function projectLinkError(link: ProjectLink) {
@@ -585,6 +586,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                   <h3>{store.name}</h3>
                 </div>
                 <span>{store.platform}</span>
+                {isSuperAdmin&&<StoreStatusControl storeId={store.id} storeName={store.name} status={store.serviceStatus} onSaved={()=>{void loadUsers();onStoreChanged?.();}}/>}
                 <button className="edit-access" onClick={event => {
                   storeReturnFocusRef.current = event.currentTarget;
                   setMessage("");
@@ -806,7 +808,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                               onClick={() =>
                                 updateEditing({
                                   storeIds:
-                                    data?.stores.map((store) => store.id) ?? [],
+                                    data?.stores.filter(store=>editing.role==="superadmin"||!store.serviceStatus||store.serviceStatus==="active").map((store) => store.id) ?? [],
                                 })
                               }
                             >
@@ -826,6 +828,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                             <input
                               type="checkbox"
                               checked={editing.storeIds.includes(store.id)}
+                              disabled={editing.role!=="superadmin"&&!!store.serviceStatus&&store.serviceStatus!=="active"}
                               onChange={() =>
                                 updateEditing({
                                   storeIds: editing.storeIds.includes(store.id)
@@ -838,7 +841,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                             />
                             <span>
                               {store.name}
-                              <small>{store.platform}</small>
+                              <small>{store.platform}{store.serviceStatus&&store.serviceStatus!=="active"?` · ${store.serviceStatus==="ended"?"Service ended":"Inactive"}`:""}</small>
                             </span>
                           </label>
                         ))}
