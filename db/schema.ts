@@ -59,6 +59,9 @@ export const userModulePermissions = pgTable("user_module_permissions", {
 
 export const stores = pgTable("stores", {
   id:text("id").primaryKey(), tenantId:text("tenant_id").notNull().references(()=>tenants.id), name:text("name").notNull(),
+  serviceStatus:text("service_status",{enum:["active","inactive","ended"]}).notNull().default("active"),
+  serviceStatusVersion:bigint("service_status_version",{mode:"bigint"}).notNull().default(BigInt(0)),
+  serviceStatusUpdatedAt:timestamp("service_status_updated_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),
   displayName:text("display_name"), platform:text("platform").notNull().default("Shopee"), bigSellerName:text("bigseller_name").notNull(), createdAt:createdAt(),
 }, table=>[index("stores_tenant_id_idx").on(table.tenantId),unique("stores_tenant_id_id_key").on(table.tenantId,table.id)]);
 
@@ -92,6 +95,7 @@ export const userStoreAccess = pgTable("user_store_access", {
   userId:bigint("user_id", { mode:"number" }).notNull().references(()=>customerUsers.id,{onDelete:"cascade"}),
   storeId:text("store_id").notNull().references(()=>stores.id,{onDelete:"cascade"}),
   enabled:boolean("enabled").notNull().default(true),
+  serviceAccessVersion:bigint("service_access_version",{mode:"bigint"}).notNull().default(BigInt(0)),
   createdAt:createdAt(),
 }, table=>[uniqueIndex("user_store_access_idx").on(table.userId,table.storeId),index("user_store_access_user_idx").on(table.userId)]);
 
