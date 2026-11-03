@@ -1,4 +1,5 @@
 "use client";
+import type {RepriceTarget} from "./package-repricing";
 
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { FakeSellerCase } from "./fake-seller-report";
@@ -146,6 +147,11 @@ export default function Home() {
   const [adMonth, setAdMonth] = useState("");
   const [adRangeStart, setAdRangeStart] = useState("");
   const [adRangeEnd, setAdRangeEnd] = useState("");
+  const [recalculateTargets,setRecalculateTargets]=useState<RepriceTarget[]>([]);
+  const [highlightedPackageIds,setHighlightedPackageIds]=useState<string[]>([]);
+  useEffect(()=>{setRecalculateTargets([]);setHighlightedPackageIds([]);},[storeId]);
+  function startRecalculation(targets:RepriceTarget[]){setRecalculateTargets(targets);setSection("calculator");window.scrollTo({top:0});}
+  function finishPriceUpdate(ids:string[]){setRecalculateTargets([]);setHighlightedPackageIds(ids);setStandalonePackageCreate(false);setPackagePrefills([]);setSection("packages");window.scrollTo({top:0});}
   const [packagePrefills, setPackagePrefills] = useState<PackagePrefill[]>([]);
   const [packageDraftKey, setPackageDraftKey] = useState("");
   const [standalonePackageCreate, setStandalonePackageCreate] = useState(false);
@@ -413,8 +419,8 @@ export default function Home() {
         </section>
       </div>}
 
-      {section==="packages" && <div className="page"><PackageControl staging={isStaging} storePlatform={store?.platform} allowSamplePreview={data.access?.role==="superadmin"} storeId={storeSelectionMade?storeId:""} storeName={!storeSelectionMade?"No Store Selected":allStoresSelected?"All Accessible Stores":(store?.name ?? "Selected Store")} prefills={packagePrefills} standaloneCreate={standalonePackageCreate} draftStorageKey={packageDraftKey ? `package-draft:${packageDraftKey}` : undefined} onPrefillsAccepted={()=>setPackagePrefills([])} /></div>}
-      {section==="calculator" && <div className="page" aria-label="Price Calculator"><PriceCalculator staging={isStaging} storeId={allStoresSelected?"":store?.id??""} storeName={allStoresSelected?"":(store?.name??"")} productProfile={allStoresSelected?null:data?.productProfile} coFundVouchers={allStoresSelected?[]:data?.coFundVouchers} onCreatePackage={prefill=>openPackageDraft([prefill])} onCreatePackages={openPackageDraft} /></div>}
+      {section==="packages" && <div className="page"><PackageControl onRecalculate={isStaging&&allowedSections.includes("calculator")?startRecalculation:undefined} highlightedIds={highlightedPackageIds} staging={isStaging} storePlatform={store?.platform} allowSamplePreview={data.access?.role==="superadmin"} storeId={storeSelectionMade?storeId:""} storeName={!storeSelectionMade?"No Store Selected":allStoresSelected?"All Accessible Stores":(store?.name ?? "Selected Store")} prefills={packagePrefills} standaloneCreate={standalonePackageCreate} draftStorageKey={packageDraftKey ? `package-draft:${packageDraftKey}` : undefined} onPrefillsAccepted={()=>setPackagePrefills([])} /></div>}
+      {section==="calculator" && <div className="page" aria-label="Price Calculator"><PriceCalculator recalculateTargets={recalculateTargets} onPricesUpdated={finishPriceUpdate} staging={isStaging} storeId={allStoresSelected?"":store?.id??""} storeName={allStoresSelected?"":(store?.name??"")} productProfile={allStoresSelected?null:data?.productProfile} coFundVouchers={allStoresSelected?[]:data?.coFundVouchers} onCreatePackage={prefill=>openPackageDraft([prefill])} onCreatePackages={openPackageDraft} /></div>}
       {section==="design" && <div className="page"><DesignChecker key={storeId} storeId={storeId}/></div>}
       {section==="protection" && <div className="page"><FakeSellerReport storeName={store?.name ?? "Selected store"} allStores={allStoresSelected} cases={fakeSellerCases}/></div>}
       {section==="permissions" && data?.access?.canManagePermissions && <div className="page"><PermissionSettings accountSetupPreview initialEnabledModules={data.access.clientEnabledModules} onStoreChanged={()=>load(storeId && storeId!=="all" ? storeId : undefined,true)}/></div>}
