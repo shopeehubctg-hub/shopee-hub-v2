@@ -7,6 +7,7 @@ import { accountMappingDisplay } from './account-mapping-display';
 import { useEffect, useRef, useState } from "react";
 import type { AccountCurrency, AccountCurrencySummary, AccountResponse } from "./account-contract";
 import { accountMoney } from "./account-display";
+import {malaysiaDate} from "./account-ledger";
 import { RateCell, RecordDetails } from "./account-settings-ui";
 
 import { billingRowsMatching, visibleSelection, useFeePlans, useFeePreviewState } from "./fee-plan-context";
@@ -53,7 +54,7 @@ export function AccountPanel() {
   const security = useAccountSecurity();
   const { enabled: securityEnabled, phase: securityPhase, epoch: securityEpoch, isCurrentAccess, lockLocal } = security;
   const {previewRows,mergePreviewRows,openFeeWorkspace,settingsRevision}=useFeePlans();
-  const [invoiceMonth, setInvoiceMonth] = useFeePreviewState<string>("account-invoice-month","2026-10");
+  const [invoiceMonth, setInvoiceMonth] = useFeePreviewState<string>("account-invoice-month",malaysiaDate().slice(0,7));
   const [query, setQuery] = useState("");
   const [country,setCountry]=useState<"all"|MarketCode>("all");
   const [selected,setSelected]=useState<string[]>([]);

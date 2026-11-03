@@ -249,10 +249,10 @@ export async function GET(request: Request) {
     if(!dashboardSectionAllowed(plan.section,enabledModules,membership.role,membership.role==="superadmin"||membership.can_manage_permissions===true))return Response.json({error:"Module access denied"},{status:403});
 
     const [registry,directory]=await Promise.all([
-      supabaseRest<RegistryStore[]>(`stores?select=id,name,display_name,platform,bigseller_name&tenant_id=eq.${encodeURIComponent(membership.tenant_id)}&order=name.asc`),
+      supabaseRest<Array<RegistryStore&{service_status?:string}>>(`stores?select=id,name,display_name,platform,bigseller_name,service_status&tenant_id=eq.${encodeURIComponent(membership.tenant_id)}&order=name.asc`),
       storeDirectory(membership.tenant_id),
     ]);
-    const visibleStores = registry.filter(store=>canonicalStoreId(store.id)===store.id).map(store=>({
+    const visibleStores = registry.filter(store=>canonicalStoreId(store.id)===store.id&&store.service_status!=='ended').map(store=>({
       id:store.id,name:store.display_name??store.name,
       sourceName:directory.byId.get(store.id)?.store_name??store.bigseller_name,
       bigsellerName:store.bigseller_name,platform:store.platform,
@@ -332,7 +332,7 @@ export async function GET(request: Request) {
 
   const canonicalTenantStores=allTenantStores.filter(store=>canonicalStoreId(store.id)===store.id);
   const allowedStoreIds=await dbStoreAccessIds(db,membership);
-  const tenantStores = canonicalTenantStores.filter(store=>allowedStoreIds.has(store.id));
+  const tenantStores = canonicalTenantStores.filter(store=>allowedStoreIds.has(store.id)&&store.serviceStatus!=='ended');
   const modulePermissionRows = await db.select().from(tenantModulePermissions).where(eq(tenantModulePermissions.tenantId, tenant.id));
   const configuredModules = new Map(modulePermissionRows.map((row) => [row.moduleId, row.enabled]));
   const clientEnabledModules = ALL_PORTAL_MODULE_IDS.filter((moduleId) => moduleId === "live_calendar" ? configuredModules.get(moduleId) === true : configuredModules.get(moduleId) !== false);

@@ -79,3 +79,10 @@ test('Production release retains Super Admin-only permissions without delegated 
  assert.equal((await GET(req('section=permissions'))).status,403);
  state.member.role='superadmin';assert.equal((await GET(req('section=permissions'))).status,200);
 });
+
+ test('Service ended is absent from Super Admin daily selector while management access stays independent',async()=>{
+ state.stores[0].service_status='ended';state.stores[1].service_status='inactive';
+ const response=await GET(req('section=bootstrap'));assert.equal(response.status,200);
+ const body=await response.json();assert.deepEqual(body.stores.map(store=>store.id),['store-b']);
+ assert.equal((await GET(req('section=bootstrap&storeId=store-a'))).status,403);
+ });
