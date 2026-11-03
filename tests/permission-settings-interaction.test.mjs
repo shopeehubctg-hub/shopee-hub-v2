@@ -137,6 +137,6 @@ test('store directory filters country and service status without changing stores
  await click([...document.querySelectorAll('.access-tabs button')].find(button=>button.textContent.trim()==='Stores'));
  const rows=()=>[...document.querySelectorAll('table[aria-label="Store directory"] tbody tr')];assert.equal(rows().length,3);
  await change(document.querySelector('[aria-label="Filter stores by country"]'),'SG');assert.equal(rows().length,1);assert.match(rows()[0].textContent,/Alpha SG/);
- await change(document.querySelector('[aria-label="Filter stores by country"]'),'all');await change(document.querySelector('[aria-label="Filter stores by service status"]'),'ended');assert.equal(rows().length,1);assert.match(rows()[0].textContent,/Beta MY/);assert.equal(writes,0);
+ await change(document.querySelector('[aria-label="Filter stores by country"]'),'all');await change(document.querySelector('[aria-label="Filter stores by service status"]'),'ended');assert.equal(rows().length,1);assert.match(rows()[0].textContent,/Beta MY/);assert.equal(writes,0);const summary=document.querySelector('.directory-menu summary');await click(summary);assert.equal(summary.parentElement.open,true);assert.equal(document.querySelector('.directory-menu-item').getAttribute('aria-label'),'Edit details for Beta MY');await act(()=>summary.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.equal(summary.parentElement.open,false);assert.equal(document.activeElement,summary);
  });
 });

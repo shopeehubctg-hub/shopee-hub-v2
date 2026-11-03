@@ -605,7 +605,7 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
                 <td className="directory-actions"><div className="directory-row-actions">
                 {isSuperAdmin&&<button type="button" className="directory-manage" aria-label={`Manage ${store.name}`} onClick={()=>setProjectEditor({storeId:store.id})}>Manage</button>}{!isSuperAdmin&&<button type="button" className="directory-manage" onClick={event=>beginStoreEdit(store,event.currentTarget)}>Edit</button>}
                 <details className="directory-menu" onToggle={event=>{if(event.currentTarget.open)document.querySelectorAll<HTMLDetailsElement>('.directory-menu[open]').forEach(menu=>{if(menu!==event.currentTarget)menu.open=false;});}} onKeyDown={event=>{if(event.key==='Escape'&&!(event.target as Element).closest('dialog')){event.currentTarget.open=false;event.currentTarget.querySelector('summary')?.focus();}}}><summary aria-label={`More actions for ${store.name}`}><span aria-hidden="true">⋯</span></summary><div className="directory-menu-panel">
-                <button type="button" className="directory-menu-item" onClick={event=>beginStoreEdit(store,event.currentTarget)}>Edit details</button>
+                <button type="button" className="directory-menu-item" aria-label={`Edit details for ${store.name}`} onClick={event=>beginStoreEdit(store,event.currentTarget)}>Edit details</button>
                 {isSuperAdmin&&<StoreStatusControl storeId={store.id} storeName={store.name} status={store.serviceStatus} triggerLabel="Change service status" onSaved={()=>{void loadUsers();onStoreChanged?.();}}/>}
                 </div></details></div></td>
               </tr>
