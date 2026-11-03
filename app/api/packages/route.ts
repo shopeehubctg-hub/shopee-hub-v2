@@ -704,6 +704,7 @@ export async function PATCH(request:Request) {
     if(!historyWebhookConfigured())return packageError("Saving","Package History Google Sheet is not connected. The draft was not published.",503);
     const [version]=await db.select().from(packageVersions).where(eq(packageVersions.packageId,item.id)).orderBy(desc(packageVersions.version)).limit(1);
     if(!version)return packageError("Saving","This package has no saved version.",409);
+    if(body.expectedVersion!==undefined&&body.expectedVersion!==version.version)return packageError("Saving","This package changed. Reload before retrying this version.",409);
     const unpublished=["draft","review"].includes(item.status);
     if(body.action==="publish"&&!unpublished)return packageError("Saving","Only a draft package can be published.",409);
     if(body.action==="retry"&&(unpublished||!["pending","failed"].includes(version.sheetSyncStatus)))

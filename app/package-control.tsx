@@ -1,4 +1,6 @@
 "use client";
+import {eligibleRepriceTarget,type RepriceTarget} from "./package-repricing";
+import "./package-repricing.css";
 import {changedPackageStart,startedPackageDates} from "./package-start-date-policy";
 import {duplicateInventory,MAX_INVENTORY_ITEMS,inventoryLinesUnchanged} from "./inventory-items";
 import {PricingEvidencePanel} from "./pricing-evidence-panel";
@@ -71,7 +73,7 @@ const durationLabel=(item:PackageItem)=>({"long-term":"Long Term","monthly":"Mon
 
 type KitExportPreview = { packageCount:number; rowCount:number; signature:string };
 type KitExportResponse = KitExportPreview & { rows:Array<{kitSku:string;inventorySku:string;quantity:number;price:1}> };
-type Props = { storeId:string; storeName:string; storePlatform?:string; canCreate?:boolean; allowSamplePreview?:boolean; staging?:boolean; prefills?:PackagePrefill[]; standaloneCreate?:boolean; draftStorageKey?:string; onPrefillsAccepted?:()=>void };
+type Props = { onRecalculate?:(targets:RepriceTarget[])=>void; highlightedIds?:string[]; storeId:string; storeName:string; storePlatform?:string; canCreate?:boolean; allowSamplePreview?:boolean; staging?:boolean; prefills?:PackagePrefill[]; standaloneCreate?:boolean; draftStorageKey?:string; onPrefillsAccepted?:()=>void };
 type StoredBatch = { prefills:PackagePrefill[]; storeId?:string; requestIds?:Record<string,string> };
 
 const PLATFORM_NAMES:PlatformName[] = ["Shopee","Lazada","TikTok Shop"];
@@ -191,7 +193,7 @@ function PackagePriceSummary({item,country="all"}:{item:PackageItem;country?:"al
   })}</div>;
 }
 
-export function PackageControl({ storeId, storeName, storePlatform, canCreate=true, allowSamplePreview=false, staging=false, prefills=[], standaloneCreate:initialStandaloneCreate=false, draftStorageKey, onPrefillsAccepted }:Props) {
+export function PackageControl({ onRecalculate,highlightedIds=[],storeId, storeName, storePlatform, canCreate=true, allowSamplePreview=false, staging=false, prefills=[], standaloneCreate:initialStandaloneCreate=false, draftStorageKey, onPrefillsAccepted }:Props) {
   const [batchStore,setBatchStore] = useState<string|null>(null);
   const [batchListView,setBatchListView] = useState(false);
   const standaloneCreate=initialStandaloneCreate&&!batchListView;
@@ -401,12 +403,12 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
   function groupPrefills(input:PackagePrefill[]) {
     const groups = new Map<string,PackagePrefill[]>();
     input.forEach(item=>{
-      const key=item.name.trim().toLowerCase();
+      const key=batchIdentity(item);
       groups.set(key,[...(groups.get(key)??[]),item]);
     });
     return [...groups.values()];
   }
-  function batchName(name:string) { return name.trim().toLowerCase(); }
+  function batchIdentity(item:PackagePrefill|undefined) { return item?.calculatorGroupId??item?.name.trim().toLowerCase()??""; }
   function readStoredBatch():StoredBatch|null {
     if (!draftStorageKey) return null;
     try {
@@ -425,14 +427,14 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
     const stored=readStoredBatch();
     let recoveryUnavailable=Boolean(draftStorageKey&&!stored);
     if (stored) {
-      const name=batchName(first.name);
+      const name=batchIdentity(first);
       const requestId=stored.requestIds?.[name]??batchRequestIds.current[name]??crypto.randomUUID();
       batchRequestIds.current[name]=requestId;
       createRequestId.current=requestId;
       try { saveStoredBatch({...stored,requestIds:{...stored.requestIds,[name]:requestId}}); }
       catch { recoveryUnavailable=true; }
     } else if (draftStorageKey) {
-      createRequestId.current=batchRequestIds.current[batchName(first.name)]??createRequestId.current;
+      createRequestId.current=batchRequestIds.current[batchIdentity(first)]??createRequestId.current;
     }
     const nonCampaign=group.find(item=>item.calculatorSettings.serviceScenario==="Non-Campaign Day")??first;
     const campaign=group.find(item=>item.calculatorSettings.serviceScenario==="Campaign Day")??first;
@@ -452,7 +454,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
     const grouped=groupPrefills(prefills);
     const stored=readStoredBatch();
     const requestIds={...batchRequestIds.current,...stored?.requestIds};
-    grouped.forEach(group=>{ const name=batchName(group[0].name); requestIds[name]??=crypto.randomUUID(); });
+    grouped.forEach(group=>{ const name=batchIdentity(group[0]); requestIds[name]??=crypto.randomUUID(); });
     batchRequestIds.current=requestIds;
     if (stored) {
       try { saveStoredBatch({...stored,requestIds}); } catch { /* Save is blocked until storage is available. */ }
@@ -756,7 +758,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
           stored=readStoredBatch();
         } catch { /* Keep the current package open for retry. */ }
       }
-      if (stored?.requestIds?.[batchName(prefillBatch[0].name)]!==createRequestId.current) {
+      if (stored?.requestIds?.[batchIdentity(prefillBatch[0])]!==createRequestId.current) {
         setFormErrors([{section:"Saving",message:"This package batch could not be verified in browser storage. Restore storage and reload before saving."}]);
         return;
       }
@@ -773,7 +775,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({priceAdjustmentReason,name:form.name,mode,clientRequestId,...(inventoryCatalogEnabled?{captureInventory:true}:{}),markets:form.markets,changeNote:form.changeNote,
           priceSchedules:schedules,samePricing:form.samePricing,longTerm:form.longTerm,campaignLongTerm:form.campaignLongTerm||campaignLines.length>0&&campaignLines.every(line=>line.effectiveTo===null),recurringCampaign:recurringRule(),storeId:editingStore?.id??storeId,storeName:editingStore?.name??storeName,components,platforms,packageId:editingPackageId,expectedVersion:editingVersion??undefined,
-          calculatorSettings:calculatorSettings?{scenarios:prefillBatch.filter(item=>batchName(item.name)===batchName(prefillBatch[0]?.name??"")).map(item=>item.calculatorSettings)}:null}),
+          calculatorSettings:calculatorSettings?{scenarios:prefillBatch.filter(item=>batchIdentity(item)===batchIdentity(prefillBatch[0])).map(item=>item.calculatorSettings)}:null}),
       });
       const data = await response.json().catch(()=>null);
       if (!response.ok && !data?.savedAsDraft) {
@@ -796,11 +798,11 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
         : `Package created · Version ${data.version} · Google Sheet synced`;
       if (editingPackageId) setHistoryOpen(editingPackageId);
       const next = prefillQueue[0];
-      const currentName=batchName(prefillBatch[0]?.name??"");
-      const remaining=prefillBatch.filter(item=>batchName(item.name)!==currentName);
+      const currentName=batchIdentity(prefillBatch[0]);
+      const remaining=prefillBatch.filter(item=>batchIdentity(item)!==currentName);
       const stored=readStoredBatch();
       let recoveryFailed=Boolean(draftStorageKey&&prefillBatch.length&&(
-        !stored || stored.requestIds?.[currentName]!==clientRequestId || !stored.prefills?.some(item=>batchName(item.name)===currentName)
+        !stored || stored.requestIds?.[currentName]!==clientRequestId || !stored.prefills?.some(item=>batchIdentity(item)===currentName)
       ));
       if (stored&&!recoveryFailed) {
         try {
@@ -948,7 +950,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
     setShowCreate(true);
   }
 
-  function renderSelection(item:PackageItem) { if(sampleMode)return null; return <>{canExportKits&&hasSelectedStore&&source==="database"&&<label className="kit-package-selector"><input type="checkbox" checked={selectedKitIds.includes(item.id)} disabled={item.sheetSyncStatus!=="synced"||Boolean(item.pendingVersion)||["draft","review"].includes(item.status)} onChange={event=>{setKitError("");setKitPreview(null);setSelectedKitIds(current=>event.target.checked?[...current,item.id]:current.filter(id=>id!==item.id));}} aria-label={`Select ${item.name} for fulfillment sheet`}/><span>Select for Fulfillment Sheet</span></label>}</>; }
+  function renderSelection(item:PackageItem) { if(sampleMode)return null; return <>{(canExportKits||onRecalculate)&&hasSelectedStore&&source==="database"&&<label className="kit-package-selector"><input type="checkbox" checked={selectedKitIds.includes(item.id)} disabled={item.sheetSyncStatus!=="synced"||Boolean(item.pendingVersion)||["draft","review"].includes(item.status)} onChange={event=>{setKitError("");setKitPreview(null);setSelectedKitIds(current=>event.target.checked?[...current,item.id]:current.filter(id=>id!==item.id));}} aria-label={`Select package ${item.name}`}/><span>{onRecalculate?"Select Package":"Select for Fulfillment Sheet"}</span></label>}</>; }
   function renderHistory(item:PackageItem) {
     if(openHistory!==item.id)return null;
     const result=historyResults[historyKey(item)];
@@ -983,6 +985,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
       <div className="package-hero-actions">
         {!staging&&<a href={HISTORY_SHEET_URL} target="_blank" rel="noopener noreferrer">Google Sheet History</a>}
         <span>{sampleMode?"Sample data":!hasPackageScope?"Select a Store":allStoresSelected?"Accessible Stores":source==="sheet-migration-preview"?"Sheet Migration Preview":"Live Database"}</span>
+        {!sampleMode&&onRecalculate&&hasSelectedStore&&loadedStoreId===storeId&&source==="database"&&<button type="button" className="reprice-next" disabled={!selectedKitIds.length||scopedItems.filter(item=>selectedKitIds.includes(item.id)).some(item=>!eligibleRepriceTarget(item))} onClick={()=>onRecalculate(scopedItems.filter(item=>selectedKitIds.includes(item.id)))}>Recalculate Prices ({selectedKitIds.length})</button>}
         {!sampleMode&&canExportKits&&hasSelectedStore&&loadedStoreId===storeId&&source==="database"&&<button type="button" className="kit-export-button" onClick={previewKitExport} disabled={!selectedKitIds.length||kitBusy}>Generate Fulfillment Sheet{selectedKitIds.length?` (${selectedKitIds.length})`:""}</button>}
         {!sampleMode&&canCreate&&hasSelectedStore&&<button onClick={openNew}>Create Single Package</button>}
     {!sampleMode&&canCreate&&hasSelectedStore&&<button type="button" onClick={()=>setBatchStore(storeId)}>Batch Upload Packages</button>}
@@ -1015,7 +1018,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
 
     {listLoading&&<div className="package-empty" role="status" aria-live="polite" aria-busy="true"><strong>Loading packages…</strong></div>}
     {listFailed&&<div className="package-message error" role="alert">{listState.error} <button type="button" onClick={()=>void load()}>Retry</button></div>}
-    {listReady&&(view==="grid"?<div className="package-list">{displayed.map(item=><article className="package-card" key={item.id}>
+    {listReady&&(view==="grid"?<div className="package-list">{displayed.map(item=><article className={`package-card${highlightedIds.includes(item.id)?" package-reprice-highlight":""}`} data-package-id={item.id} key={item.id}>
       <div className="package-card-head">
         <div>{renderSelection(item)}<span className={`package-status ${item.status}`}>{item.status}</span><span className={`sync-status ${item.pendingVersion?"pending":item.sheetSyncStatus ?? "pending"}`}>Sheet {item.pendingVersion?`v${item.pendingVersion} needs sync`:item.sheetSyncStatus==="not_sent"?"not sent":item.sheetSyncStatus ?? "preview"}</span><h3>{item.name}</h3></div>
         {!item.priceSchedules?.length&&!item.recurringCampaign&&isMarket(item.market)&&<div className="package-price"><small>{item.market}{item.currentPriceLabel?` · ${item.currentPriceLabel}`:""}</small><del>{money(item.originalPrice,item.market,source==="database")}</del><strong>{money(item.sellingPrice,item.market,source==="database")}</strong></div>}
@@ -1028,7 +1031,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
       <div className="component-list">{item.components.map((line,index)=><div key={`${line.inventorySku}-${index}`}><span className={`component-kind ${line.kind}`}>{line.kind}</span><b>{line.inventorySku}</b><span>{line.name}</span><strong>× {line.quantity}</strong></div>)}</div>
       {renderHistory(item)}
       {renderActions(item)}
-    </article>)}</div>:<div className="package-sheet-scroll" tabIndex={0} role="region" aria-label="Package list spreadsheet"><table className="package-sheet"><caption>Packages & Pricing · {visible.length} package{visible.length===1?"":"s"} · Showing {displayed.length}</caption><thead><tr><th scope="col" className="package-sheet-name">Package</th>{allStoresSelected&&<th scope="col">Store</th>}<th scope="col">Type</th><th scope="col">Status / Sheet</th>{listMarkets.map(market=><th scope="col" key={market}>{market} · {MARKET_CONFIG[market].symbol} prices</th>)}<th scope="col">Effective dates</th><th scope="col">Platform SKU</th><th scope="col">Inventory SKU / Quantity</th><th scope="col">Version</th><th scope="col">Actions</th></tr></thead><tbody>{displayed.map(item=><Fragment key={item.id}><tr><th scope="row" className="package-sheet-name"><strong>{item.name}</strong>{renderSelection(item)}<button type="button" aria-expanded={openDetails===item.id} onClick={()=>setOpenDetails(openDetails===item.id?null:item.id)} aria-label={`View details for ${item.name}`}>{openDetails===item.id?"Hide details":"View details"}</button></th>{allStoresSelected&&<td>{item.storeName??item.storeId}</td>}<td>{durationLabel(item)}</td><td><span className={`package-status ${item.status}`}>{item.status}</span><span className={`sync-status ${item.pendingVersion?"pending":item.sheetSyncStatus??"pending"}`}>Sheet {item.pendingVersion?`v${item.pendingVersion} needs sync`:item.sheetSyncStatus==="not_sent"?"not sent":item.sheetSyncStatus??"preview"}</span></td>{listMarkets.map(market=><td key={market}>{renderListPrices(item,market)}</td>)}<td className="package-sheet-dates">{renderListDates(item)}</td><td>{(item.platforms?.length?item.platforms:[{platform:"Shopee",packageSku:item.packageSku}]).map(line=><div key={line.platform}><small>{line.platform}</small><div>{line.packageSku}</div></div>)}</td><td>{item.components.map((line,index)=><div key={index} title={`${line.kind} · ${line.name}`}>{line.inventorySku} × {line.quantity}</div>)}</td><td>v{item.version}</td><td>{renderActions(item)}</td></tr>{(openDetails===item.id||openHistory===item.id)&&<tr className="package-sheet-detail"><td colSpan={8+listMarkets.length+(allStoresSelected?1:0)}>{openDetails===item.id&&<div><h3>{item.name}</h3>{(item.priceSchedules?.length||item.recurringCampaign)?<PackagePriceSummary item={item} country={countryFilter}/>:null}<div className="component-list">{item.components.map((line,index)=><div key={index}><span className={`component-kind ${line.kind}`}>{line.kind}</span><b>{line.inventorySku}</b><span>{line.name}</span><strong>× {line.quantity}</strong></div>)}</div></div>}{renderHistory(item)}</td></tr>}</Fragment>)}</tbody></table></div>)}
+    </article>)}</div>:<div className="package-sheet-scroll" tabIndex={0} role="region" aria-label="Package list spreadsheet"><table className="package-sheet"><caption>Packages & Pricing · {visible.length} package{visible.length===1?"":"s"} · Showing {displayed.length}</caption><thead><tr><th scope="col" className="package-sheet-name">Package</th>{allStoresSelected&&<th scope="col">Store</th>}<th scope="col">Type</th><th scope="col">Status / Sheet</th>{listMarkets.map(market=><th scope="col" key={market}>{market} · {MARKET_CONFIG[market].symbol} prices</th>)}<th scope="col">Effective dates</th><th scope="col">Platform SKU</th><th scope="col">Inventory SKU / Quantity</th><th scope="col">Version</th><th scope="col">Actions</th></tr></thead><tbody>{displayed.map(item=><Fragment key={item.id}><tr className={highlightedIds.includes(item.id)?"package-reprice-highlight":""} data-package-id={item.id}><th scope="row" className="package-sheet-name"><strong>{item.name}</strong>{renderSelection(item)}<button type="button" aria-expanded={openDetails===item.id} onClick={()=>setOpenDetails(openDetails===item.id?null:item.id)} aria-label={`View details for ${item.name}`}>{openDetails===item.id?"Hide details":"View details"}</button></th>{allStoresSelected&&<td>{item.storeName??item.storeId}</td>}<td>{durationLabel(item)}</td><td><span className={`package-status ${item.status}`}>{item.status}</span><span className={`sync-status ${item.pendingVersion?"pending":item.sheetSyncStatus??"pending"}`}>Sheet {item.pendingVersion?`v${item.pendingVersion} needs sync`:item.sheetSyncStatus==="not_sent"?"not sent":item.sheetSyncStatus??"preview"}</span></td>{listMarkets.map(market=><td key={market}>{renderListPrices(item,market)}</td>)}<td className="package-sheet-dates">{renderListDates(item)}</td><td>{(item.platforms?.length?item.platforms:[{platform:"Shopee",packageSku:item.packageSku}]).map(line=><div key={line.platform}><small>{line.platform}</small><div>{line.packageSku}</div></div>)}</td><td>{item.components.map((line,index)=><div key={index} title={`${line.kind} · ${line.name}`}>{line.inventorySku} × {line.quantity}</div>)}</td><td>v{item.version}</td><td>{renderActions(item)}</td></tr>{(openDetails===item.id||openHistory===item.id)&&<tr className="package-sheet-detail"><td colSpan={8+listMarkets.length+(allStoresSelected?1:0)}>{openDetails===item.id&&<div><h3>{item.name}</h3>{(item.priceSchedules?.length||item.recurringCampaign)?<PackagePriceSummary item={item} country={countryFilter}/>:null}<div className="component-list">{item.components.map((line,index)=><div key={index}><span className={`component-kind ${line.kind}`}>{line.kind}</span><b>{line.inventorySku}</b><span>{line.name}</span><strong>× {line.quantity}</strong></div>)}</div></div>}{renderHistory(item)}</td></tr>}</Fragment>)}</tbody></table></div>)}
 
     {listReady&&visible.length>displayCount&&<button type="button" className="package-load-more" onClick={()=>setDisplayCount(count=>count+30)}>Show more packages ({visible.length-displayCount} remaining)</button>}
     {listReady&&!visible.length&&<div className="package-empty"><strong>{!hasPackageScope?"Select a Store":allStoresSelected?"No Packages In Accessible Stores":"No Packages In This View"}</strong><span>{!hasPackageScope?"Package information will appear after you choose a store.":allStoresSelected?"Only packages from stores you have permission to access appear here.":"Choose another filter or create the first package."}</span></div>}
@@ -1043,7 +1046,7 @@ export function PackageControl({ storeId, storeName, storePlatform, canCreate=tr
 
       {formErrors.length>0&&<div className="package-error-popout" role="alert" aria-live="assertive"><div><b>We could not save this package. Please check:</b><button type="button" onClick={()=>setFormErrors([])} aria-label="Dismiss errors">×</button></div>{([...new Set(formErrors.map(error=>error.section))] as FormSection[]).map(section=><div className="package-error-group" key={section}><strong>{section}</strong><ul>{formErrors.filter(error=>error.section===section).map(error=><li key={`${error.section}-${error.message}`}>{error.message}</li>)}</ul></div>)}</div>}
 
-      {prefillBatch.length>0&&<section className="calculator-batch-transfer"><div><b>{prefillQueue.length+1} Calculator Packages Remaining</b><span>Non-Campaign and Campaign prices are grouped by package. Save each completed package as a draft to open the next one.</span></div><div className="calculator-batch-list">{groupPrefills(prefillBatch).slice(0,3).map((group,index)=>{const nonCampaign=group.find(item=>item.calculatorSettings.serviceScenario==="Non-Campaign Day")??group[0];const campaign=group.find(item=>item.calculatorSettings.serviceScenario==="Campaign Day")??group[0];return <div className={index===0?"current":""} key={group[0].name}><span>{index===0?"Current":"Queued"}</span><b>{group[0].name}</b><strong><small>Non-Campaign</small>{money(nonCampaign.sellingPrice,"MY")}</strong><strong><small>Campaign</small>{money(campaign.sellingPrice,"MY")}</strong></div>})}{prefillQueue.length>2&&<small>+ {prefillQueue.length-2} more in queue</small>}</div></section>}
+      {prefillBatch.length>0&&<section className="calculator-batch-transfer"><div><b>{prefillQueue.length+1} Calculator Packages Remaining</b><span>Non-Campaign and Campaign prices are grouped by package. Save each completed package as a draft to open the next one.</span></div><div className="calculator-batch-list">{groupPrefills(prefillBatch).slice(0,3).map((group,index)=>{const nonCampaign=group.find(item=>item.calculatorSettings.serviceScenario==="Non-Campaign Day")??group[0];const campaign=group.find(item=>item.calculatorSettings.serviceScenario==="Campaign Day")??group[0];return <div className={index===0?"current":""} key={batchIdentity(group[0])}><span>{index===0?"Current":"Queued"}</span><b>{group[0].name}</b><strong><small>Non-Campaign</small>{money(nonCampaign.sellingPrice,"MY")}</strong><strong><small>Campaign</small>{money(campaign.sellingPrice,"MY")}</strong></div>})}{prefillQueue.length>2&&<small>+ {prefillQueue.length-2} more in queue</small>}</div></section>}
 
       <section className="form-section"><div className="form-section-title"><span>1</span><div><h4>Package Details</h4><p>Name, markets and shared promotion dates</p></div></div>
         <div className="form-grid package-detail-grid">
