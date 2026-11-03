@@ -17,3 +17,9 @@ Removing an active country is blocked in UI and RPC until the administrator revi
 The first evidence-backed group is SkinDae MY/SG. Similar names alone are not sufficient to group any other projects. iLady SG market inconsistency and ambiguous Mizino billing units remain unresolved.
 
 Release gates: Database Structure review, rollback-only SQL/API/UI tests, fixed Staging deployment, actual UI/UX review, final functional QC, then explicit Production authorization. Static review is not visual acceptance.
+
+## Initial Staging verification
+
+Reviewed SkinDae grouping was first executed with ROLLBACK, then committed through the same service-role RPC on independent Staging. Saved Project `0b01b2e6-ede9-476f-965f-1a210b06a546`, revision 1, links only existing MY and SG Store IDs; createdStoreIds is empty. Script asserts no Store identity/status, grant or Account version changes. No other project was guessed or grouped.
+
+Combined app verification: 20 targeted API/model/UI interaction and existing-permission/Account/status regression tests passed, TypeScript and full build passed. A required storefront name prevents silently inventing an import name from the project label. Actual deployment/visual review remains a separate gate.
