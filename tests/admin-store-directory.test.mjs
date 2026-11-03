@@ -9,9 +9,9 @@ const { build } = await import(pathToFileURL(require.resolve("esbuild", { paths:
 const bundled = await build({
   entryPoints: ["app/api/admin/stores/route.ts"], bundle: true, write: false, platform: "node", format: "esm",
   plugins: [{ name: "api-stubs", setup(build) {
-    build.onResolve({ filter: /^(server-only|.*\/chatgpt-auth|.*\/supabase-rest)$/ }, args => ({ path: args.path.split("/").at(-1), namespace: "stub" }));
+    build.onResolve({ filter: /^(server-only|.*\/chatgpt-auth|.*\/supabase-rest|.*\/account-security-server)$/ }, args => ({ path: args.path.split("/").at(-1), namespace: "stub" }));
     build.onLoad({ filter: /.*/, namespace: "stub" }, args => ({
-      contents: args.path === "server-only" ? "" : args.path === "chatgpt-auth"
+      contents: args.path === "account-security-server" ? "export async function accountSecurityGate(){return null;}" : args.path === "server-only" ? "" : args.path === "chatgpt-auth"
         ? "export async function getChatGPTUser(){return globalThis.__user;}"
         : "export async function supabaseRest(path,init){return globalThis.__rest(path,init);}", loader: "js",
     }));

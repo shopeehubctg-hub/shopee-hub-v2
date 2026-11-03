@@ -16,15 +16,18 @@ const headers={"Cache-Control":"private, no-store"};
 async function portalUsers(auth: PermissionContext){
   const tenantId=auth.member.tenant_id;
   const accountReadable=await accountAccessGranted();
-  const [users,tenantModules,tenantStoreRows,directory,accountStatus,storeSetupAvailable]=await Promise.all([
+  const [users,tenantModules,tenantStoreRows,directory,accountStatus,storeSetupAvailable,registeredNamesAvailable]=await Promise.all([
     supabaseRest<Member[]>(`customer_users?select=*&tenant_id=eq.${encodeURIComponent(tenantId)}&order=email.asc`),
     supabaseRest<Array<{module_id:string;enabled:boolean}>>(`tenant_module_permissions?select=module_id,enabled&tenant_id=eq.${encodeURIComponent(tenantId)}`),
     supabaseRest<Array<{id:string;name:string;display_name:string|null;platform:string;bigseller_name:string}>>(`stores?select=id,name,display_name,platform,bigseller_name&tenant_id=eq.${encodeURIComponent(tenantId)}&order=name.asc`),
     storeDirectory(tenantId),
-    (accountReadable?supabaseRest<Array<{roster_key:string;legal_entity:string;version:string;store_id:string|null;effective_month:string}>>(`account_billing_unit_versions?select=roster_key,legal_entity,version::text,store_id,effective_month&tenant_id=eq.${encodeURIComponent(tenantId)}&order=version.desc`):Promise.resolve([]))
+    (accountReadable?supabaseRest<Array<{roster_key:string;legal_entity:string;billing_registered_name?:string|null;change_action?:string;version:string;store_id:string|null;effective_month:string}>>(`account_billing_unit_versions?select=roster_key,legal_entity,billing_registered_name,change_action,version::text,store_id,effective_month&tenant_id=eq.${encodeURIComponent(tenantId)}&order=version.desc`):Promise.resolve([]))
+      .catch(error=>{if(accountReadable&&error instanceof Error&&/"code":"(PGRST204|42703)"/.test(error.message))return supabaseRest<Array<{roster_key:string;legal_entity:string;billing_registered_name?:string|null;change_action?:string;version:string;store_id:string|null;effective_month:string}>>(`account_billing_unit_versions?select=roster_key,legal_entity,change_action,version::text,store_id,effective_month&tenant_id=eq.${encodeURIComponent(tenantId)}&order=version.desc`);throw error;})
       .then(rows=>({rows,available:true}))
       .catch(error=>{if(error instanceof Error&&/"code":"(PGRST205|42P01)"/.test(error.message))return {rows:[],available:false};throw error;}),
     (accountReadable?supabaseRest<boolean>("rpc/account_store_setup_v2_available",{method:"POST"}):Promise.resolve(false))
+      .catch(error=>{if(error instanceof Error&&/"code":"(PGRST202|PGRST205|42883)"/.test(error.message))return false;throw error;}),
+    (accountReadable?supabaseRest<boolean>("rpc/account_registered_names_available",{method:"POST"}):Promise.resolve(false))
       .catch(error=>{if(error instanceof Error&&/"code":"(PGRST202|PGRST205|42883)"/.test(error.message))return false;throw error;}),
   ]);
   const accountVersions=accountStatus.rows;
@@ -39,17 +42,23 @@ async function portalUsers(auth: PermissionContext){
       if(!current||version.effective_month>current.effective_month||version.effective_month===current.effective_month&&BigInt(version.version)>BigInt(current.version))currentByKey.set(version.roster_key,version);
     }
   }
-  const unitsByStore=new Map<string,Array<{rosterKey:string;legalEntity:string;latestVersion:string}>>();
+  const namesFor=(key:string,month:string,fallback:typeof accountVersions[number])=>{
+    const names=accountVersions.filter(version=>version.roster_key===key&&version.effective_month.slice(0,7)<=month&&(version.change_action==='company'||version.change_action==='setup')).sort((a,b)=>a.effective_month.localeCompare(b.effective_month)||(BigInt(a.version)<BigInt(b.version)?-1:1));
+    const platform=names.at(-1)?.legal_entity??fallback.legal_entity;
+    const billing=names.filter(version=>typeof version.billing_registered_name==='string'&&version.billing_registered_name.trim()).at(-1)?.billing_registered_name??null;
+    return {legalEntity:platform,billingEntity:billing};
+  };
+  const unitsByStore=new Map<string,Array<{rosterKey:string;legalEntity:string;billingEntity:string|null;latestVersion:string}>>();
   for(const [key,current] of currentByKey){
     if(!current.store_id)continue;
     const units=unitsByStore.get(current.store_id)??[];
-    units.push({rosterKey:key,legalEntity:current.legal_entity,latestVersion:latestByKey.get(key)?.version??current.version});
+    units.push({rosterKey:key,...namesFor(key,currentMonth,current),latestVersion:latestByKey.get(key)?.version??current.version});
     unitsByStore.set(current.store_id,units);
   }
   for(const [key,latest] of latestByKey){
     if(currentByKey.has(key)||!latest.store_id)continue;
     const units=unitsByStore.get(latest.store_id)??[];
-    units.push({rosterKey:key,legalEntity:latest.legal_entity,latestVersion:latest.version});
+    units.push({rosterKey:key,...namesFor(key,latest.effective_month.slice(0,7),latest),latestVersion:latest.version});
     unitsByStore.set(latest.store_id,units);
   }
   const tenantStores=tenantStoreRows.filter(store=>canonicalStoreId(store.id)===store.id).map(store=>{
@@ -75,7 +84,7 @@ async function portalUsers(auth: PermissionContext){
       enabledModules,storeIds,canManagePermissions:user.role==="superadmin"||delegated,editable,
       permissionsVersion:user.permissions_version}];
   });
-  return{stores:allowedStores,accountSettingsAvailable:accountReadable&&accountStatus.available&&storeSetupAvailable===true,
+  return{stores:allowedStores,accountRegisteredNamesAvailable:accountReadable&&registeredNamesAvailable===true,accountSettingsAvailable:accountReadable&&accountStatus.available&&storeSetupAvailable===true,
     clientDefaults,users:exposedUsers,access:{isSuperAdmin:auth.isSuperAdmin,canManageStores:true,
       canManageDefaults:auth.isSuperAdmin,grantableModules:auth.grantableModules}};
 }

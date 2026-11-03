@@ -18,7 +18,7 @@ type StoreLinks = {
   adsTopUpOwner: AdsTopUpOwner | "";
 };
 type StoreDraft = StoreLinks & { name: string; market: MarketCode };
-type Store = { id: string; name: string; platform: string; bigseller_name?: string; accountUnit?: { rosterKey: string; legalEntity: string; latestVersion: string } | null; accountUnitCount?: number } & Partial<StoreLinks>;
+type Store = { id: string; name: string; platform: string; bigseller_name?: string; accountUnit?: { rosterKey: string; legalEntity: string; billingEntity?: string | null; latestVersion: string } | null; accountUnitCount?: number } & Partial<StoreLinks>;
 const emptyStoreDraft = (): StoreDraft => ({ name: "", market: "MY", projectLinks: [], storeGroupLink: "", googleDriveLink: "", adsTopUpOwner: "" });
 
 function projectLinkError(link: ProjectLink) {
@@ -76,6 +76,7 @@ type UserData = {
   stores: Store[];
   clientDefaults: PortalModuleId[];
   accountSettingsAvailable: boolean;
+  accountRegisteredNamesAvailable?: boolean;
   access: PermissionAccess;
 };
 
@@ -103,6 +104,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
   const [newStore, setNewStore] = useState<StoreDraft>(emptyStoreDraft);
   const [newAccount, setNewAccount] = useState<AccountSetupDraft>(emptyAccountSetup);
   const [editLegalEntity, setEditLegalEntity] = useState("");
+  const [editBillingEntity, setEditBillingEntity] = useState("");
   const [editEntityMonth, setEditEntityMonth] = useState(malaysiaMonth);
   const storeRequest = useRef<{ payload: string; id: string } | null>(null);
   const userRequest = useRef<{ payload: string; id: string } | null>(null);
@@ -285,7 +287,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
   async function saveStore() {
     if (!editingStore) return;
     if (storeDraft.projectLinks.some(projectLinkError)) return;
-    const companyChanged = editAccountPreview && !!editingStore.accountUnit && editLegalEntity.trim() !== editingStore.accountUnit.legalEntity;
+    const companyChanged = editAccountPreview && !!editingStore.accountUnit && (editLegalEntity.trim() !== editingStore.accountUnit.legalEntity || (!!editBillingEntity.trim() && editBillingEntity.trim() !== (editingStore.accountUnit.billingEntity ?? "")));
     if (companyChanged && (!editLegalEntity.trim() || !/^20\d{2}-(0[1-9]|1[0-2])$/.test(editEntityMonth) || editEntityMonth < malaysiaMonth())) {
       setStoreError("Enter a legal company name and current or future effective month.");
       return;
@@ -294,7 +296,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
     setSaving(true);
     try {
       const payload = { id: editingStore.id, ...storeDraft, adsTopUpOwner: storeDraft.adsTopUpOwner || null,
-        ...(companyChanged && editingStore.accountUnit ? { legalEntity: editLegalEntity.trim(), effectiveMonth: editEntityMonth, accountRosterKey: editingStore.accountUnit.rosterKey, expectedAccountVersion: editingStore.accountUnit.latestVersion } : {}) };
+        ...(companyChanged && editingStore.accountUnit ? { legalEntity: editLegalEntity.trim(), ...(data?.accountRegisteredNamesAvailable && editBillingEntity.trim() ? { billingEntity: editBillingEntity.trim() } : {}), effectiveMonth: editEntityMonth, accountRosterKey: editingStore.accountUnit.rosterKey, expectedAccountVersion: editingStore.accountUnit.latestVersion } : {}) };
       const payloadText = JSON.stringify(payload);
       if (storeRequest.current?.payload !== payloadText) storeRequest.current = { payload: payloadText, id: crypto.randomUUID() };
       const response = await fetch("/api/admin/stores", {
@@ -597,6 +599,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                     adsTopUpOwner: store.adsTopUpOwner ?? "",
                   });
                   setEditLegalEntity(store.accountUnit?.legalEntity ?? "");
+                  setEditBillingEntity(store.accountUnit?.billingEntity ?? "");
                   setEditEntityMonth(malaysiaMonth());
                 }}>Edit store</button>
               </article>
@@ -620,7 +623,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                 updateNewStore({ market });
                 setNewAccount(current => resetAccountSetupSelection(current, market));
               }}>{MARKET_CODES.map(market=><option key={market} value={market}>{MARKET_CONFIG[market].name} ({market})</option>)}</select></label>
-              {newAccountPreview && <AccountSetupFields draft={newAccount} market={accountMarket} update={updateNewAccount} />}
+              {newAccountPreview && <AccountSetupFields draft={newAccount} registeredNamesAvailable={data?.accountRegisteredNamesAvailable===true} market={accountMarket} update={updateNewAccount} />}
               <StoreExchangeRateField market={newStore.market} invoiceMonth={newAccount.effectiveMonth} onInvoiceMonthChange={month=>setNewAccount(current=>({...current,effectiveMonth:month}))} showInvoiceMonth={!newAccountPreview} />
               {newAccountPreview && accountSetupError(newAccount, accountMarket, plans) && <p className="store-field-error" role="status">{accountSetupError(newAccount, accountMarket, plans)}</p>}
               <StoreLinkFields draft={newStore} update={updateNewStore} idPrefix="add-store" />
@@ -642,7 +645,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
             <div className="access-form" aria-busy={saving}>
               <label>Store name<input ref={storeNameInputRef} maxLength={120} required value={storeDraft.name} onChange={event => updateStoreDraft({ name: event.target.value })} /></label>
               <StoreExchangeRateField market={marketFromPlatform(editingStore.platform)} invoiceMonth={editEntityMonth} onInvoiceMonthChange={setEditEntityMonth} showInvoiceMonth />
-              {editAccountPreview && (editingStore.accountUnit ? <fieldset><legend>Account company</legend><div className="account-rate-fields"><label className="account-field-wide">Company name<input maxLength={240} value={editLegalEntity} onChange={event => { setStoreError(""); setEditLegalEntity(event.target.value); }} required /></label><label>Effective invoice month<input type="month" min={malaysiaMonth()} value={editEntityMonth} onChange={event => { setStoreError(""); setEditEntityMonth(event.target.value); }} required /></label></div></fieldset> : <p className="store-access-note">{(editingStore.accountUnitCount ?? 0) > 1 ? "This store has multiple billing projects. Edit each company in Account." : "No Account setup is linked to this store yet. Set up its billing project in Account."}</p>)}
+              {editAccountPreview && (editingStore.accountUnit ? <fieldset><legend>Registered names</legend><div className="account-rate-fields"><label>Registered Name (Platform)<input maxLength={240} value={editLegalEntity} onChange={event => { setStoreError(""); setEditLegalEntity(event.target.value); }} required /></label><label>Registered Name (Billing)<input maxLength={240} value={editBillingEntity} disabled={saving || !data?.accountRegisteredNamesAvailable} onChange={event => { setStoreError(""); setEditBillingEntity(event.target.value); }} />{editingStore.accountUnit.billingEntity && !editBillingEntity.trim() && <small>The saved billing name will be kept.</small>}</label><label>Effective invoice month<input type="month" min={malaysiaMonth()} value={editEntityMonth} onChange={event => { setStoreError(""); setEditEntityMonth(event.target.value); }} required /></label></div></fieldset> : <p className="store-access-note">{(editingStore.accountUnitCount ?? 0) > 1 ? "This store has multiple billing projects. Edit each company in Account." : "No Account setup is linked to this store yet. Set up its billing project in Account."}</p>)}
               <StoreLinkFields draft={storeDraft} update={updateStoreDraft} idPrefix="edit-store" />
               {accountSetupPreview && !accountSetupAvailable && <p className="store-access-note" role="status">Account setup is unavailable. Store details can still be saved.</p>}
               {storeError && <p id="edit-store-error" className="store-form-error" role="alert">{storeError}</p>}
