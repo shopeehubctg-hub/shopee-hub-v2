@@ -398,13 +398,13 @@ export default function Home() {
     </aside>
 
     <section className="workspace">
-      <header className="header">
+      {section!=="permissions"&&<header className="header">
         <div><p className="kicker">{section==="account"?"SHOPEE HUB":"SHOPEE HUB PERFORMANCE"}{isStaging&&<span data-environment="staging"> · STAGING</span>}</p><h1>{section==="account"?"Account":section==="packages"&&!storeSelectionMade?"No Store Selected":allStoresSelected ? "All Stores" : (store?.name ?? (isStaging?"Selected Store":"J Packaging"))}</h1></div>
         {section!=="account"&&<div className="toolbar">
           <StoreProjectSelector stores={data?.stores??[]} storeId={storeId} onSelect={selectStore} revision={dataRevision} operationMode={section==="packages"||section==="calculator"} placeholder={section==="packages"&&!storeSelectionMade}/>
           <button onClick={()=>load(storeId,true)} disabled={loading}>{loading?"Updating…":"Update data"}</button>
         </div>}
-      </header>
+      </header>}
 
       <DashboardModuleBoundary key={section}><Suspense fallback={<ModuleLoading/>}>
       {needsModuleData&&!storeId?<div className="card" role="status">No stores are available. Select or add a store to view this module.</div>:!moduleReady?(currentModule?.error?<div className="card" role="alert"><p>{currentModule.error}</p><button type="button" onClick={()=>setModuleRetry(value=>value+1)}>Retry module</button></div>:<ModuleLoading/>):stagingSnapshotUnavailable?<div className="card" role="status"><h2>No data</h2><p>No Staging snapshot is available for this store.</p></div>:<>
@@ -425,7 +425,7 @@ export default function Home() {
       {section==="calculator" && <div className="page" aria-label="Price Calculator"><PriceCalculator recalculateTargets={recalculateTargets} onPricesUpdated={finishPriceUpdate} staging={isStaging} storeId={allStoresSelected?"":store?.id??""} storeName={allStoresSelected?"":(store?.name??"")} productProfile={allStoresSelected?null:data?.productProfile} coFundVouchers={allStoresSelected?[]:data?.coFundVouchers} onCreatePackage={prefill=>openPackageDraft([prefill])} onCreatePackages={openPackageDraft} /></div>}
       {section==="design" && <div className="page"><DesignChecker key={storeId} storeId={storeId}/></div>}
       {section==="protection" && <div className="page"><FakeSellerReport storeName={store?.name ?? "Selected store"} allStores={allStoresSelected} cases={fakeSellerCases}/></div>}
-      {section==="permissions" && data?.access?.canManagePermissions && <div className="page"><PermissionSettings accountSetupPreview initialEnabledModules={data.access.clientEnabledModules} onStoreChanged={()=>load(storeId && storeId!=="all" ? storeId : undefined,true)}/></div>}
+      {section==="permissions" && data?.access?.canManagePermissions && <div className="page"><PermissionSettings staging={isStaging} accountSetupPreview initialEnabledModules={data.access.clientEnabledModules} onStoreChanged={()=>load(storeId && storeId!=="all" ? storeId : undefined,true)}/></div>}
       {section==="account" && data?.access?.role==="superadmin" && <div className="page"><AccountPanel /></div>}
       {section==="live_calendar" && <div className="page"><LiveCalendar key={storeId} initialStoreId={storeId} initialView={data.access?.role==="superadmin"?"month":"list"}/></div>}
 

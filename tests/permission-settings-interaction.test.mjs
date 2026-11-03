@@ -124,9 +124,19 @@ test('Edit Store shows separate registered names and capability-gates billing in
  const response=data(true);response.accountSettingsAvailable=true;response.accountRegisteredNamesAvailable=true;response.stores[0].accountUnit={rosterKey:'r1',legalEntity:'Platform Legal Co',billingEntity:'Billing Legal Co',latestVersion:'7'};
  await withApp(async(url)=>{if(url==='/api/admin/users')return Response.json(response);throw Error('Unexpected '+url);},async({click})=>{
  await click([...document.querySelectorAll('.access-tabs button')].find(button=>button.textContent.trim()==='Stores'));
- await click([...document.querySelectorAll('button')].find(button=>button.textContent.trim()==='Edit store details'));
+ await click(document.querySelector('.directory-menu summary'));await click([...document.querySelectorAll('button')].find(button=>button.textContent.trim()==='Edit details'));
  const field=label=>[...document.querySelectorAll('.access-modal label')].find(node=>node.textContent.startsWith(label))?.querySelector('input');
  assert.equal(field('Registered Name (Platform)').value,'Platform Legal Co');assert.equal(field('Registered Name (Billing)').value,'Billing Legal Co');assert.equal(field('Registered Name (Billing)').disabled,false);
  });
- response.accountRegisteredNamesAvailable=false;await withApp(async()=>Response.json(response),async({click})=>{await click([...document.querySelectorAll('.access-tabs button')].find(button=>button.textContent.trim()==='Stores'));await click([...document.querySelectorAll('button')].find(button=>button.textContent.trim()==='Edit store details'));const billing=[...document.querySelectorAll('.access-modal label')].find(node=>node.textContent.startsWith('Registered Name (Billing)')).querySelector('input');assert.equal(billing.disabled,true);assert.equal(billing.value,'Billing Legal Co');});
+ response.accountRegisteredNamesAvailable=false;await withApp(async()=>Response.json(response),async({click})=>{await click([...document.querySelectorAll('.access-tabs button')].find(button=>button.textContent.trim()==='Stores'));await click(document.querySelector('.directory-menu summary'));await click([...document.querySelectorAll('button')].find(button=>button.textContent.trim()==='Edit details'));const billing=[...document.querySelectorAll('.access-modal label')].find(node=>node.textContent.startsWith('Registered Name (Billing)')).querySelector('input');assert.equal(billing.disabled,true);assert.equal(billing.value,'Billing Legal Co');});
+});
+
+test('store directory filters country and service status without changing stores',async()=>{
+ const response=data(true);response.stores=[{id:'shopee-my',name:'Alpha MY',platform:'Shopee MY',serviceStatus:'active'},{id:'shopee-sg',name:'Alpha SG',platform:'Shopee SG',serviceStatus:'active'},{id:'shopee-ended',name:'Beta MY',platform:'Shopee MY',serviceStatus:'ended'}];let writes=0;
+ await withApp(async(_url,init={})=>{if(init.method)writes++;return Response.json(response);},async({click,change})=>{
+ await click([...document.querySelectorAll('.access-tabs button')].find(button=>button.textContent.trim()==='Stores'));
+ const rows=()=>[...document.querySelectorAll('table[aria-label="Store directory"] tbody tr')];assert.equal(rows().length,3);
+ await change(document.querySelector('[aria-label="Filter stores by country"]'),'SG');assert.equal(rows().length,1);assert.match(rows()[0].textContent,/Alpha SG/);
+ await change(document.querySelector('[aria-label="Filter stores by country"]'),'all');await change(document.querySelector('[aria-label="Filter stores by service status"]'),'ended');assert.equal(rows().length,1);assert.match(rows()[0].textContent,/Beta MY/);assert.equal(writes,0);
+ });
 });
