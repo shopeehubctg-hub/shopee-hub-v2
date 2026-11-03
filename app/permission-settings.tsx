@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import {StoreProjectEditor} from "./store-project-editor";
 import { StoreStatusControl } from "./store-status-control";
 import { StoreExchangeRateField } from "./store-exchange-rate-field";
 import { MARKET_CODES, MARKET_CONFIG, marketFromPlatform, type MarketCode } from "./markets";
@@ -100,6 +101,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
   const [addingStore, setAddingStore] = useState(false);
+  const [projectEditor,setProjectEditor]=useState<{storeId?:string}|null>(null);
   const [editingStore, setEditingStore] = useState<Store | null>(null);
   const [storeDraft, setStoreDraft] = useState<StoreDraft>(emptyStoreDraft);
   const [newStore, setNewStore] = useState<StoreDraft>(emptyStoreDraft);
@@ -577,7 +579,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
               <span>Add a store to make it available in the portal.</span>
             </div>
             <span className="store-access-note">Customer visibility is managed separately under Users & roles.</span>
-            <button disabled={!data} onClick={event => { storeReturnFocusRef.current = event.currentTarget; setMessage(""); setStoreError(""); setAddingStore(true); }}>+ Add store</button>
+            <button disabled={!data} onClick={event => { storeReturnFocusRef.current = event.currentTarget; setMessage(""); setStoreError(""); if(isSuperAdmin)setProjectEditor({});else setAddingStore(true); }}>+ Add store</button>
           </section>
           <section className="store-access-list">
             {data?.stores.map(store => (
@@ -586,6 +588,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                   <h3>{store.name}</h3>
                 </div>
                 <span>{store.platform}</span>
+                {isSuperAdmin&&<button type="button" className="edit-access" onClick={()=>setProjectEditor({storeId:store.id})}>Project &amp; countries</button>}
                 {isSuperAdmin&&<StoreStatusControl storeId={store.id} storeName={store.name} status={store.serviceStatus} onSaved={()=>{void loadUsers();onStoreChanged?.();}}/>}
                 <button className="edit-access" onClick={event => {
                   storeReturnFocusRef.current = event.currentTarget;
@@ -603,13 +606,14 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                   setEditLegalEntity(store.accountUnit?.legalEntity ?? "");
                   setEditBillingEntity(store.accountUnit?.billingEntity ?? "");
                   setEditEntityMonth(malaysiaMonth());
-                }}>Edit store</button>
+                }}>Edit store details</button>
               </article>
             ))}
           </section>
         </>
       )}
 
+      {projectEditor&&<StoreProjectEditor initialStoreId={projectEditor.storeId} onClose={()=>setProjectEditor(null)} onSaved={()=>{void loadUsers();onStoreChanged?.();}}/>}
       {addingStore && (
         <div className="access-modal" role="dialog" aria-modal="true" aria-label="Add store" onKeyDown={handleStoreModalKeyDown}>
           <div className="access-editor card" ref={storeModalRef}>

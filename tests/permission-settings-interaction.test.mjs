@@ -124,9 +124,9 @@ test('Edit Store shows separate registered names and capability-gates billing in
  const response=data(true);response.accountSettingsAvailable=true;response.accountRegisteredNamesAvailable=true;response.stores[0].accountUnit={rosterKey:'r1',legalEntity:'Platform Legal Co',billingEntity:'Billing Legal Co',latestVersion:'7'};
  await withApp(async(url)=>{if(url==='/api/admin/users')return Response.json(response);throw Error('Unexpected '+url);},async({click})=>{
  await click([...document.querySelectorAll('.access-tabs button')].find(button=>button.textContent.trim()==='Stores'));
- await click([...document.querySelectorAll('button')].find(button=>button.textContent.trim()==='Edit store'));
+ await click([...document.querySelectorAll('button')].find(button=>button.textContent.trim()==='Edit store details'));
  const field=label=>[...document.querySelectorAll('.access-modal label')].find(node=>node.textContent.startsWith(label))?.querySelector('input');
  assert.equal(field('Registered Name (Platform)').value,'Platform Legal Co');assert.equal(field('Registered Name (Billing)').value,'Billing Legal Co');assert.equal(field('Registered Name (Billing)').disabled,false);
  });
- response.accountRegisteredNamesAvailable=false;await withApp(async()=>Response.json(response),async({click})=>{await click([...document.querySelectorAll('.access-tabs button')].find(button=>button.textContent.trim()==='Stores'));await click([...document.querySelectorAll('button')].find(button=>button.textContent.trim()==='Edit store'));const billing=[...document.querySelectorAll('.access-modal label')].find(node=>node.textContent.startsWith('Registered Name (Billing)')).querySelector('input');assert.equal(billing.disabled,true);assert.equal(billing.value,'Billing Legal Co');});
+ response.accountRegisteredNamesAvailable=false;await withApp(async()=>Response.json(response),async({click})=>{await click([...document.querySelectorAll('.access-tabs button')].find(button=>button.textContent.trim()==='Stores'));await click([...document.querySelectorAll('button')].find(button=>button.textContent.trim()==='Edit store details'));const billing=[...document.querySelectorAll('.access-modal label')].find(node=>node.textContent.startsWith('Registered Name (Billing)')).querySelector('input');assert.equal(billing.disabled,true);assert.equal(billing.value,'Billing Legal Co');});
 });

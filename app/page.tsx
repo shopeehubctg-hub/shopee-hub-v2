@@ -25,6 +25,8 @@ const OverviewStoreSales=lazy(()=>import("./overview-store-sales").then(module=>
 const OverviewSales=lazy(()=>import("./overview-sales").then(module=>({default:module.OverviewSales})));
 const SNAPSHOT_SECTIONS=new Set(["overview","advertising","actions","calculator","orders","health","protection"]);
 
+import {StoreProjectSelector} from "./store-project-selector";
+
 type Store = { id: string; name: string; sourceName?: string; platform: string; contacts: { project: string; href: string; driveLink?: string }[]; storeGroupLink?: string | null; driveLink?: string | null };
 type ManagementAction = { actionDate: string; category: string; title: string; detail: string };
 type CoFundVoucher = { id:number; campaignName:string; campaignDate:string|null; campaignStartAt:string|null; campaignEndAt:string|null; voucherName:string; discountAmount:number; currency:string; quantity:number };
@@ -393,7 +395,7 @@ export default function Home() {
       <header className="header">
         <div><p className="kicker">{section==="account"?"SHOPEE HUB":"SHOPEE HUB PERFORMANCE"}{isStaging&&<span data-environment="staging"> · STAGING</span>}</p><h1>{section==="account"?"Account":section==="packages"&&!storeSelectionMade?"No Store Selected":allStoresSelected ? "All Stores" : (store?.name ?? (isStaging?"Selected Store":"J Packaging"))}</h1></div>
         {section!=="account"&&<div className="toolbar">
-          <label>Store<select value={section==="packages"&&!storeSelectionMade?"":storeId} onChange={event=>selectStore(event.target.value)}><option value="" disabled>Select a Store</option><option value="all">All Stores</option>{data?.stores.map(s=><option key={s.id} value={s.id}>{s.name} · {s.platform.replace("Shopee ", "")}</option>) ?? <option value="j-packaging-shopee">J Packaging · MY</option>}</select></label>
+          <StoreProjectSelector stores={data?.stores??[]} storeId={storeId} onSelect={selectStore} revision={dataRevision} operationMode={section==="packages"||section==="calculator"} placeholder={section==="packages"&&!storeSelectionMade}/>
           <button onClick={()=>load(storeId,true)} disabled={loading}>{loading?"Updating…":"Update data"}</button>
         </div>}
       </header>
