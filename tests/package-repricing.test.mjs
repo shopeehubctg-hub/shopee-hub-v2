@@ -48,3 +48,17 @@ test('eligibility excludes ended/draft/pending/non-MY packages',()=>{
  const base={status:'active',sheetSyncStatus:'synced',priceSchedules:[{market:'MY'}]};assert.equal(eligibleRepriceTarget(base),true);
  for(const patch of [{status:'expired'},{status:'draft'},{status:'review'},{pendingVersion:2},{sheetSyncStatus:'pending'},{priceSchedules:[{market:'SG'}]}])assert.ok(!eligibleRepriceTarget({...base,...patch}));
 });
+
+test('ordinary edit after partial repricing preserves an inherited legacy gap but rejects new price changes',async()=>{
+ const {resolvePricingEvidence}=await import('../node_modules/.reprice-tests/evidence.mjs');
+ const original={market:'MY',priceType:'campaign',originalPrice:30000,sellingPrice:18000,effectiveFrom:'2026-11-09',effectiveTo:'2026-11-11'};
+ const evidence={source:'Calculator',scenarios:[],originalPrices:{MY:{normal:200,campaign:200}},scenarioReferences:{campaign:{source:'Calculator',recordedBy:'legacy',recordedAt:''}},finalPrices:[{...original,originalPrice:300,sellingPrice:180}],adjustmentReason:''};
+ const context={tenantId:'t',storeId:'s',actor:'user'};const previous={_pricingEvidence:evidence};
+ assert.equal((await resolvePricingEvidence({},context,{},[original],previous)).adjustmentReason,'');
+ await assert.rejects(()=>resolvePricingEvidence({},context,{},[{...original,sellingPrice:18100}],previous),/reason/);
+ assert.ok(await resolvePricingEvidence({},context,{},[{...original,sellingPrice:20000}],previous));
+ assert.ok(await resolvePricingEvidence({},context,{},[{...original,effectiveTo:'2026-11-12'}],previous));
+ const mixed={_pricingEvidence:{...evidence,finalPrices:[...evidence.finalPrices,{...evidence.finalPrices[0],effectiveFrom:'2026-12-09',effectiveTo:'2026-12-11',sellingPrice:190}]}};
+ await assert.rejects(()=>resolvePricingEvidence({},context,{},[original,{...original,effectiveFrom:'2026-12-09',effectiveTo:'2026-12-11'}],mixed),/reason/);
+ const noReferences={_pricingEvidence:{...evidence,scenarioReferences:undefined}};await assert.rejects(()=>resolvePricingEvidence({},context,{},[original],noReferences),/reason/);
+});

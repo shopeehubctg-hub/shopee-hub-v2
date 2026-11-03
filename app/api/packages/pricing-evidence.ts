@@ -20,6 +20,15 @@ export async function resolvePricingEvidence(db:DB,context:{tenantId:string;stor
  const adjusted=original&&schedules.some(p=>p.market==='MY'&&Math.abs(p.sellingPrice/100-(p.priceType==='campaign'?original.campaign:original.normal))>0.005);
  const reason=(input.priceAdjustmentReason??old?.adjustmentReason??'').trim();
  if(reason.length>1000)throw Error('Use up to 1,000 characters for the price change reason.');
- if(adjusted&&!reason)throw Error('Enter a reason for changing the Calculator price.');
+ // A partial recalculation may inherit a legacy manual price without a recorded reason.
+ // Preserve that discrepancy, but do not exempt a newly changed value or period ambiguity.
+ const inherited=(p:typeof schedules[number])=>{
+  if(!old?.scenarioReferences||!Array.isArray(old.finalPrices))return false;
+  const prior=old.finalPrices.filter((row:unknown):row is {market:string;priceType:string;sellingPrice:number;effectiveFrom:string;effectiveTo:string|null}=>!!row&&typeof row==='object'&&'market' in row&&row.market==='MY'&&'priceType' in row&&row.priceType===p.priceType&&'sellingPrice' in row&&typeof row.sellingPrice==='number'&&Number.isFinite(row.sellingPrice));
+  const exact=prior.filter(row=>row.effectiveFrom===p.effectiveFrom&&row.effectiveTo===p.effectiveTo);
+  const candidates=exact.length?exact:prior;
+  return candidates.length>0&&candidates.every(row=>Math.round(row.sellingPrice*100)===p.sellingPrice);
+ };
+ if(adjusted&&!reason&&schedules.some(p=>p.market==='MY'&&Math.abs(p.sellingPrice/100-(p.priceType==='campaign'?original!.campaign:original!.normal))>0.005&&!inherited(p)))throw Error('Enter a reason for changing the Calculator price.');
  return {source:scenarios.length?'Calculator':'Manual Excel Upload',...(saved?{exportId:saved.id,exportedAt:saved.createdAt,exportedBy:saved.actor}:{}),scenarios,...(old?.scenarioReferences?{scenarioReferences:old.scenarioReferences}:{}),...(original?{originalPrices:{MY:original}}:{}),finalPrices:schedules.map(p=>({...p,sellingPrice:p.sellingPrice/100,originalPrice:p.originalPrice/100})),adjustmentReason:reason,recordedBy:context.actor,recordedAt:new Date().toISOString()};
 }
