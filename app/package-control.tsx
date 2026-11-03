@@ -950,7 +950,7 @@ export function PackageControl({ onRecalculate,highlightedIds=[],storeId, storeN
     setShowCreate(true);
   }
 
-  function renderSelection(item:PackageItem) { if(sampleMode)return null; return <>{(canExportKits||staging&&onRecalculate)&&hasSelectedStore&&source==="database"&&<label className="kit-package-selector"><input type="checkbox" checked={selectedKitIds.includes(item.id)} disabled={item.sheetSyncStatus!=="synced"||Boolean(item.pendingVersion)||["draft","review"].includes(item.status)} onChange={event=>{setKitError("");setKitPreview(null);setSelectedKitIds(current=>event.target.checked?[...current,item.id]:current.filter(id=>id!==item.id));}} aria-label={`Select package ${item.name}`}/><span>{staging&&onRecalculate?"Select Package":"Select for Fulfillment Sheet"}</span></label>}</>; }
+  function renderSelection(item:PackageItem) { if(sampleMode)return null; return <>{(canExportKits||onRecalculate)&&hasSelectedStore&&source==="database"&&<label className="kit-package-selector"><input type="checkbox" checked={selectedKitIds.includes(item.id)} disabled={item.sheetSyncStatus!=="synced"||Boolean(item.pendingVersion)||["draft","review"].includes(item.status)} onChange={event=>{setKitError("");setKitPreview(null);setSelectedKitIds(current=>event.target.checked?[...current,item.id]:current.filter(id=>id!==item.id));}} aria-label={`Select package ${item.name}`}/><span>{onRecalculate?"Select Package":"Select for Fulfillment Sheet"}</span></label>}</>; }
   function renderHistory(item:PackageItem) {
     if(openHistory!==item.id)return null;
     const result=historyResults[historyKey(item)];
@@ -985,7 +985,7 @@ export function PackageControl({ onRecalculate,highlightedIds=[],storeId, storeN
       <div className="package-hero-actions">
         {!staging&&<a href={HISTORY_SHEET_URL} target="_blank" rel="noopener noreferrer">Google Sheet History</a>}
         <span>{sampleMode?"Sample data":!hasPackageScope?"Select a Store":allStoresSelected?"Accessible Stores":source==="sheet-migration-preview"?"Sheet Migration Preview":"Live Database"}</span>
-        {!sampleMode&&staging&&onRecalculate&&hasSelectedStore&&loadedStoreId===storeId&&source==="database"&&<button type="button" className="reprice-next" disabled={!selectedKitIds.length||scopedItems.filter(item=>selectedKitIds.includes(item.id)).some(item=>!eligibleRepriceTarget(item))} onClick={()=>onRecalculate(scopedItems.filter(item=>selectedKitIds.includes(item.id)))}>Recalculate Prices ({selectedKitIds.length})</button>}
+        {!sampleMode&&onRecalculate&&hasSelectedStore&&loadedStoreId===storeId&&source==="database"&&<button type="button" className="reprice-next" disabled={!selectedKitIds.length||scopedItems.filter(item=>selectedKitIds.includes(item.id)).some(item=>!eligibleRepriceTarget(item))} onClick={()=>onRecalculate(scopedItems.filter(item=>selectedKitIds.includes(item.id)))}>Recalculate Prices ({selectedKitIds.length})</button>}
         {!sampleMode&&canExportKits&&hasSelectedStore&&loadedStoreId===storeId&&source==="database"&&<button type="button" className="kit-export-button" onClick={previewKitExport} disabled={!selectedKitIds.length||kitBusy}>Generate Fulfillment Sheet{selectedKitIds.length?` (${selectedKitIds.length})`:""}</button>}
         {!sampleMode&&canCreate&&hasSelectedStore&&<button onClick={openNew}>Create Single Package</button>}
     {!sampleMode&&canCreate&&hasSelectedStore&&<button type="button" onClick={()=>setBatchStore(storeId)}>Batch Upload Packages</button>}

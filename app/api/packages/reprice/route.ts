@@ -14,7 +14,7 @@ import {PATCH as retryPackageHistory} from '../route';
 export const dynamic='force-dynamic';
 const fail=(message:string,status=409)=>Object.assign(Error(message),{status});
 export async function POST(request:Request){try{
- if(deploymentTarget()!=='staging')throw fail('This feature is currently available in Staging only.',404);
+ if(!['staging','production'].includes(deploymentTarget()))throw fail('Price updates require a configured Dashboard environment.',404);
  assertDeploymentIsolation();
  const b=await request.json();
  const allowed=['storeId','packageId','expectedVersion','requestId','exportId','priceTypes'];
@@ -51,7 +51,7 @@ export async function POST(request:Request){try{
   return {packageId:item.id,version,sheetSyncStatus:'pending',replayed:false};
  });
  if(receipt.sheetSyncStatus==='synced')return Response.json({ok:true,saved:true,...receipt},{headers:{'Cache-Control':'private, no-store'}});
- // The shared publisher uses Staging's isolated local receipt; never calls Production Sheets here.
+ // Reuse the environment-isolated publisher and the saved version's existing Change ID.
  try{
  const publish=await retryPackageHistory(new Request(new URL('/api/packages',request.url),{method:'PATCH',headers:request.headers,body:JSON.stringify({action:'retry',packageId:receipt.packageId,expectedVersion:receipt.version})}));
  const result=await publish.json();
