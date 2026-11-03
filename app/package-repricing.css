@@ -3,3 +3,25 @@
 .reprice-calculator .reprice-results td{font-size:14px}.reprice-calculator .reprice-results td:first-child{font-size:20px;font-weight:700;color:#e72b2b}.reprice-row-header>span{overflow-wrap:anywhere;font-size:13px}.reprice-dialog .reprice-compare-row strong{overflow-wrap:anywhere}
 .reprice-dialog footer button{font-size:14px;min-height:44px}.reprice-dialog header>button{min-width:44px;min-height:44px}
 @media(max-width:640px){.reprice-row-header{align-items:flex-start;flex-direction:column}.reprice-calculator .reprice-results{display:table;min-width:0!important;width:100%;table-layout:fixed}.reprice-calculator .reprice-results th,.reprice-calculator .reprice-results td{min-width:0!important;width:auto!important;white-space:normal!important;overflow-wrap:anywhere;padding:8px 4px}.reprice-calculator .reprice-results th{font-size:10px}.reprice-calculator .reprice-results td{font-size:12px}.reprice-calculator .reprice-results td:first-child{font-size:16px}}
+
+/* Keep the added selection actions at the existing Calculator control scale. */
+.price-calculator .calculator-section-head{align-items:center;flex-wrap:wrap}
+.price-calculator .calculator-result-head-actions{flex-wrap:wrap;justify-content:flex-end;align-items:flex-end;gap:10px;max-width:100%}
+.price-calculator .calculator-result-head-actions .calculator-country-picker{min-width:150px;padding:0;border:0;border-radius:0;background:transparent;color:#536570;font-size:12px;line-height:1.4;font-weight:600;gap:6px}
+.price-calculator .calculator-country-picker select{height:38px;min-height:38px;font-size:12px;font-weight:600;padding:8px 10px}
+.price-calculator .calculator-result-head-actions>button,.price-calculator .calculator-selection-bar button{min-height:38px;padding:9px 14px;border-radius:9px;font-family:inherit;font-size:12px;line-height:18px;font-weight:700;white-space:normal}
+.price-calculator .calculator-download-note{order:1;flex-basis:100%;margin:0;text-align:right;color:#6c7a84;font-size:11px;line-height:1.5}
+.price-calculator .calculator-selection-bar{justify-content:space-between;gap:12px;padding:12px 16px;font-size:12px;line-height:18px}
+.price-calculator .calculator-selection-summary,.price-calculator .calculator-selection-actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px}
+.price-calculator .calculator-selection-summary>span{color:#6c7a84;font-size:12px}
+.price-calculator .calculator-selection-summary label{font-size:12px;font-weight:600;cursor:pointer}
+.price-calculator .calculator-selection-summary input,.price-calculator .calculator-select-label input{width:16px;height:16px;margin:0;accent-color:#18222f;flex-shrink:0}
+.price-calculator .dual-package-card>.calculator-select-label{padding:10px 16px;min-height:40px;margin:0;border-bottom:1px solid #e4eaed;color:#536570;font-size:12px;line-height:18px;font-weight:600;cursor:pointer}
+@media(max-width:640px){
+ .price-calculator .calculator-result-head-actions{justify-content:flex-start;width:100%}
+ .price-calculator .calculator-download-note{text-align:left}
+ .price-calculator .calculator-selection-bar{padding:12px}
+ .price-calculator .calculator-selection-summary,.price-calculator .calculator-selection-actions{width:100%}
+ .price-calculator .calculator-selection-actions{display:grid;grid-template-columns:1fr;gap:8px}
+ .price-calculator .calculator-result-head-actions>button,.price-calculator .calculator-selection-bar button{min-height:42px;font-size:12px}
+}
