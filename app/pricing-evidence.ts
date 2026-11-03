@@ -1,7 +1,7 @@
 import {calculatorSnapshots} from './package-history';
 import type {CalculatorSnapshot} from './calculator-types';
 export type ExportSnapshot={id:string;requestId:string;name:string;normal:number;campaign:number;scenarios:CalculatorSnapshot[];createdAt?:string};
-export type PricingEvidence={source:'Calculator'|'Manual Excel Upload';exportId?:string;exportedAt?:string;exportedBy?:string;scenarios:CalculatorSnapshot[];originalPrices?:{MY:{normal:number;campaign:number}};finalPrices:unknown;adjustmentReason:string;recordedBy:string;recordedAt:string};
+export type PricingEvidence={source:'Calculator'|'Manual Excel Upload';exportId?:string;exportedAt?:string;exportedBy?:string;scenarios:CalculatorSnapshot[];scenarioReferences?:Partial<Record<'non_campaign'|'campaign',{exportId?:string;recordedBy:string;recordedAt:string;source?:string}>>;originalPrices?:{MY:{normal:number;campaign:number}};finalPrices:unknown;adjustmentReason:string;recordedBy:string;recordedAt:string};
 export function exportSnapshots(value:unknown):CalculatorSnapshot[]{
  const input=(value as {scenarios?:unknown})?.scenarios;
  if(!Array.isArray(input)||input.length!==2)throw Error('Complete both Normal and Campaign Calculator settings before exporting.');

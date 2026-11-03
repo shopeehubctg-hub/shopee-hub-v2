@@ -38,6 +38,7 @@ export type CalculatorSnapshot = {
 };
 
 export type PackagePrefill = {
+  calculatorGroupId?:string;
   requestId:number;
   name:string;
   sellingPrice:number;
