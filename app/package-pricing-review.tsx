@@ -1,0 +1,49 @@
+"use client";
+import {useEffect,useRef,useState} from 'react';
+import {createPortal} from 'react-dom';
+import {eligibleRepriceTarget,repricedState,type RepriceRow,type RepriceTarget,type RepriceType} from './package-repricing';
+import './package-repricing.css';
+type Result={kind:'saved'|'failed'|'unconfirmed';message:string;packageId?:string};
+export function PackagePricingReview({storeId,rows,onClose,onComplete}:{storeId:string;rows:RepriceRow[];onClose:()=>void;onComplete:(ids:string[])=>void}){
+ const dialog=useRef<HTMLElement>(null);
+ const [targets,setTargets]=useState<RepriceTarget[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[busy,setBusy]=useState(false),[search,setSearch]=useState('');
+ const [mapping,setMapping]=useState<Record<string,string>>(()=>Object.fromEntries(rows.map(r=>[r.id,r.targetId??''])));
+ const [types,setTypes]=useState<Record<string,RepriceType[]>>(()=>Object.fromEntries(rows.map(r=>[r.id,['non_campaign','campaign']])));
+ const [results,setResults]=useState<Record<string,Result>>({});
+ const requests=useRef(new Map<string,{requestId:string;exportRequestId:string;exportId?:string}>());
+ const latest=useRef({busy:false});latest.current.busy=busy;
+ useEffect(()=>{const controller=new AbortController();setLoading(true);fetch('/api/packages?compact=1&storeId='+encodeURIComponent(storeId),{cache:'no-store',signal:controller.signal}).then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.error||'Unable to load packages.');setTargets((d.packages??[]).filter(eligibleRepriceTarget));}).catch(e=>{if(!controller.signal.aborted)setError(e.message);}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return ()=>controller.abort();},[storeId]);
+ useEffect(()=>{const previous=document.activeElement as HTMLElement|null;dialog.current?.focus();return()=>previous?.focus();},[]);
+ useEffect(()=>{const handle=(e:KeyboardEvent)=>{if(e.key==='Escape'&&!latest.current.busy)onClose();if(e.key==='Tab'){const nodes=Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),summary')??[]);const first=nodes[0],last=nodes.at(-1);if(first&&last){if(e.shiftKey&&(document.activeElement===first||document.activeElement===dialog.current)){e.preventDefault();last.focus();}else if(!e.shiftKey&&(document.activeElement===last||document.activeElement===dialog.current)){e.preventDefault();first.focus();}}}};document.addEventListener('keydown',handle);return()=>document.removeEventListener('keydown',handle);},[onClose]);
+ function issue(row:RepriceRow){
+  if(results[row.id]?.kind==='saved')return '';
+  const target=targets.find(t=>t.id===mapping[row.id]);if(!target)return 'Select an existing package.';
+  if(rows.some(other=>other.id!==row.id&&mapping[other.id]===target.id))return 'This package is selected more than once. Choose a different target.';
+  const normal=row.scenarios.find(s=>s.serviceScenario==='Non-Campaign Day')?.suggestedShopeePrice,campaign=row.scenarios.find(s=>s.serviceScenario==='Campaign Day')?.suggestedShopeePrice;
+  try{repricedState((target.priceSchedules??[]).map(p=>({...p,originalPrice:Math.round(p.originalPrice*100),sellingPrice:Math.round(p.sellingPrice*100)})),null,types[row.id],{normal:normal??0,campaign:campaign??0});}catch(e){return (e as Error).message;}
+  return '';
+ }
+ const ready=!loading&&rows.every(r=>!issue(r)),done=rows.every(r=>results[r.id]?.kind==='saved');
+ async function save(){if(busy||!ready)return;setBusy(true);setError('');try{
+  for(const row of rows){if(results[row.id]?.kind==='saved')continue;
+   const target=targets.find(t=>t.id===mapping[row.id])!;
+   const signature=JSON.stringify([row.scenarios,target.id,target.version,types[row.id]]);
+   let ref=requests.current.get(signature);if(!ref){ref={requestId:crypto.randomUUID(),exportRequestId:crypto.randomUUID()};requests.current.set(signature,ref);}
+   try{
+    if(!ref.exportId){const r=await fetch('/api/calculator-exports',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({storeId,rows:[{requestId:ref.exportRequestId,name:row.name,scenarios:row.scenarios}]})});const data=await r.json();if(!r.ok)throw Error(data.error||'Unable to save Calculator settings.');ref.exportId=data.rows[0].id;}
+    const r=await fetch('/api/packages/reprice',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({storeId,packageId:target.id,expectedVersion:target.version,requestId:ref.requestId,exportId:ref.exportId,priceTypes:types[row.id]})});
+    const data=await r.json();const kind=r.ok&&data.ok?'saved':data.saved||r.status>=500?'unconfirmed':'failed';
+    setResults(old=>({...old,[row.id]:{kind,message:kind==='saved'?'Prices updated successfully.':data.error||'Unable to confirm the result. Retry to check this update.',packageId:target.id}}));
+   }catch(e){setResults(old=>({...old,[row.id]:{kind:'unconfirmed',message:(e as Error).message||'Connection interrupted. Retry to confirm this update.'}}));}
+  }
+ }finally{setBusy(false);}}
+ const oldPrice=(t:RepriceTarget,type:RepriceType)=>[...new Set((t.priceSchedules??[]).filter(p=>p.market==='MY'&&p.priceType===type).map(p=>p.sellingPrice.toFixed(2)))].map(v=>'RM '+v).join(' / ')||'No saved period';
+ return createPortal(<div className="reprice-overlay"><section ref={dialog} tabIndex={-1} className="reprice-dialog" role="dialog" aria-modal="true" aria-labelledby="reprice-title"><header><div><p className="kicker">CHECK PRICES</p><h2 id="reprice-title">Update Existing Package Prices ({rows.length})</h2><p>Existing package periods, SKUs, inventory and other markets stay as saved.</p></div><button type="button" disabled={busy} aria-label="Close price review" onClick={onClose}>×</button></header>
+ {loading&&<p role="status">Loading existing packages…</p>}{error&&<p role="alert" className="reprice-error">{error}</p>}
+ {!loading&&!targets.length&&<p>No active or scheduled MY packages are available in this store.</p>}
+ {!loading&&targets.length>0&&<label>Find by Package Name or Platform SKU<input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search existing packages"/></label>}
+ {rows.map(row=>{const target=targets.find(t=>t.id===mapping[row.id]),result=results[row.id],message=issue(row),locked=busy||result?.kind==='saved'||result?.kind==='unconfirmed';return <article key={row.id} className="reprice-review-card"><h3>{row.name}</h3><label>Existing Package<select aria-label={`Existing package for ${row.name}`} value={mapping[row.id]} disabled={locked||loading} onChange={e=>{setMapping(old=>({...old,[row.id]:e.target.value}));setResults(old=>Object.fromEntries(Object.entries(old).filter(([id])=>id!==row.id)));}}><option value="">Select an Existing Package</option>{targets.filter(t=>t.id===mapping[row.id]||`${t.name} ${t.packageSku}`.toLowerCase().includes(search.toLowerCase())).map(t=><option key={t.id} value={t.id}>{t.name} · {t.packageSku}</option>)}</select></label>
+ {target&&<><p>{target.packageSku} · Version {target.version} · Existing dates retained</p><div className="reprice-comparison"><b>Update</b><b>Existing Price</b><b>New Price</b>{(['non_campaign','campaign'] as RepriceType[]).map(type=><div className="reprice-compare-row" key={type}><label><input type="checkbox" checked={types[row.id].includes(type)} disabled={locked} onChange={e=>setTypes(old=>({...old,[row.id]:e.target.checked?[...old[row.id],type]:old[row.id].filter(t=>t!==type)}))}/>{type==='campaign'?'Campaign Day':'Normal Day'}</label><span>{oldPrice(target,type)}</span><strong>RM {row.scenarios.find(s=>s.serviceScenario===(type==='campaign'?'Campaign Day':'Non-Campaign Day'))?.suggestedShopeePrice.toFixed(2)}</strong></div>)}</div><details><summary>Package Periods Included in This Update</summary>{(target.priceSchedules??[]).filter(p=>p.market==='MY'&&types[row.id].includes(p.priceType as RepriceType)).map((p,i)=><p key={i}>{p.priceType==='campaign'?'Campaign':'Normal'} · {p.effectiveFrom} — {p.effectiveTo??'Ongoing'}</p>)}</details></>}
+ {message&&!loading&&<p className="reprice-error">{message}</p>}{result&&<p role={result.kind==='saved'?'status':'alert'} className={result.kind==='saved'?'reprice-success':'reprice-error'}>{result.message}</p>}{result?.kind==='failed'&&<button type="button" onClick={()=>setResults(old=>{const next={...old};delete next[row.id];return next;})}>Edit Selection</button>}</article>;})}
+ <footer>{done?<button type="button" className="reprice-next" onClick={()=>onComplete(rows.map(r=>results[r.id].packageId!))}>View Updated Packages</button>:<><button type="button" disabled={busy} onClick={onClose}>Cancel</button><button type="button" className="reprice-next" disabled={!ready||busy} onClick={save}>{busy?'Updating Prices…':Object.keys(results).length?'Retry Unfinished Updates':'Confirm Update'}</button></>}</footer></section></div>,document.body);
+}
