@@ -7,7 +7,7 @@ export type AccountMappingCandidate = {
   mappingId: string; username: string; storeId: string | null; storeName: string;
 };
 export type AccountStoreRow = {
-  id: string; rosterKey?: string; storeId: string | null; storeName: string; project: string;
+  id: string; rosterKey?: string; sourceRosterKey?:string; canonicalUnitKey?:string; storeId: string | null; storeName: string; project: string;
   currency: AccountCurrency; statementMonth: string; invoiceMonth: string;
   salesCurrency?: AccountCurrency;
   previewMarketFxEligible?: boolean;

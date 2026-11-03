@@ -1,3 +1,4 @@
+import {projectAccountUnitCrosswalk} from './account-unit-crosswalk';
 import {MARKET_CONFIG,MARKET_CODES} from './markets';
 import { cents, previousMonth } from './account-ledger';
 import type { AccountCurrency, AccountFeeRule, AccountResponse,AccountStoreRow } from './account-contract';
@@ -25,11 +26,12 @@ export function validateFeeRule(value:unknown,currency:AccountCurrency):AccountF
   if(rule.minimum&&rule.tiers?.some(tier=>tier.cap!==undefined&&cents(rule.minimum!)>cents(tier.cap)))throw new Error('Minimum fee cannot exceed a tier cap');
   return rule;
 }
-export function applyAccountSettings(account:AccountResponse,settings:AccountSetting[],storeNames:Map<string,string>):AccountResponse {
-  const represented=new Set(account.stores.map(row=>row.rosterKey));
+export function applyAccountSettings(account:AccountResponse,settings:AccountSetting[],storeNames:Map<string,string>,tenantId=''):AccountResponse {
+  const represented=new Set(account.stores.flatMap(row=>[row.rosterKey,row.sourceRosterKey].filter(Boolean)));
   const units=new Map<string,AccountSetting>();
   for(const setting of settings.filter(s=>s.effective_month.slice(0,7)<=account.invoiceMonth).sort((a,b)=>a.effective_month.localeCompare(b.effective_month)||(BigInt(a.version)<BigInt(b.version)?-1:1)))units.set(setting.roster_key,setting);
   for(const setting of units.values())if(!represented.has(setting.roster_key)){account.stores.push({id:setting.roster_key,rosterKey:setting.roster_key,project:setting.roster_project,entity:setting.legal_entity,billingEntity:setting.billing_registered_name??null,market:setting.market??MARKET_CODES.find(market=>MARKET_CONFIG[market].currency===setting.currency),storeId:null,storeName:setting.roster_project,currency:setting.currency,statementMonth:previousMonth(account.invoiceMonth),invoiceMonth:account.invoiceMonth,servicePeriodStart:null,servicePeriodEnd:null,status:'pending_terms',expectedNetFee:null,billed:null,collected:null,outstanding:null});}
+  projectAccountUnitCrosswalk(account,settings,storeNames,tenantId);
   for(const row of account.stores) {
     row.market??=MARKET_CODES.find(market=>MARKET_CONFIG[market].currency===row.currency);
     const history=settings.filter(s=>s.roster_key===row.rosterKey).sort((a,b)=>BigInt(a.version)<BigInt(b.version)?-1:1);

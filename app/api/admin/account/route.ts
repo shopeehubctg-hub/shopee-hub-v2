@@ -47,7 +47,7 @@ export async function GET(request:Request) {
       account.settingsAvailable=settingsAvailable;
       account.registeredNamesAvailable=registeredNamesAvailable===true;
       account.storeOptions=stores.filter(s=>canonicalStoreId(s.id)===s.id).map(s=>({id:s.id,name:s.display_name??s.name,platform:s.platform})).sort((a,b)=>a.name.localeCompare(b.name));
-      const decorated=appendAccountMarketStores(applyAccountSettings(account,settings,storeNames),stores);
+      const decorated=appendAccountMarketStores(applyAccountSettings(account,settings,storeNames,member.tenant_id),stores);
       for(const row of decorated.stores){
         const ids=[...new Set((row.candidates??[]).flatMap(candidate=>candidate.storeId&&canonicalStores.has(candidate.storeId)?[candidate.storeId]:[]))];
         const store=canonicalStores.get(row.storeId??(ids.length===1?ids[0]:''));

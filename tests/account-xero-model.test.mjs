@@ -145,3 +145,9 @@ test('canonical source aliases match exactly while collisions remain ambiguous a
  const collision=run({rows:[...rows,row('sg',{market:'SG',storeAliases:['ECOPLUS OFFICIAL (PACKXPERT)']})],snapshot:snapshot([invoice('i1',{storeNames:['ECOPLUS OFFICIAL (PACKXPERT)']})])});assert.equal(collision.groups[0].invoiceChoices[0].storeEvidence.state,'ambiguous');
  assert.deepEqual(exact.targets.find(target=>target.unitKey==='b').storeAliases,['OTHER STORE']);
 });
+
+test('activated canonical client resolves historical source mapping after effective version selection without double counting',()=>{
+ const source='roster-2026-10-sg-3',canonical='store:shopee-bonlife-singapore';const rows=[row(canonical,{sourceRosterKey:source,canonicalUnitKey:canonical,storeName:'Store a',currency:'MYR',market:'SG'})];
+ const maps=[mapping({unitKey:source,invoiceId:'i1'}),mapping({unitKey:canonical,invoiceId:'i1',version:'2',effectiveMonth:'2026-11'})];const result=run({rows,mappings:maps});assert.equal(result.byUnit[canonical].invoices.length,1);assert.equal(result.byUnit[canonical].byCurrency[0].invoiced,'108.00');assert.equal(result.groups[0].invoiceChoices[0].appliedVersion,'1');assert.equal(result.groups[0].expectedVersion,'2');assert.equal(result.groups[0].invoiceChoices[0].mappedUnitKey,canonical);assert.equal(maps[0].unitKey,source);assert.equal(result.unmappedInvoiceCount,0);
+ const blocked=run({rows:[row(canonical,{storeName:'Store a'})],mappings:[mapping({unitKey:source})]});assert.deepEqual(blocked.byUnit[canonical].byCurrency,[]);assert.equal(blocked.unmappedInvoiceCount,1);
+});
