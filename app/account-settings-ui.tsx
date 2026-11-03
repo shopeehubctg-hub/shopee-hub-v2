@@ -1,4 +1,5 @@
 "use client";
+import {malaysiaMonth} from "./store-account-setup-model";
 import {MARKET_CONFIG} from "./markets";
 import {accountRowMarket} from "./account-market-display";
 import { accountMappingDisplay } from './account-mapping-display';
@@ -80,17 +81,19 @@ export function RateCell({row,month,onEdit}:{row:AccountStoreRow;month:string;on
   </button>;
 }
 
-export function CompanyCell({row,month,canSave,editable,onSaved}:{row:AccountStoreRow;month:string;canSave:boolean;editable:boolean;onSaved:()=>void}) {
+export function CompanyCell({row,month,canSave,editable,registeredNamesAvailable=false,onSaved}:{row:AccountStoreRow;month:string;canSave:boolean;editable:boolean;registeredNamesAvailable?:boolean;onSaved:()=>void}) {
   const [editing,setEditing]=useState(false);
   const [entity,setEntity]=useState(row.entity||'');
+  const [billingEntity,setBillingEntity]=useState(row.billingEntity||'');
   const [saving,setSaving]=useState(false);
   const [error,setError]=useState('');
   const retry=useRef<{payload:string;id:string}|null>(null);
+  const pastMonth=month<malaysiaMonth();
   async function save(event:FormEvent<HTMLFormElement>){
-    event.preventDefault();if(!canSave||!row.rosterKey)return;
+    event.preventDefault();if(!canSave||!row.rosterKey||pastMonth)return;
     setSaving(true);setError('');
     try{
-      const body={rosterKey:row.rosterKey,entity:entity.trim(),effectiveMonth:month,expectedVersion:row.latestSettingsVersion||'0'};
+      const body={rosterKey:row.rosterKey,entity:entity.trim(),...(registeredNamesAvailable&&billingEntity.trim()?{billingEntity:billingEntity.trim()}:{}),effectiveMonth:month,expectedVersion:row.latestSettingsVersion||'0'};
       const payload=JSON.stringify(body);
       if(retry.current?.payload!==payload)retry.current={payload,id:crypto.randomUUID()};
       await saveSetting('/api/admin/account/company',{...body,requestId:retry.current.id});
@@ -98,16 +101,16 @@ export function CompanyCell({row,month,canSave,editable,onSaved}:{row:AccountSto
     }catch(cause){setError(cause instanceof Error?cause.message:'Could not save company.');}
     finally{setSaving(false);}
   }
-  return <div className="account-company-cell">{editing?<form onSubmit={event=>void save(event)}><label className="sr-only" htmlFor={`company-${row.id}`}>Company name for {row.project}</label><input id={`company-${row.id}`} value={entity} onChange={event=>setEntity(event.target.value)} maxLength={240} required disabled={saving}/><div><button type="submit" disabled={!canSave||saving}>{saving?'Saving…':'Save'}</button><button type="button" disabled={saving} onClick={()=>{setEditing(false);setError('');}}>Cancel</button></div></form>:<><strong>{row.entity||'—'}</strong>{editable&&<button type="button" className="account-link-button" onClick={()=>{setEntity(row.entity||'');setEditing(true);}}>Edit company</button>}</>}{error&&<small role="alert" className="account-inline-error">{error}</small>}</div>;
+  return <div className="account-company-cell">{editing?<form onSubmit={event=>void save(event)}><label>Registered Name (Platform)<input value={entity} onChange={event=>setEntity(event.target.value)} maxLength={240} required disabled={saving}/></label><label>Registered Name (Billing)<input value={billingEntity} onChange={event=>setBillingEntity(event.target.value)} maxLength={240} disabled={saving||!registeredNamesAvailable}/></label>{!registeredNamesAvailable&&<small>Billing name editing is unavailable.</small>}{row.billingEntity&&!billingEntity.trim()&&<small>The saved billing name will be kept.</small>}{pastMonth&&<small role="status">Choose the current or a future invoice month above to save registered names.</small>}<div><button type="submit" disabled={!canSave||saving||pastMonth}>{saving?'Saving…':'Save'}</button><button type="button" disabled={saving} onClick={()=>{setEditing(false);setError('');}}>Cancel</button></div></form>:<><div className="account-registered-name"><small>Registered Name (Platform)</small><strong>{row.entity||'—'}</strong></div><div className="account-registered-name"><small>Registered Name (Billing)</small><strong>{row.billingEntity||'Not set'}</strong></div>{editable&&<button type="button" className="account-link-button" onClick={()=>{setEntity(row.entity||'');setBillingEntity(row.billingEntity||'');setEditing(true);}}>Edit registered names</button>}</>}{error&&<small role="alert" className="account-inline-error">{error}</small>}</div>;
 }
 
-export function RecordDetails({row,month,canConfigure,canSave,options,onClose,onSaved}:{row:AccountStoreRow;month:string;canConfigure:boolean;canSave:boolean;options:StoreOption[];onClose:()=>void;onSaved:()=>void}) {
+export function RecordDetails({row,month,canConfigure,canSave,registeredNamesAvailable=false,options,onClose,onSaved}:{row:AccountStoreRow;month:string;canConfigure:boolean;canSave:boolean;registeredNamesAvailable?:boolean;options:StoreOption[];onClose:()=>void;onSaved:()=>void}) {
   const dialogRef=useRef<HTMLDialogElement>(null);
   useEffect(()=>{const dialog=dialogRef.current;dialog?.showModal();return ()=>{if(dialog?.open)dialog.close();};},[]);
   return <dialog className="account-record-dialog" ref={dialogRef} aria-labelledby="account-record-title" onCancel={event=>{event.preventDefault();onClose();}}>
     <header><div><h3 id="account-record-title">{row.project||row.storeName}</h3><p>{MARKET_CONFIG[accountRowMarket(row)].name} · {row.currency}</p></div><button type="button" className="account-record-close" aria-label="Close billing record" onClick={onClose}>×</button></header>
     <div className="account-record-body"><dl className="account-record-fields">
-      <div><dt>Company</dt><dd><CompanyCell row={row} month={month} canSave={canSave} editable={canConfigure} onSaved={onSaved}/></dd></div>
+      <div><dt>Registered names</dt><dd><CompanyCell row={row} month={month} canSave={canSave} editable={canConfigure} registeredNamesAvailable={registeredNamesAvailable} onSaved={onSaved}/></dd></div>
       <div><dt>Store</dt><dd><StoreNameCell row={row} options={options} month={month} canSave={canSave} configurable={canConfigure} onSaved={onSaved}/></dd></div>
       <div><dt>Sales currency</dt><dd>{row.salesCurrency??row.currency}</dd></div>
       <div><dt>Invoice month</dt><dd>{row.invoiceMonth||'Not set'}</dd></div>
