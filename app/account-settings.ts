@@ -36,7 +36,12 @@ export async function saveAccountSetting(request:Request,action:'mapping'|'fee_r
     if(typeof body.effectiveMonth!=='string'||!/^20\d{2}-(0[1-9]|1[0-2])$/.test(body.effectiveMonth)||body.effectiveMonth<malaysiaDate().slice(0,7))return Response.json({error:'Choose the current or a future invoice month'},{status:400});
     if(typeof body.expectedVersion!=='string'||!/^\d{1,18}$/.test(body.expectedVersion))return Response.json({error:'Refresh the Account before saving'},{status:400});
     if(typeof body.requestId!=='string'||! /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.requestId))return Response.json({error:'A unique save ID is required'},{status:400});
-    const currency=unit.id.startsWith('store:')?'MYR':unit.market==='SG'?'SGD':'MYR';
+    let currency:'MYR'|'SGD'|'THB'|'PHP'=unit.id.startsWith('store:')?'MYR':unit.market==='SG'?'SGD':'MYR';
+    if(BigInt(body.expectedVersion)>BigInt(0)){
+      const current=await supabaseRest<Array<{currency:string}>>(`account_billing_unit_versions?select=currency&tenant_id=eq.${encodeURIComponent(member.tenant_id)}&roster_key=eq.${encodeURIComponent(unit.id)}&order=version.desc&limit=1`);
+      if(current.length!==1||!['MYR','SGD','THB','PHP'].includes(current[0].currency))return Response.json({error:'This project changed. Refresh Account and try again.'},{status:409});
+      currency=current[0].currency as typeof currency;
+    }
     let storeId:string|null=null;let rule=null;let entity=unit.entity;
     if(action==='mapping') {
       if(typeof body.storeId!=='string'||canonicalStoreId(body.storeId)!==body.storeId)return Response.json({error:'Choose a store from the Store Selector'},{status:400});
@@ -51,16 +56,10 @@ export async function saveAccountSetting(request:Request,action:'mapping'|'fee_r
     if(action==='company'&&Object.prototype.hasOwnProperty.call(body,'billingEntity')){
       let billingEntity:string|null;try{billingEntity=optionalBillingName(body.billingEntity);}catch(error){return Response.json({error:error instanceof Error?error.message:'Check Registered Name (Billing).'},{status:400});}
       if(!await registeredNamesAvailable())return Response.json({error:'Registered names are not configured in this environment.'},{status:503});
-      let namesCurrency=currency;
-      if(BigInt(body.expectedVersion)>BigInt(0)){
-        const current=await supabaseRest<Array<{currency:string;version:string}>>(`account_billing_unit_versions?select=currency,version::text&tenant_id=eq.${encodeURIComponent(member.tenant_id)}&roster_key=eq.${encodeURIComponent(unit.id)}&order=version.desc&limit=1`);
-        if(current.length!==1||!['MYR','SGD','THB','PHP'].includes(current[0].currency))return Response.json({error:'This project changed. Refresh Account and try again.'},{status:409});
-        namesCurrency=current[0].currency as typeof currency;
-      }
       const candidateIds=[...new Set((unit.candidates??[]).flatMap(candidate=>candidate.storeId&&canonicalStoreId(candidate.storeId)===candidate.storeId?[candidate.storeId]:[]))];
       const proposed=BigInt(body.expectedVersion)===BigInt(0)?(unit.id.startsWith('store:')?unit.id.slice(6):candidateIds.length===1?candidateIds[0]:null):null;
       const known=proposed?await supabaseRest<Array<{id:string}>>(`stores?select=id&tenant_id=eq.${encodeURIComponent(member.tenant_id)}&id=eq.${encodeURIComponent(proposed)}&limit=1`):[];
-      const result=await supabaseRest<{version:string;legalEntity:string;billingEntity:string|null}>('rpc/account_save_registered_names',{method:'POST',body:JSON.stringify({p_tenant:member.tenant_id,p_actor:actor.email.toLowerCase(),p_roster_key:unit.id,p_roster_project:unit.project,p_platform_name:entity,p_billing_name:billingEntity,p_currency:namesCurrency,p_effective_month:`${body.effectiveMonth}-01`,p_store_id:known[0]?.id??null,p_expected_version:body.expectedVersion,p_request_id:body.requestId})});
+      const result=await supabaseRest<{version:string;legalEntity:string;billingEntity:string|null}>('rpc/account_save_registered_names',{method:'POST',body:JSON.stringify({p_tenant:member.tenant_id,p_actor:actor.email.toLowerCase(),p_roster_key:unit.id,p_roster_project:unit.project,p_platform_name:entity,p_billing_name:billingEntity,p_currency:currency,p_effective_month:`${body.effectiveMonth}-01`,p_store_id:known[0]?.id??null,p_expected_version:body.expectedVersion,p_request_id:body.requestId})});
       return Response.json({saved:true,...result});
     }
     const result=await supabaseRest<{version:string}>('rpc/account_save_billing_unit_version',{method:'POST',body:JSON.stringify({

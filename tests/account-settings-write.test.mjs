@@ -35,3 +35,10 @@ test('persisted registered names use immutable DB currency rather than deriving 
 });
 
 test('registered-name exact retries reach RPC replay after latest version advances',async()=>{ setup({currentVersion:'8'});const response=await saveAccountSetting(request({...body,entity:'Platform',billingEntity:'Billing',expectedVersion:'7'}),'company');assert.equal(response.status,200);assert.equal(payload.p_expected_version,'7');assert.equal(payload.p_request_id,body.requestId);assert.equal(payload.p_currency,'MYR');});
+
+test('an imported SG unit keeps its saved MYR currency when mapped or edited later',async()=>{
+ for(const action of ['mapping','company','fee_rule']){
+  setup();const response=await saveAccountSetting(request({...body,rosterKey:'roster-2026-10-sg-2',expectedVersion:'7',entity:'Updated Platform',rule:{type:'fixed',currency:'MYR',basis:'fixed_monthly',fixedAmount:'100'}}),action);
+  assert.equal(response.status,200,action);assert.equal(payload.p_currency,'MYR',action);
+ }
+});
