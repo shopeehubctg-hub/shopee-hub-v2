@@ -9,7 +9,7 @@
 .price-calculator .calculator-result-head-actions{flex-wrap:wrap;justify-content:flex-end;align-items:flex-end;gap:10px;max-width:100%}
 .price-calculator .calculator-result-head-actions .calculator-country-picker{min-width:150px;padding:0;border:0;border-radius:0;background:transparent;color:#536570;font-size:12px;line-height:1.4;font-weight:600;gap:6px}
 .price-calculator .calculator-country-picker select{height:38px;min-height:38px;font-size:12px;font-weight:600;padding:8px 10px}
-.price-calculator .calculator-result-head-actions>button,.price-calculator .calculator-selection-bar button{min-height:38px;padding:9px 14px;border-radius:9px;font-family:inherit;font-size:12px;line-height:18px;font-weight:700;white-space:normal}
+.price-calculator .calculator-result-head-actions>button,.price-calculator .calculator-selection-bar button,.price-calculator .create-package-link{min-height:38px;padding:9px 14px;border-radius:9px;font-family:inherit;font-size:12px;line-height:18px;font-weight:700;white-space:normal}
 .price-calculator .calculator-download-note{order:1;flex-basis:100%;margin:0;text-align:right;color:#6c7a84;font-size:11px;line-height:1.5}
 .price-calculator .calculator-selection-bar{justify-content:space-between;gap:12px;padding:12px 16px;font-size:12px;line-height:18px}
 .price-calculator .calculator-selection-summary,.price-calculator .calculator-selection-actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px}
@@ -23,5 +23,5 @@
  .price-calculator .calculator-selection-bar{padding:12px}
  .price-calculator .calculator-selection-summary,.price-calculator .calculator-selection-actions{width:100%}
  .price-calculator .calculator-selection-actions{display:grid;grid-template-columns:1fr;gap:8px}
- .price-calculator .calculator-result-head-actions>button,.price-calculator .calculator-selection-bar button{min-height:42px;font-size:12px}
+ .price-calculator .calculator-result-head-actions>button,.price-calculator .calculator-selection-bar button,.price-calculator .create-package-link{min-height:42px;font-size:12px}
 }
