@@ -12,4 +12,4 @@ Automated: sidebar interaction/account switch/revocation test PASS; Calculator h
 
 Fixed entry: https://shopee-hub-v2-260731-git-cod-e05b8d-shopeehubctg-5199s-projects.vercel.app/
 
-Final UI/UX and function QC receipts are recorded separately after actual final deployed review. Production is not authorized or released for this feature. No deletion or business-data changes were performed.
+Actual fixed Staging desktop and 390px UI/UX PASS and final scoped function QC PASS are recorded in the release handoff. On 4 November the user explicitly authorized Production release of the grouped sidebar and Pin. This candidate publishes only through a GitHub PR merge into main and automatic Vercel deployment; the actual merged commit and smoke results are recorded after release. No deletion or business-data changes were performed.
