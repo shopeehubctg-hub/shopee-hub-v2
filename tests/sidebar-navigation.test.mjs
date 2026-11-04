@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {execFileSync} from 'node:child_process';
+import {JSDOM} from 'jsdom';
+const compiled=execFileSync('node_modules/.bin/esbuild',['--bundle','--format=esm','--platform=node','--loader:.css=empty','--jsx=automatic'],{maxBuffer:10*1024*1024,input:`import React,{act} from 'react';import {createRoot} from 'react-dom/client';import {SidebarNavigation} from './app/sidebar-navigation';export {React,act,createRoot,SidebarNavigation};`});
+const {React,act,createRoot,SidebarNavigation}=await import(`data:text/javascript;base64,${compiled.toString('base64')}`);
+test('grouping, pin reload, account isolation and permission revocation',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{url:'https://test.local'});
+ for(const key of ['window','document','localStorage','HTMLElement','MouseEvent'])Object.defineProperty(globalThis,key,{configurable:true,value:dom.window[key]});globalThis.IS_REACT_ACT_ENVIRONMENT=true;
+ const root=createRoot(document.querySelector('#root'));let selected='';
+ const items=[['overview','Overview'],['advertising','Advertising'],['health','Store Health'],['actions','Client Action Center']];
+ const render=async(userKey='one',list=items)=>act(()=>root.render(React.createElement(SidebarNavigation,{items:list,section:'overview',onSelect:id=>selected=id,userKey,collapsed:false})));
+ const click=async(label)=>act(()=>document.querySelector(`[aria-label="${label}"]`).click());
+ await render();assert.equal(document.querySelector('[title="Advertising"]'),null);assert.ok(document.querySelector('[title="Client Action Center"]'));
+ await act(()=>[...document.querySelectorAll('button')].find(el=>el.textContent.includes('Analytics')).click());
+ await click('Pin Advertising');assert.equal(document.querySelectorAll('[title="Advertising"]').length,1);assert.equal(document.querySelector('[title="Advertising"]').closest('.nav-child'),null);
+ await act(()=>document.querySelector('[title="Advertising"]').click());assert.equal(selected,'advertising');
+ await render('two');assert.equal(document.querySelector('[aria-label="Unpin Advertising"]'),null);
+ await render('one');assert.ok(document.querySelector('[aria-label="Unpin Advertising"]'));
+ await render('one',items.filter(([id])=>id!=='advertising'));assert.equal(document.querySelector('[title="Advertising"]'),null);
+ await render();await click('Unpin Advertising');assert.ok(document.querySelector('[title="Advertising"]').closest('.nav-child'));
+ await act(()=>root.unmount());dom.window.close();
+});

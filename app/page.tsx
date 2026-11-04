@@ -1,4 +1,5 @@
 "use client";
+import {SidebarNavigation} from "./sidebar-navigation";
 import type {RepriceTarget} from "./package-repricing";
 
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -384,7 +385,7 @@ export default function Home() {
     <aside className="side">
       <div className="logo"><img src="/shopee-hub-logo-transparent.png" alt="ShopeeHub"/><small>STORE COMMAND CENTER</small></div>
       <button className="sidebar-toggle" onClick={()=>setSidebarCollapsed(current=>!current)} aria-label={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"} title={sidebarCollapsed?"Expand sidebar":"Collapse sidebar"}>{sidebarCollapsed?"›":"‹"}</button>
-      <nav>{nav.map(([id,label]) => <button key={id} className={section===id?"active":""} onClick={()=>setSection(id)}><span>{label.slice(0,1)}</span>{label}</button>)}</nav>
+      <SidebarNavigation items={nav} section={section} onSelect={setSection} userKey={data.user.email} collapsed={sidebarCollapsed}/>
       <div className="fleet contact-card"><p>Contact Shopee Hub Specialist</p><strong>{allStoresSelected ? "Select a project" : (store?.contacts.length ? store.name : "Link unavailable")}</strong><div>{!allStoresSelected && store?.contacts.map(contact=><a key={contact.href} href={contact.href} target="_blank" rel="noopener noreferrer" title={contact.project}>{store.contacts.length > 1 ? contact.project : "Contact"} →</a>)}{!allStoresSelected && store?.storeGroupLink && <a href={store.storeGroupLink} target="_blank" rel="noopener noreferrer">Store group →</a>}</div></div>
       <p className="access">{data.access?.role === "superadmin" ? "Super Admin access" : "Private access"}<br/><b>{data.user.email}</b></p>
     </aside>
