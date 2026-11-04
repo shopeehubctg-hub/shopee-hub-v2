@@ -1,0 +1,19 @@
+/* Keep Xero's six-column ledger independent of Account's responsive billing-card table. */
+.account-refined .xero-account-panel{min-width:0;max-width:100%;}
+.account-refined .xero-account-panel .xero-table-scroll{overflow:auto;max-height:460px;max-width:100%;overscroll-behavior:contain;border-top:1px solid var(--line);}
+.account-refined .xero-account-panel .xero-table-scroll:focus-visible{outline:2px solid var(--red);outline-offset:-2px;}
+.account-refined .xero-account-panel .xero-data-table{display:table;table-layout:auto;width:100%;min-width:940px;border-collapse:separate;border-spacing:0;font-size:12px;}
+.account-refined .xero-account-panel .xero-data-table caption{text-align:left;padding:12px 14px;font-size:12px;font-weight:650;color:var(--ink);background:var(--card,#fff);}
+.account-refined .xero-account-panel .xero-data-table thead{display:table-header-group;position:static;width:auto;height:auto;overflow:visible;clip-path:none;white-space:nowrap;}
+.account-refined .xero-account-panel .xero-data-table tbody{display:table-row-group;}
+.account-refined .xero-account-panel .xero-data-table tr{display:table-row;position:static;padding:0;border:0;width:auto;}
+.account-refined .xero-account-panel .xero-data-table th,.account-refined .xero-account-panel .xero-data-table td{display:table-cell;width:auto;min-width:120px;padding:10px 14px;white-space:nowrap;overflow-wrap:normal;word-break:normal;line-height:1.5;vertical-align:middle;font-size:12px;border:0;border-bottom:1px solid var(--line);background:var(--card,#fff);}
+.account-refined .xero-account-panel .xero-data-table th:first-child{min-width:180px;}
+.account-refined .xero-account-panel .xero-data-table td:nth-child(2){min-width:180px;}
+.account-refined .xero-account-panel .xero-data-table thead th{position:sticky;top:0;z-index:1;min-width:120px;font-size:11px;color:var(--muted);background:var(--paper,#f5f8f9);box-shadow:0 1px 0 var(--line);}
+.account-refined .xero-account-panel .xero-data-table td::before{display:none;content:none;}
+.account-refined .xero-account-panel .xero-data-table td:nth-child(n+3){font-variant-numeric:tabular-nums;}
+.account-refined .xero-account-panel .xero-data-table a{display:inline-flex;align-items:center;min-height:24px;color:var(--ink);text-decoration:underline;text-underline-offset:3px;}
+.account-refined .xero-account-panel .account-daily-ledger>summary{cursor:pointer;padding:13px 14px;font-size:12px;font-weight:650;}
+.account-refined .xero-account-panel .account-daily-ledger .xero-data-table{min-width:720px;}
+@media(max-width:680px){.account-refined .xero-account-panel .xero-table-scroll{max-height:390px;}.account-refined .xero-account-panel .xero-data-table th,.account-refined .xero-account-panel .xero-data-table td{padding:10px 12px;}}
