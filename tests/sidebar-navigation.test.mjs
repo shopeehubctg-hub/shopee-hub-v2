@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {execFileSync} from 'node:child_process';
 import {JSDOM} from 'jsdom';
+const NativeChannel=globalThis.MessageChannel;const channels=[];globalThis.MessageChannel=class extends NativeChannel{constructor(){super();channels.push(this);}};
 const compiled=execFileSync('node_modules/.bin/esbuild',['--bundle','--format=esm','--platform=node','--loader:.css=empty','--jsx=automatic'],{maxBuffer:10*1024*1024,input:`import React,{act} from 'react';import {createRoot} from 'react-dom/client';import {SidebarNavigation} from './app/sidebar-navigation';export {React,act,createRoot,SidebarNavigation};`});
 const {React,act,createRoot,SidebarNavigation}=await import(`data:text/javascript;base64,${compiled.toString('base64')}`);
 test('grouping, pin reload, account isolation and permission revocation',async()=>{
@@ -19,5 +20,5 @@ test('grouping, pin reload, account isolation and permission revocation',async()
  await render('one');assert.ok(document.querySelector('[aria-label="Unpin Advertising"]'));
  await render('one',items.filter(([id])=>id!=='advertising'));assert.equal(document.querySelector('[title="Advertising"]'),null);
  await render();await click('Unpin Advertising');assert.ok(document.querySelector('[title="Advertising"]').closest('.nav-child'));
- await act(()=>root.unmount());dom.window.close();
+ await act(()=>root.unmount());dom.window.close();for(const channel of channels){channel.port1.close();channel.port2.close();}globalThis.MessageChannel=NativeChannel;
 });
