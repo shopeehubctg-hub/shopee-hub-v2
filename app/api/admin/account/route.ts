@@ -1,3 +1,4 @@
+import {decorateAccountXero} from '../../../account-xero-server';
 import { bnmServiceRate, bnmMarketServiceRate } from '../../../account-fx-source';
 import { canonicalStoreId } from '../../../live-calendar-model';
 import { getChatGPTUser } from '../../../chatgpt-auth';
@@ -31,8 +32,9 @@ export async function GET(request:Request) {
     const today=malaysiaDate();
     const invoiceMonth=new URL(request.url).searchParams.get('invoiceMonth')??today.slice(0,7);
     if(!/^20\d{2}-(0[1-9]|1[0-2])$/.test(invoiceMonth)) return Response.json({error:'Choose a valid invoice month'},{status:400});
-    const stores=await rows<{id:string;name:string;display_name:string|null;platform:string}>('stores','id,name,display_name,platform',member.tenant_id);
+    const stores=await rows<{id:string;name:string;display_name:string|null;bigseller_name?:string|null;platform:string}>('stores','id,name,display_name,bigseller_name,platform',member.tenant_id);
     const storeNames=new Map(stores.filter(s=>canonicalStoreId(s.id)===s.id).map(s=>[s.id,s.display_name??s.name]));
+    const canonicalStores=new Map(stores.filter(store=>canonicalStoreId(store.id)===store.id).map(store=>[store.id,store]));
     let settings:AccountSetting[]=[];let settingsAvailable=true;
     const settingsSelect='id,roster_key,roster_project,legal_entity,currency,change_action,version::text,effective_month,store_id,fee_rule,created_at,market,input_currency,client_type,rate_card,fx_policy,fx_rate::text';
     try {
@@ -46,7 +48,11 @@ export async function GET(request:Request) {
       account.registeredNamesAvailable=registeredNamesAvailable===true;
       account.storeOptions=stores.filter(s=>canonicalStoreId(s.id)===s.id).map(s=>({id:s.id,name:s.display_name??s.name,platform:s.platform})).sort((a,b)=>a.name.localeCompare(b.name));
       const decorated=appendAccountMarketStores(applyAccountSettings(account,settings,storeNames,member.tenant_id),stores);
-      for(const row of decorated.stores){row.previewRateDefaultsEligible=member.tenant_id==='j-packaging';delete row.previewServiceFxRate;}
+      for(const row of decorated.stores){
+        const ids=[...new Set((row.candidates??[]).flatMap(candidate=>candidate.storeId&&canonicalStores.has(candidate.storeId)?[candidate.storeId]:[]))];
+        const store=canonicalStores.get(row.storeId??(ids.length===1?ids[0]:''));
+        row.storeAliases=store?[...new Set([store.display_name,store.name,store.bigseller_name].filter((name):name is string=>typeof name==='string'&&Boolean(name.trim())))]:[];
+        row.previewRateDefaultsEligible=member.tenant_id==='j-packaging';delete row.previewServiceFxRate;}
       const bonlife=decorated.stores.filter(row=>row.market==='SG'&&row.salesCurrency==='SGD'&&(row.fxPolicy==='bnm-service-average'||member.tenant_id==='j-packaging'&&row.currency==='SGD'&&row.rosterKey==='roster-2026-10-sg-3'&&row.project==='BONLIFE SG'));
       await Promise.all([
         ...(bonlife.length?[bnmServiceRate(invoiceMonth).then(rate=>{if(rate&&rate.policy==='bnm-service-average'&&rate.verified===true&&Boolean(rate.reference)&&rate.serviceMonth===previousMonth(invoiceMonth))for(const row of bonlife)row.previewServiceFxRate={...rate,currency:'SGD',quotationUnit:1};})]:[]),
@@ -57,7 +63,7 @@ export async function GET(request:Request) {
           if(rate&&rate.policy==='bnm-service-average'&&rate.verified===true&&Boolean(rate.reference)&&rate.currency===currency&&rate.quotationUnit===1&&rate.serviceMonth===previousMonth(invoiceMonth))for(const row of targets)row.previewServiceFxRate=rate;
         }),
       ]);
-      return decorated;
+      return decorateAccountXero(decorated,request);
     };
     try {
       const [cycles,terms,assessments,invoices,receipts,allocations]=await Promise.all([

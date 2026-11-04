@@ -17,3 +17,7 @@ User request: label the existing Dashboard company as Registered Name (Platform)
 
 Feature branch codex/account-registered-names was created from latest main7c03f2c8d562c60b861c32d9d95bf014c432d151. It depends on the unreleased Xero integration72fb135625bdbe7920fdf5d8bdd4aed1f2f6a6b9. Keep latest Package change and existing Staging work.
 Independent Staging Supabase ubjfuveoqbvouryldqfu only; Production unchanged. Database Structure design GO before implementation. Required actual UI/UX then final function QC. No Deletes.
+
+## Current release candidate
+
+The isolated latest-main Account candidate and disabled-Xero activation limits are described in `account-production-release-2026-11-04.md`. Historical Stage branch/dependency notes above do not authorize copying Stage configuration or financial facts to Production.

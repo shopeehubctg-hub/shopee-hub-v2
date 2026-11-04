@@ -1,0 +1,82 @@
+-- Independent Staging, after the mapping migration. Every fixture is rolled back.
+-- No real source data, token, user credential, source call or DELETE is used.
+begin;
+do $$
+declare suffix text:=replace(gen_random_uuid()::text,'-','');t text;email text;u bigint;s text;c uuid:=gen_random_uuid();r uuid:=gen_random_uuid();old_r uuid:=gen_random_uuid();cat uuid:=gen_random_uuid();opt uuid:=gen_random_uuid();scope jsonb;row1 jsonb;row2 jsonb;snapshot jsonb;unit_key text:='roster-2026-10-my-990001';store_a text;store_b text;foreign_t text;foreign_store text;
+begin
+ t:='xero-mapping-test-'||suffix;email:='xero-mapping-'||suffix||'@example.invalid';s:=encode(sha256(convert_to(suffix,'UTF8')),'hex');foreign_t:='foreign-'||t;
+ store_a:='shopee-map-'||suffix||'-a';store_b:='shopee-map-'||suffix||'-b';foreign_store:='shopee-map-'||suffix||'-foreign';
+ perform set_config('xero_map.tenant',t,true);perform set_config('xero_map.actor',email,true);perform set_config('xero_map.session',s,true);perform set_config('xero_map.connection',c::text,true);perform set_config('xero_map.run',r::text,true);perform set_config('xero_map.old_run',old_r::text,true);perform set_config('xero_map.category',cat::text,true);perform set_config('xero_map.option',opt::text,true);perform set_config('xero_map.store_a',store_a,true);perform set_config('xero_map.store_b',store_b,true);perform set_config('xero_map.foreign_store',foreign_store,true);
+ insert into public.tenants(id,name,active) values(t,'Synthetic Xero mapping test',true),(foreign_t,'Synthetic foreign mapping test',true);
+ u:=-abs(('x'||left(suffix,12))::bit(48)::bigint)-20000000;
+ insert into public.customer_users(id,email,tenant_id,role,active) values(u,email,t,'superadmin',true);
+ insert into account_security.portal_auth_sessions(session_digest,tenant_id,user_id,request_id,auth_method,expires_at) values(decode(s,'hex'),t,u,gen_random_uuid(),'password',now()+interval '1 hour');
+ insert into public.stores(id,tenant_id,name,platform,bigseller_name) values(store_a,t,'Synthetic A','Shopee MY','Synthetic A'),(store_b,t,'Synthetic B','Shopee MY','Synthetic B'),(foreign_store,foreign_t,'Synthetic foreign','Shopee MY','Synthetic foreign');
+ scope:=jsonb_build_object('categoryId',cat,'options',jsonb_build_array(jsonb_build_object('id',opt,'project','Shopee Hub'),jsonb_build_object('id',gen_random_uuid(),'project','Shopee Hub Internal'),jsonb_build_object('id',gen_random_uuid(),'project','Tik Tok Hub'),jsonb_build_object('id',gen_random_uuid(),'project','Lazada Hub')));
+ insert into public.xero_connections(id,tenant_id,environment,external_connection_id,organisation_id,organisation_name,created_by,project_scope) values(c,t,'staging',gen_random_uuid(),gen_random_uuid(),'Synthetic mapping source',email,scope);
+ row1:=jsonb_build_object('invoiceId','00000000-0000-0000-0000-000000000011','invoiceNumber','SYNTHETIC-1','contactId','00000000-0000-0000-0000-000000000001','currency','MYR','state','eligible','reason',null,'project','Shopee Hub','subtotal','100.00','tax','0.00','gross','100.00','amountPaid','20.00','amountDue','80.00','amountCredited','0.00','cashReceived',null,'date','2026-10-01','dueDate',null);
+ row2:=row1||jsonb_build_object('invoiceId','00000000-0000-0000-0000-000000000012','invoiceNumber','SYNTHETIC-2','contactId','00000000-0000-0000-0000-000000000002');
+ snapshot:=jsonb_build_object('month','2026-10','today','2026-11-01','scope',scope,'report',jsonb_build_object('rows',jsonb_build_array(row1,row2),'totals',jsonb_build_array(jsonb_build_object('currency','MYR','gross','200.00','tax','0.00','amountPaid','40.00','amountDue','160.00','amountCredited','0.00','cashReceived',null)),'month','2026-10','today','2026-11-01','payments','[]'::jsonb,'invoiceCount',2,'pendingCount',0,'collections',jsonb_build_array(jsonb_build_object('currency','MYR','monthCollected','0.00','todayCollected','0.00')),'outstanding',jsonb_build_array(jsonb_build_object('currency','MYR','amountDue','160.00')),'invoices',jsonb_build_array(row1||jsonb_build_object('xeroUrl','https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=00000000-0000-0000-0000-000000000011'),row2||jsonb_build_object('xeroUrl','https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=00000000-0000-0000-0000-000000000012'))),
+ 'companies',jsonb_build_array(jsonb_build_object('contactId',row1->'contactId','companyName','Synthetic Company 1','categoryId',cat,'optionId',opt,'project','Shopee Hub'),jsonb_build_object('contactId',row2->'contactId','companyName','Synthetic Company 2','categoryId',cat,'optionId',opt,'project','Shopee Hub')));
+ insert into public.xero_sync_runs(id,tenant_id,connection_id,request_id,actor_email,status,lease_id,lease_until,credential_epoch,completed_at) values(r,t,c,gen_random_uuid(),email,'succeeded',gen_random_uuid(),now()+interval '15 minutes',1,clock_timestamp()),(old_r,t,c,gen_random_uuid(),email,'succeeded',gen_random_uuid(),now()+interval '15 minutes',1,clock_timestamp()-interval '1 minute');
+ insert into public.xero_sync_snapshots(run_id,tenant_id,connection_id,snapshot,created_at) values(old_r,t,c,snapshot-'companies',clock_timestamp()-interval '1 minute'),(r,t,c,snapshot,clock_timestamp());
+ -- Future commercial setup must remain untouched when adding the historical identity anchor.
+ insert into public.account_billing_unit_versions(tenant_id,roster_key,roster_project,legal_entity,currency,store_id,effective_month,version,change_action,fee_rule,actor_email,request_id,request_payload,market,input_currency)
+ values(t,unit_key,'Future client','Future company','MYR',store_a,'2026-11-01',1,'setup','{"type":"fixed","currency":"MYR","basis":"fixed_monthly","fixedAmount":"99.00"}'::jsonb,email,gen_random_uuid(),'{}','MY','MYR');
+end $$;
+set local role service_role;
+do $$
+declare ledger_table text;has_facts boolean;t text:=current_setting('xero_map.tenant');a text:=current_setting('xero_map.actor');s text:=current_setting('xero_map.session');r uuid:=current_setting('xero_map.run')::uuid;cat text:=current_setting('xero_map.category');opt text:=current_setting('xero_map.option');c uuid:=current_setting('xero_map.connection')::uuid;
+ seed jsonb:=jsonb_build_object('project','Original audited client','entity','Original audited company','currency','MYR','market','MY','storeId',current_setting('xero_map.store_a'));
+ seed_b jsonb:=jsonb_build_object('project','Other audited client','entity','Other audited company','currency','MYR','market','MY','storeId',current_setting('xero_map.store_b'));
+ b1 jsonb;b2 jsonb;bindings jsonb;bad jsonb;answer jsonb;again jsonb;req uuid:=gen_random_uuid();audit_before bigint;unit_before bigint;mapping_before bigint;request_before bigint;snap jsonb;future jsonb;
+begin
+ if has_table_privilege('authenticated','public.account_xero_mapping_versions','select') or has_table_privilege('service_role','public.account_xero_mapping_versions','update') or has_table_privilege('service_role','public.account_xero_mapping_versions','delete') or has_table_privilege('service_role','public.account_xero_mapping_versions','truncate') then raise exception 'Mapping ACL not append-only';end if;
+ if has_function_privilege('anon','public.xero_billing_mappings_save(text,text,text,text,uuid,date,jsonb,uuid,text)','execute') or has_function_privilege('authenticated','public.xero_billing_mappings_read(text,text,text,text,date,text)','execute') then raise exception 'Mapping RPC exposed';end if;
+ select snapshot into snap from public.xero_sync_snapshots where run_id=r;
+ if not xero_private.snapshot_valid(snap) or not xero_private.snapshot_valid(snap-'companies') then raise exception 'Old/new snapshot compatibility lost';end if;
+ if xero_private.snapshot_valid(snap||'{"companies":null}'::jsonb) or xero_private.snapshot_valid(snap||'{"companies":{}}'::jsonb) or xero_private.snapshot_valid(jsonb_set(snap,'{companies,0,email}','"private@example.invalid"')) or xero_private.snapshot_valid(jsonb_set(snap,'{companies,0,optionId}',to_jsonb(gen_random_uuid()::text))) or xero_private.snapshot_valid(jsonb_set(snap,'{companies,1,contactId}',snap#>'{companies,0,contactId}')) then raise exception 'Invalid company identity accepted';end if;
+ b1:=jsonb_build_object('contactId','00000000-0000-0000-0000-000000000001','categoryId',cat,'optionId',opt,'rosterKey','roster-2026-10-my-990001','expectedVersion','0','targetExpectedVersion','1','targetSeed',seed);
+ b2:=b1||jsonb_build_object('contactId','00000000-0000-0000-0000-000000000002');bindings:=jsonb_build_array(b1,b2);
+ select count(*) into audit_before from public.account_audit_log where tenant_id=t;
+ answer:=public.xero_billing_mappings_read(t,a,s,'staging','2026-10-01');
+ if answer->>'sourceRunId'<>r::text or answer->'snapshot' is distinct from snap or jsonb_array_length(answer->'mappings')<>0 or answer->>'lastSyncedAt' is null then raise exception 'Selected-month read contract mismatch';end if;
+ if (select count(*) from public.account_audit_log where tenant_id=t)<>audit_before then raise exception 'Read wrote data';end if;
+ begin perform public.xero_billing_mappings_save(t,a,s,'staging',current_setting('xero_map.old_run')::uuid,'2026-10-01',bindings,gen_random_uuid());raise exception 'Stale source accepted';exception when others then if sqlerrm<>'XERO_MAPPING_SOURCE_STALE' then raise;end if;end;
+ begin perform public.xero_billing_mappings_save(t,a,s,'staging',r,'2026-10-01',jsonb_build_array(b1,b1),gen_random_uuid());raise exception 'Duplicate source key accepted';exception when others then if sqlerrm<>'XERO_MAPPING_DUPLICATE' then raise;end if;end;
+ bad:=jsonb_build_array(b1||jsonb_build_object('contactId',gen_random_uuid()));
+ begin perform public.xero_billing_mappings_save(t,a,s,'staging',r,'2026-10-01',bad,gen_random_uuid());raise exception 'Unobserved source accepted';exception when others then if sqlerrm<>'XERO_MAPPING_IDENTITY_DENIED' then raise;end if;end;
+ answer:=public.xero_billing_mappings_save(t,a,s,'staging',r,'2026-10-01',bindings,req);
+ if jsonb_array_length(answer->'mappings')<>2 or answer->'unitVersions'->>'roster-2026-10-my-990001'<>'2' then raise exception 'Same-target bulk did not share one anchor';end if;
+ again:=public.xero_billing_mappings_save(t,a,s,'staging',r,'2026-10-01',bindings,req);if answer is distinct from again then raise exception 'Exact replay changed';end if;
+ if (select count(*) from public.account_xero_mapping_versions where tenant_id=t)<>2 or (select count(*) from public.account_billing_unit_versions where tenant_id=t)<>2 then raise exception 'Replay/bulk created duplicate versions';end if;
+ if not exists(select 1 from public.account_billing_unit_versions where tenant_id=t and roster_key='roster-2026-10-my-990001' and version=2 and effective_month='2026-10-01' and change_action='mapping' and fee_rule is null and rate_card is null and fx_policy is null and client_type is null and legal_entity='Original audited company') then raise exception 'Historical anchor fabricated or lost identity';end if;
+ if not exists(select 1 from public.account_billing_unit_versions where tenant_id=t and roster_key='roster-2026-10-my-990001' and version=1 and effective_month='2026-11-01' and fee_rule->>'fixedAmount'='99.00' and legal_entity='Future company') then raise exception 'Future commercial setup overwritten';end if;
+ if (select count(*) from public.account_audit_log where tenant_id=t)<>audit_before+3 then raise exception 'Audit missing or duplicated';end if;
+ begin perform public.xero_billing_mappings_save(t,a,s,'staging',r,'2026-10-01',jsonb_build_array(b1||jsonb_build_object('expectedVersion','1')),req);raise exception 'Changed request replay accepted';exception when others then if sqlerrm<>'ACCOUNT_REQUEST_CONFLICT' then raise;end if;end;
+ begin perform public.xero_billing_mappings_save(t,a,s,'staging',r,'2026-10-01',bindings,gen_random_uuid());raise exception 'Stale version accepted';exception when others then if sqlerrm<>'XERO_MAPPING_VERSION_CONFLICT' then raise;end if;end;
+ select count(*) into audit_before from public.account_audit_log where tenant_id=t;select count(*) into unit_before from public.account_billing_unit_versions where tenant_id=t;select count(*) into mapping_before from public.account_xero_mapping_versions where tenant_id=t;select count(*) into request_before from public.account_store_requests where tenant_id=t;
+ bad:=jsonb_build_array(b1||jsonb_build_object('expectedVersion','1','targetExpectedVersion','0','rosterKey','roster-2026-10-my-990002','targetSeed',seed_b),b2||jsonb_build_object('expectedVersion','99','targetExpectedVersion','2'));
+ begin perform public.xero_billing_mappings_save(t,a,s,'staging',r,'2026-10-01',bad,gen_random_uuid());raise exception 'Late bulk failure accepted';exception when others then if sqlerrm<>'XERO_MAPPING_VERSION_CONFLICT' then raise;end if;end;
+ if (select count(*) from public.account_audit_log where tenant_id=t)<>audit_before or (select count(*) from public.account_billing_unit_versions where tenant_id=t)<>unit_before or (select count(*) from public.account_xero_mapping_versions where tenant_id=t)<>mapping_before or (select count(*) from public.account_store_requests where tenant_id=t)<>request_before then raise exception 'Late bulk failure left partial writes';end if;
+ bad:=jsonb_build_array(b1||jsonb_build_object('expectedVersion','1','targetExpectedVersion','0','rosterKey','roster-2026-10-my-990003','targetSeed',seed_b||jsonb_build_object('storeId',current_setting('xero_map.foreign_store'))));
+ begin perform public.xero_billing_mappings_save(t,a,s,'staging',r,'2026-10-01',bad,gen_random_uuid());raise exception 'Cross-tenant store accepted';exception when others then if sqlerrm<>'XERO_MAPPING_STORE_DENIED' then raise;end if;end;
+ begin perform public.xero_billing_mappings_save('foreign-'||t,a,s,'staging',r,'2026-10-01',bindings,gen_random_uuid());raise exception 'Cross-tenant actor accepted';exception when others then if sqlerrm<>'XERO_ACCESS_DENIED' then raise;end if;end;
+ begin perform public.xero_billing_mappings_save(t,a,repeat('0',64),'staging',r,'2026-10-01',bindings,gen_random_uuid());raise exception 'Missing primary accepted';exception when others then if sqlerrm<>'ACCOUNT_PRIMARY_DENIED' then raise;end if;end;
+
+ insert into public.account_billing_unit_versions(tenant_id,roster_key,roster_project,legal_entity,currency,store_id,effective_month,version,change_action,fee_rule,actor_email,request_id,request_payload,market,input_currency)
+ values(t,'roster-2026-10-my-990004','Unresolved target','Unresolved company','MYR',null,'2026-10-01',1,'company',null,a,gen_random_uuid(),'{}','MY','MYR');
+ bad:=jsonb_build_array(b1||jsonb_build_object('expectedVersion','1','targetExpectedVersion','1','rosterKey','roster-2026-10-my-990004'));
+ begin perform public.xero_billing_mappings_save(t,a,s,'staging',r,'2026-10-01',bad,gen_random_uuid());raise exception 'Null-store target accepted';exception when others then if sqlerrm<>'XERO_MAPPING_STORE_REQUIRED' then raise;end if;end;
+ answer:=public.xero_billing_mappings_read(t,a,s,'staging','2026-10-01');if jsonb_array_length(answer->'mappings')<>2 then raise exception 'Mapping reload lost versions';end if;
+ answer:=public.xero_billing_mappings_read(t,a,s,'staging','2026-09-01');if answer->'snapshot'<>'null'::jsonb or answer->'sourceRunId'<>'null'::jsonb or jsonb_array_length(answer->'mappings')<>2 then raise exception 'No source month adopted another snapshot or lost history';end if;
+ -- Optional legacy income ledger remains absent in Production; do not create it for this test.
+ foreach ledger_table in array array['account_invoices','account_receipts','account_assessments'] loop
+  if to_regclass('public.'||ledger_table) is not null then
+   execute format('select exists(select 1 from public.%I where tenant_id=$1)',ledger_table) into has_facts using t;
+   if has_facts then raise exception 'Mapping created financial facts';end if;
+  end if;
+ end loop;
+end $$;
+reset role;
+rollback;
