@@ -12,7 +12,7 @@ test('grouping, pin reload, account isolation and permission revocation',async()
  const items=[['overview','Overview'],['advertising','Advertising'],['health','Store Health'],['actions','Client Action Center']];
  const render=async(userKey='one',list=items)=>act(()=>root.render(React.createElement(SidebarNavigation,{items:list,section:'overview',onSelect:id=>selected=id,userKey,collapsed:false})));
  const click=async(label)=>act(()=>document.querySelector(`[aria-label="${label}"]`).click());
- await render();assert.equal(document.querySelector('[title="Advertising"]'),null);assert.ok(document.querySelector('[title="Client Action Center"]'));
+ await render();await act(()=>document.querySelector('.mobile-nav-toggle').click());assert.equal(document.querySelector('.mobile-nav-toggle').getAttribute('aria-expanded'),'true');await act(()=>document.querySelector('[title="Client Action Center"]').click());assert.equal(document.querySelector('.mobile-nav-toggle').getAttribute('aria-expanded'),'false');assert.equal(selected,'actions');assert.equal(document.querySelector('[title="Advertising"]'),null);assert.ok(document.querySelector('[title="Client Action Center"]'));
  await act(()=>[...document.querySelectorAll('button')].find(el=>el.textContent.includes('Analytics')).click());
  await click('Pin Advertising');assert.equal(document.querySelectorAll('[title="Advertising"]').length,1);assert.equal(document.querySelector('[title="Advertising"]').closest('.nav-child'),null);
  await act(()=>document.querySelector('[title="Advertising"]').click());assert.equal(selected,'advertising');
