@@ -1,3 +1,4 @@
+import {pricingMode,type PricingMode} from './pricing-periods';
 import ExcelJS from 'exceljs';
 import * as XLSX from 'xlsx';
 import {batchMarkets,marketChoices,type MarketChoice,type BatchPackage} from './package-batch-model';
@@ -5,23 +6,23 @@ import {MARKET_CONFIG} from './markets';
 import {MAX_INVENTORY_ITEMS,inventoryKey} from './inventory-items';
 import type {InventoryProduct} from './inventory-catalog-model';
 import type {CalculatorSnapshot} from './calculator-types';
-export type BatchRow={code:string;name:string;normal:number;campaign:number;scenarios?:CalculatorSnapshot[];exportId?:string};
-export type BatchExcelOptions={products?:InventoryProduct[];storeId?:string;entry?:'By Product Name'|'By SKU'};
-export const headersFor=(choice:MarketChoice|'SG',slots=MAX_INVENTORY_ITEMS)=>['Package Name *',...batchMarkets(choice).flatMap(m=>[`${m} Original Price (${MARKET_CONFIG[m].symbol}) *`,`${m} Normal Price (${MARKET_CONFIG[m].symbol}) *`,`${m} Campaign Price (${MARKET_CONFIG[m].symbol})`]),'Shopee SKU','Lazada SKU','TikTok SKU',...Array.from({length:slots},(_,i)=>[`Inventory SKU ${i+1}${i===0?' *':''}`,`Quantity ${i+1}${i===0?' *':''}`]).flat()];
+export type BatchRow={code:string;name:string;normal:number;campaign:number;normalLate?:number;pricingMode?:PricingMode;scenarios?:CalculatorSnapshot[];exportId?:string};
+export type BatchExcelOptions={products?:InventoryProduct[];storeId?:string;entry?:'By Product Name'|'By SKU';pricingMode?:PricingMode};
+export const headersFor=(choice:MarketChoice|'SG',slots=MAX_INVENTORY_ITEMS,withLate=false)=>['Package Name *',...batchMarkets(choice).flatMap(m=>[`${m} Original Price (${MARKET_CONFIG[m].symbol}) *`,`${m} Normal Price (${MARKET_CONFIG[m].symbol}) *`,`${m} Campaign Price (${MARKET_CONFIG[m].symbol})`,...(withLate?[`${m} Normal 16th–End Price (${MARKET_CONFIG[m].symbol})`]:[])]),'Shopee SKU','Lazada SKU','TikTok SKU',...Array.from({length:slots},(_,i)=>[`Inventory SKU ${i+1}${i===0?' *':''}`,`Quantity ${i+1}${i===0?' *':''}`]).flat()];
 const letter=(number:number)=>{let s='';for(let n=number;n;n=Math.floor((n-1)/26))s=String.fromCharCode(65+(n-1)%26)+s;return s;};
-const labels=(choice:MarketChoice,byName:boolean)=>[...headersFor(choice).slice(0,4+batchMarkets(choice).length*3),...Array.from({length:MAX_INVENTORY_ITEMS},(_,i)=>[`${byName?'Product Name':'Inventory SKU'} ${i+1}${i===0?' *':''}`,`Quantity ${i+1}${i===0?' *':''}`,`${byName?'Inventory SKU':'Product Name'} ${i+1} (Auto)`]).flat(),'_CalculatorRef','_StoreId'];
+const labels=(choice:MarketChoice,byName:boolean,withLate=true)=>[...headersFor(choice,20,withLate).slice(0,4+batchMarkets(choice).length*(withLate?4:3)),...Array.from({length:MAX_INVENTORY_ITEMS},(_,i)=>[`${byName?'Product Name':'Inventory SKU'} ${i+1}${i===0?' *':''}`,`Quantity ${i+1}${i===0?' *':''}`,`${byName?'Inventory SKU':'Product Name'} ${i+1} (Auto)`]).flat(),'_CalculatorRef','_StoreId','_PricingMode'];
 export async function downloadBatch(rows:BatchRow[],choice:MarketChoice='MY',options:BatchExcelOptions={}){
- const b=new ExcelJS.Workbook(),markets=batchMarkets(choice),products=options.products??[],base=4+markets.length*3,lastRow=Math.max(106,rows.length+6),libraryLast=Math.max(106,products.length+106);
+ const b=new ExcelJS.Workbook(),markets=batchMarkets(choice),products=options.products??[],withLate=options.pricingMode==='split_normal'||rows.some(r=>r.pricingMode==='split_normal'),priceColumns=withLate?4:3,base=4+markets.length*priceColumns,lastRow=Math.max(106,rows.length+6),libraryLast=Math.max(106,products.length+106);
  b.creator='Shopee Hub';b.calcProperties.fullCalcOnLoad=true;
  for(const byName of [true,false]){
-  const s=b.addWorksheet(byName?'By Product Name':'By SKU'),headers=labels(choice,byName);
+  const s=b.addWorksheet(byName?'By Product Name':'By SKU'),headers=labels(choice,byName,withLate);
   s.views=[{state:'frozen',xSplit:1,ySplit:6,showGridLines:false}];
-  s.columns=headers.map((h,i)=>({width:i===0?34:i<1+markets.length*3?Math.max(28,h.length+2):i<base?23:(i-base)%3===1?15:byName?43:30,hidden:i>=base&&((i-base)%3===2||i>=base+MAX_INVENTORY_ITEMS*3)}));
-  const notes=['PACKAGE BATCH · '+(byName?'BY PRODUCT NAME':'BY INVENTORY SKU'),'* Required. Use ONE entry tab per upload; select the same tab in Dashboard. Up to 20 items per package.',`Choose ${byName?'Product Name':'Inventory SKU'} and enter Quantity. Its matching ${byName?'SKU':'Product Name'} is filled in a hidden, protected column.`,'New product? Fill SKU and Product Name in the yellow Product Library rows, then select it here. Red = duplicate or unmatched product.','Calculator MY Normal / Campaign prices are locked. Change them in Dashboard Review with a reason. Fill Original Price and other markets manually.'];
+  s.columns=headers.map((h,i)=>({width:i===0?34:i<1+markets.length*priceColumns?Math.max(28,h.length+2):i<base?23:(i-base)%3===1?15:byName?43:30,hidden:(i>=1&&i<1+markets.length*priceColumns&&withLate&&(i-1)%priceColumns===3&&options.pricingMode!=='split_normal'&&!rows.some(r=>r.pricingMode==='split_normal'))||i>=base&&((i-base)%3===2||i>=base+MAX_INVENTORY_ITEMS*3)}));
+  const notes=['PACKAGE BATCH · '+(byName?'BY PRODUCT NAME':'BY INVENTORY SKU'),'* Required. Use ONE entry tab per upload; select the same tab in Dashboard. Up to 20 items per package.',`Choose ${byName?'Product Name':'Inventory SKU'} and enter Quantity. Its matching ${byName?'SKU':'Product Name'} is filled in a hidden, protected column.`,'Set the pricing mode in Dashboard before downloading. New product? Fill SKU and Product Name in the yellow Product Library rows, then select it here. Red = duplicate or unmatched product.','Calculator MY Normal / Campaign prices are locked. Change them in Dashboard Review with a reason. Fill Original Price and other markets manually.'];
   notes.forEach((v,i)=>{s.mergeCells(i+1,1,i+1,Math.min(headers.length,9));const c=s.getCell(i+1,1);c.value=v;c.font={name:'Noto Sans',size:i===0?14:11,bold:i===0,color:{argb:'FF075670'}};c.alignment={wrapText:false,vertical:'middle'};s.getRow(i+1).height=30;});
   s.getRow(6).values=headers;s.getRow(6).height=27;s.getRow(6).eachCell(c=>{c.font={name:'Noto Sans',size:11,bold:true,color:{argb:'FFFFFFFF'}};c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF075670'}};c.alignment={wrapText:false,vertical:'middle'};});
   for(let r=7;r<=lastRow;r++)for(let i=0;i<headers.length;i++){
-   const c=s.getCell(r,i+1),price=i>=1&&i<1+markets.length*3,qty=i>=base&&i<base+60&&(i-base)%3===1,auto=i>=base&&((i-base)%3===2||i>=base+60);
+   const c=s.getCell(r,i+1),price=i>=1&&i<1+markets.length*priceColumns,qty=i>=base&&i<base+60&&(i-base)%3===1,auto=i>=base&&((i-base)%3===2||i>=base+60);
    c.font={name:'Noto Sans',size:11,color:{argb:'FF174B70'}};c.fill={type:'pattern',pattern:'solid',fgColor:{argb:auto?'FFEFF3F6':'FFFFF9E8'}};c.numFmt=price?'0.00':qty?'0':'@';c.protection={locked:auto};
    if(price||qty)c.dataValidation={type:qty?'whole':'decimal',operator:qty?'between':'greaterThan',allowBlank:true,formulae:qty?[1,100000]:[0],showErrorMessage:true,errorStyle:'stop',error:qty?'Enter a whole quantity from 1 to 100,000.':'Enter a positive numeric price.'};
   }
@@ -35,7 +36,8 @@ export async function downloadBatch(rows:BatchRow[],choice:MarketChoice='MY',opt
    const counts=Array.from({length:20},(_,j)=>`COUNTIF($${letter(base+j*3+1)}7,${L}7)`).join(',');
    s.addConditionalFormatting({ref:`${L}7:${L}${lastRow}`,rules:[{type:'expression',priority:i+1,formulae:[`AND(${L}7<>"",OR(SUM(${counts})>1,COUNTIF(INDIRECT("'Product Library'!$${A}$6:$${A}$${libraryLast}"),${L}7)<>1))`],style:{fill:{type:'pattern',pattern:'solid',bgColor:{argb:'FFFDE8E7'}},font:{color:{argb:'FFB32424'}}}}]});
   }
-  rows.forEach((row,i)=>{const r=i+7;s.getCell(r,1).value=row.name;if(markets.includes('MY')){s.getCell(r,3).value=row.normal;s.getCell(r,4).value=row.campaign;if(row.exportId)for(const c of [3,4]){s.getCell(r,c).protection={locked:true};s.getCell(r,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFEFF3F6'}};}}s.getCell(r,base+61).value=row.exportId??'';s.getCell(r,base+62).value=options.storeId??'';});
+  for(let r=7;r<=lastRow;r++)s.getCell(r,base+63).value=options.pricingMode??rows[0]?.pricingMode??'normal_campaign';
+  rows.forEach((row,i)=>{const r=i+7;s.getCell(r,1).value=row.name;if(markets.includes('MY')){s.getCell(r,3).value=row.normal;s.getCell(r,4).value=row.campaign;if(withLate&&row.normalLate!==undefined)s.getCell(r,5).value=row.normalLate;if(row.exportId)for(const c of (withLate?[3,4,5]:[3,4])){s.getCell(r,c).protection={locked:true};s.getCell(r,c).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFEFF3F6'}};}}s.getCell(r,base+61).value=row.exportId??'';s.getCell(r,base+62).value=options.storeId??'';s.getCell(r,base+63).value=row.pricingMode??options.pricingMode??'normal_campaign';});
   await s.protect('',{selectLockedCells:true,selectUnlockedCells:true,autoFilter:true,spinCount:1});
  }
  const lib=b.addWorksheet('Product Library');lib.views=[{state:'frozen',ySplit:5,showGridLines:false}];lib.columns=[{width:58},{width:64}];
@@ -52,14 +54,14 @@ export function readBatch(data:ArrayBuffer,entry:'By Product Name'|'By SKU'='By 
  const s=b.Sheets[sheetName],range=XLSX.utils.decode_range(s['!ref']||'A1');if(range.e.r>2006||range.e.c>90)throw Error('Workbook is too large. Use at most 500 packages.');
  const library=b.Sheets['Product Library'],products:InventoryProduct[]=[];
  if(library){const lr=XLSX.utils.decode_range(library['!ref']||'A1');if(lr.e.r>2100)throw Error('Product Library is too large.');for(let r=5;r<=lr.e.r;r++){const sku=cellValue(library,r,0),name=cellValue(library,r,1);if(sku||name){if(!sku||!name)throw Error(`Product Library row ${r+1}: fill both SKU and Product Name.`);if(products.some(p=>inventoryKey(p.sku)===inventoryKey(sku)))throw Error(`Product Library row ${r+1}: duplicate SKU ${sku}.`);products.push({sku,name});}}}
- let choice:MarketChoice|'SG'|undefined,start=-1,slots=20,isNew=sheetName!=='Packages';
- for(let r=0;r<=Math.min(range.e.r,10)&&!choice;r++)for(const candidate of [...marketChoices,'SG'] as const){for(const count of [20,10]){const expected=isNew?labels(candidate as MarketChoice,sheetName==='By Product Name'):headersFor(candidate,count);if(expected.every((v,c)=>cellValue(s,r,c)===v)){choice=candidate;start=r;slots=count;break;}}if(choice)break;}
+ let choice:MarketChoice|'SG'|undefined,start=-1,slots=20,withLate=false,isNew=sheetName!=='Packages';
+ for(let r=0;r<=Math.min(range.e.r,10)&&!choice;r++)for(const candidate of [...marketChoices,'SG'] as const){for(const count of [20,10]){for(const late of (isNew?[true,false]:[false])){const expected=isNew?labels(candidate as MarketChoice,sheetName==='By Product Name',late):headersFor(candidate,count);if((isNew?expected.slice(0,-3):expected).every((v,c)=>cellValue(s,r,c)===v)){choice=candidate;start=r;slots=count;withLate=late;break;}}if(choice)break;}if(choice)break;}
  if(!choice)throw Error('Headers do not match. Download the current template and keep the headers unchanged.');
- const markets=batchMarkets(choice),base=4+markets.length*3,output:BatchPackage[]=[];
+ const markets=batchMarkets(choice),base=4+markets.length*(withLate?4:3),output:BatchPackage[]=[];
  for(let r=start+1;r<=range.e.r;r++){
   const relevant=[...Array.from({length:base},(_,c)=>c),...Array.from({length:slots},(_,j)=>isNew?[base+j*3,base+j*3+1]:[base+j*2,base+j*2+1]).flat()];
   if(!relevant.some(c=>cellValue(s,r,c)))continue;
-  let c=1;const prices:BatchPackage['prices']={};for(const m of markets){prices[m]={original:cellValue(s,r,c),normal:cellValue(s,r,c+1),campaign:cellValue(s,r,c+2)};c+=3;}
+  let c=1;const prices:BatchPackage['prices']={};for(const m of markets){prices[m]={original:cellValue(s,r,c),normal:cellValue(s,r,c+1),campaign:cellValue(s,r,c+2),...(withLate?{normalLate:cellValue(s,r,c+3)}:{})};c+=withLate?4:3;}
   const skus={Shopee:cellValue(s,r,c),Lazada:cellValue(s,r,c+1),TikTok:cellValue(s,r,c+2)};c+=3;
   const items=Array.from({length:slots},(_,j)=>{const key=cellValue(s,r,c+j*(isNew?3:2)),quantity=cellValue(s,r,c+j*(isNew?3:2)+1);if(!key&&!quantity)return null;
    const matches=products.filter(p=>inventoryKey(sheetName==='By Product Name'?p.name:p.sku)===inventoryKey(key));
@@ -67,7 +69,7 @@ export function readBatch(data:ArrayBuffer,entry:'By Product Name'|'By SKU'='By 
    return {sku:sheetName==='By Product Name'?matches[0].sku:key,name:matches.length===1?matches[0].name:'',quantity};
   }).filter((v):v is NonNullable<typeof v>=>!!v);
   const exportId=isNew?cellValue(s,r,base+60):'',fileStoreId=isNew?cellValue(s,r,base+61):'';
-  output.push({id:`row-${r}`,name:cellValue(s,r,0),prices,skus,items:items.length?items:[{sku:'',quantity:'',name:''}],dates:null,...(exportId?{exportId}:{}),...(fileStoreId?{fileStoreId}:{})});
+  output.push({id:`row-${r}`,name:cellValue(s,r,0),pricingMode:cellValue(s,start,base+62)==='_PricingMode'?pricingMode(cellValue(s,r,base+62)):withLate?'split_normal':undefined,prices,skus,items:items.length?items:[{sku:'',quantity:'',name:''}],dates:null,...(exportId?{exportId}:{}),...(fileStoreId?{fileStoreId}:{})});
  }
  if(!output.length)throw Error('No packages found in the selected tab.');if(output.length>500)throw Error('Use at most 500 packages per preview.');
  const refs=output.map(p=>p.exportId).filter(Boolean);if(new Set(refs).size!==refs.length)throw Error('A Calculator export row is repeated. Keep one package per exported row.');return output;

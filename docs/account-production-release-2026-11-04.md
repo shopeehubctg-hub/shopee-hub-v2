@@ -45,3 +45,14 @@ Store-owned `store:<id>` billing projects must retain that Store identity. The A
 ## Source-label readability follow-up
 
 Matching rows preserve supplied company labels. Where absent, presentation uses already-returned invoice STORE NAME evidence and invoice references; a short stable Contact reference is the final fallback. No company is inferred and no match, amount, source record, schema or sync is changed. Distinct missing-name source rows and existing company labels are covered by rendered UI regression. Actual connected Staging visual retry remains parent-owned.
+
+
+## Production preparation evidence — 4 November 2026
+
+The user separately approved Production Xero inspection and independent read-only configuration for only WISDOM FACTORY SDN BHD's Shopee Hub, Shopee Hub Internal, Tik Tok Hub and Lazada Hub. Fresh Production credentials and final OAuth consent remain required; no environment values or connections have been copied from Staging.
+
+Parent applied the exact reviewed Names artifact and four Xero artifacts in dependency order. An automatic mapping-migration rejection was resolved by supplying the independent owner review and explicit user approval evidence, then using the same migration tool/SQL; no alternate execution path was used. Four Xero rollback-only suites and the Names rollback-only suite passed. Installed source/private tables are RLS protected and service-only. All six Xero tables remain empty after tests; no source calls, real financial facts or credentials were seeded.
+
+The trusted Google Sheet was reread through the connector on 4 November: all 58 rows matched the reviewed source snapshot. Independent Database Structure and QC approved the exact rollback and commit variants. The rollback rehearsal passed with original fingerprints unchanged; parent then committed 56 month-effective registered-name versions and 41 initial canonical store mappings. Both explicitly deferred rows and six unknown-store units remain pending. Effective Invoice Month is November 2026. The existing 12 October versions, 53 store records, seven Rate Cards and grants are retained; no fee or FX changes were made. The resulting version count is 109 over 59 stored unit keys; the canonical read model prevents competing presentation rows. A single replay-safe batch receipt retains all 58 original source rows. This source-based configuration import is separate from the code PR and is not Stage/Xero replication.
+
+The current matching identity fix shows existing source Store Name labels and invoice references when older snapshots have no company name, or a stable short Contact reference if no readable evidence exists. It does not guess legal companies, auto-save proposals or change amounts. Actual Staging re-review is pending at documentation time.

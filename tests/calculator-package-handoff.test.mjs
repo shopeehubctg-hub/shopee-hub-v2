@@ -102,3 +102,19 @@ test('Production customer sees selected create/update actions and transfers only
   const batch=JSON.parse(env.dom.window.localStorage.getItem(key));assert.equal(batch.prefills.length,2);assert.ok(batch.prefills.every(p=>p.name==='Package B'));
  }finally{await env.close();}
 });
+
+
+test('three-period Calculator handoff groups all three settings into one selected package',async()=>{
+ const env=await setup();try{
+ await env.click('Early Month, Campaign & Late Month Prices');
+ const doc=env.dom.window.document;const late=doc.querySelector('[aria-label="normalLate Platform Voucher percentage"]');
+ const inputs=[...doc.querySelectorAll('[aria-label="normalLate Platform Voucher percentage"]')];
+ if(inputs[0])await act(async()=>{Object.getOwnPropertyDescriptor(env.dom.window.HTMLInputElement.prototype,'value').set.call(inputs[0],'5');inputs[0].dispatchEvent(new env.dom.window.Event('input',{bubbles:true}));});
+ await act(async()=>doc.querySelector('[aria-label="Select Calculator package 1"]').click());
+ await env.click('Create Selected Packages (1)');await env.click('Confirm & Continue');
+ await waitFor(()=>doc.querySelector('.package-modal.standalone'));
+ const key=Object.keys(env.dom.window.localStorage).find(k=>k.startsWith('package-draft:'));
+ const saved=JSON.parse(env.dom.window.localStorage.getItem(key));assert.equal(saved.prefills.length,3);assert.equal(new Set(saved.prefills.map(p=>p.calculatorGroupId)).size,1);assert.deepEqual(saved.prefills.map(p=>p.calculatorSettings.pricingPeriod),['normal_1_15','campaign','normal_16_end']);
+ assert.equal(doc.querySelector('.pricing-mode-options button.active').textContent,'Early Month, Campaign & Late Month Prices');
+ }finally{await env.close();}
+});

@@ -20,3 +20,8 @@ Fixed Staging: https://shopee-hub-v2-260731-git-cod-e05b8d-shopeehubctg-5199s-pr
 DB only ubjfuveoqbvouryldqfu. No Production auth/data replication.
 
 Account Store Name matching: codex/account-invoice-store-matching at 123f7cdd55e67552155e47a5a740faabf7b92870. Includes queued Registered Name (Platform/Billing) prerequisite28e008c8. Fresh explicit STORE NAME evidence drives per-invoice matching; unknown/conflicting/multi-store invoices remain pending. Stage names and evidence migrations applied, actual rollback checks PASS. Automated186 related checks and TypeScript PASS. Actual fresh source review, UI/UX and final function QC pending. No Production release authorized.
+
+
+## Three pricing modes — 4 November 2026
+User approved combined review with current permission work. Feature codex/calculator-three-period-pricing at 331c009d832340b9f46bd0d637f9cd4504585d76 is integrated on Stage base 1526c4ed5f178eb4b8652f3eb08dc1db20e0d4bc. Canonical Normal availability + versioned early/late price rule, immutable Calculator period evidence, single/batch/Excel/reprice/History all retain explicit mode. No DDL/backfill/business data copying/deletion. Stage DB only ubjfuveoqbvouryldqfu.
+49 feature/regression checks, TypeScript and webpack build PASS before integration. Permission UI/API and Xero runtime versions retained from Stage during conflict resolution; no Stage feature replaced by main's older presentation. Combined 40 checks PASS (feature + store-scope + permission UI); combined Next webpack / TypeScript build PASS. Real UI/UX and Function QC PENDING; Chrome page execution timed out and deployment connector has403; user confirmed Chrome is busy and deferred real browser checks. No Production PR/release authorized for this candidate.
