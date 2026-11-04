@@ -6,6 +6,9 @@
 .price-calculator .period-reference-note{grid-column:1/-1;font-size:12px;line-height:1.5;font-weight:400}
 .price-calculator .period-mode-note{font-size:14px;color:#536779;line-height:1.6;margin:12px 0 20px}
 .price-calculator .pricing-goal-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr))}
+.price-calculator .pricing-goal-grid article{grid-template-columns:minmax(0,1fr);align-content:start}
+.price-calculator .pricing-goal-grid article>*{min-width:0;max-width:100%}
+.price-calculator .pricing-goal-grid select{width:100%}
 .market-price-card .normal-late-price-input{grid-column:1/-1}
 .batch-panel>.batch-country-picker{vertical-align:bottom;min-width:180px;max-width:100%}
 @media(max-width:700px){.pricing-mode-options{grid-template-columns:1fr;gap:8px}.pricing-mode-options button{min-height:44px;text-align:left}.price-calculator .voucher-hero-inputs{grid-template-columns:1fr}.price-calculator .voucher-hero-inputs label{min-width:0}}
