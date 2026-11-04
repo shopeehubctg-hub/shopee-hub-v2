@@ -47,6 +47,7 @@ async function setup(prefills, postResponses, packages = [], { accumulateSaved =
       });
       return { ok: next.ok, status: next.status ?? (next.ok ? 201 : 500), json: async () => next.body };
     }
+    if (String(url).includes("inventory-skus")) return {ok:true,json:async()=>({products:[],canEdit:false})};
     if (refreshFails) throw new Error("list refresh unavailable");
     return { ok: true, json: async () => ({ packages: [...savedPackages], source: "database", canDelete: false }) };
   }});
@@ -97,6 +98,12 @@ function click(dom, label) {
   button.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
 }
 
+async function addInventory(dom,sku){
+ await act(async()=>{input(dom,'[aria-label="Search Product / Inventory SKU 1"]',sku);});
+ await act(async()=>click(dom,'+ Add New Product'));
+ await act(async()=>input(dom,'[aria-label="Product Name 1"]','Test item'));
+}
+
 async function completeCurrentForm(dom, index) {
   await act(async () => {
     input(dom, 'input[aria-label="Shopee Listing 1 SKU"]', `QA-SKU-${index}`);
@@ -106,9 +113,9 @@ async function completeCurrentForm(dom, index) {
     input(dom, '.scenario-editor.campaign input[type="number"]', "1000");
     input(dom, '.scenario-editor.nonCampaign input[type="month"]', "2026-10");
     input(dom, '.scenario-editor.campaign input[type="month"]', "2026-10");
-    input(dom, '.component-row input', `QA-ITEM-${index}`);
-    input(dom, '.component-row input:nth-of-type(2)', "Test item");
+
   });
+  await addInventory(dom, `QA-ITEM-${index}`);
   // A month alone does not select a Campaign event. Choose Double Day explicitly.
   await act(async()=>dom.window.document.querySelector('.campaign-month-card input[type="checkbox"]').click());
 }
@@ -122,9 +129,9 @@ test("same pricing hides the Campaign card and copies Non-Campaign dates even af
       input(harness.dom, '.scenario-editor.nonCampaign input[type="number"]', "1000");
       input(harness.dom, '.scenario-editor.nonCampaign input[type="month"]', "2026-10");
       input(harness.dom, '.scenario-editor.campaign input[type="month"]', "2026-11");
-      input(harness.dom, '.component-row input', "SAME-PRICE-ITEM");
-      input(harness.dom, '.component-row input:nth-of-type(2)', "Test item");
+
     });
+    await addInventory(harness.dom, "SAME-PRICE-ITEM");
     await act(async () => harness.dom.window.document.querySelector('.same-pricing-toggle input').dispatchEvent(new harness.dom.window.MouseEvent('click', { bubbles: true })));
     assert.equal(harness.dom.window.document.querySelector('.scenario-editor.campaign'), null);
     assert.match(harness.dom.window.document.querySelector('.pricing-section').textContent, /Campaign dates will follow Non-Campaign dates/);

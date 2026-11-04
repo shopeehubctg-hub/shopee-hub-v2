@@ -10,7 +10,7 @@ await mkdir(dir,{recursive:true});
 await build({entryPoints:[new URL('../app/page.tsx',import.meta.url).pathname],outfile:new URL('page.mjs',dir).pathname,bundle:true,format:'esm',platform:'browser',packages:'external',jsx:'automatic',logLevel:'silent'});
 const {default:Home}=await import(new URL('page.mjs',dir));
 const waitFor=async(check)=>{for(let i=0;i<150;i++){if(check())return;await act(async()=>new Promise(r=>setTimeout(r,10)));}assert.ok(check(),'expected handoff UI did not arrive');};
-async function setup({open=()=>null,storageBlocked=false,modules=['calculator','packages'],storeId='test-store'}={}){
+async function setup({open=()=>null,storageBlocked=false,modules=['calculator','packages'],storeId='test-store',environment='staging'}={}){
  const dom=new JSDOM('<div id="root"></div>',{url:'https://local.test/?section=calculator'});
  const values={window:dom.window,document:dom.window.document,navigator:dom.window.navigator,HTMLElement:dom.window.HTMLElement,Event:dom.window.Event,MouseEvent:dom.window.MouseEvent,crypto:dom.window.crypto,IS_REACT_ACT_ENVIRONMENT:true};
  const prior=Object.fromEntries([...Object.keys(values),'fetch'].map(k=>[k,Object.getOwnPropertyDescriptor(globalThis,k)]));
@@ -19,7 +19,7 @@ async function setup({open=()=>null,storageBlocked=false,modules=['calculator','
  dom.window.scrollTo=()=>{};
  if(storageBlocked)Object.defineProperty(dom.window.Storage.prototype,'setItem',{value(){throw new dom.window.DOMException('Storage full','QuotaExceededError');}});
  const calls=[];
- globalThis.fetch=async(url,options={})=>{calls.push({url,options});const body=String(url).startsWith('/api/dashboard')?{environment:'staging',user:{email:'client@example.test'},access:{role:'customer',enabledModules:modules,clientEnabledModules:modules,canManagePermissions:false},stores:[{id:'test-store',name:'Test Store',platform:'Shopee MY',contacts:[]}],selectedStoreId:storeId,snapshot:null,actions:[],adPerformance:[],adBalance:null,productProfile:null,coFundVouchers:[]}:String(url).includes('inventory-skus')?{products:[],canEdit:false}:{packages:[],source:'database',canDelete:false};return{ok:true,status:200,json:async()=>body};};
+ globalThis.fetch=async(url,options={})=>{calls.push({url,options});const body=String(url).startsWith('/api/dashboard')?{environment,user:{email:'client@example.test'},access:{role:'customer',enabledModules:modules,clientEnabledModules:modules,canManagePermissions:false},stores:[{id:'test-store',name:'Test Store',platform:'Shopee MY',contacts:[]}],selectedStoreId:storeId,snapshot:null,actions:[],adPerformance:[],adBalance:null,productProfile:null,coFundVouchers:[]}:String(url).includes('inventory-skus')?{products:[],canEdit:false}:{packages:[],source:'database',canDelete:false};return{ok:true,status:200,json:async()=>body};};
  const {createRoot}=await import('react-dom/client');const root=createRoot(dom.window.document.getElementById('root'));
  await act(async()=>root.render(React.createElement(Home)));
  await waitFor(()=>dom.window.document.querySelector('.calculator-selection-bar'));
@@ -88,5 +88,17 @@ test('three packages start unchecked; choosing two transfers exactly two stable 
   const key=Object.keys(env.dom.window.localStorage).find(k=>k.startsWith('package-draft:'));
   const batch=JSON.parse(env.dom.window.localStorage.getItem(key));assert.equal(batch.prefills.length,4);assert.equal(new Set(batch.prefills.map(p=>p.calculatorGroupId)).size,2);
   assert.deepEqual([...new Set(batch.prefills.map(p=>p.name))],['Package A','Package B']);
+ }finally{await env.close();}
+});
+
+test('Production customer sees selected create/update actions and transfers only selected packages',async()=>{
+ const env=await setup({environment:'production'});try{
+  assert.ok(!env.dom.window.document.body.textContent.includes('Create All Ready'));
+  assert.ok(env.dom.window.document.body.textContent.includes('Update Existing Package Prices (0)'));
+  await act(async()=>env.dom.window.document.querySelector('[aria-label="Select Calculator package 2"]').click());
+  await env.click('Create Selected Packages (1)');await env.click('Confirm & Continue');
+  await waitFor(()=>env.dom.window.document.querySelector('.package-modal.standalone'));
+  const key=Object.keys(env.dom.window.localStorage).find(k=>k.startsWith('package-draft:'));
+  const batch=JSON.parse(env.dom.window.localStorage.getItem(key));assert.equal(batch.prefills.length,2);assert.ok(batch.prefills.every(p=>p.name==='Package B'));
  }finally{await env.close();}
 });
