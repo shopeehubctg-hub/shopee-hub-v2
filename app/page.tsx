@@ -1,4 +1,6 @@
 "use client";
+import {CalculatorCountryAvailability} from "./calculator-country-availability";
+import {StoreProjectSelector} from "./store-project-selector";
 import type {RepriceTarget} from "./package-repricing";
 
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -393,7 +395,7 @@ export default function Home() {
       <header className="header">
         <div><p className="kicker">{section==="account"?"SHOPEE HUB":"SHOPEE HUB PERFORMANCE"}{isStaging&&<span data-environment="staging"> · STAGING</span>}</p><h1>{section==="account"?"Account":section==="packages"&&!storeSelectionMade?"No Store Selected":allStoresSelected ? "All Stores" : (store?.name ?? (isStaging?"Selected Store":"J Packaging"))}</h1></div>
         {section!=="account"&&<div className="toolbar">
-          <label>Store<select value={section==="packages"&&!storeSelectionMade?"":storeId} onChange={event=>selectStore(event.target.value)}><option value="" disabled>Select a Store</option><option value="all">All Stores</option>{data?.stores.map(s=><option key={s.id} value={s.id}>{s.name} · {s.platform.replace("Shopee ", "")}</option>) ?? <option value="j-packaging-shopee">J Packaging · MY</option>}</select></label>
+          <StoreProjectSelector stores={data?.stores??[]} storeId={storeId} onSelect={selectStore} revision={dataRevision} placeholder={section==="packages"&&!storeSelectionMade}/>
           <button onClick={()=>load(storeId,true)} disabled={loading}>{loading?"Updating…":"Update data"}</button>
         </div>}
       </header>
@@ -414,7 +416,7 @@ export default function Home() {
       </div>}
 
       {section==="packages" && <div className="page"><PackageControl onRecalculate={allowedSections.includes("calculator")?startRecalculation:undefined} highlightedIds={highlightedPackageIds} staging={isStaging} storePlatform={store?.platform} allowSamplePreview={data.access?.role==="superadmin"} storeId={storeSelectionMade?storeId:""} storeName={!storeSelectionMade?"No Store Selected":allStoresSelected?"All Accessible Stores":(store?.name ?? "Selected Store")} prefills={packagePrefills} standaloneCreate={standalonePackageCreate} draftStorageKey={packageDraftKey ? `package-draft:${packageDraftKey}` : undefined} onPrefillsAccepted={()=>setPackagePrefills([])} /></div>}
-      {section==="calculator" && <div className="page" aria-label="Price Calculator"><PriceCalculator recalculateTargets={recalculateTargets} onPricesUpdated={finishPriceUpdate} staging={isStaging} storeId={allStoresSelected?"":store?.id??""} storeName={allStoresSelected?"":(store?.name??"")} productProfile={allStoresSelected?null:data?.productProfile} coFundVouchers={allStoresSelected?[]:data?.coFundVouchers} onCreatePackage={prefill=>openPackageDraft([prefill])} onCreatePackages={openPackageDraft} /></div>}
+      {section==="calculator" && <div className="page" aria-label="Price Calculator"><CalculatorCountryAvailability platform={allStoresSelected?undefined:store?.platform} onOpenPackages={allowedSections.includes("packages")?()=>setSection("packages"):undefined}><PriceCalculator recalculateTargets={recalculateTargets} onPricesUpdated={finishPriceUpdate} staging={isStaging} storeId={allStoresSelected?"":store?.id??""} storeName={allStoresSelected?"":(store?.name??"")} productProfile={allStoresSelected?null:data?.productProfile} coFundVouchers={allStoresSelected?[]:data?.coFundVouchers} onCreatePackage={prefill=>openPackageDraft([prefill])} onCreatePackages={openPackageDraft} /></CalculatorCountryAvailability></div>}
       {section==="design" && <div className="page"><DesignChecker key={storeId} storeId={storeId}/></div>}
       {section==="protection" && <div className="page"><FakeSellerReport storeName={store?.name ?? "Selected store"} allStores={allStoresSelected} cases={fakeSellerCases}/></div>}
       {section==="permissions" && data?.access?.canManagePermissions && <div className="page"><PermissionSettings accountSetupPreview initialEnabledModules={data.access.clientEnabledModules} onStoreChanged={()=>load(storeId && storeId!=="all" ? storeId : undefined,true)}/></div>}

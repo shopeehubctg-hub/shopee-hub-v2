@@ -1,0 +1,19 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {execFileSync} from 'node:child_process';import {JSDOM} from 'jsdom';
+const NativeChannel=globalThis.MessageChannel;const channels=[];globalThis.MessageChannel=class extends NativeChannel{constructor(){super();channels.push(this);}};
+const compiled=execFileSync('node_modules/.bin/esbuild',['--bundle','--format=esm','--platform=node','--loader:.css=empty','--jsx=automatic'],{input:`import React,{act} from 'react';import {createRoot} from 'react-dom/client';import {StoreProjectSelector} from './app/store-project-selector';export {React,act,createRoot,StoreProjectSelector};`,maxBuffer:10*1024*1024});
+const {React,act,createRoot,StoreProjectSelector}=await import(`data:text/javascript;base64,${compiled.toString('base64')}`);
+test('Calculator and Package modes use authorized country tabs and preserve canonical store selection',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{url:'https://stage.test'});for(const key of ['window','document','HTMLElement','Event','MouseEvent'])Object.defineProperty(globalThis,key,{configurable:true,value:dom.window[key]});globalThis.IS_REACT_ACT_ENVIRONMENT=true;const beforeFetch=globalThis.fetch;
+ const projects=[{id:'p',name:'SkinDae',version:'1',markets:[{market:'MY',stores:[{id:'my',name:'SkinDae MY',serviceStatus:'active'}]},{market:'SG',stores:[{id:'sg',name:'SkinDae SG',serviceStatus:'active'}]}]}];globalThis.fetch=async()=>Response.json({projects,allowedStoreIds:['my','sg']});const root=createRoot(document.querySelector('#root'));let selected='';const stores=[{id:'my',name:'SkinDae MY',platform:'Shopee MY'},{id:'sg',name:'SkinDae SG',platform:'Shopee SG'}];
+ try{for(const operationMode of [true,false]){await act(()=>root.render(React.createElement(StoreProjectSelector,{stores,storeId:'my',operationMode,onSelect:id=>selected=id})));await act(async()=>{});assert.ok(document.querySelector('[aria-label="Store country"]'));assert.equal(document.querySelector('[aria-label="Package or Calculator storefront"]'),null);assert.ok(!document.body.textContent.includes('Existing packages stay'));await act(()=>[...document.querySelectorAll('button')].find(button=>button.textContent==='SG').click());assert.equal(selected,'sg');}
+ await act(()=>root.render(React.createElement(StoreProjectSelector,{stores:[stores[0]],storeId:'my',operationMode:true,onSelect:()=>{}})));assert.deepEqual([...document.querySelectorAll('.project-market-tabs button')].map(button=>button.textContent),['MY']);
+ // Stage keeps its canonical Project API; the shared selector consumes only returned authorized IDs.
+ globalThis.fetch=async url=>{assert.equal(url,'/api/store-projects');return Response.json({projects});};
+ await act(()=>root.render(React.createElement(StoreProjectSelector,{stores,storeId:'my',projectEndpoint:'/api/store-projects',revision:1,onSelect:id=>selected=id})));await act(async()=>{});assert.deepEqual([...document.querySelectorAll('.project-market-tabs button')].map(button=>button.textContent),['MY','SG']);
+ // A denied refresh cannot leave an earlier Project/country whitelist visible or expose a server error.
+ globalThis.fetch=async()=>Response.json({error:'private server detail'},{status:403});
+ await act(()=>root.render(React.createElement(StoreProjectSelector,{stores,storeId:'my',projectEndpoint:'/api/store-projects',revision:2,onSelect:()=>{}})));await act(async()=>{});
+ assert.equal(document.querySelectorAll('.project-market-tabs button').length,0);assert.equal(document.querySelectorAll('[aria-label="Project selector"] option').length,2);assert.doesNotMatch(document.body.textContent,/private server detail/);
+
+ }finally{await act(()=>root.unmount());globalThis.fetch=beforeFetch;dom.window.close();for(const channel of channels){channel.port1.close();channel.port2.close();}globalThis.MessageChannel=NativeChannel;}
+});
