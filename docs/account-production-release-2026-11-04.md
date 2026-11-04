@@ -37,3 +37,7 @@ Configured Xero reads/OAuth require persisted revocable primary portal sessions 
 ## Reviewed Names activation follow-up
 
 Parent applied only the exact reviewed Names artifact to Production and reported its authorized rollback-only suite PASS, with synthetic fixtures rolled back. Baseline verification is parent-owned. This worker executed no database operation. Xero migration/application, configuration and live source activation remain pending and disabled.
+
+## Canonical mapping guard
+
+Store-owned `store:<id>` billing projects must retain that Store identity. The API rejects a different target before the save RPC, matching the already deployed database constraint. Defensive monthly projection ignores an incompatible mapping version while retaining earlier verified as-of bindings and ledger facts; ordinary roster-unit mapping remains editable. Targeted API/model/crosswalk/no-ledger regressions PASS. No schema or stored-history rewrite is needed.

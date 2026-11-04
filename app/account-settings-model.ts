@@ -26,6 +26,8 @@ export function validateFeeRule(value:unknown,currency:AccountCurrency):AccountF
   if(rule.minimum&&rule.tiers?.some(tier=>tier.cap!==undefined&&cents(rule.minimum!)>cents(tier.cap)))throw new Error('Minimum fee cannot exceed a tier cap');
   return rule;
 }
+/** Store-owned billing units retain their canonical identity; roster units may be manually remapped. */
+export function billingUnitAcceptsStore(unitKey:string,storeId:string|null):boolean{return !unitKey.startsWith('store:')||storeId===unitKey.slice(6);}
 export function applyAccountSettings(account:AccountResponse,settings:AccountSetting[],storeNames:Map<string,string>,tenantId=''):AccountResponse {
   const represented=new Set(account.stores.flatMap(row=>[row.rosterKey,row.sourceRosterKey].filter(Boolean)));
   const units=new Map<string,AccountSetting>();
@@ -36,7 +38,9 @@ export function applyAccountSettings(account:AccountResponse,settings:AccountSet
     row.market??=MARKET_CODES.find(market=>MARKET_CONFIG[market].currency===row.currency);
     const history=settings.filter(s=>s.roster_key===row.rosterKey).sort((a,b)=>BigInt(a.version)<BigInt(b.version)?-1:1);
     const applicable=history.filter(s=>s.effective_month.slice(0,7)<=account.invoiceMonth).sort((a,b)=>a.effective_month.localeCompare(b.effective_month)||(BigInt(a.version)<BigInt(b.version)?-1:1));
-    const currentMapping=applicable.filter(s=>(s.change_action==='mapping'||s.change_action==='setup')).at(-1);
+    const mappingHistory=applicable.filter(s=>(s.change_action==='mapping'||s.change_action==='setup'));
+    const currentMapping=mappingHistory.filter(s=>billingUnitAcceptsStore(row.rosterKey??row.id,s.store_id)).at(-1);
+    if(mappingHistory.length&&!currentMapping&&row.rosterKey?.startsWith('store:')&&!(row.storeId===row.rosterKey.slice(6)&&storeNames.has(row.storeId))){row.storeId=null;row.storeName=row.project;row.mappingStatus='missing';row.mappingReason='Store mapping does not match this billing project.';row.candidates=[];row.status='pending_mapping';}
     const currentRule=applicable.filter(s=>(s.change_action==='fee_rule'||s.change_action==='setup')).at(-1);
     const currentCompany=applicable.filter(s=>s.change_action==='company'||s.change_action==='setup').at(-1);
     if(currentCompany)row.entity=currentCompany.legal_entity;
