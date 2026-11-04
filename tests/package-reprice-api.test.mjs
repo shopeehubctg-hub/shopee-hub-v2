@@ -20,3 +20,15 @@ test('lost post-save History response retains saved receipt and replay confirms 
 test('permissions, unconfigured environment, missing target, expired, stale version and unsynced state reject without writes',async()=>{for(const patch of [{denied:true},{noCalculator:true},{environment:'local'},{missing:true}]){reset();Object.assign(ctx,patch);assert.ok((await post()).status>=400);assert.equal(ctx.state.package_versions.length,1);}for(const patch of [{version:9},{sheetSyncStatus:'pending'},{calculatorSettings:{_packageEnded:true}}]){reset();Object.assign(ctx.state.package_versions[0],patch);assert.equal((await post()).status,409);assert.equal(ctx.state.package_versions.length,1);}});
 
 test('configured Production uses the same atomic receipt and post-save retry protections',async()=>{reset();ctx.environment='production';ctx.deliveryThrows=true;const b=body(),r=await post(b);assert.equal(r.status,503);assert.equal((await r.json()).saved,true);assert.equal(ctx.state.package_versions.length,2);ctx.deliveryThrows=false;assert.equal((await post(b)).status,200);assert.equal(ctx.state.package_versions.length,2);});
+
+
+test('three-period late-only API append preserves other periods and stores period-specific evidence',async()=>{
+ reset();const previous=ctx.state.package_versions[0];
+ previous.calculatorSettings._pricingMode='split_normal';previous.calculatorSettings._normalMonthlyRule={schema:1,prices:{MY:{early:{originalPrice:300,sellingPrice:200},late:{originalPrice:300,sellingPrice:230}}}};
+ ctx.export.pricingMode='split_normal';ctx.export.normalLate=240;
+ ctx.export.scenarios=['normal_1_15','campaign','normal_16_end'].map((period,i)=>({...scenario(period==='campaign'?'Campaign Day':'Non-Campaign Day'),pricingSchemaVersion:2,pricingMode:'split_normal',pricingPeriod:period,suggestedShopeePrice:[210,210,240][i]}));
+ const response=await post({...body(),priceTypes:['normal_late']});assert.equal(response.status,200,JSON.stringify(await response.clone().json()));
+ const version=ctx.state.package_versions.at(-1);assert.equal(version.calculatorSettings._normalMonthlyRule.prices.MY.early.sellingPrice,200);assert.equal(version.calculatorSettings._normalMonthlyRule.prices.MY.late.sellingPrice,240);
+ const next=ctx.state.package_prices.slice(3);assert.deepEqual(next.map(p=>p.sellingPrice),basePrices.map(p=>p.sellingPrice));assert.equal(version.calculatorSettings._pricingEvidence.periodReferences.normal_16_end.exportId,ctx.export.id);
+ assert.equal(ctx.state.package_versions[0].calculatorSettings._normalMonthlyRule.prices.MY.late.sellingPrice,230);
+});

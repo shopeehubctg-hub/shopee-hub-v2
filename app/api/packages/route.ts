@@ -1,3 +1,4 @@
+import {normalPricingSummary,pricingMode,validateNormalMonthlyRule,resolvedNormalPrice,effectivePackagePrice,type NormalMonthlyRule} from "../../pricing-periods";
 import {deploymentTarget} from "../../deployment-isolation";
 import {MARKET_CONFIG,isMarket,priceMarket,marketFromPlatform,type MarketCode} from '../../markets';
 import { packageDurationType } from '../../package-duration';
@@ -268,7 +269,8 @@ export async function GET(request: Request) {
       const currentEvent=recurringCampaign?activeRecurringEvent(recurringCampaign,today):null;
       const eventPrice=displayMarket?currentEvent?.prices[displayMarket]:null;
       const normalPrice=versionPrices.find(item=>item.priceType==="non_campaign"&&priceMarket(item.market,item.currency)===displayMarket);
-      const displayPrice=recurringCampaign ? eventPrice?{originalPrice:Math.round(eventPrice.originalPrice*100),sellingPrice:Math.round(eventPrice.sellingPrice*100)}:normalPrice??price : price;
+      const legacyDisplayPrice=recurringCampaign ? eventPrice?{originalPrice:Math.round(eventPrice.originalPrice*100),sellingPrice:Math.round(eventPrice.sellingPrice*100)}:normalPrice??price : price;
+      const displayPrice=version?.calculatorSettings?._pricingMode==='split_normal'?effectivePackagePrice(versionPrices,version.calculatorSettings,today,displayMarket,true)??legacyDisplayPrice:legacyDisplayPrice;
       const currentPlatforms = version ? (platformsByVersion.get(version.id)??[]).map(({ platform, packageSku }) => ({ platform, packageSku })) : [];
       return {
         ...row,
@@ -382,6 +384,8 @@ async function savePackage(request: Request) {
     longTerm?: boolean;
     campaignLongTerm?: boolean;
     recurringCampaign?: unknown;
+    pricingMode?:unknown;
+    normalMonthlyRule?:unknown;
   };
   const catalogEnabled=true;
   const captureInventory=catalogEnabled&&!body.packageId;
@@ -442,6 +446,12 @@ async function savePackage(request: Request) {
   })) {
     return packageError("Pricing & Promotion","Recurring Campaign dates and first event price must match the Campaign card. Non-Campaign pricing must cover the same period.");
   }
+  let selectedPricingMode;let normalMonthlyRule:NormalMonthlyRule|null=null;
+  try {
+    selectedPricingMode=pricingMode(body.pricingMode??(body.samePricing?'uniform':undefined));
+    normalMonthlyRule=validateNormalMonthlyRule(body.normalMonthlyRule,selectedPricingMode,schedules,true);
+    if(selectedPricingMode==='uniform'&&markets.some(m=>new Set(schedules.filter(p=>p.market===m).map(p=>p.sellingPrice)).size!==1))throw Error('Same Price All Month needs one selling price in each market.');
+  }catch(error){return packageError('Pricing & Promotion',(error as Error).message);}
   const periodKeys=(market:string,priceType:"non_campaign"|"campaign")=>schedules.filter(item=>item.market===market&&item.priceType===priceType).map(item=>`${item.promotionType}|${item.effectiveFrom}|${item.effectiveTo}`).sort().join(",");
   if (markets.some(market=>periodKeys(market,"non_campaign")!==periodKeys(markets[0],"non_campaign")||periodKeys(market,"campaign")!==periodKeys(markets[0],"campaign"))) {
     return packageError("Pricing & Promotion","All selected markets must use the same promotion dates for each pricing type.");
@@ -472,7 +482,7 @@ async function savePackage(request: Request) {
   }
 
   const verifyCaptureRequest=!body.packageId&&(body.captureInventory===true||body.batchUpload===true);
-  const captureFingerprint=verifyCaptureRequest?inventoryFingerprint({storeId:body.storeId,name:body.name.trim(),mode,components,platforms,markets,schedules,exportId:body.exportId??null,priceAdjustmentReason:body.priceAdjustmentReason??null,samePricing:!!body.samePricing,longTerm:!!body.longTerm,campaignLongTerm:!!body.campaignLongTerm,recurringCampaign,changeNote:body.changeNote?.trim()??'',calculatorSettings:body.calculatorSettings??null}):null;
+  const captureFingerprint=verifyCaptureRequest?inventoryFingerprint({storeId:body.storeId,name:body.name.trim(),mode,components,platforms,markets,schedules,exportId:body.exportId??null,priceAdjustmentReason:body.priceAdjustmentReason??null,samePricing:!!body.samePricing,longTerm:!!body.longTerm,campaignLongTerm:!!body.campaignLongTerm,recurringCampaign,pricingMode:selectedPricingMode,normalMonthlyRule,changeNote:body.changeNote?.trim()??'',calculatorSettings:body.calculatorSettings??null}):null;
   if(verifyCaptureRequest){catalogProducts(components);if(!body.clientRequestId)return packageError("Saving","A stable package request ID is required. Refresh and retry.");}
   const db = await getDb();
   const requestedPackageId = body.packageId ? String(body.packageId) : null;
@@ -535,6 +545,7 @@ async function savePackage(request: Request) {
     existingPackage=existing;
     nextVersion = Number(latest?.version ?? 0) + 1;
     previousComponents = latest?.components ?? [];
+    if(latest?.calculatorSettings?._pricingMode==='split_normal'&&body.pricingMode===undefined)return packageError('Pricing & Promotion','This package uses three-period pricing. Refresh the Dashboard before editing.');
     previousVersion = latest;
   }
 
@@ -554,8 +565,8 @@ async function savePackage(request: Request) {
     schedules.splice(0,schedules.length,...bounded);
   }
   const primaryPeriod=schedules.find(item=>item.effectiveTo===null)??schedules.find(item=>item.priceType==="campaign")!;
-  const changeSummary = nextVersion === 1 ? "新开配套" : previousVersion
-    ? emailChangeSummary({components,calculatorSettings:{_packageMetadata:metadata,_recurringCampaign:recurringCampaign}},previousVersion,schedules,oldPrices,platforms,oldSkus)
+  const changeSummary = nextVersion === 1 ? (normalMonthlyRule?"Created · "+Object.entries(normalMonthlyRule.prices).map(([m,p])=>`${m}: Normal 1st–15th ${p!.early.sellingPrice.toFixed(2)}, 16th–End ${p!.late.sellingPrice.toFixed(2)}`).join(" | "):"新开配套") : previousVersion
+    ? emailChangeSummary({components,calculatorSettings:{_packageMetadata:metadata,_recurringCampaign:recurringCampaign,_pricingMode:selectedPricingMode,_normalMonthlyRule:normalMonthlyRule}},previousVersion,schedules,oldPrices,platforms,oldSkus)
     : "配套资料修改（历史比较资料不足）";
   const captureReplay=await db.transaction(async tx => {
     if(catalogEnabled)await lockInventoryCatalog(tx,membership.tenantId);
@@ -580,7 +591,7 @@ async function savePackage(request: Request) {
     if(catalogEnabled&&mappingsToCapture.length)await captureInventoryProducts(tx,membership.tenantId,body.storeId!,versionId,mappingsToCapture);
     let pricingEvidence=null;
     {
-      try{pricingEvidence=await resolvePricingEvidence(tx,{tenantId:membership.tenantId,storeId:body.storeId!,actor:user.email},body,schedules,previousVersion?.calculatorSettings);}
+      try{pricingEvidence=await resolvePricingEvidence(tx,{tenantId:membership.tenantId,storeId:body.storeId!,actor:user.email},{...body,pricingMode:selectedPricingMode,normalMonthlyRule},schedules,previousVersion?.calculatorSettings);}
       catch(error){throw Object.assign(error instanceof Error?error:Error('Check Calculator pricing evidence.'),{code:'PRICING_EVIDENCE'});}
     }
     if (!requestedPackageId) {
@@ -608,7 +619,7 @@ async function savePackage(request: Request) {
       addedComponents:diff.added,
       removedComponents:diff.removed,
       sheetSyncStatus:mode==="draft"?"not_sent":localReceipt?"synced":"pending",
-      calculatorSettings:{...Object.fromEntries(Object.entries(body.calculatorSettings ?? {}).filter(([key])=>!key.startsWith("_"))),...(pricingEvidence?{scenarios:pricingEvidence.scenarios,_pricingEvidence:pricingEvidence}:{}),...(captureFingerprint?{_inventoryCaptureFingerprint:captureFingerprint}:{}),_packageEnded:false,_samePricing:body.samePricing===true,_longTermLifecycle:longTermLifecycle,_recurringCampaign:recurringCampaign,_packageMetadata:metadata,_packageHistorySummary:{schema:1,summary:changeSummary}},
+      calculatorSettings:{...Object.fromEntries(Object.entries(body.calculatorSettings ?? {}).filter(([key])=>!key.startsWith("_"))),...(pricingEvidence?{scenarios:pricingEvidence.scenarios,_pricingEvidence:pricingEvidence}:{}),...(captureFingerprint?{_inventoryCaptureFingerprint:captureFingerprint}:{}),_pricingMode:selectedPricingMode,_normalMonthlyRule:normalMonthlyRule,_packageEnded:false,_samePricing:body.samePricing===true,_longTermLifecycle:longTermLifecycle,_recurringCampaign:recurringCampaign,_packageMetadata:metadata,_packageHistorySummary:{schema:1,summary:changeSummary}},
       changeNote:body.changeNote?.trim() || (nextVersion === 1 ? "Initial version" : `Version ${nextVersion}`),
       effectiveFrom:primaryPeriod.effectiveFrom,
       effectiveTo:primaryPeriod.effectiveTo,
@@ -658,7 +669,7 @@ async function savePackage(request: Request) {
     currentComponents:formatComponents(components),
     changedBy:user.email,
     syncStatus:"Synced",
-    changeSummary,
+    changeSummary:[changeSummary,normalPricingSummary({_pricingMode:selectedPricingMode,_normalMonthlyRule:normalMonthlyRule})].filter(Boolean).join(" | "),
   });
   if (sync.status!=="synced") {
     await db.update(packageVersions).set({ sheetSyncStatus:sync.status }).where(eq(packageVersions.id, versionId));
@@ -734,7 +745,7 @@ export async function PATCH(request:Request) {
       shopeeSku:platformMap.Shopee??"",lazadaSku:platformMap.Lazada??"",tiktokSku:platformMap["TikTok Shop"]??"",
       addedComponents:formatComponents(version.addedComponents),removedComponents:formatComponents(version.removedComponents),
       currentComponents:formatComponents(version.components),changedBy:version.createdBy,syncStatus:"Synced",
-      changeSummary:await versionChangeSummary(db,version),
+      changeSummary:[await versionChangeSummary(db,version),normalPricingSummary(version.calculatorSettings)].filter(Boolean).join(" | "),
     });
     if(sync.status!=="synced"){
       await db.update(packageVersions).set({sheetSyncStatus:sync.status}).where(eq(packageVersions.id,version.id));
