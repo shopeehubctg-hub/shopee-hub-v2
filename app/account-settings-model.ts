@@ -1,7 +1,8 @@
+import {projectAccountUnitCrosswalk} from './account-unit-crosswalk';
 import {MARKET_CONFIG,MARKET_CODES} from './markets';
 import { cents, previousMonth } from './account-ledger';
 import type { AccountCurrency, AccountFeeRule, AccountResponse,AccountStoreRow } from './account-contract';
-export type AccountSetting = {id:string;roster_key:string;roster_project:string;legal_entity:string;currency:AccountCurrency;change_action:'mapping'|'fee_rule'|'company'|'setup';version:string;effective_month:string;store_id:string|null;fee_rule:AccountFeeRule|null;created_at:string;market?:AccountStoreRow['market'];input_currency?:AccountCurrency;client_type?:AccountStoreRow['clientType'];rate_card?:AccountStoreRow['rateCard'];fx_policy?:AccountStoreRow['fxPolicy'];fx_rate?:string|null};
+export type AccountSetting = {id:string;roster_key:string;roster_project:string;legal_entity:string;billing_registered_name?:string|null;currency:AccountCurrency;change_action:'mapping'|'fee_rule'|'company'|'setup';version:string;effective_month:string;store_id:string|null;fee_rule:AccountFeeRule|null;created_at:string;market?:AccountStoreRow['market'];input_currency?:AccountCurrency;client_type?:AccountStoreRow['clientType'];rate_card?:AccountStoreRow['rateCard'];fx_policy?:AccountStoreRow['fxPolicy'];fx_rate?:string|null};
 const money=/^\d{1,16}(?:\.\d{1,2})?$/;
 export function validateFeeRule(value:unknown,currency:AccountCurrency):AccountFeeRule {
   if(!value||typeof value!=='object'||Array.isArray(value)) throw new Error('Choose a monthly fee rule');
@@ -25,19 +26,26 @@ export function validateFeeRule(value:unknown,currency:AccountCurrency):AccountF
   if(rule.minimum&&rule.tiers?.some(tier=>tier.cap!==undefined&&cents(rule.minimum!)>cents(tier.cap)))throw new Error('Minimum fee cannot exceed a tier cap');
   return rule;
 }
-export function applyAccountSettings(account:AccountResponse,settings:AccountSetting[],storeNames:Map<string,string>):AccountResponse {
-  const represented=new Set(account.stores.map(row=>row.rosterKey));
+/** Store-owned billing units retain their canonical identity; roster units may be manually remapped. */
+export function billingUnitAcceptsStore(unitKey:string,storeId:string|null):boolean{return !unitKey.startsWith('store:')||storeId===unitKey.slice(6);}
+export function applyAccountSettings(account:AccountResponse,settings:AccountSetting[],storeNames:Map<string,string>,tenantId=''):AccountResponse {
+  const represented=new Set(account.stores.flatMap(row=>[row.rosterKey,row.sourceRosterKey].filter(Boolean)));
   const units=new Map<string,AccountSetting>();
   for(const setting of settings.filter(s=>s.effective_month.slice(0,7)<=account.invoiceMonth).sort((a,b)=>a.effective_month.localeCompare(b.effective_month)||(BigInt(a.version)<BigInt(b.version)?-1:1)))units.set(setting.roster_key,setting);
-  for(const setting of units.values())if(!represented.has(setting.roster_key)){account.stores.push({id:setting.roster_key,rosterKey:setting.roster_key,project:setting.roster_project,entity:setting.legal_entity,market:setting.market??MARKET_CODES.find(market=>MARKET_CONFIG[market].currency===setting.currency),storeId:null,storeName:setting.roster_project,currency:setting.currency,statementMonth:previousMonth(account.invoiceMonth),invoiceMonth:account.invoiceMonth,servicePeriodStart:null,servicePeriodEnd:null,status:'pending_terms',expectedNetFee:null,billed:null,collected:null,outstanding:null});}
+  for(const setting of units.values())if(!represented.has(setting.roster_key)){account.stores.push({id:setting.roster_key,rosterKey:setting.roster_key,project:setting.roster_project,entity:setting.legal_entity,billingEntity:setting.billing_registered_name??null,market:setting.market??MARKET_CODES.find(market=>MARKET_CONFIG[market].currency===setting.currency),storeId:null,storeName:setting.roster_project,currency:setting.currency,statementMonth:previousMonth(account.invoiceMonth),invoiceMonth:account.invoiceMonth,servicePeriodStart:null,servicePeriodEnd:null,status:'pending_terms',expectedNetFee:null,billed:null,collected:null,outstanding:null});}
+  projectAccountUnitCrosswalk(account,settings,storeNames,tenantId);
   for(const row of account.stores) {
     row.market??=MARKET_CODES.find(market=>MARKET_CONFIG[market].currency===row.currency);
     const history=settings.filter(s=>s.roster_key===row.rosterKey).sort((a,b)=>BigInt(a.version)<BigInt(b.version)?-1:1);
     const applicable=history.filter(s=>s.effective_month.slice(0,7)<=account.invoiceMonth).sort((a,b)=>a.effective_month.localeCompare(b.effective_month)||(BigInt(a.version)<BigInt(b.version)?-1:1));
-    const currentMapping=applicable.filter(s=>(s.change_action==='mapping'||s.change_action==='setup')).at(-1);
+    const mappingHistory=applicable.filter(s=>(s.change_action==='mapping'||s.change_action==='setup'));
+    const currentMapping=mappingHistory.filter(s=>billingUnitAcceptsStore(row.rosterKey??row.id,s.store_id)).at(-1);
+    if(mappingHistory.length&&!currentMapping&&row.rosterKey?.startsWith('store:')&&!(row.storeId===row.rosterKey.slice(6)&&storeNames.has(row.storeId))){row.storeId=null;row.storeName=row.project;row.mappingStatus='missing';row.mappingReason='Store mapping does not match this billing project.';row.candidates=[];row.status='pending_mapping';}
     const currentRule=applicable.filter(s=>(s.change_action==='fee_rule'||s.change_action==='setup')).at(-1);
     const currentCompany=applicable.filter(s=>s.change_action==='company'||s.change_action==='setup').at(-1);
     if(currentCompany)row.entity=currentCompany.legal_entity;
+    const billingName=applicable.filter(s=>(s.change_action==='company'||s.change_action==='setup')&&typeof s.billing_registered_name==='string'&&s.billing_registered_name.trim()).at(-1)?.billing_registered_name;
+    row.billingEntity=billingName??row.billingEntity??null;
     const current=applicable.at(-1);
     row.latestSettingsVersion=history.at(-1)?.version??'0';row.appliedSettingsVersion=current?.version??null;row.settingsEffectiveMonth=current?.effective_month.slice(0,7)??null;
     row.rateHistory=history.filter(s=>(s.change_action==='fee_rule'||s.change_action==='setup')).map(s=>({action:'fee_rule',version:s.version,effectiveMonth:s.effective_month.slice(0,7),rule:s.fee_rule,storeId:s.store_id,changedAt:s.created_at}));

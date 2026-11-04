@@ -1,11 +1,13 @@
 import 'server-only';
+import {optionalBillingName} from './registered-names';
+import {registeredNamesAvailable} from './registered-names-server';
 import roster from './account-roster-data.json';
 import { getChatGPTUser } from './chatgpt-auth';
 import { accountSecurityGate } from './account-security-server';
 import { supabaseRest } from './supabase-rest';
 import { canonicalStoreId } from './live-calendar-model';
 import { malaysiaDate } from './account-ledger';
-import { validateFeeRule } from './account-settings-model';
+import { billingUnitAcceptsStore, validateFeeRule } from './account-settings-model';
 export async function saveAccountSetting(request:Request,action:'mapping'|'fee_rule'|'company'):Promise<Response> {
   const gate=await accountSecurityGate();if(gate)return gate;
   const actor=await getChatGPTUser();
@@ -21,7 +23,7 @@ export async function saveAccountSetting(request:Request,action:'mapping'|'fee_r
     const raw=await request.text();if(raw.length>20000)return Response.json({error:'Fee rule is too large'},{status:400});
     let body:Record<string,unknown>;try{body=JSON.parse(raw);}catch{return Response.json({error:'Invalid save request'},{status:400});}
     if(!body||typeof body!=='object'||Array.isArray(body))return Response.json({error:'Invalid save request'},{status:400});
-    let unit:{id:string;project:string;entity:string;market:string}|undefined=roster.rows.find(row=>row.id===body.rosterKey);
+    let unit:{id:string;project:string;entity:string;market:string;candidates?:Array<{storeId:string|null}>}|undefined=roster.rows.find(row=>row.id===body.rosterKey);
     if(!unit && typeof body.rosterKey==='string' && body.rosterKey.startsWith('store:')) {
       const id=body.rosterKey.slice(6);
       if(canonicalStoreId(id)===id) {
@@ -34,10 +36,16 @@ export async function saveAccountSetting(request:Request,action:'mapping'|'fee_r
     if(typeof body.effectiveMonth!=='string'||!/^20\d{2}-(0[1-9]|1[0-2])$/.test(body.effectiveMonth)||body.effectiveMonth<malaysiaDate().slice(0,7))return Response.json({error:'Choose the current or a future invoice month'},{status:400});
     if(typeof body.expectedVersion!=='string'||!/^\d{1,18}$/.test(body.expectedVersion))return Response.json({error:'Refresh the Account before saving'},{status:400});
     if(typeof body.requestId!=='string'||! /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.requestId))return Response.json({error:'A unique save ID is required'},{status:400});
-    const currency=unit.id.startsWith('store:')?'MYR':unit.market==='SG'?'SGD':'MYR';
+    let currency:'MYR'|'SGD'|'THB'|'PHP'=unit.id.startsWith('store:')?'MYR':unit.market==='SG'?'SGD':'MYR';
+    if(BigInt(body.expectedVersion)>BigInt(0)){
+      const current=await supabaseRest<Array<{currency:string}>>(`account_billing_unit_versions?select=currency&tenant_id=eq.${encodeURIComponent(member.tenant_id)}&roster_key=eq.${encodeURIComponent(unit.id)}&order=version.desc&limit=1`);
+      if(current.length!==1||!['MYR','SGD','THB','PHP'].includes(current[0].currency))return Response.json({error:'This project changed. Refresh Account and try again.'},{status:409});
+      currency=current[0].currency as typeof currency;
+    }
     let storeId:string|null=null;let rule=null;let entity=unit.entity;
     if(action==='mapping') {
       if(typeof body.storeId!=='string'||canonicalStoreId(body.storeId)!==body.storeId)return Response.json({error:'Choose a store from the Store Selector'},{status:400});
+      if(!billingUnitAcceptsStore(unit.id,body.storeId))return Response.json({error:'This billing project must keep its own store. Choose the original store.'},{status:400});
       const stores=await supabaseRest<Array<{id:string}>>(`stores?select=id&tenant_id=eq.${encodeURIComponent(member.tenant_id)}&id=eq.${encodeURIComponent(body.storeId)}&limit=1`);
       if(!stores[0])return Response.json({error:'Choose a store from the Store Selector'},{status:400});storeId=stores[0].id;
     } else if(action==='company') {
@@ -45,6 +53,15 @@ export async function saveAccountSetting(request:Request,action:'mapping'|'fee_r
       entity=body.entity.trim();
     } else {
       try{rule=validateFeeRule(body.rule,currency);}catch(error){return Response.json({error:error instanceof Error?error.message:'Invalid fee rule'},{status:400});}
+    }
+    if(action==='company'&&Object.prototype.hasOwnProperty.call(body,'billingEntity')){
+      let billingEntity:string|null;try{billingEntity=optionalBillingName(body.billingEntity);}catch(error){return Response.json({error:error instanceof Error?error.message:'Check Registered Name (Billing).'},{status:400});}
+      if(!await registeredNamesAvailable())return Response.json({error:'Registered names are not configured in this environment.'},{status:503});
+      const candidateIds=[...new Set((unit.candidates??[]).flatMap(candidate=>candidate.storeId&&canonicalStoreId(candidate.storeId)===candidate.storeId?[candidate.storeId]:[]))];
+      const proposed=BigInt(body.expectedVersion)===BigInt(0)?(unit.id.startsWith('store:')?unit.id.slice(6):candidateIds.length===1?candidateIds[0]:null):null;
+      const known=proposed?await supabaseRest<Array<{id:string}>>(`stores?select=id&tenant_id=eq.${encodeURIComponent(member.tenant_id)}&id=eq.${encodeURIComponent(proposed)}&limit=1`):[];
+      const result=await supabaseRest<{version:string;legalEntity:string;billingEntity:string|null}>('rpc/account_save_registered_names',{method:'POST',body:JSON.stringify({p_tenant:member.tenant_id,p_actor:actor.email.toLowerCase(),p_roster_key:unit.id,p_roster_project:unit.project,p_platform_name:entity,p_billing_name:billingEntity,p_currency:currency,p_effective_month:`${body.effectiveMonth}-01`,p_store_id:known[0]?.id??null,p_expected_version:body.expectedVersion,p_request_id:body.requestId})});
+      return Response.json({saved:true,...result});
     }
     const result=await supabaseRest<{version:string}>('rpc/account_save_billing_unit_version',{method:'POST',body:JSON.stringify({
       p_tenant:member.tenant_id,p_actor:actor.email.toLowerCase(),p_roster_key:unit.id,p_roster_project:unit.project,p_entity:entity||unit.project,

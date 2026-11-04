@@ -23,3 +23,18 @@ test('setup creates a store billing unit with company, mapping and rate; later c
 });
 
 test('ledger-backed billing rows without market remain visible in country sections',()=>{const data=account('2026-10');data.stores.push({id:'real-term',rosterKey:'real-unit',currency:'SGD',market:undefined,expectedNetFee:'10.00',billed:'10.00',collected:'0.00',outstanding:'10.00'});const result=applyAccountSettings(data,[],new Map());assert.equal(result.stores[0].market,'SG');assert.equal(result.stores[0].billed,'10.00');});
+
+test('registered Billing name resolves as of invoice month independently of Platform and never creates fee or cash',()=>{
+ const setup={...version(1,'2026-10','company','store',null),legal_entity:'Platform October',billing_registered_name:null};const november={...version(2,'2026-11','company','store',null),legal_entity:'Platform November',billing_registered_name:'Billing November'};const laterRule={...version(3,'2026-11','fee_rule','store',rule),legal_entity:'Stale copied Platform',billing_registered_name:'Stale copied Billing'};
+ const october=applyAccountSettings(account('2026-10'),[setup,november,laterRule],new Map()).stores[0];assert.equal(october.entity,'Platform October');assert.equal(october.billingEntity,null);assert.equal(october.billed,null);
+ const next=applyAccountSettings(account('2026-11'),[setup,november,laterRule],new Map()).stores[0];assert.equal(next.entity,'Platform November');assert.equal(next.billingEntity,'Billing November');assert.equal(next.billed,null);assert.equal(next.rateRule.fixedAmount,'100.00');
+});
+test('canonical billing units ignore incompatible mapping history without losing earlier verified as-of bindings',()=>{
+ const key='store:shopee-a',names=new Map([['shopee-a','Store A'],['shopee-b','Store B']]);
+ const good={...version(1,'2026-10','setup','shopee-a',rule),roster_key:key};const bad={...version(2,'2026-11','mapping','shopee-b',null),roster_key:key};const history=[good,bad],snapshot=structuredClone(history);
+ for(const month of ['2026-10','2026-11']){const row=applyAccountSettings(account(month),history,names).stores[0];assert.equal(row.storeId,'shopee-a');assert.equal(row.storeName,'Store A');assert.equal(row.mappingEffectiveMonth,'2026-10');assert.equal(row.latestSettingsVersion,'2');assert.equal(row.rateRule.fixedAmount,'100.00');assert.ok(row.candidates.every(candidate=>candidate.storeId==='shopee-a'));}
+ const pending=applyAccountSettings(account('2026-11'),[bad],names).stores[0];assert.equal(pending.storeId,null);assert.equal(pending.mappingStatus,'missing');assert.equal(pending.status,'pending_mapping');assert.equal(pending.mappingEffectiveMonth,null);assert.deepEqual(pending.candidates,[]);assert.equal(pending.billed,null);assert.deepEqual(history,snapshot);
+ const ledger=account('2026-11');ledger.stores=[{id:'verified-term',rosterKey:key,project:'Verified A',currency:'MYR',storeId:'shopee-a',storeName:'Store A',billed:'12.00',collected:'0.00',outstanding:'12.00',expectedNetFee:null,status:'invoiced'}];const retained=applyAccountSettings(ledger,[bad],names).stores[0];assert.equal(retained.storeId,'shopee-a');assert.equal(retained.billed,'12.00');assert.equal(retained.outstanding,'12.00');
+ // Non-canonical roster units remain editable across stores and months.
+ const ordinary=applyAccountSettings(account('2026-11'),[version(1,'2026-10','mapping','shopee-a',null),version(2,'2026-11','mapping','shopee-b',null)],names).stores[0];assert.equal(ordinary.storeId,'shopee-b');assert.equal(ordinary.mappingEffectiveMonth,'2026-11');
+});
