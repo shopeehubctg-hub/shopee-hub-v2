@@ -42,3 +42,10 @@ test('an imported SG unit keeps its saved MYR currency when mapped or edited lat
   assert.equal(response.status,200,action);assert.equal(payload.p_currency,'MYR',action);
  }
 });
+
+test('canonical store billing units cannot be reassigned, while roster mapping remains editable',async()=>{
+ setup();const original=globalThis.__rest;globalThis.__rest=async(path,init)=>path.startsWith('stores?select=id,name,display_name,platform')?[{id:'shopee-supu',name:'SUPU',display_name:null,platform:'Shopee MY'}]:original(path,init);
+ const canonical={...body,rosterKey:'store:shopee-supu'};const denied=await saveAccountSetting(request({...canonical,storeId:'shopee-other'}),'mapping');assert.equal(denied.status,400);assert.match((await denied.json()).error,/own store/);assert.equal(payload,null);assert.ok(paths.every(path=>!path.startsWith('rpc/')));
+ assert.equal((await saveAccountSetting(request(canonical),'mapping')).status,200);assert.equal(payload.p_store_id,'shopee-supu');assert.equal(payload.p_roster_key,'store:shopee-supu');
+ setup();globalThis.__rest=async(path,init)=>path.startsWith('stores?')?[{id:'shopee-other'}]:original(path,init);assert.equal((await saveAccountSetting(request({...body,storeId:'shopee-other'}),'mapping')).status,200);assert.equal(payload.p_roster_key,body.rosterKey);assert.equal(payload.p_store_id,'shopee-other');
+});

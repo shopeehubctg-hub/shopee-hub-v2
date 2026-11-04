@@ -7,7 +7,7 @@ import { accountSecurityGate } from './account-security-server';
 import { supabaseRest } from './supabase-rest';
 import { canonicalStoreId } from './live-calendar-model';
 import { malaysiaDate } from './account-ledger';
-import { validateFeeRule } from './account-settings-model';
+import { billingUnitAcceptsStore, validateFeeRule } from './account-settings-model';
 export async function saveAccountSetting(request:Request,action:'mapping'|'fee_rule'|'company'):Promise<Response> {
   const gate=await accountSecurityGate();if(gate)return gate;
   const actor=await getChatGPTUser();
@@ -45,6 +45,7 @@ export async function saveAccountSetting(request:Request,action:'mapping'|'fee_r
     let storeId:string|null=null;let rule=null;let entity=unit.entity;
     if(action==='mapping') {
       if(typeof body.storeId!=='string'||canonicalStoreId(body.storeId)!==body.storeId)return Response.json({error:'Choose a store from the Store Selector'},{status:400});
+      if(!billingUnitAcceptsStore(unit.id,body.storeId))return Response.json({error:'This billing project must keep its own store. Choose the original store.'},{status:400});
       const stores=await supabaseRest<Array<{id:string}>>(`stores?select=id&tenant_id=eq.${encodeURIComponent(member.tenant_id)}&id=eq.${encodeURIComponent(body.storeId)}&limit=1`);
       if(!stores[0])return Response.json({error:'Choose a store from the Store Selector'},{status:400});storeId=stores[0].id;
     } else if(action==='company') {
