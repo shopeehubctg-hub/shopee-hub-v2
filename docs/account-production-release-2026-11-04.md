@@ -41,3 +41,7 @@ Parent applied only the exact reviewed Names artifact to Production and reported
 ## Canonical mapping guard
 
 Store-owned `store:<id>` billing projects must retain that Store identity. The API rejects a different target before the save RPC, matching the already deployed database constraint. Defensive monthly projection ignores an incompatible mapping version while retaining earlier verified as-of bindings and ledger facts; ordinary roster-unit mapping remains editable. Targeted API/model/crosswalk/no-ledger regressions PASS. No schema or stored-history rewrite is needed.
+
+## Source-label readability follow-up
+
+Matching rows preserve supplied company labels. Where absent, presentation uses already-returned invoice STORE NAME evidence and invoice references; a short stable Contact reference is the final fallback. No company is inferred and no match, amount, source record, schema or sync is changed. Distinct missing-name source rows and existing company labels are covered by rendered UI regression. Actual connected Staging visual retry remains parent-owned.
