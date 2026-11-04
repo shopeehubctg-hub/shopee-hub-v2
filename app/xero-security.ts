@@ -16,6 +16,8 @@ export function xeroConfig(env:NodeJS.ProcessEnv=process.env):XeroConfig|null {
  const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  // Xero Web app client IDs are opaque hexadecimal credentials, distinct from app/tenant UUIDs.
  if(!(/^[0-9a-f]{32}$/i.test(env.XERO_CLIENT_ID)||uuid.test(env.XERO_CLIENT_ID))||!uuid.test(env.XERO_ORGANISATION_ID))return null;
+ // Application metadata is an isolation guard, never a substitute for fresh Production OAuth consent.
+ if(target==='production'&&(env.SHOPEE_ACCOUNT_SECURITY_ENABLED!=='1'||!env.XERO_APP_ID||!uuid.test(env.XERO_APP_ID)||env.XERO_APP_ID==='f507678e-99a0-4f8e-b399-c7b4ece1f6aa'||env.XERO_SANDBOX_ONLY==='1'))return null;
  return {clientId:env.XERO_CLIENT_ID,clientSecret:env.XERO_CLIENT_SECRET,redirectUri,key,organisationId:env.XERO_ORGANISATION_ID,environment:target};
 }
 export function randomXeroState(){return randomBytes(32).toString('base64url');}

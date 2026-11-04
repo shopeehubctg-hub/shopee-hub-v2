@@ -1,4 +1,5 @@
--- Independent Stage only. All synthetic fixtures and changes are rolled back.
+-- Authorized transaction-only Names verification on Stage or Production.
+-- All synthetic fixtures and changes stay inside this transaction and are rolled back.
 begin;
 do $$
 declare suffix text:=replace(gen_random_uuid()::text,'-','');t text;a text;u bigint;sid text;
@@ -12,7 +13,7 @@ begin
 end $$;
 set local role service_role;
 do $$
-declare t text:=current_setting('names.tenant');a text:=current_setting('names.actor');sid text:=current_setting('names.store');unit text:='store:'||current_setting('names.store');month date:=date_trunc('month',now() at time zone 'Asia/Kuala_Lumpur')::date;future date;req uuid:=gen_random_uuid();answer jsonb;again jsonb;rule jsonb:='{"type":"fixed","currency":"MYR","basis":"fixed_monthly","fixedAmount":"99.00"}';setup jsonb;details jsonb:='{"projectLinks":[],"storeGroupLink":"","googleDriveLink":"","adsTopUpOwner":null}';n bigint;audit_n bigint;request_n bigint;row_v public.account_billing_unit_versions;new_store text;created jsonb;
+declare ledger_table text;has_facts boolean;t text:=current_setting('names.tenant');a text:=current_setting('names.actor');sid text:=current_setting('names.store');unit text:='store:'||current_setting('names.store');month date:=date_trunc('month',now() at time zone 'Asia/Kuala_Lumpur')::date;future date;req uuid:=gen_random_uuid();answer jsonb;again jsonb;rule jsonb:='{"type":"fixed","currency":"MYR","basis":"fixed_monthly","fixedAmount":"99.00"}';setup jsonb;details jsonb:='{"projectLinks":[],"storeGroupLink":"","googleDriveLink":"","adsTopUpOwner":null}';n bigint;audit_n bigint;request_n bigint;row_v public.account_billing_unit_versions;new_store text;created jsonb;
 begin
  future:=(month+interval '2 months')::date;
  if not public.account_registered_names_available() then raise exception 'Names capability missing';end if;
@@ -68,7 +69,13 @@ begin
  select count(*) into n from public.account_billing_unit_versions where tenant_id=t;select count(*) into audit_n from public.account_audit_log where tenant_id=t;select count(*) into request_n from public.account_store_requests where tenant_id=t;
  begin perform public.account_update_store_with_setup_v2(t,a,sid,'Names should rollback','Synthetic names store','MY',jsonb_build_object('version',2,'legalEntity','Should rollback','billingEntity','Should rollback','effectiveMonth',to_char(month,'YYYY-MM')),'{"projectLinks":"invalid"}',gen_random_uuid(),unit,8);raise exception 'Late failure accepted';exception when others then if sqlerrm<>'STORE_DETAILS_INVALID' then raise;end if;end;
  if (select count(*) from public.account_billing_unit_versions where tenant_id=t)<>n or (select count(*) from public.account_audit_log where tenant_id=t)<>audit_n or (select count(*) from public.account_store_requests where tenant_id=t)<>request_n or exists(select 1 from public.stores where id=sid and display_name='Names should rollback') then raise exception 'Late error left partial names/audit/store/request';end if;
- if exists(select 1 from public.account_assessments where tenant_id=t) or exists(select 1 from public.account_invoices where tenant_id=t) or exists(select 1 from public.account_receipts where tenant_id=t) then raise exception 'Names created ledger facts';end if;
+ -- Optional legacy income ledger remains absent in Production; do not create it for this test.
+ foreach ledger_table in array array['account_assessments','account_invoices','account_receipts'] loop
+  if to_regclass('public.'||ledger_table) is not null then
+   execute format('select exists(select 1 from public.%I where tenant_id=$1)',ledger_table) into has_facts using t;
+   if has_facts then raise exception 'Names created ledger facts';end if;
+  end if;
+ end loop;
 end $$;
 reset role;
 rollback;
