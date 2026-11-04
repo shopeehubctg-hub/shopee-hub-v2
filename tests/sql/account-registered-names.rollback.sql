@@ -1,4 +1,5 @@
--- Independent Stage only. All synthetic fixtures and changes are rolled back.
+-- Authorized transaction-only Names verification on Stage or Production.
+-- All synthetic fixtures and changes stay inside this transaction and are rolled back.
 begin;
 do $$
 declare suffix text:=replace(gen_random_uuid()::text,'-','');t text;a text;u bigint;sid text;

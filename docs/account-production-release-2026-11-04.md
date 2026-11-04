@@ -24,7 +24,7 @@ Four Xero migration artifacts are included as future reviewed implementation, no
 
 A dedicated Production app, exact Production callback, explicit organisation allowlist and independent random token encryption key are required for future live activation. `XERO_APP_ID` is now required for Production and the known Stage app / Stage sandbox flag is rejected. This metadata check does not replace fresh OAuth consent. No credential values are committed or copied. Runtime uses environment/tenant/organisation-bound encryption and separate `environment='production'` database rows.
 
-Configured Xero reads/OAuth require persisted revocable primary portal sessions and existing Account access checks. Check Production `SHOPEE_ACCOUNT_SECURITY_ENABLED=1` and a fresh login before live activation; legacy signed cookies are not upgraded by bypassing session checks. A disabled status GET remains accessible through existing active Super Admin authorization. Source read scope remains only Shopee Hub, Shopee Hub Internal, Tik Tok Hub and Lazada Hub; no Xero accounting write is introduced.
+Configured Xero reads/OAuth require persisted revocable primary portal sessions and existing Account access checks. Production configuration now fails closed unless `SHOPEE_ACCOUNT_SECURITY_ENABLED=1`; a fresh login is required before live activation; legacy signed cookies are not upgraded by bypassing session checks. A disabled status GET remains accessible through existing active Super Admin authorization. Source read scope remains only Shopee Hub, Shopee Hub Internal, Tik Tok Hub and Lazada Hub; no Xero accounting write is introduced.
 
 ## Verification and remaining gates
 
@@ -33,3 +33,7 @@ Configured Xero reads/OAuth require persisted revocable primary portal sessions 
 - TypeScript and full vinext build PASS; focused Account/Xero lint PASS.
 - Linked Names/Store setup/Account persistence regressions are recorded in the final handoff.
 - Source-only synthetic tests do not constitute fresh Production OAuth, source validation, actual UI/UX or final function acceptance. Parent owns fixed Staging verification, exact Database Structure release review, PR/main merge queue, automatic Production deployment and smoke verification. This candidate has not been pushed or published.
+
+## Reviewed Names activation follow-up
+
+Parent applied only the exact reviewed Names artifact to Production and reported its authorized rollback-only suite PASS, with synthetic fixtures rolled back. Baseline verification is parent-owned. This worker executed no database operation. Xero migration/application, configuration and live source activation remain pending and disabled.
