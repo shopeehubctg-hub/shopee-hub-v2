@@ -2,6 +2,17 @@ import {isMarket, type MarketCode} from './markets';
 import {activeRecurringEvent,readRecurringCampaign} from './recurring-campaign';
 
 export const PRICING_MODES = ['uniform', 'normal_campaign', 'split_normal'] as const;
+// Legacy two-price packages remain readable without converting their history.
+export const PACKAGE_PRICING_MODES = ['uniform', 'split_normal'] as const;
+export const PRICE_SOURCE_PERIODS = ['normal_1_15', 'campaign', 'normal_16_end'] as const;
+export type PriceSourcePeriod = typeof PRICE_SOURCE_PERIODS[number];
+export type PriceApplication = {mode:'uniform';sourcePeriod:PriceSourcePeriod};
+export function priceApplication(value:unknown):PriceApplication|undefined {
+  if(value==null)return undefined;
+  const v=value as PriceApplication;
+  if(v.mode!=='uniform'||!PRICE_SOURCE_PERIODS.includes(v.sourcePeriod))throw Error('Choose which price to use for the whole month.');
+  return {mode:'uniform',sourcePeriod:v.sourcePeriod};
+}
 export type PricingMode = typeof PRICING_MODES[number];
 export type PricingPeriod = 'normal_all' | 'normal_1_15' | 'campaign' | 'normal_16_end';
 export const pricingModeLabels:Record<PricingMode,string> = {

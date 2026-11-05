@@ -32,3 +32,30 @@ test('three-period late-only API append preserves other periods and stores perio
  const next=ctx.state.package_prices.slice(3);assert.deepEqual(next.map(p=>p.sellingPrice),basePrices.map(p=>p.sellingPrice));assert.equal(version.calculatorSettings._pricingEvidence.periodReferences.normal_16_end.exportId,ctx.export.id);
  assert.equal(ctx.state.package_versions[0].calculatorSettings._normalMonthlyRule.prices.MY.late.sellingPrice,230);
 });
+
+function fixedRecommendations(){ctx.export.pricingMode='split_normal';ctx.export.normal=210;ctx.export.campaign=220;ctx.export.normalLate=230;ctx.export.scenarios=['normal_1_15','campaign','normal_16_end'].map((period,i)=>({...scenario(period==='campaign'?'Campaign Day':'Non-Campaign Day'),calculationKind:'three_period_recommendations',pricingSchemaVersion:2,pricingMode:'split_normal',pricingPeriod:period,suggestedShopeePrice:210+i*10}));}
+test('new three recommendations update a legacy Normal price only after explicit source selection',async()=>{
+ reset();fixedRecommendations();assert.equal((await post()).status,409);assert.equal(ctx.state.package_versions.length,1);
+ const b={...body(),priceSelection:{normalSourcePeriod:'normal_16_end'}};assert.equal((await post(b)).status,200);
+ const v=ctx.state.package_versions.at(-1),e=v.calculatorSettings._pricingEvidence;
+ assert.equal(ctx.state.package_prices.at(-3).sellingPrice,23000);assert.equal(ctx.state.package_prices.at(-2).sellingPrice,19000);
+ assert.equal(e.recommendations.length,3);assert.equal(e.priceSelection.normalSourcePeriod,'normal_16_end');assert.equal(e.scenarios.find(s=>s.pricingPeriod==='normal_all').suggestedShopeePrice,230);
+ assert.equal((await post({...b,priceSelection:{normalSourcePeriod:'normal_1_15'}})).status,409);
+});
+test('new recommendations keep uniform package dates and preserve all three sources plus chosen application',async()=>{
+ reset();fixedRecommendations();ctx.state.package_versions[0].calculatorSettings._pricingMode='uniform';ctx.state.package_prices[1].sellingPrice=20000;
+ const before=structuredClone(ctx.state.package_prices);const b={...body(),priceTypes:['non_campaign','campaign'],priceSelection:{uniformSourcePeriod:'campaign'}};
+ assert.equal((await post(b)).status,200);const v=ctx.state.package_versions.at(-1),e=v.calculatorSettings._pricingEvidence;
+ assert.equal(v.calculatorSettings._pricingMode,'uniform');assert.equal(ctx.state.package_prices.at(-3).sellingPrice,22000);assert.equal(ctx.state.package_prices.at(-2).sellingPrice,22000);
+ assert.deepEqual(e.originalPrices.MY,{normal:210,campaign:220,normalLate:230});assert.deepEqual(e.priceApplication,{mode:'uniform',sourcePeriod:'campaign'});assert.equal(e.recommendations.length,3);
+ for(let i=0;i<3;i++){const p=ctx.state.package_prices[3+i];assert.equal(p.effectiveFrom,before[i].effectiveFrom);assert.equal(p.effectiveTo,before[i].effectiveTo);assert.equal(p.originalPrice,before[i].originalPrice);}
+});
+
+test('price source fields for another target mode cannot overwrite partial-update evidence',async()=>{
+ for(const mode of ['normal_campaign','split_normal','uniform']){
+  reset();fixedRecommendations();ctx.state.package_versions[0].calculatorSettings._pricingMode=mode;
+  const before=structuredClone(ctx.state),priceSelection=mode==='uniform'?{normalSourcePeriod:'normal_1_15'}:{uniformSourcePeriod:'campaign'};
+  const response=await post({...body(),priceTypes:['campaign'],priceSelection});
+  assert.equal(response.status,409);assert.match((await response.json()).error,/does not apply/);assert.deepEqual(ctx.state,before);
+ }
+});
