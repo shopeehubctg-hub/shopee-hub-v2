@@ -180,3 +180,9 @@ export function reviewPriceLadder(rows) {
       return {...row,status:current<=previous+.005?"better":"higher",label:current<=previous+.005?"Better Value":"Higher PPU"};
     });
 }
+
+// Re-evaluate one explicitly selected all-month price using each period's own fees.
+export function calculateShopeePriceAtPrice(row,fees,price){
+ const requiredPrice=Math.round(price*100)/100,calculated=calculateFeesForPrice(requiredPrice,fees),markupAmount=requiredPrice-row.facebookPrice;
+ return {valid:Number.isFinite(requiredPrice)&&requiredPrice>0,requiredPrice,customerPrice:calculated.feeBase*(1-Math.min(100,Math.max(0,fees.shopeeVoucher))/100),markupAmount,markupRate:row.facebookPrice?markupAmount/row.facebookPrice*100:0,...calculated,serviceCapped:calculated.uncappedServiceFee>fees.serviceCap};
+}

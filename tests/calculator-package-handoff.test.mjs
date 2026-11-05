@@ -19,10 +19,12 @@ async function setup({open=()=>null,storageBlocked=false,modules=['calculator','
  dom.window.scrollTo=()=>{};
  if(storageBlocked)Object.defineProperty(dom.window.Storage.prototype,'setItem',{value(){throw new dom.window.DOMException('Storage full','QuotaExceededError');}});
  const calls=[];
- globalThis.fetch=async(url,options={})=>{calls.push({url,options});const body=String(url).startsWith('/api/dashboard')?{environment,user:{email:'client@example.test'},access:{role:'customer',enabledModules:modules,clientEnabledModules:modules,canManagePermissions:false},stores:[{id:'test-store',name:'Test Store',platform:'Shopee MY',contacts:[]}],selectedStoreId:storeId,snapshot:null,actions:[],adPerformance:[],adBalance:null,productProfile:null,coFundVouchers:[]}:String(url).includes('inventory-skus')?{products:[],canEdit:false}:{packages:[],source:'database',canDelete:false};return{ok:true,status:200,json:async()=>body};};
+ globalThis.fetch=async(url,options={})=>{calls.push({url,options});const body=String(url).startsWith('/api/dashboard')?{environment,user:{email:'client@example.test'},access:{role:'customer',enabledModules:modules,clientEnabledModules:modules,canManagePermissions:false},stores:[{id:'test-store',name:'Test Store',platform:'Shopee MY',contacts:[]}],selectedStoreId:storeId,snapshot:null,actions:[],adPerformance:[],adBalance:null,productProfile:null,platformVoucher:{early:0,campaign:0,late:5,updatedAt:"2026-11-05T00:00:00Z"},coFundVouchers:[]}:String(url).includes('inventory-skus')?{products:[],canEdit:false}:{packages:[],source:'database',canDelete:false};return{ok:true,status:200,json:async()=>body};};
  const {createRoot}=await import('react-dom/client');const root=createRoot(dom.window.document.getElementById('root'));
  await act(async()=>root.render(React.createElement(Home)));
  await waitFor(()=>dom.window.document.querySelector('.calculator-selection-bar'));
+ const late=dom.window.document.querySelector('[aria-label="normalLate Platform Voucher percentage"]');
+ await act(async()=>{Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value').set.call(late,'5');late.dispatchEvent(new dom.window.Event('input',{bubbles:true}));});
  const click=async(text)=>{const b=[...dom.window.document.querySelectorAll('button')].find(b=>b.textContent===text);assert.ok(b,`missing ${text}`);await act(async()=>b.click());};
  return {dom,calls,click,close:async()=>{await act(async()=>root.unmount());dom.window.close();for(const[k,v]of Object.entries(prior)){if(v)Object.defineProperty(globalThis,k,v);else delete globalThis[k];}}};
 }
@@ -36,7 +38,7 @@ test('blocked popup transfers the full calculator batch to the same-tab package 
   const storage=env.dom.window.localStorage;
   const key=Object.keys(storage).find(k=>k.startsWith('package-draft:'));
   const batch=JSON.parse(storage.getItem(key));
-  assert.equal(batch.storeId,'test-store');assert.equal(batch.prefills.length,6);
+  assert.equal(batch.storeId,'test-store');assert.equal(batch.prefills.length,9);
   assert.deepEqual([...new Set(batch.prefills.map(p=>p.name))],['Package A','Package B','Package C']);
   assert.equal(batch.prefills[0].calculatorSettings.pricingGoal,'sameCustomerPrice');
   assert.equal(batch.prefills[0].calculatorSettings.facebookPrice,289);
@@ -53,7 +55,7 @@ test('allowed popup uses a persisted draft and clears its opener',async()=>{
   await env.click('Create Selected Packages (3)');await env.click('Confirm & Continue');
   assert.equal(opened.length,1);assert.equal(tab.opener,null);
   const key=new URL(opened[0],env.dom.window.location.origin).searchParams.get('packageDraft');
-  assert.equal(JSON.parse(env.dom.window.localStorage.getItem('package-draft:'+key)).prefills.length,6);
+  assert.equal(JSON.parse(env.dom.window.localStorage.getItem('package-draft:'+key)).prefills.length,9);
   assert.ok(env.dom.window.document.querySelector('.price-calculator'));
  }finally{await env.close();}
 });
@@ -74,7 +76,7 @@ test('a store or package permission problem keeps the calculated data and explai
   await env.click('Create Selected Packages (3)');await env.click('Confirm & Continue');
    const dialog=env.dom.window.document.querySelector('[role="dialog"]');assert.ok(dialog);
    assert.match(dialog.querySelector('[role="alert"]').textContent,options.storeId?/select a store/i:/access to Packages/i);
-   assert.equal(env.dom.window.document.querySelectorAll('.calculator-confirm-table tbody tr').length,6);
+   assert.equal(env.dom.window.document.querySelectorAll('.calculator-confirm-table tbody tr').length,9);
   }finally{await env.close();}
  }
 });
@@ -86,7 +88,7 @@ test('three packages start unchecked; choosing two transfers exactly two stable 
   await env.click('Create Selected Packages (2)');await env.click('Confirm & Continue');
   await waitFor(()=>env.dom.window.document.querySelector('.package-modal.standalone'));
   const key=Object.keys(env.dom.window.localStorage).find(k=>k.startsWith('package-draft:'));
-  const batch=JSON.parse(env.dom.window.localStorage.getItem(key));assert.equal(batch.prefills.length,4);assert.equal(new Set(batch.prefills.map(p=>p.calculatorGroupId)).size,2);
+  const batch=JSON.parse(env.dom.window.localStorage.getItem(key));assert.equal(batch.prefills.length,6);assert.equal(new Set(batch.prefills.map(p=>p.calculatorGroupId)).size,2);
   assert.deepEqual([...new Set(batch.prefills.map(p=>p.name))],['Package A','Package B']);
  }finally{await env.close();}
 });
@@ -99,6 +101,22 @@ test('Production customer sees selected create/update actions and transfers only
   await env.click('Create Selected Packages (1)');await env.click('Confirm & Continue');
   await waitFor(()=>env.dom.window.document.querySelector('.package-modal.standalone'));
   const key=Object.keys(env.dom.window.localStorage).find(k=>k.startsWith('package-draft:'));
-  const batch=JSON.parse(env.dom.window.localStorage.getItem(key));assert.equal(batch.prefills.length,2);assert.ok(batch.prefills.every(p=>p.name==='Package B'));
+  const batch=JSON.parse(env.dom.window.localStorage.getItem(key));assert.equal(batch.prefills.length,3);assert.ok(batch.prefills.every(p=>p.name==='Package B'));
+ }finally{await env.close();}
+});
+
+
+test('three-period Calculator handoff groups all three settings into one selected package',async()=>{
+ const env=await setup();try{
+ assert.equal(env.dom.window.document.querySelector('.price-calculator .pricing-mode-options'),null);
+ const doc=env.dom.window.document;const late=doc.querySelector('[aria-label="normalLate Platform Voucher percentage"]');
+ const inputs=[...doc.querySelectorAll('[aria-label="normalLate Platform Voucher percentage"]')];
+ if(inputs[0])await act(async()=>{Object.getOwnPropertyDescriptor(env.dom.window.HTMLInputElement.prototype,'value').set.call(inputs[0],'5');inputs[0].dispatchEvent(new env.dom.window.Event('input',{bubbles:true}));});
+ await act(async()=>doc.querySelector('[aria-label="Select Calculator package 1"]').click());
+ await env.click('Create Selected Packages (1)');await env.click('Confirm & Continue');
+ await waitFor(()=>doc.querySelector('.package-modal.standalone'));
+ const key=Object.keys(env.dom.window.localStorage).find(k=>k.startsWith('package-draft:'));
+ const saved=JSON.parse(env.dom.window.localStorage.getItem(key));assert.equal(saved.prefills.length,3);assert.equal(new Set(saved.prefills.map(p=>p.calculatorGroupId)).size,1);assert.deepEqual(saved.prefills.map(p=>p.calculatorSettings.pricingPeriod),['normal_1_15','campaign','normal_16_end']);
+ assert.equal(saved.prefills.every(p=>p.calculatorSettings.calculationKind==='three_period_recommendations'),true);
  }finally{await env.close();}
 });

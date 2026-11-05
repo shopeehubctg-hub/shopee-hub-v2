@@ -1,9 +1,11 @@
+import {readNormalMonthlyRule,pricingModeLabels,type NormalMonthlyRule,type PricingMode} from "./pricing-periods";
 import {MARKET_CONFIG,isMarket} from './markets';
 import type { CalculatorSnapshot } from "./calculator-types";
 import { recurringEventLabels, type RecurringCampaignRule } from "./recurring-campaign";
 
 export type PackageHistorySnapshot = {
   name?: string | null;
+  calculatorSettings?:Record<string,unknown>|null;
   market?: string | null;
   platforms?: { platform: string; packageSku: string }[];
   components?: { inventorySku: string; name: string; quantity: number; kind: string }[];
@@ -35,13 +37,14 @@ export function calculatorSnapshots(value: unknown): CalculatorSnapshot[] {
 export function publicCalculatorSettings(value: Record<string, unknown> | null) {
   const snapshots = calculatorSnapshots(value);
   const evidence=value?._pricingEvidence;
-  if (!snapshots.length) return evidence?{_pricingEvidence:evidence}:null;
-  if (Array.isArray(value?.scenarios)) return { scenarios: snapshots,...(evidence?{_pricingEvidence:evidence}:{}) };
+  const profile=value?._pricingMode?{_pricingMode:value._pricingMode,_normalMonthlyRule:value._normalMonthlyRule}:{};
+  if (!snapshots.length) return evidence?{...profile,_pricingEvidence:evidence}:Object.keys(profile).length?profile:null;
+  if (Array.isArray(value?.scenarios)) return { ...profile,scenarios: snapshots,...(evidence?{_pricingEvidence:evidence}:{}) };
   const { _packageMetadata, _packageHistorySummary, _packageEnded, _endedAt, _endedDate, _endedBy, ...snapshot } = snapshots[0] as CalculatorSnapshot & Record<string, unknown>;
   void _packageMetadata;
   void _packageHistorySummary;
   void _packageEnded; void _endedAt; void _endedDate; void _endedBy;
-  return snapshot;
+  return {...snapshot,...profile};
 }
 
 const missing = "Not recorded";
@@ -49,7 +52,10 @@ const sortedLines = (lines: string[]) => lines.sort().join("\n") || "None";
 const priceText = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value.toFixed(2) : missing;
 
 export function packageHistoryFields(snapshot: PackageHistorySnapshot) {
+  const rule=readNormalMonthlyRule(snapshot.calculatorSettings);
   return {
+    ...(snapshot.calculatorSettings?._pricingMode?{"Pricing mode":pricingModeLabels[snapshot.calculatorSettings._pricingMode as PricingMode]??missing}:{}),
+    ...(rule?{"Monthly Normal prices":Object.entries(rule.prices).map(([m,p])=>`${m}: 1st–15th ${priceText(p!.early.sellingPrice)} · 16th–End ${priceText(p!.late.sellingPrice)}`).join('\n')}:{}),
     "Package name": snapshot.name ?? missing,
     "Selling markets": snapshot.market ? sortedLines(snapshot.market.split(",").map(value => value.trim())) : missing,
     "Platform listing SKUs": snapshot.platforms ? sortedLines(snapshot.platforms.map(line => `${line.platform}: ${line.packageSku}`)) : missing,

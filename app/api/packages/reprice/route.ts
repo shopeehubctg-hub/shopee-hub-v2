@@ -8,7 +8,7 @@ import {marketFromPlatform} from '../../../markets';
 import {exportSnapshots} from '../../../pricing-evidence';
 import {findExport} from '../pricing-evidence';
 import {inventoryFingerprint} from '../inventory-capture';
-import {repricedState,replacementEvidence,type RepriceType} from '../../../package-repricing';
+import {repricedState,replacementEvidence,repriceSelection,selectedRepriceAmounts,type RepriceType} from '../../../package-repricing';
 import {PATCH as retryPackageHistory} from '../route';
 
 export const dynamic='force-dynamic';
@@ -17,13 +17,14 @@ export async function POST(request:Request){try{
  if(!['staging','production'].includes(deploymentTarget()))throw fail('Price updates require a configured Dashboard environment.',404);
  assertDeploymentIsolation();
  const b=await request.json();
- const allowed=['storeId','packageId','expectedVersion','requestId','exportId','priceTypes'];
+ const allowed=['storeId','packageId','expectedVersion','requestId','exportId','priceTypes','priceSelection'];
  if(!b||Object.keys(b).some(k=>!allowed.includes(k))||typeof b.storeId!=='string'||typeof b.packageId!=='string'||!Number.isSafeInteger(b.expectedVersion)||b.expectedVersion<1||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(b.requestId??'')||typeof b.exportId!=='string'||!Array.isArray(b.priceTypes))throw fail('Invalid price update. Reopen the Calculator and review the package.',400);
+ const selection=repriceSelection(b.priceSelection);
  const types=[...b.priceTypes].sort() as RepriceType[];
- if(!types.length||types.length>2||new Set(types).size!==types.length||types.some(t=>!['non_campaign','campaign'].includes(t)))throw fail('Choose Normal Day, Campaign Day, or both.',400);
+ if(!types.length||types.length>3||new Set(types).size!==types.length||types.some(t=>!['non_campaign','campaign','normal_early','normal_late'].includes(t)))throw fail('Choose Normal Day, Campaign Day, or both.',400);
  const {db,member,user}=await inventoryAccess(b.storeId);
  if(!await canAccessModule(db,member,'calculator'))throw fail('Price Calculator access is required.',403);
- const hash=inventoryFingerprint({packageId:b.packageId,expectedVersion:b.expectedVersion,storeId:b.storeId,exportId:b.exportId,priceTypes:types});
+ const hash=inventoryFingerprint({packageId:b.packageId,expectedVersion:b.expectedVersion,storeId:b.storeId,exportId:b.exportId,priceTypes:types,priceSelection:selection});
  const receipt=await db.transaction(async tx=>{
   const [item]=await tx.select().from(packages).where(and(eq(packages.id,b.packageId),eq(packages.storeId,b.storeId),eq(packages.tenantId,member.tenantId),isNull(packages.deletedAt))).for('update').limit(1);
   if(!item)throw fail('Package not found or store access denied.',404);
@@ -40,11 +41,15 @@ export async function POST(request:Request){try{
   if(!store.length||['draft','review','expired'].includes(item.status)||!['active','scheduled'].includes(packageLifecycleStatus(prices,previous.calculatorSettings,marketToday(marketFromPlatform(store[0].platform)))))throw fail('Only active or scheduled packages can have prices updated here.');
   const snapshot=await findExport(tx,member.tenantId,item.storeId,b.exportId);
   const scenarios=exportSnapshots({scenarios:snapshot.scenarios});
-  const state=repricedState(prices,previous.calculatorSettings,types,snapshot);
-  const evidence=replacementEvidence(previous.calculatorSettings,scenarios,types,snapshot,state.prices,user.email);
+  const amounts=selectedRepriceAmounts(scenarios,previous.calculatorSettings,types,selection);
+  const state=repricedState(prices,previous.calculatorSettings,types,amounts);
+  const legacyNormal=scenarios.find(s=>s.pricingPeriod===selection.normalSourcePeriod);
+  const appliedScenarios=previous.calculatorSettings?._pricingMode!=='split_normal'&&previous.calculatorSettings?._pricingMode!=='uniform'&&legacyNormal
+   ?[...scenarios.filter(s=>s.serviceScenario==='Campaign Day'),{...legacyNormal,calculationKind:undefined,pricingMode:'normal_campaign' as const,pricingPeriod:'normal_all' as const}]:scenarios;
+  const evidence={...replacementEvidence(previous.calculatorSettings,appliedScenarios,types,{...snapshot,...amounts},state.prices,user.email),recommendations:scenarios,priceSelection:selection,...(previous.calculatorSettings?._pricingMode==='uniform'&&selection.uniformSourcePeriod?{priceApplication:{mode:'uniform' as const,sourcePeriod:selection.uniformSourcePeriod},originalPrices:{MY:{normal:snapshot.normal,campaign:snapshot.campaign,normalLate:snapshot.normalLate}}}:{})};
   const versionId=crypto.randomUUID(),version=previous.version+1;
-  const summary=`Calculator price update · ${types.map(t=>t==='campaign'?'Campaign Day':'Normal Day').join(' + ')} · MY · Package periods retained`;
-  await tx.insert(packageVersions).values({id:versionId,packageId:item.id,version,components:previous.components,promotionType:previous.promotionType,addedComponents:[],removedComponents:[],sheetSyncStatus:'pending',calculatorSettings:{...previous.calculatorSettings,scenarios:evidence.scenarios,_pricingEvidence:evidence,_recurringCampaign:state.recurring,_samePricing:state.samePricing,_calculatorReprice:{requestId:b.requestId,hash,actor:user.email,previousVersion:previous.version,exportId:b.exportId,priceTypes:types},_packageHistorySummary:{schema:1,summary}},changeNote:summary,effectiveFrom:previous.effectiveFrom,effectiveTo:previous.effectiveTo,createdBy:user.email});
+  const summary=`Calculator price update · ${types.map(t=>t==='campaign'?'Campaign Day':t==='normal_late'?'Normal 16th–End':t==='normal_early'?'Normal 1st–15th':'Normal Day').join(' + ')} · MY · Package periods retained`;
+  await tx.insert(packageVersions).values({id:versionId,packageId:item.id,version,components:previous.components,promotionType:previous.promotionType,addedComponents:[],removedComponents:[],sheetSyncStatus:'pending',calculatorSettings:{...previous.calculatorSettings,scenarios:evidence.scenarios,_pricingEvidence:evidence,_recurringCampaign:state.recurring,_normalMonthlyRule:state.normalRule,_samePricing:state.samePricing,_calculatorReprice:{requestId:b.requestId,hash,actor:user.email,previousVersion:previous.version,exportId:b.exportId,priceTypes:types,priceSelection:selection},_packageHistorySummary:{schema:1,summary}},changeNote:summary,effectiveFrom:previous.effectiveFrom,effectiveTo:previous.effectiveTo,createdBy:user.email});
   for(const p of state.prices){const {id,versionId:oldVersion,createdAt,createdBy,...values}=p;void id;void oldVersion;void createdAt;void createdBy;await tx.insert(packagePrices).values({...values,id:crypto.randomUUID(),versionId,createdBy:user.email});}
   for(const p of platforms){const {id,versionId:oldVersion,createdAt,...values}=p;void id;void oldVersion;void createdAt;await tx.insert(packagePlatformSkus).values({...values,id:crypto.randomUUID(),versionId});}
   await tx.insert(packageAuditLog).values({packageId:item.id,action:'calculator_price_updated',detail:`Version ${version}: ${summary}`,actor:user.email});

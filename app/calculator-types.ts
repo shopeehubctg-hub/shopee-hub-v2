@@ -1,5 +1,10 @@
+import type {PricingMode,PricingPeriod} from "./pricing-periods";
 export type CalculatorSnapshot = {
   source:"Shopee Pricing Calculator";
+  calculationKind?:"three_period_recommendations";
+  pricingSchemaVersion?:2;
+  pricingMode?:PricingMode;
+  pricingPeriod?:PricingPeriod;
   packageName:string;
   category:string;
   cashbackProgramme:boolean;

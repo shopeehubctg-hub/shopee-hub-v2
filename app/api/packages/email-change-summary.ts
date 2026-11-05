@@ -15,6 +15,8 @@ export function emailChangeSummary(current: VersionSnapshot, previous: VersionSn
   if (normalized(prices.map(p=>[p.market,p.priceType,p.originalPrice])) !== normalized(previousPrices.map(p=>[p.market,p.priceType,p.originalPrice]))) changes.push("Original Price 修改");
   if (normalized(prices.map(p=>[p.market,p.priceType,p.promotionType])) !== normalized(previousPrices.map(p=>[p.market,p.priceType,p.promotionType]))) changes.push("Promotion Type 修改");
   if (JSON.stringify(current.calculatorSettings?._recurringCampaign??null)!==JSON.stringify(previous.calculatorSettings?._recurringCampaign??null)) changes.push("Monthly Campaign 活动与价格修改");
+  if(JSON.stringify(current.calculatorSettings?._normalMonthlyRule??null)!==JSON.stringify(previous.calculatorSettings?._normalMonthlyRule??null))changes.push('Normal Day 月头／月尾价格修改');
+  if(current.calculatorSettings?._pricingMode!==previous.calculatorSettings?._pricingMode)changes.push('Pricing Mode 修改');
   const meta = current.calculatorSettings?._packageMetadata as {name?:string;market?:string}|undefined;
   const oldMeta = previous.calculatorSettings?._packageMetadata as {name?:string;market?:string}|undefined;
   if (meta && oldMeta) {

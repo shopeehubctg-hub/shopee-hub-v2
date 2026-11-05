@@ -1,7 +1,7 @@
 import {sql} from 'drizzle-orm';
 import {inventoryAccess,inventoryResponseError} from '../inventory-skus/access';
 import {canAccessModule} from '../../module-access';
-import {exportSnapshots} from '../../pricing-evidence';
+import {exportSnapshots,snapshotAmounts} from '../../pricing-evidence';
 import {inventoryFingerprint} from '../packages/inventory-capture';
 export const dynamic='force-dynamic';
 export async function POST(request:Request){try{
@@ -10,8 +10,8 @@ export async function POST(request:Request){try{
  if(!Array.isArray(b.rows)||!b.rows.length||b.rows.length>500||JSON.stringify(b.rows).length>3000000)throw Error('Export between 1 and 500 packages.');
  const entries=b.rows.map((r:{requestId?:string;name?:string;scenarios?:unknown})=>{
   if(!/^[0-9a-f-]{36}$/i.test(r.requestId??'')||!r.name?.trim()||r.name.length>300)throw Error('Invalid export row. Refresh and export again.');
-  const scenarios=exportSnapshots({scenarios:r.scenarios}),normal=scenarios.find(v=>v.serviceScenario==='Non-Campaign Day')!,campaign=scenarios.find(v=>v.serviceScenario==='Campaign Day')!;
-  const payload={name:r.name.trim(),market:'MY',currency:'MYR',normal:Number(normal.suggestedShopeePrice.toFixed(2)),campaign:Number(campaign.suggestedShopeePrice.toFixed(2)),scenarios};
+  const scenarios=exportSnapshots({scenarios:r.scenarios});
+  const payload={name:r.name.trim(),market:'MY',currency:'MYR',...snapshotAmounts(scenarios),scenarios};
   return {requestId:r.requestId!,payload,hash:inventoryFingerprint(payload)};
  });
  if(new Set(entries.map((e:{requestId:string})=>e.requestId)).size!==entries.length)throw Error('Duplicate export request rows.');
