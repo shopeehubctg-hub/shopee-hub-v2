@@ -1,0 +1,25 @@
+.pricing-mode-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0 20px}
+.pricing-mode-options button{min-height:48px;padding:10px 14px;border:1px solid #cedbe3;border-radius:10px;background:#f5f8fa;color:#344b5b;font:600 14px var(--font-noto-sans),sans-serif;line-height:1.4;text-align:center}
+.pricing-mode-options button.active{background:#192330;color:white;border-color:#192330}
+.pricing-mode-options button:focus-visible{outline:3px solid #3192b4;outline-offset:2px}
+.price-calculator .voucher-hero-inputs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.price-calculator .period-reference-note{grid-column:1/-1;font-size:12px;line-height:1.5;font-weight:400}
+.price-calculator .period-mode-note{font-size:14px;color:#536779;line-height:1.6;margin:12px 0 20px}
+.price-calculator .pricing-goal-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr))}
+.price-calculator .pricing-goal-grid article{grid-template-columns:minmax(0,1fr);align-content:start}
+.price-calculator .pricing-goal-grid article>*{min-width:0;max-width:100%}
+.price-calculator .pricing-goal-grid select{width:100%}
+.market-price-card .normal-late-price-input{grid-column:1/-1}
+.batch-panel>.batch-country-picker{vertical-align:bottom;min-width:180px;max-width:100%}
+@media(max-width:700px){.pricing-mode-options{grid-template-columns:1fr;gap:8px}.pricing-mode-options button{min-height:44px;text-align:left}.price-calculator .voucher-hero-inputs{grid-template-columns:1fr}.price-calculator .voucher-hero-inputs label{min-width:0}}
+/* New package applications have two choices; Calculator always compares three periods. */
+.pricing-mode-options{grid-template-columns:repeat(2,minmax(0,1fr))}
+.price-calculator .voucher-hero-inputs label{display:flex;flex-direction:column;justify-content:flex-end;min-width:0}
+.price-calculator .voucher-hero-inputs label>span{min-height:38px;display:flex;align-items:flex-start}
+.price-calculator .voucher-hero-inputs input{width:100%;box-sizing:border-box}
+.market-price-card .price-period-row{grid-column:1/-1;margin-top:8px;font-size:13px}
+.market-price-card>label{min-width:0}
+.market-price-card input[readonly]{background:#f3f6f8;color:#647481}
+.uniform-price-source{display:flex;flex-direction:column;gap:8px;max-width:420px;margin:0 0 20px;font-weight:600}
+.uniform-price-source select{padding:12px;border:1px solid #cedbe3;border-radius:10px;font:inherit;background:white}
+@media(max-width:700px){.pricing-mode-options{grid-template-columns:1fr}.price-calculator .voucher-hero-inputs label>span{min-height:0}}

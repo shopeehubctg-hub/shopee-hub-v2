@@ -25,21 +25,21 @@ test('four-market creation, draft editing and recurring prices preserve currenci
  try {
  await act(async()=>root.render(React.createElement(PackageControl,{storeId:'store',storeName:'Thailand Store',storePlatform:'Shopee TH'})));
  assert.match(doc.querySelector('.package-card').textContent,/฿ 90.00/);
- await click('+ New Package');assert.deepEqual(marketChecks().filter(([,input])=>input.checked).map(([code])=>code),['TH']);
+ await click('Create Single Package');assert.deepEqual(marketChecks().filter(([,input])=>input.checked).map(([code])=>code),['TH']);
  for(const [,input] of marketChecks())if(!input.checked)await act(async()=>input.click());
  await set(doc.querySelector('input[placeholder="e.g. Golden Package 肾心健康"]')??doc.querySelector('.package-detail-grid input'),'Four Markets');
  await set(doc.querySelector('.listing-skus input'),'FOUR-SKU');
- await act(async()=>doc.querySelector('.same-pricing-toggle input').click());
+ await click('Same Price All Month',doc.querySelector('.pricing-mode-options'));
  for(const [index,card] of [...doc.querySelectorAll('.nonCampaign .market-price-card')].entries()){const inputs=card.querySelectorAll('input');await set(inputs[0],String(100+index*100));await set(inputs[1],String(90+index*100));}
  await set(doc.querySelector('.nonCampaign input[type="month"]'),'2026-11');
- await set(doc.querySelector('input[placeholder="OXM Inventory SKU"]'),'FOUR-INV');await set(doc.querySelector('input[placeholder="Item Name"]'),'Four market product');
+ await act(async()=>doc.querySelector('[role="combobox"]').focus());await click('+ Add New Product');await set(doc.querySelector('[aria-label="New Inventory SKU 1"]'),'FOUR-INV');await set(doc.querySelector('[aria-label="Product Name 1"]'),'Four market product');
  await click('Save Draft');assert.equal(submitted.length,1,doc.querySelector('.package-form-errors')?.textContent);
  assert.deepEqual([...submitted[0].markets].sort(),markets.slice().sort());
  assert.equal(submitted[0].mode,'draft');assert.equal(submitted[0].priceSchedules.length,8);
  for(const market of markets){const normal=submitted[0].priceSchedules.find(line=>line.market===market&&line.priceType==='non_campaign');const campaign=submitted[0].priceSchedules.find(line=>line.market===market&&line.priceType==='campaign');assert.equal(campaign.sellingPrice,normal.sellingPrice);}
  await click('Edit Draft');assert.deepEqual(marketChecks().filter(([,input])=>input.checked).map(([code])=>code),markets);
  assert.equal([...doc.querySelectorAll('.nonCampaign .market-price-card')].find(card=>card.querySelector('strong').textContent.startsWith('TH')).querySelectorAll('input')[1].value,'90');
- await act(async()=>doc.querySelector('.same-pricing-toggle input').click());
+ await click('Normal & Campaign Prices',doc.querySelector('.pricing-mode-options'));
  await click('Long-term Package',doc.querySelector('.campaign-duration'));
  for(const card of doc.querySelectorAll('.campaign .market-price-card')){const [original,selling]=card.querySelectorAll('input');await set(original,'500');await set(selling,card.querySelector('strong').textContent.startsWith('PH')?'350':'400');}
  await click('Create Package',doc.querySelector('.form-actions'));assert.equal(submitted.length,2,doc.querySelector('.package-form-errors')?.textContent);

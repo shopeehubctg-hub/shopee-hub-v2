@@ -1,3 +1,4 @@
+import {pricingMode} from '../../pricing-periods';
 import {inventoryAccess,inventoryResponseError} from '../inventory-skus/access';
 import {projectProducts,productName} from '../inventory-skus/catalog';
 import {findExport} from '../packages/pricing-evidence';
@@ -14,6 +15,8 @@ export async function POST(request:Request){try{
   row.items=row.items.map(i=>({sku:String(i.sku??'').trim(),quantity:String(i.quantity??''),name:productName(products,String(i.sku??''),i.name??''),uiKey:crypto.randomUUID()}));
   delete row.exportSnapshot;
   if(row.exportId){if(!snapshots.has(row.exportId))snapshots.set(row.exportId,await findExport(db,member.tenantId,storeId,row.exportId));row.exportSnapshot=snapshots.get(row.exportId);}
+  row.pricingMode=pricingMode(row.pricingMode);
+  if(row.exportSnapshot&&row.exportSnapshot.pricingMode&&row.exportSnapshot.pricingMode!==row.pricingMode)throw Error('Pricing mode does not match the saved Calculator export. Export a fresh template.');
   rows.push(row);
  }
  return Response.json({rows,products},{headers:{'Cache-Control':'private, no-store'}});

@@ -1,16 +1,19 @@
 "use client";
+import "./pricing-periods.css";
 
 import { useEffect, useMemo, useState } from "react";
 import {PackagePricingReview} from "./package-pricing-review";
 import {ExistingPackageCalculator} from "./reprice-calculator";
 import type {RepriceRow,RepriceTarget} from "./package-repricing";
 import { createPortal } from "react-dom";
-import { autoTopUpEligibleForStore, calculatePricePerUnit, calculateShopeePrice, calculateShopeePriceForCustomerTarget, categoryIndexForProduct, commissionRateFor, maximumCoFundVoucher, resolvedCategoryForProduct, reviewPriceLadder, SERVICE_MODES } from "./price-calculator-model";
+import { autoTopUpEligibleForStore, calculatePricePerUnit, calculateShopeePrice, calculateShopeePriceForCustomerTarget, categoryIndexForProduct, commissionRateFor, maximumCoFundVoucher, resolvedCategoryForProduct, reviewPriceLadder, SERVICE_MODES as LEGACY_SERVICE_MODES } from "./price-calculator-model";
 import {marketChoices,marketChoiceLabel,type MarketChoice} from "./package-batch-model";
 import type { CalculatorSnapshot, PackagePrefill } from "./calculator-types";
 import type { ProjectProductProfile } from "./product-catalog";
-import { VOUCHER_PRESET_SOURCE, voucherPresetFor } from "./voucher-presets.js";
+import { VOUCHER_PRESET_SOURCE, voucherPresetFor,periodVoucherPresetFor,PERIOD_VOUCHER_REFERENCE_DATE } from "./voucher-presets.js";
 
+
+const SERVICE_MODES={...LEGACY_SERVICE_MODES,normalLate:{...LEGACY_SERVICE_MODES.nonCampaign,label:'Normal Day · 16th–End'}};
 type ServiceMode = keyof typeof SERVICE_MODES;
 type NumberValue = number|"";
 type PackageRow = { id:number; name:string; facebookPrice:NumberValue; mainProductQuantity:NumberValue; markupRates:Record<ServiceMode,string|null>; customerTargets:Record<ServiceMode,string|null> };
@@ -26,7 +29,8 @@ type FeeDraft = {
   sellerShipping:NumberValue; facebookShipping:NumberValue;
 };
 type CoFundVoucher = { id:number; campaignName:string; campaignDate:string|null; campaignStartAt:string|null; campaignEndAt:string|null; voucherName:string; discountAmount:number; currency:string; quantity:number };
-type Props = { recalculateTargets?:RepriceTarget[]; onPricesUpdated?:(ids:string[])=>void; staging?:boolean; storeId?:string; storeName?:string; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; onCreatePackage?:(prefill:PackagePrefill)=>void; onCreatePackages?:(prefills:PackagePrefill[])=>void };
+import type {PlatformVoucherPreset} from "./platform-voucher";
+type Props = { platformVoucher?:PlatformVoucherPreset|null; recalculateTargets?:RepriceTarget[]; onPricesUpdated?:(ids:string[])=>void; staging?:boolean; storeId?:string; storeName?:string; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; onCreatePackage?:(prefill:PackagePrefill)=>void; onCreatePackages?:(prefills:PackagePrefill[])=>void };
 type ConfirmationRow = { prefill:PackagePrefill; scenario:string; quantity:number; facebookPpu:number|null; customerPpu:number|null };
 type PendingConfirmation = { kind:"single"|"batch"; rows:ConfirmationRow[] };
 type LadderRow = { name:string; quantity:number; customerPrice:number; ppu:number; status:"base"|"better"|"higher"; label:string };
@@ -34,20 +38,22 @@ type PricingGoal = "facebookPayout"|"sameCustomerPrice"|"cheaperCustomerPrice";
 type DiscountUnit = "rm"|"percent";
 type GoalSetting = { goal:PricingGoal; discountUnit:DiscountUnit; discountValue:NumberValue };
 
-const blankMarkups = ():Record<ServiceMode,string|null> => ({nonCampaign:null,campaign:null});
-const blankCustomerTargets = ():Record<ServiceMode,string|null> => ({nonCampaign:null,campaign:null});
+const blankMarkups = ():Record<ServiceMode,string|null> => ({nonCampaign:null,campaign:null,normalLate:null});
+const blankCustomerTargets = ():Record<ServiceMode,string|null> => ({nonCampaign:null,campaign:null,normalLate:null});
 const INITIAL_PACKAGES:PackageRow[] = [
   { id:1, name:"Package A", facebookPrice:289, mainProductQuantity:"", markupRates:blankMarkups(), customerTargets:blankCustomerTargets() },
   { id:2, name:"Package B", facebookPrice:358, mainProductQuantity:"", markupRates:blankMarkups(), customerTargets:blankCustomerTargets() },
   { id:3, name:"Package C", facebookPrice:716, mainProductQuantity:"", markupRates:blankMarkups(), customerTargets:blankCustomerTargets() },
 ];
-const SCENARIOS = Object.keys(SERVICE_MODES) as ServiceMode[];
+
 const money = (value:number) => `RM ${Number.isFinite(value) ? value.toFixed(2) : "0.00"}`;
 const pct = (value:number) => `${Number.isFinite(value) ? value.toFixed(2) : "0.00"}%`;
 const positive = (value:string|number) => Math.max(0, Number(value) || 0);
 const editableNumber = (value:string):NumberValue => value===""?"":positive(value);
 
-export function PriceCalculator({ recalculateTargets=[],onPricesUpdated,staging=false, storeId="", storeName="", productProfile, coFundVouchers=[], onCreatePackage, onCreatePackages }:Props) {
+export function PriceCalculator({ platformVoucher, recalculateTargets=[],onPricesUpdated,staging=false, storeId="", storeName="", productProfile, coFundVouchers=[], onCreatePackage, onCreatePackages }:Props) {
+  const SCENARIOS:ServiceMode[]=['nonCampaign','campaign','normalLate'];
+  const scenarioLabel=(mode:ServiceMode)=>mode==='nonCampaign'?'Normal Day · 1st–15th':SERVICE_MODES[mode].label;
   const [selectedRows,setSelectedRows]=useState<number[]>([]);
   const [priceReview,setPriceReview]=useState<RepriceRow[]|null>(null);
   useEffect(()=>{setSelectedRows([]);setPriceReview(null);},[storeId]);
@@ -60,6 +66,7 @@ export function PriceCalculator({ recalculateTargets=[],onPricesUpdated,staging=
   const [pricingGoals,setPricingGoals] = useState<Record<ServiceMode,GoalSetting>>({
     nonCampaign:{goal:"sameCustomerPrice",discountUnit:"rm",discountValue:""},
     campaign:{goal:"sameCustomerPrice",discountUnit:"rm",discountValue:""},
+    normalLate:{goal:"sameCustomerPrice",discountUnit:"rm",discountValue:""},
   });
   const mainProducts = productProfile?.mainProducts ?? [];
   const categoryOptions = useMemo(()=>{
@@ -78,7 +85,8 @@ export function PriceCalculator({ recalculateTargets=[],onPricesUpdated,staging=
   const commission = selectedCategoryOption?.rate ?? 0;
   const selectedCategory = selectedCategoryOption?.name ?? "No Product Category configured";
   const storeVoucherPreset = voucherPresetFor(storeName);
-  const [voucherRates,setVoucherRates] = useState<Record<ServiceMode,NumberValue>>({nonCampaign:storeVoucherPreset.normal,campaign:storeVoucherPreset.campaign});
+  const periodPreset=platformVoucher===undefined?periodVoucherPresetFor(storeName):{early:platformVoucher?.early??null,campaign:platformVoucher?.campaign??null,late:platformVoucher?.late??null,available:!!platformVoucher};
+  const [voucherRates,setVoucherRates] = useState<Record<ServiceMode,NumberValue>>({nonCampaign:periodPreset.early??(platformVoucher===undefined?storeVoucherPreset.normal:""),campaign:periodPreset.campaign??(platformVoucher===undefined?storeVoucherPreset.campaign:""),normalLate:periodPreset.late??""});
   const [fees,setFees] = useState<FeeDraft>({
     serviceCap:108, preorder:2.16, isPreorder:false, isSpayLater:false, platformSupport:0.54,
     shopeeVoucher:0, sellerVoucher:0,
@@ -89,9 +97,8 @@ export function PriceCalculator({ recalculateTargets=[],onPricesUpdated,staging=
   const cofundVoucher = positive(selectedCoFund?.discountAmount ?? 0);
   const autoTopUpEligible = autoTopUpEligibleForStore(storeName);
   const autoTopUpRate = autoTopUpEligible ? 5 : 0;
-  const calculations = useMemo(()=>packages.map(row=>({
-    row,
-    scenarios:SCENARIOS.map(mode=>{
+  const calculations = useMemo(()=>packages.map(row=>{
+    const scenarios=SCENARIOS.map(mode=>{
       const activeFees:FeeSettings = {
         transaction:transactionRate, commission, service:SERVICE_MODES[mode].rate,
         serviceCap:positive(fees.serviceCap), preorder:positive(fees.preorder), isPreorder:fees.isPreorder,
@@ -109,13 +116,15 @@ export function PriceCalculator({ recalculateTargets=[],onPricesUpdated,staging=
       const customMarkup = row.markupRates[mode];
       const result = customMarkup === null ? suggested : calculateShopeePrice(pricedRow,activeFees,positive(customMarkup));
       return {mode,activeFees,suggested,result,goalSetting};
-    }),
-  })),[packages,fees,commission,voucherRates,transactionRate,pricingGoals,cofundVoucher,autoTopUpRate]);
+    });
+    return {row,scenarios};
+  }),[packages,fees,commission,voucherRates,transactionRate,pricingGoals,cofundVoucher,autoTopUpRate]);
   const headlineRate = transactionRate + commission + SERVICE_MODES.campaign.rate + (fees.isPreorder?positive(fees.preorder):0) + autoTopUpRate;
   useEffect(()=>{
     const preset = voucherPresetFor(storeName);
-    setVoucherRates({nonCampaign:preset.normal,campaign:preset.campaign});
-  },[storeName]);
+    const periods=platformVoucher===undefined?periodVoucherPresetFor(storeName):{early:platformVoucher?.early??null,campaign:platformVoucher?.campaign??null,late:platformVoucher?.late??null};
+    setVoucherRates({nonCampaign:periods.early??(platformVoucher===undefined?preset.normal:""),campaign:periods.campaign??(platformVoucher===undefined?preset.campaign:""),normalLate:periods.late??""});
+  },[storeName,platformVoucher?.early,platformVoucher?.campaign,platformVoucher?.late,platformVoucher?.updatedAt]);
   useEffect(()=>{setSelectedCategoryKey(categoryOptions[0]?.key ?? "");},[storeName,categoryOptions]);
 
   function updateFee(key:keyof typeof fees, value:string|boolean) {
@@ -141,16 +150,17 @@ export function PriceCalculator({ recalculateTargets=[],onPricesUpdated,staging=
     setPackages(current=>[...current,{id:Math.max(0,...current.map(row=>row.id))+1,name:`Package ${String.fromCharCode(65+current.length)}`,facebookPrice:0,mainProductQuantity:"",markupRates:blankMarkups(),customerTargets:blankCustomerTargets()}]);
   }
   function packagePrefill(row:PackageRow, mode:ServiceMode, result:ReturnType<typeof calculateShopeePrice>, suggested:ReturnType<typeof calculateShopeePrice>, requestId=Date.now()) {
-    if (!row.name.trim() || !result.valid || positive(row.facebookPrice) <= 0 || !Number.isFinite(result.requiredPrice) || Number(result.requiredPrice.toFixed(2)) <= 0) return null;
+    if (voucherRates[mode]==="" || !row.name.trim() || !result.valid || positive(row.facebookPrice) <= 0 || !Number.isFinite(result.requiredPrice) || Number(result.requiredPrice.toFixed(2)) <= 0) return null;
     const calculatorSettings:CalculatorSnapshot = {
       source:"Shopee Pricing Calculator",
+      pricingSchemaVersion:2,calculationKind:"three_period_recommendations",pricingMode:"split_normal",pricingPeriod:mode==="campaign"?"campaign":mode==="normalLate"?"normal_16_end":"normal_1_15",
       packageName:row.name,
       category:selectedCategory,
       cashbackProgramme:true,
       customCommission:null,
       commissionRate:commission,
       transactionRate,
-      serviceScenario:SERVICE_MODES[mode].label as CalculatorSnapshot["serviceScenario"],
+      serviceScenario:mode==="campaign"?"Campaign Day":"Non-Campaign Day",
       pricingGoal:pricingGoals[mode].goal,
       discountUnit:pricingGoals[mode].discountUnit,
       discountValue:positive(pricingGoals[mode].discountValue),
@@ -184,7 +194,7 @@ export function PriceCalculator({ recalculateTargets=[],onPricesUpdated,staging=
   }
   function confirmationRow(row:PackageRow, mode:ServiceMode, result:ReturnType<typeof calculateShopeePrice>, suggested:ReturnType<typeof calculateShopeePrice>, requestId=Date.now()):ConfirmationRow|null {
     const prefill = packagePrefill(row,mode,result,suggested,requestId);
-    return prefill ? {prefill,scenario:SERVICE_MODES[mode].label,quantity:positive(row.mainProductQuantity),facebookPpu:calculatePricePerUnit(row.facebookPrice,row.mainProductQuantity),customerPpu:calculatePricePerUnit(result.customerPrice,row.mainProductQuantity)} : null;
+    return prefill ? {prefill,scenario:scenarioLabel(mode),quantity:positive(row.mainProductQuantity),facebookPpu:calculatePricePerUnit(row.facebookPrice,row.mainProductQuantity),customerPpu:calculatePricePerUnit(result.customerPrice,row.mainProductQuantity)} : null;
   }
 
   const readyConfirmationRows = calculations.flatMap(({row,scenarios})=>scenarios.flatMap(({mode,suggested,result},index)=>{
@@ -192,7 +202,7 @@ export function PriceCalculator({ recalculateTargets=[],onPricesUpdated,staging=
     return item ? [item] : [];
   }));
   const selectedConfirmationRows=readyConfirmationRows.filter(item=>selectedRows.some(id=>item.prefill.calculatorGroupId===`calculator-row-${id}`));
-  const selectedReady=selectedRows.length>0&&selectedRows.every(id=>selectedConfirmationRows.filter(item=>item.prefill.calculatorGroupId===`calculator-row-${id}`).length===2);
+  const selectedReady=selectedRows.length>0&&selectedRows.every(id=>selectedConfirmationRows.filter(item=>item.prefill.calculatorGroupId===`calculator-row-${id}`).length===SCENARIOS.length);
   function reviewSelectedPrices(){setPriceReview(selectedRows.map(id=>({id:`calculator-row-${id}`,name:packages.find(p=>p.id===id)!.name,scenarios:selectedConfirmationRows.filter(item=>item.prefill.calculatorGroupId===`calculator-row-${id}`).map(item=>item.prefill.calculatorSettings)})));}
   const readyPackages = readyConfirmationRows.map(item=>item.prefill);
   const ladderReviews = useMemo(()=>SCENARIOS.map(mode=>({mode,rows:reviewPriceLadder(calculations.flatMap(({row,scenarios})=>{
@@ -226,17 +236,17 @@ export function PriceCalculator({ recalculateTargets=[],onPricesUpdated,staging=
     return `Lower Than Meta by ${setting.discountUnit==="rm"?money(discount):pct(discount)}`;
   }
 
-  if(recalculateTargets.length)return <ExistingPackageCalculator key={recalculateTargets.map(t=>t.id).join(":")} storeId={storeId} storeName={storeName} targets={recalculateTargets} productProfile={productProfile} coFundVouchers={coFundVouchers} onComplete={onPricesUpdated??(()=>{})}/>;
+  if(recalculateTargets.length)return <ExistingPackageCalculator platformVoucher={platformVoucher} key={`${storeId}:${platformVoucher?.updatedAt??""}:${recalculateTargets.map(t=>t.id).join(":")}`} storeId={storeId} storeName={storeName} targets={recalculateTargets} productProfile={productProfile} coFundVouchers={coFundVouchers} onComplete={onPricesUpdated??(()=>{})}/>;
   return <div className="price-calculator" onWheelCapture={event=>{const target=event.target as HTMLInputElement;if(target.tagName==="INPUT"&&target.type==="number")target.blur();}}>
     <section className="calculator-hero">
       <div><p className="kicker">SHOPEE MY · MARKUP CALCULATOR</p><h2>Markup Calculator</h2></div>
       <div className="calculator-hero-metrics">
         <div className="calculator-hero-result total-fee-result"><span>Total Shopee Charges %</span><strong>{pct(headlineRate)}</strong><small>Campaign Day · Service Fee capped at RM108</small></div>
-        <div className={`calculator-hero-result voucher-hero-result${storeVoucherPreset.available?"":" unavailable"}`}>
-          <div className="voucher-hero-head"><span>Shopee Voucher %</span><small>{storeVoucherPreset.available?`${VOUCHER_PRESET_SOURCE.month} preset`:"No preset"}</small></div>
+        <div className={`calculator-hero-result voucher-hero-result${periodPreset.available?"":" unavailable"}`}>
+          <div className="voucher-hero-head"><span>Shopee Voucher %</span><small>{periodPreset.available?platformVoucher?"Current preset":`${VOUCHER_PRESET_SOURCE.month} preset`:"No preset"}</small></div>
           <div className="voucher-hero-inputs">
-            <label><span>Non-Campaign Day</span><div><input aria-label="Non-Campaign Shopee Voucher percentage" type="number" min="0" max="100" step=".01" value={voucherRates.nonCampaign} onChange={event=>updateVoucher("nonCampaign",event.target.value)}/><b>%</b></div></label>
-            <label><span>Campaign Day</span><div><input aria-label="Campaign Shopee Voucher percentage" type="number" min="0" max="100" step=".01" value={voucherRates.campaign} onChange={event=>updateVoucher("campaign",event.target.value)}/><b>%</b></div></label>
+            {(['nonCampaign','campaign','normalLate'] as ServiceMode[]).map(mode=><label key={mode}><span>{mode==='nonCampaign'?'Normal · 1st–15th':mode==='campaign'?'Campaign':'Normal · 16th–End'}</span><div><input aria-label={`${mode} Platform Voucher percentage`} type="number" min="0" max="100" step=".01" value={voucherRates[mode]} onChange={event=>updateVoucher(mode,event.target.value)}/><b>%</b></div></label>)}
+            <small className="period-reference-note">Historical voucher averages · {platformVoucher?.updatedAt?.slice(0,10)??PERIOD_VOUCHER_REFERENCE_DATE}. Actual vouchers may vary.</small>
           </div>
         </div>
       </div>
@@ -265,11 +275,11 @@ export function PriceCalculator({ recalculateTargets=[],onPricesUpdated,staging=
       </div>
       <div className="step-one-extra">
         <div className="pricing-goal-settings">
-          <div className="pricing-goal-heading"><b>Price Goals</b><span>Set Campaign and Non-Campaign separately</span></div>
+          <div className="pricing-goal-heading"><b>Price Goals</b></div>
           <div className="pricing-goal-grid">{SCENARIOS.map(mode=>{const setting=pricingGoals[mode];return <article className={mode} key={mode}>
-            <div><b>{SERVICE_MODES[mode].label}</b><small>We calculate the Shopee price from this goal</small></div>
+            <div><b>{scenarioLabel(mode)}</b><small>We calculate the Shopee price from this goal</small></div>
             <label>Price Goal<select value={setting.goal} onChange={event=>updatePricingGoal(mode,{goal:event.target.value as PricingGoal})}><option value="facebookPayout">Match Meta Order Income</option><option value="sameCustomerPrice">Match Meta Buyer Payment</option><option value="cheaperCustomerPrice">Lower Than Meta</option></select></label>
-            {setting.goal==="cheaperCustomerPrice"&&<label>Discount<div className="discount-target-input"><select aria-label={`${SERVICE_MODES[mode].label} discount unit`} value={setting.discountUnit} onChange={event=>updatePricingGoal(mode,{discountUnit:event.target.value as DiscountUnit})}><option value="rm">RM</option><option value="percent">%</option></select><input aria-label={`${SERVICE_MODES[mode].label} discount value`} type="number" min="0" step=".01" placeholder="Enter value" value={setting.discountValue} onChange={event=>updatePricingGoal(mode,{discountValue:editableNumber(event.target.value)})}/></div></label>}
+            {setting.goal==="cheaperCustomerPrice"&&<label>Discount<div className="discount-target-input"><select aria-label={`${scenarioLabel(mode)} discount unit`} value={setting.discountUnit} onChange={event=>updatePricingGoal(mode,{discountUnit:event.target.value as DiscountUnit})}><option value="rm">RM</option><option value="percent">%</option></select><input aria-label={`${scenarioLabel(mode)} discount value`} type="number" min="0" step=".01" placeholder="Enter value" value={setting.discountValue} onChange={event=>updatePricingGoal(mode,{discountValue:editableNumber(event.target.value)})}/></div></label>}
           </article>})}</div>
         </div>
         <div className="fee-fields advanced-fields">
@@ -293,17 +303,19 @@ export function PriceCalculator({ recalculateTargets=[],onPricesUpdated,staging=
     <section className="calculator-table calculator-results card">
       <div className="calculator-section-head"><div><p className="kicker">STEP 2 · PACKAGE RESULTS</p><h3>Recommended Prices</h3></div><div className="calculator-result-head-actions">{<label className="calculator-country-picker">Select Countries<select value={batchMarket} onChange={e=>setBatchMarket(e.target.value as MarketChoice)}>{marketChoices.map(m=><option key={m} value={m}>{marketChoiceLabel(m)}</option>)}</select></label>}{<button type="button" disabled={!storeName} onClick={async()=>{try{
  const rows=calculations.flatMap(({row,scenarios})=>{
- const normal=scenarios.find(s=>s.mode==="nonCampaign"),campaign=scenarios.find(s=>s.mode==="campaign");
- if(!normal||!campaign||!packagePrefill(row,normal.mode,normal.result,normal.suggested,row.id)||!packagePrefill(row,campaign.mode,campaign.result,campaign.suggested,row.id))return [];
- return [{requestId:crypto.randomUUID(),code:`PKG-${row.id}`,name:row.name,scenarios:[packagePrefill(row,normal.mode,normal.result,normal.suggested,row.id)!.calculatorSettings,packagePrefill(row,campaign.mode,campaign.result,campaign.suggested,row.id)!.calculatorSettings],normal:Number(normal.result.requiredPrice.toFixed(2)),campaign:Number(campaign.result.requiredPrice.toFixed(2))}];});
- if(!rows.length){setBatchMessage("Complete package prices and quantities first.");return;}
+ const normal=scenarios.find(s=>s.mode==="nonCampaign"),campaign=scenarios.find(s=>s.mode==="campaign"),late=scenarios.find(s=>s.mode==="normalLate");
+ if(scenarios.some(s=>!packagePrefill(row,s.mode,s.result,s.suggested,row.id))||!normal||!campaign||!packagePrefill(row,normal.mode,normal.result,normal.suggested,row.id)||!packagePrefill(row,campaign.mode,campaign.result,campaign.suggested,row.id))return [];
+ return [{requestId:crypto.randomUUID(),code:`PKG-${row.id}`,name:row.name,scenarios:scenarios.map(s=>packagePrefill(row,s.mode,s.result,s.suggested,row.id)?.calculatorSettings).filter((s):s is CalculatorSnapshot=>!!s),pricingMode:"split_normal" as const,normalLate:Number(late!.result.requiredPrice.toFixed(2)),normal:Number(normal.result.requiredPrice.toFixed(2)),campaign:Number(campaign.result.requiredPrice.toFixed(2))}];});
+ if(!rows.length){setBatchMessage("Complete all three prices and the three Platform Voucher percentages before downloading.");return;}
  if(!storeId)throw Error('Select a store before exporting.');
  const response=await fetch('/api/calculator-exports',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({storeId,rows})});const saved=await response.json();if(!response.ok)throw Error(saved.error||'Unable to save Calculator settings.');
  const catalogResponse=await fetch('/api/inventory-skus?storeId='+encodeURIComponent(storeId),{cache:'no-store'});const catalog=await catalogResponse.json();if(!catalogResponse.ok)throw Error(catalog.error||'Unable to load products.');
- await (await import("./package-batch-excel")).saveBatch(rows.map((row,index)=>({...row,exportId:saved.rows[index].id})),batchMarket,{products:catalog.products,storeId});setBatchMessage(`${rows.length} packages downloaded. Fill Original Price, platform SKUs and inventory pairs across each row (SG / TH / PH prices are blank if selected), then use Batch Upload in Packages & Pricing.`);
+ await (await import("./package-batch-excel")).saveBatch(rows.map((row,index)=>({...row,exportId:saved.rows[index].id})),batchMarket,{products:catalog.products,storeId,pricingMode:"split_normal"});setBatchMessage(`${rows.length} packages downloaded. Fill Original Price, platform SKUs and inventory pairs across each row (SG / TH / PH prices are blank if selected), then use Batch Upload in Packages & Pricing.`);
  }catch(error){setBatchMessage(error instanceof Error?error.message:"Download failed. Please retry.");}}}>Download Excel</button>}{!storeName&&<small className="calculator-download-note" role="status">Select a store to download packages.</small>}{batchMessage&&<p className="calculator-download-note" role="status">{batchMessage}</p>}<button onClick={addPackage}>+ Add Package</button></div></div>
+      {voucherRates.normalLate===""&&<p role="status" className="calculator-download-note">Enter the Normal Day · 16th–End Platform Voucher %. This store has no saved late-month percentage.</p>}
+      {!storeId&&<p role="status" className="calculator-download-note">Select a store before creating or downloading packages.</p>}
       {<div className="calculator-selection-bar"><div className="calculator-selection-summary"><label><input type="checkbox" aria-label="Select all Calculator packages" checked={packages.length>0&&packages.every(p=>selectedRows.includes(p.id))} onChange={e=>setSelectedRows(e.target.checked?packages.map(p=>p.id):[])}/>Select All</label><span>{selectedRows.length} Packages Selected</span></div><div className="calculator-selection-actions"><button type="button" className="reprice-next" disabled={!storeId||!selectedReady} onClick={()=>setPendingConfirmation({kind:"batch",rows:selectedConfirmationRows})}>Create Selected Packages ({selectedRows.length})</button><button type="button" className="reprice-next" disabled={!storeId||!selectedReady} onClick={reviewSelectedPrices}>Update Existing Package Prices ({selectedRows.length})</button></div></div>}
-      <div className="package-result-list">{calculations.map(({row,scenarios})=><article className="package-result-card dual-package-card" key={row.id}>
+      <p className="period-mode-note">Compare three recommended prices. Choose one price for the whole month or keep all three when you create your package.</p><div className="package-result-list">{calculations.map(({row,scenarios})=><article className="package-result-card dual-package-card" key={row.id}>
         {<label className="calculator-select-label"><input type="checkbox" aria-label={`Select Calculator package ${row.id}`} checked={selectedRows.includes(row.id)} onChange={e=>setSelectedRows(current=>e.target.checked?[...current,row.id]:current.filter(id=>id!==row.id))}/>Select Package</label>}
         <div className="dual-package-inputs">
           <label className="result-input"><span>Package</span><input className="package-name-input" value={row.name} onChange={event=>updatePackage(row.id,"name",event.target.value)}/></label>
@@ -316,15 +328,15 @@ export function PriceCalculator({ recalculateTargets=[],onPricesUpdated,staging=
         <div className="scenario-list">{scenarios.map(({mode,suggested,result})=>{
           return <div className="scenario-result" key={mode}>
             <div className="scenario-result-main">
-              <div className={`scenario-badge ${mode}`}><b>{SERVICE_MODES[mode].label}</b><small>Service Fee {pct(SERVICE_MODES[mode].rate)} · Voucher {pct(positive(voucherRates[mode]))}</small><small className="scenario-goal">Goal: {pricingGoalSummary(mode)}</small></div>
+              <div className={`scenario-badge ${mode}`}><b>{scenarioLabel(mode)}</b><small>Service Fee {pct(SERVICE_MODES[mode].rate)} · Voucher {pct(positive(voucherRates[mode]))}</small><small className="scenario-goal">Goal: {pricingGoalSummary(mode)}</small></div>
               <div className="result-metric suggested-price"><span>Shopee Price</span><strong>{money(result.requiredPrice)}</strong><small>Listing Price</small></div>
-              {pricingGoals[mode].goal==="cheaperCustomerPrice"?<label className="result-metric customer-price-editor"><span>Buyer Payment</span><div className="money-input"><b>RM</b><input aria-label={`${row.name} ${SERVICE_MODES[mode].label} buyer payment`} type="number" min="0" step=".01" value={row.customerTargets[mode]??result.customerPrice.toFixed(2)} onChange={event=>updateCustomerTarget(row.id,mode,event.target.value)}/></div><small>Edit for this package</small></label>:<div className="result-metric"><span>Buyer Payment</span><strong>{money(result.customerPrice)}</strong><small>After Shopee Voucher</small></div>}
+              {pricingGoals[mode].goal==="cheaperCustomerPrice"?<label className="result-metric customer-price-editor"><span>Buyer Payment</span><div className="money-input"><b>RM</b><input aria-label={`${row.name} ${scenarioLabel(mode)} buyer payment`} type="number" min="0" step=".01" value={row.customerTargets[mode]??result.customerPrice.toFixed(2)} onChange={event=>updateCustomerTarget(row.id,mode,event.target.value)}/></div><small>Edit for this package</small></label>:<div className="result-metric"><span>Buyer Payment</span><strong>{money(result.customerPrice)}</strong><small>After Shopee Voucher</small></div>}
               <label className="result-metric markup-editor"><span>Markup</span><div><input type="number" min="0" step=".01" value={row.markupRates[mode] ?? suggested.markupRate.toFixed(2)} onChange={event=>updateMarkup(row.id,mode,event.target.value)}/><b>%</b></div><small>Markup (RM) · {money(result.markupAmount)}</small></label>
               <div className="result-metric payout"><span>Order Income</span><strong>{money(result.payout)}</strong><small className="facebook-payout">Meta Order Income {money(positive(row.facebookPrice)-positive(fees.facebookShipping))}</small></div>
               <div className="result-metric customer-ppu"><span>Price Per Unit</span><strong>{calculatePricePerUnit(result.customerPrice,row.mainProductQuantity)===null?"—":money(calculatePricePerUnit(result.customerPrice,row.mainProductQuantity)!)}</strong><small>Buyer Payment ÷ Qty</small></div>
-              <div className="package-result-actions"><button className="create-package-link" disabled={!row.name.trim()||!result.valid} onClick={()=>{const item=confirmationRow(row,mode,result,suggested);if(item)setPendingConfirmation({kind:"single",rows:[item]});}}>Create Package</button></div>
+              <div className="package-result-actions"><button className="create-package-link" disabled={!row.name.trim()||!result.valid||readyConfirmationRows.filter(r=>r.prefill.calculatorGroupId===`calculator-row-${row.id}`).length!==3} onClick={()=>{const item=confirmationRow(row,mode,result,suggested);if(item)setPendingConfirmation({kind:"batch",rows:readyConfirmationRows.filter(r=>r.prefill.calculatorGroupId===`calculator-row-${row.id}`)});}}>Create Package</button></div>
             </div>
-            <details className="fee-breakdown"><summary>View {SERVICE_MODES[mode].label} Fee Breakdown</summary><div className="fee-breakdown-grid">
+            <details className="fee-breakdown"><summary>View {scenarioLabel(mode)} Fee Breakdown</summary><div className="fee-breakdown-grid">
               <div><span>Transaction Fee · {pct(transactionRate)}</span><strong>{money(result.transactionFee)}</strong></div>
               <div><span>Commission · {pct(commission)}</span><strong>{money(result.commissionFee)}</strong></div>
               <div><span>Service Fee · {result.serviceCapped?"RM108 cap":pct(SERVICE_MODES[mode].rate)}</span><strong>{money(result.serviceFee)}</strong></div>
