@@ -34,7 +34,7 @@ function FailureDialog({journal,onClose,onFix}:{journal:BatchSaveJournal;onClose
 }
 export function PackageBatchPreview({storeId,storeName,onExit,staging=false,backLabel="Back to Packages"}:{storeId:string;storeName:string;staging?:boolean;onExit:(message?:string)=>void;backLabel?:string}){
  const [applyMode,setApplyMode]=useState<'uniform'|'split_normal'>('split_normal'),[uniformSource,setUniformSource]=useState<PriceSourcePeriod|''>('');
- const [entrySheet,setEntrySheet]=useState<'By Product Name'|'By SKU'>('By SKU');
+ const [entrySheet,setEntrySheet]=useState<'By Product Name'|'By SKU'>('By Product Name');
  const [step,setStep]=useState<1|2|3>(1),[busy,setBusy]=useState(false),[error,setError]=useState(''),[filename,setFilename]=useState(''),[choice,setChoice]=useState<MarketChoice>('MY');
  const [rows,setRows]=useState<BatchPackage[]>([]),[selected,setSelected]=useState<string[]>([]),[dirty,setDirty]=useState(false),[expanded,setExpanded]=useState<string|null>(null),[dates,setDates]=useState<BatchDates|null>(null);
  const [journal,setJournal]=useState<BatchSaveJournal|null>(null),[failure,setFailure]=useState<BatchSaveJournal|null>(null),[returnToPreview,setReturnToPreview]=useState(false),[individualDates,setIndividualDates]=useState(false);

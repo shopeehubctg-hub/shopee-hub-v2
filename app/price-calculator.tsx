@@ -29,7 +29,8 @@ type FeeDraft = {
   sellerShipping:NumberValue; facebookShipping:NumberValue;
 };
 type CoFundVoucher = { id:number; campaignName:string; campaignDate:string|null; campaignStartAt:string|null; campaignEndAt:string|null; voucherName:string; discountAmount:number; currency:string; quantity:number };
-type Props = { recalculateTargets?:RepriceTarget[]; onPricesUpdated?:(ids:string[])=>void; staging?:boolean; storeId?:string; storeName?:string; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; onCreatePackage?:(prefill:PackagePrefill)=>void; onCreatePackages?:(prefills:PackagePrefill[])=>void };
+import type {PlatformVoucherPreset} from "./platform-voucher";
+type Props = { platformVoucher?:PlatformVoucherPreset|null; recalculateTargets?:RepriceTarget[]; onPricesUpdated?:(ids:string[])=>void; staging?:boolean; storeId?:string; storeName?:string; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; onCreatePackage?:(prefill:PackagePrefill)=>void; onCreatePackages?:(prefills:PackagePrefill[])=>void };
 type ConfirmationRow = { prefill:PackagePrefill; scenario:string; quantity:number; facebookPpu:number|null; customerPpu:number|null };
 type PendingConfirmation = { kind:"single"|"batch"; rows:ConfirmationRow[] };
 type LadderRow = { name:string; quantity:number; customerPrice:number; ppu:number; status:"base"|"better"|"higher"; label:string };
@@ -50,7 +51,7 @@ const pct = (value:number) => `${Number.isFinite(value) ? value.toFixed(2) : "0.
 const positive = (value:string|number) => Math.max(0, Number(value) || 0);
 const editableNumber = (value:string):NumberValue => value===""?"":positive(value);
 
-export function PriceCalculator({ recalculateTargets=[],onPricesUpdated,staging=false, storeId="", storeName="", productProfile, coFundVouchers=[], onCreatePackage, onCreatePackages }:Props) {
+export function PriceCalculator({ platformVoucher, recalculateTargets=[],onPricesUpdated,staging=false, storeId="", storeName="", productProfile, coFundVouchers=[], onCreatePackage, onCreatePackages }:Props) {
   const SCENARIOS:ServiceMode[]=['nonCampaign','campaign','normalLate'];
   const scenarioLabel=(mode:ServiceMode)=>mode==='nonCampaign'?'Normal Day · 1st–15th':SERVICE_MODES[mode].label;
   const [selectedRows,setSelectedRows]=useState<number[]>([]);
@@ -84,8 +85,8 @@ export function PriceCalculator({ recalculateTargets=[],onPricesUpdated,staging=
   const commission = selectedCategoryOption?.rate ?? 0;
   const selectedCategory = selectedCategoryOption?.name ?? "No Product Category configured";
   const storeVoucherPreset = voucherPresetFor(storeName);
-  const periodPreset=periodVoucherPresetFor(storeName);
-  const [voucherRates,setVoucherRates] = useState<Record<ServiceMode,NumberValue>>({nonCampaign:periodPreset.early??storeVoucherPreset.normal,campaign:periodPreset.campaign??storeVoucherPreset.campaign,normalLate:periodPreset.late??""});
+  const periodPreset=platformVoucher===undefined?periodVoucherPresetFor(storeName):{early:platformVoucher?.early??null,campaign:platformVoucher?.campaign??null,late:platformVoucher?.late??null,available:!!platformVoucher};
+  const [voucherRates,setVoucherRates] = useState<Record<ServiceMode,NumberValue>>({nonCampaign:periodPreset.early??(platformVoucher===undefined?storeVoucherPreset.normal:""),campaign:periodPreset.campaign??(platformVoucher===undefined?storeVoucherPreset.campaign:""),normalLate:periodPreset.late??""});
   const [fees,setFees] = useState<FeeDraft>({
     serviceCap:108, preorder:2.16, isPreorder:false, isSpayLater:false, platformSupport:0.54,
     shopeeVoucher:0, sellerVoucher:0,
@@ -121,9 +122,9 @@ export function PriceCalculator({ recalculateTargets=[],onPricesUpdated,staging=
   const headlineRate = transactionRate + commission + SERVICE_MODES.campaign.rate + (fees.isPreorder?positive(fees.preorder):0) + autoTopUpRate;
   useEffect(()=>{
     const preset = voucherPresetFor(storeName);
-    const periods=periodVoucherPresetFor(storeName);
-    setVoucherRates({nonCampaign:periods.early??preset.normal,campaign:periods.campaign??preset.campaign,normalLate:periods.late??""});
-  },[storeName]);
+    const periods=platformVoucher===undefined?periodVoucherPresetFor(storeName):{early:platformVoucher?.early??null,campaign:platformVoucher?.campaign??null,late:platformVoucher?.late??null};
+    setVoucherRates({nonCampaign:periods.early??(platformVoucher===undefined?preset.normal:""),campaign:periods.campaign??(platformVoucher===undefined?preset.campaign:""),normalLate:periods.late??""});
+  },[storeName,platformVoucher?.early,platformVoucher?.campaign,platformVoucher?.late,platformVoucher?.updatedAt]);
   useEffect(()=>{setSelectedCategoryKey(categoryOptions[0]?.key ?? "");},[storeName,categoryOptions]);
 
   function updateFee(key:keyof typeof fees, value:string|boolean) {
@@ -235,17 +236,17 @@ export function PriceCalculator({ recalculateTargets=[],onPricesUpdated,staging=
     return `Lower Than Meta by ${setting.discountUnit==="rm"?money(discount):pct(discount)}`;
   }
 
-  if(recalculateTargets.length)return <ExistingPackageCalculator key={recalculateTargets.map(t=>t.id).join(":")} storeId={storeId} storeName={storeName} targets={recalculateTargets} productProfile={productProfile} coFundVouchers={coFundVouchers} onComplete={onPricesUpdated??(()=>{})}/>;
+  if(recalculateTargets.length)return <ExistingPackageCalculator platformVoucher={platformVoucher} key={`${storeId}:${platformVoucher?.updatedAt??""}:${recalculateTargets.map(t=>t.id).join(":")}`} storeId={storeId} storeName={storeName} targets={recalculateTargets} productProfile={productProfile} coFundVouchers={coFundVouchers} onComplete={onPricesUpdated??(()=>{})}/>;
   return <div className="price-calculator" onWheelCapture={event=>{const target=event.target as HTMLInputElement;if(target.tagName==="INPUT"&&target.type==="number")target.blur();}}>
     <section className="calculator-hero">
       <div><p className="kicker">SHOPEE MY · MARKUP CALCULATOR</p><h2>Markup Calculator</h2></div>
       <div className="calculator-hero-metrics">
         <div className="calculator-hero-result total-fee-result"><span>Total Shopee Charges %</span><strong>{pct(headlineRate)}</strong><small>Campaign Day · Service Fee capped at RM108</small></div>
-        <div className={`calculator-hero-result voucher-hero-result${storeVoucherPreset.available?"":" unavailable"}`}>
-          <div className="voucher-hero-head"><span>Shopee Voucher %</span><small>{storeVoucherPreset.available?`${VOUCHER_PRESET_SOURCE.month} preset`:"No preset"}</small></div>
+        <div className={`calculator-hero-result voucher-hero-result${periodPreset.available?"":" unavailable"}`}>
+          <div className="voucher-hero-head"><span>Shopee Voucher %</span><small>{periodPreset.available?platformVoucher?"Current preset":`${VOUCHER_PRESET_SOURCE.month} preset`:"No preset"}</small></div>
           <div className="voucher-hero-inputs">
             {(['nonCampaign','campaign','normalLate'] as ServiceMode[]).map(mode=><label key={mode}><span>{mode==='nonCampaign'?'Normal · 1st–15th':mode==='campaign'?'Campaign':'Normal · 16th–End'}</span><div><input aria-label={`${mode} Platform Voucher percentage`} type="number" min="0" max="100" step=".01" value={voucherRates[mode]} onChange={event=>updateVoucher(mode,event.target.value)}/><b>%</b></div></label>)}
-            <small className="period-reference-note">Historical voucher averages · {PERIOD_VOUCHER_REFERENCE_DATE}. Actual vouchers may vary.</small>
+            <small className="period-reference-note">Historical voucher averages · {platformVoucher?.updatedAt?.slice(0,10)??PERIOD_VOUCHER_REFERENCE_DATE}. Actual vouchers may vary.</small>
           </div>
         </div>
       </div>

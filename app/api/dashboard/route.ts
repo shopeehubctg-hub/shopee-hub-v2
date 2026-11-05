@@ -17,6 +17,8 @@ import { deploymentTarget } from "../../deployment-isolation";
 import { dashboardQueryPlan, dashboardSectionAllowed } from "../../dashboard-query-plan";
 import { dashboardReadCache } from "../../dashboard-read-cache";
 
+import {readPlatformVoucher} from "../../platform-voucher-server";
+
 export const dynamic = "force-dynamic";
 
 const AD_BALANCE_SHEET_CSV = "https://docs.google.com/spreadsheets/d/13NOwTGkbDjW8y869CvS6lr6H8I7XRn3I0urt_-rqkgs/export?format=csv&gid=421872532";
@@ -305,6 +307,7 @@ export async function GET(request: Request) {
       actions,
       productProfile,
       coFundVouchers:selectedCoFundVouchers,
+      platformVoucher:selectedStore&&plan.vouchers?await readPlatformVoucher(selectedStore.id,membership.tenant_id):null,
       user: { email: user.email },
       access: { role:membership.role, enabledModules, clientEnabledModules, canManagePermissions:membership.role==="superadmin"||membership.can_manage_permissions===true },
       dataSources: {
@@ -437,6 +440,7 @@ export async function GET(request: Request) {
     actions,
     productProfile,
     coFundVouchers:selectedCoFundVouchers,
+    platformVoucher:selectedStore&&plan.vouchers?await readPlatformVoucher(selectedStore.id,tenant.id):null,
     user: { email: user.email },
     access: { role: membership.role, enabledModules, clientEnabledModules, canManagePermissions: membership.role === "superadmin" || membership.canManagePermissions===true },
   },started);
