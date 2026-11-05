@@ -1,7 +1,7 @@
-import {readNormalMonthlyRule,pricingMode,snapshotPeriod,type NormalMonthlyRule,type PricingPeriod} from './pricing-periods';
+import {readNormalMonthlyRule,pricingMode,snapshotPeriod,PRICE_SOURCE_PERIODS,type PriceSourcePeriod,type NormalMonthlyRule,type PricingPeriod} from './pricing-periods';
 import {priceMarket} from "./markets";
 import {calculatorSnapshots} from './package-history';
-import type {PricingEvidence} from './pricing-evidence';
+import {snapshotAmounts,type PricingEvidence} from './pricing-evidence';
 import type {CalculatorSnapshot} from './calculator-types';
 
 export type RepriceType='non_campaign'|'campaign'|'normal_early'|'normal_late';
@@ -9,6 +9,28 @@ export type RepriceTarget={id:string;storeId:string;name:string;packageSku:strin
 export type RepriceRow={id:string;name:string;targetId?:string;scenarios:CalculatorSnapshot[]};
 export const scenarioName=(type:RepriceType)=>type==='campaign'?'Campaign Day':'Non-Campaign Day';
 export function eligibleRepriceTarget(target:RepriceTarget){return ['active','scheduled'].includes(target.status)&&!target.pendingVersion&&target.sheetSyncStatus==='synced'&&target.priceSchedules?.some(p=>priceMarket(p.market,'currency' in p?p.currency:undefined)==='MY');}
+export type RepriceSelection={normalSourcePeriod?:'normal_1_15'|'normal_16_end';uniformSourcePeriod?:PriceSourcePeriod};
+export function repriceSelection(value:unknown):RepriceSelection {
+ if(value==null)return {};
+ if(typeof value!=='object'||Array.isArray(value))throw Error('Invalid price selection.');
+ const v=value as Record<string,unknown>;
+ if(Object.keys(v).some(k=>!['normalSourcePeriod','uniformSourcePeriod'].includes(k))||v.normalSourcePeriod!==undefined&&!['normal_1_15','normal_16_end'].includes(String(v.normalSourcePeriod))||v.uniformSourcePeriod!==undefined&&!PRICE_SOURCE_PERIODS.includes(v.uniformSourcePeriod as PriceSourcePeriod))throw Error('Choose a valid price source.');
+ return v as RepriceSelection;
+}
+export function selectedRepriceAmounts(scenarios:CalculatorSnapshot[],settings:Record<string,unknown>|null,types:RepriceType[],selection:RepriceSelection={}) {
+ const amounts=snapshotAmounts(scenarios),mode=pricingMode(settings?._pricingMode);
+ if(selection.uniformSourcePeriod&&mode!=='uniform'||selection.normalSourcePeriod&&mode!=='normal_campaign')throw Error('The selected price source does not apply to this package’s pricing mode.');
+ if(!scenarios.every(s=>s.calculationKind==='three_period_recommendations'))return amounts;
+ if(mode==='split_normal')return amounts;
+ if(mode==='uniform'){
+  if(!selection.uniformSourcePeriod)throw Error('Choose which recommended price to use for the whole month.');
+  const value=scenarios.find(s=>snapshotPeriod(s)===selection.uniformSourcePeriod)?.suggestedShopeePrice;
+  if(!(Number(value)>0))throw Error('The selected recommended price is missing.');
+  return {...amounts,normal:value!,campaign:value!,normalLate:value!,pricingMode:mode};
+ }
+ if(types.includes('non_campaign')&&!selection.normalSourcePeriod)throw Error('Choose the early- or late-month recommendation for this package’s Normal Day price.');
+ return {...amounts,normal:selection.normalSourcePeriod==='normal_16_end'?amounts.normalLate!:amounts.normal,pricingMode:mode};
+}
 export function repricedState<T extends {currency?:string;market:string;priceType:string;originalPrice:number;sellingPrice:number}>(prices:T[],settings:Record<string,unknown>|null,types:RepriceType[],amounts:{normal:number;campaign:number;normalLate?:number;pricingMode?:unknown}){
  const rule=readNormalMonthlyRule(settings),mode=pricingMode(settings?._pricingMode);
  if(pricingMode(amounts.pricingMode)!==mode)throw Error('Pricing modes do not match. Recalculate with this package’s saved pricing mode.');

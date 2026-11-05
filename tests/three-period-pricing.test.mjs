@@ -90,3 +90,28 @@ test('direct Calculator handoff records all three prices and requires a reason f
  await assert.rejects(()=>resolve.resolvePricingEvidence({}, {tenantId:'tenant',storeId:'test',actor:'qa'},changed,schedules),/reason/);
  const explained=await resolve.resolvePricingEvidence({}, {tenantId:'tenant',storeId:'test',actor:'qa'},{...changed,priceAdjustmentReason:'Rounded for promotion'},schedules);assert.equal(explained.originalPrices.MY.normalLate,230);assert.equal(explained.finalPrices.at(-1).sellingPrice,235);
 });
+
+test('fixed-three capture can apply one chosen price without replacing the three recommendations',async()=>{
+ const source=scenarios().map(s=>({...s,calculationKind:'three_period_recommendations'}));
+ const schedules=[price({originalPrice:30000,sellingPrice:22000}),price({priceType:'campaign',originalPrice:30000,sellingPrice:22000})];
+ const e=await resolve.resolvePricingEvidence({}, {tenantId:'tenant',storeId:'test',actor:'qa'},{pricingMode:'uniform',priceApplication:{mode:'uniform',sourcePeriod:'campaign'},calculatorSettings:{scenarios:source}},schedules);
+ assert.deepEqual(e.originalPrices.MY,{normal:210,campaign:220,normalLate:230,pricingMode:'split_normal',pricingSchemaVersion:2});assert.equal(e.scenarios[2].suggestedShopeePrice,230);assert.equal(e.priceApplication.sourcePeriod,'campaign');
+ await assert.rejects(()=>resolve.resolvePricingEvidence({}, {tenantId:'tenant',storeId:'test',actor:'qa'},{pricingMode:'uniform',calculatorSettings:{scenarios:source}},schedules),/source|application/);
+ await assert.rejects(()=>resolve.resolvePricingEvidence({}, {tenantId:'tenant',storeId:'test',actor:'qa'},{pricingMode:'uniform',priceApplication:{mode:'uniform',sourcePeriod:'invalid'},calculatorSettings:{scenarios:source}},schedules));
+});
+test('every requested market combination uses the same four-price layout, regardless of old mode option',async()=>{
+ for(const choice of ['MY','MY+SG','MY+TH','MY+PH','MY+SG+TH','MY+SG+TH+PH']){
+  const b=new ExcelJS.Workbook();await b.xlsx.load(await excel.downloadBatch([] ,choice,{pricingMode:'uniform'}));
+  const s=b.getWorksheet('By SKU');const headers=s.getRow(6).values;
+  for(const m of choice.split('+')){assert.equal(headers.filter(v=>String(v).startsWith(m+' Original Price')).length,1);assert.equal(headers.filter(v=>String(v).startsWith(m+' Disc Price')).length,3);}
+  assert.equal(s.views[0].xSplit,1);assert.equal(headers.filter(v=>/^Inventory SKU \d+/.test(v)).length,20);
+ }
+});
+
+test('mapped legacy repricing evidence survives ordinary date/inventory edits without replacing its source',async()=>{
+ const rec=scenarios().map(s=>({...s,calculationKind:'three_period_recommendations'}));
+ const old={_pricingMode:'normal_campaign',_pricingEvidence:{source:'Calculator',exportId:'11111111-1111-4111-8111-111111111111',recommendations:rec,priceSelection:{normalSourcePeriod:'normal_16_end'},scenarios:[{...rec[2],calculationKind:undefined,pricingMode:'normal_campaign',pricingPeriod:'normal_all'},rec[1]],scenarioReferences:{non_campaign:{exportId:'11111111-1111-4111-8111-111111111111',recordedBy:'qa',recordedAt:'now'}},originalPrices:{MY:{normal:230,campaign:220}},finalPrices:[],adjustmentReason:'',recordedBy:'qa',recordedAt:'now'}};
+ const db={execute:async()=>[{id:old._pricingEvidence.exportId,actor:'qa',created_at:'now',payload:{normal:210,campaign:220,normalLate:230,pricingMode:'split_normal',scenarios:rec}}]};
+ const saved=await resolve.resolvePricingEvidence(db,{tenantId:'tenant',storeId:'test',actor:'qa'},{pricingMode:'normal_campaign'},[price({originalPrice:30000,sellingPrice:23000}),price({priceType:'campaign',originalPrice:30000,sellingPrice:22000})],old);
+ assert.equal(saved.originalPrices.MY.normal,230);assert.equal(saved.recommendations.length,3);assert.equal(saved.priceSelection.normalSourcePeriod,'normal_16_end');
+});

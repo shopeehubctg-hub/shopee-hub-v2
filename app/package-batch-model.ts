@@ -1,15 +1,15 @@
-import {pricingMode,type PricingMode} from './pricing-periods';
+import {pricingMode,type PricingMode,type PriceApplication,type PriceSourcePeriod} from './pricing-periods';
 import {defaultRecurringEvent,recurringEventWindow,recurringEventIds,type RecurringEventId} from './recurring-campaign';
 import type {MarketCode} from './markets';
 import {MAX_INVENTORY_ITEMS,duplicateInventory} from './inventory-items';
-import type {ExportSnapshot} from './pricing-evidence';
+import {adjustedPrices,type ExportSnapshot} from './pricing-evidence';
 export type BatchMarket=MarketCode;
 export const marketChoices=['MY','MY+SG','MY+TH','MY+PH','MY+SG+TH','MY+SG+TH+PH'] as const;
 export type MarketChoice=typeof marketChoices[number];
 export const marketChoiceLabel=(choice:MarketChoice)=>choice==='MY'?'MY Only':choice;
 export const batchMarkets=(choice:MarketChoice|'SG'):BatchMarket[]=>choice.split('+') as BatchMarket[];
 export type BatchDates={normal:{mode:'months'|'custom'|'long';months:string[];start:string;end:string};campaign:{mode:'months'|'long';months:Record<string,RecurringEventId[]>;start:string;events:RecurringEventId[]}};
-export type BatchPackage={id:string;name:string;pricingMode?:PricingMode;prices:Partial<Record<BatchMarket,{original:string;normal:string;campaign:string;normalLate?:string}>>;skus:{Shopee:string;Lazada:string;TikTok:string};items:{sku:string;quantity:string;name?:string;uiKey?:string}[];dates:BatchDates|null;exportId?:string;fileStoreId?:string;exportSnapshot?:ExportSnapshot;priceAdjustmentReason?:string;catalogRequired?:boolean};
+export type BatchPackage={priceApplication?:PriceApplication;threePeriodPrices?:BatchPackage['prices'];id:string;name:string;pricingMode?:PricingMode;prices:Partial<Record<BatchMarket,{original:string;normal:string;campaign:string;normalLate?:string}>>;skus:{Shopee:string;Lazada:string;TikTok:string};items:{sku:string;quantity:string;name?:string;uiKey?:string}[];dates:BatchDates|null;exportId?:string;fileStoreId?:string;exportSnapshot?:ExportSnapshot;priceAdjustmentReason?:string;catalogRequired?:boolean};
 export const blankDates=():BatchDates=>({normal:{mode:'months',months:[],start:'',end:''},campaign:{mode:'months',months:{},start:'',events:[]}});
 export const validDate=(v:string)=>/^\d{4}-\d{2}-\d{2}$/.test(v)&&!Number.isNaN(Date.parse(v+'T00:00:00Z'))&&new Date(v+'T00:00:00Z').toISOString().slice(0,10)===v;
 export const validMonth=(v:string)=>/^\d{4}-(0[1-9]|1[0-2])$/.test(v);
@@ -39,6 +39,7 @@ export function batchIssues(p:BatchPackage,all:BatchPackage[],includeDates=true)
  for(const platform of ['Shopee','Lazada','TikTok'] as const)if(p.skus[platform].trim()&&all.some(other=>other.id!==p.id&&other.skus[platform].trim().toUpperCase()===p.skus[platform].trim().toUpperCase()))issues.push(`${platform} SKU: duplicated in another package.`);
  const platformValues=Object.values(p.skus).map(v=>v.trim().toUpperCase()).filter(Boolean);if(new Set(platformValues).size!==platformValues.length)issues.push('Platform SKU: each platform listing SKU must be different.');
  if(!Object.keys(p.prices).length)issues.push('Prices: choose a selling market.');
+ if(p.pricingMode==='uniform'&&p.threePeriodPrices&&!p.priceApplication)issues.push('Whole-month Price: choose a source period.');
  if(p.pricingMode==='uniform'&&Object.values(p.prices).some(v=>v.campaign&&Number(v.campaign)!==Number(v.normal)))issues.push('Same Price All Month: Normal and Campaign prices must match.');
  try{pricingMode(p.pricingMode);}catch(e){issues.push((e as Error).message);}
  if(p.pricingMode==='split_normal')for(const [market,v] of Object.entries(p.prices))if(!v.normalLate||!Number.isFinite(Number(v.normalLate))||Number(v.normalLate)<=0||Number(v.normalLate)>Number(v.original))issues.push(`${market} late-month price: enter a positive price within Original Price.`);
@@ -47,7 +48,21 @@ export function batchIssues(p:BatchPackage,all:BatchPackage[],includeDates=true)
  const entered=p.items.filter(i=>i.sku||i.quantity);if(!entered.length)issues.push('Inventory: add at least one item.');if(entered.length>MAX_INVENTORY_ITEMS)issues.push('Inventory: maximum 20 items.');
  entered.forEach((i,index)=>{if(!i.sku.trim()||!Number.isInteger(Number(i.quantity))||Number(i.quantity)<=0||Number(i.quantity)>100000)issues.push(`Inventory ${index+1}: SKU and whole quantity 1–100,000 required.`);if(p.catalogRequired&&!i.name?.trim())issues.push(`Inventory ${index+1}: enter a Product Name for this new SKU.`);});
  issues.push(...duplicateInventory(p.items).map(d=>d.message));
- if(p.exportSnapshot&&p.prices.MY&&(Math.abs(Number(p.prices.MY.normal)-p.exportSnapshot.normal)>0.005||Math.abs(Number(p.prices.MY.campaign||p.prices.MY.normal)-p.exportSnapshot.campaign)>0.005||p.exportSnapshot.normalLate!==undefined&&Math.abs(Number(p.prices.MY.normalLate)-p.exportSnapshot.normalLate)>0.005)&&!p.priceAdjustmentReason?.trim())issues.push('Price Adjustment: enter a reason for changing the Calculator price.');
+ if(adjustedPrices(p.prices,p.exportSnapshot,p.priceApplication)&&!p.priceAdjustmentReason?.trim())issues.push('Price Adjustment: enter a reason for changing the Calculator price.');
  return includeDates?[...issues,...dateIssues(p.dates,sameBatchPrice(p))]:issues;
 }
 export function applyBatchDates(rows:BatchPackage[],ids:string[],dates:BatchDates){return rows.map(p=>ids.includes(p.id)?{...p,dates:structuredClone(dates)}:p);}
+
+// Application is separate from the immutable Calculator recommendation.
+export function applyBatchPricing(p:BatchPackage,mode:'uniform'|'split_normal',sourcePeriod?:PriceSourcePeriod):BatchPackage {
+ const source=p.threePeriodPrices??p.prices;
+ if(mode==='split_normal')return {...p,prices:structuredClone(source),threePeriodPrices:undefined,priceApplication:undefined,pricingMode:mode};
+ if(!sourcePeriod)throw Error('Choose which price to use for the whole month.');
+ const key=sourcePeriod==='campaign'?'campaign':sourcePeriod==='normal_16_end'?'normalLate':'normal';
+ const prices=Object.fromEntries(Object.entries(source).map(([market,v])=>{
+  const value=v[key]||(key==='campaign'?v.normal:'');
+  if(!value||!Number.isFinite(Number(value))||Number(value)<=0)throw Error(`${market}: fill the selected period price first.`);
+  return [market,{...v,normal:value,campaign:value,normalLate:value}];
+ }));
+ return {...p,threePeriodPrices:structuredClone(source),prices,pricingMode:mode,priceApplication:{mode,sourcePeriod}};
+}

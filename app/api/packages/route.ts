@@ -361,6 +361,7 @@ async function savePackage(request: Request) {
     captureInventory?: boolean;
     exportId?:string;
     priceAdjustmentReason?:string;
+    priceApplication?:unknown;
     mode?: "draft" | "publish";
     clientRequestId?: string;
     packageId?: string;
@@ -482,7 +483,7 @@ async function savePackage(request: Request) {
   }
 
   const verifyCaptureRequest=!body.packageId&&(body.captureInventory===true||body.batchUpload===true);
-  const captureFingerprint=verifyCaptureRequest?inventoryFingerprint({storeId:body.storeId,name:body.name.trim(),mode,components,platforms,markets,schedules,exportId:body.exportId??null,priceAdjustmentReason:body.priceAdjustmentReason??null,samePricing:!!body.samePricing,longTerm:!!body.longTerm,campaignLongTerm:!!body.campaignLongTerm,recurringCampaign,pricingMode:selectedPricingMode,normalMonthlyRule,changeNote:body.changeNote?.trim()??'',calculatorSettings:body.calculatorSettings??null}):null;
+  const captureFingerprint=verifyCaptureRequest?inventoryFingerprint({storeId:body.storeId,name:body.name.trim(),mode,components,platforms,markets,schedules,exportId:body.exportId??null,priceAdjustmentReason:body.priceAdjustmentReason??null,priceApplication:body.priceApplication??null,samePricing:!!body.samePricing,longTerm:!!body.longTerm,campaignLongTerm:!!body.campaignLongTerm,recurringCampaign,pricingMode:selectedPricingMode,normalMonthlyRule,changeNote:body.changeNote?.trim()??'',calculatorSettings:body.calculatorSettings??null}):null;
   if(verifyCaptureRequest){catalogProducts(components);if(!body.clientRequestId)return packageError("Saving","A stable package request ID is required. Refresh and retry.");}
   const db = await getDb();
   const requestedPackageId = body.packageId ? String(body.packageId) : null;

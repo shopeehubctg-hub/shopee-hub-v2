@@ -6,13 +6,13 @@ import {PackagePricingReview} from "./package-pricing-review";
 import {ExistingPackageCalculator} from "./reprice-calculator";
 import type {RepriceRow,RepriceTarget} from "./package-repricing";
 import { createPortal } from "react-dom";
-import { autoTopUpEligibleForStore, calculatePricePerUnit, calculateShopeePrice, calculateShopeePriceAtPrice, calculateShopeePriceForCustomerTarget, categoryIndexForProduct, commissionRateFor, maximumCoFundVoucher, resolvedCategoryForProduct, reviewPriceLadder, SERVICE_MODES as LEGACY_SERVICE_MODES } from "./price-calculator-model";
+import { autoTopUpEligibleForStore, calculatePricePerUnit, calculateShopeePrice, calculateShopeePriceForCustomerTarget, categoryIndexForProduct, commissionRateFor, maximumCoFundVoucher, resolvedCategoryForProduct, reviewPriceLadder, SERVICE_MODES as LEGACY_SERVICE_MODES } from "./price-calculator-model";
 import {marketChoices,marketChoiceLabel,type MarketChoice} from "./package-batch-model";
 import type { CalculatorSnapshot, PackagePrefill } from "./calculator-types";
 import type { ProjectProductProfile } from "./product-catalog";
 import { VOUCHER_PRESET_SOURCE, voucherPresetFor,periodVoucherPresetFor,PERIOD_VOUCHER_REFERENCE_DATE } from "./voucher-presets.js";
 
-import {PRICING_MODES,pricingModeLabels,type PricingMode} from './pricing-periods';
+
 const SERVICE_MODES={...LEGACY_SERVICE_MODES,normalLate:{...LEGACY_SERVICE_MODES.nonCampaign,label:'Normal Day · 16th–End'}};
 type ServiceMode = keyof typeof SERVICE_MODES;
 type NumberValue = number|"";
@@ -51,9 +51,8 @@ const positive = (value:string|number) => Math.max(0, Number(value) || 0);
 const editableNumber = (value:string):NumberValue => value===""?"":positive(value);
 
 export function PriceCalculator({ recalculateTargets=[],onPricesUpdated,staging=false, storeId="", storeName="", productProfile, coFundVouchers=[], onCreatePackage, onCreatePackages }:Props) {
-  const [modeChoice,setModeChoice]=useState<PricingMode>('normal_campaign');
-  const SCENARIOS:ServiceMode[]=modeChoice==='normal_campaign'?['nonCampaign','campaign']:['nonCampaign','campaign','normalLate'];
-  const scenarioLabel=(mode:ServiceMode)=>mode==='nonCampaign'&&modeChoice!=='normal_campaign'?'Normal Day · 1st–15th':SERVICE_MODES[mode].label;
+  const SCENARIOS:ServiceMode[]=['nonCampaign','campaign','normalLate'];
+  const scenarioLabel=(mode:ServiceMode)=>mode==='nonCampaign'?'Normal Day · 1st–15th':SERVICE_MODES[mode].label;
   const [selectedRows,setSelectedRows]=useState<number[]>([]);
   const [priceReview,setPriceReview]=useState<RepriceRow[]|null>(null);
   useEffect(()=>{setSelectedRows([]);setPriceReview(null);},[storeId]);
@@ -117,12 +116,8 @@ export function PriceCalculator({ recalculateTargets=[],onPricesUpdated,staging=
       const result = customMarkup === null ? suggested : calculateShopeePrice(pricedRow,activeFees,positive(customMarkup));
       return {mode,activeFees,suggested,result,goalSetting};
     });
-    if(modeChoice==='uniform'){
-      const price=Math.max(...scenarios.map(s=>s.result.requiredPrice));
-      for(const item of scenarios)item.result={...item.result,...calculateShopeePriceAtPrice({...row,facebookPrice:positive(row.facebookPrice)},item.activeFees,price)};
-    }
     return {row,scenarios};
-  }),[packages,fees,commission,voucherRates,transactionRate,pricingGoals,cofundVoucher,autoTopUpRate,modeChoice]);
+  }),[packages,fees,commission,voucherRates,transactionRate,pricingGoals,cofundVoucher,autoTopUpRate]);
   const headlineRate = transactionRate + commission + SERVICE_MODES.campaign.rate + (fees.isPreorder?positive(fees.preorder):0) + autoTopUpRate;
   useEffect(()=>{
     const preset = voucherPresetFor(storeName);
@@ -157,7 +152,7 @@ export function PriceCalculator({ recalculateTargets=[],onPricesUpdated,staging=
     if (voucherRates[mode]==="" || !row.name.trim() || !result.valid || positive(row.facebookPrice) <= 0 || !Number.isFinite(result.requiredPrice) || Number(result.requiredPrice.toFixed(2)) <= 0) return null;
     const calculatorSettings:CalculatorSnapshot = {
       source:"Shopee Pricing Calculator",
-      pricingSchemaVersion:2,pricingMode:modeChoice,pricingPeriod:mode==="campaign"?"campaign":mode==="normalLate"?"normal_16_end":modeChoice==="normal_campaign"?"normal_all":"normal_1_15",
+      pricingSchemaVersion:2,calculationKind:"three_period_recommendations",pricingMode:"split_normal",pricingPeriod:mode==="campaign"?"campaign":mode==="normalLate"?"normal_16_end":"normal_1_15",
       packageName:row.name,
       category:selectedCategory,
       cashbackProgramme:true,
@@ -279,7 +274,6 @@ export function PriceCalculator({ recalculateTargets=[],onPricesUpdated,staging=
       </div>
       <div className="step-one-extra">
         <div className="pricing-goal-settings">
-          <div className="pricing-goal-heading"><b>Pricing Mode</b></div><div className="pricing-mode-options" role="group" aria-label="Pricing Mode">{PRICING_MODES.map(m=><button type="button" key={m} aria-pressed={modeChoice===m} className={modeChoice===m?'active':''} onClick={()=>{setModeChoice(m);setPackages(current=>current.map(r=>({...r,markupRates:blankMarkups()})));}}>{pricingModeLabels[m]}</button>)}</div>
           <div className="pricing-goal-heading"><b>Price Goals</b></div>
           <div className="pricing-goal-grid">{SCENARIOS.map(mode=>{const setting=pricingGoals[mode];return <article className={mode} key={mode}>
             <div><b>{scenarioLabel(mode)}</b><small>We calculate the Shopee price from this goal</small></div>
@@ -310,15 +304,17 @@ export function PriceCalculator({ recalculateTargets=[],onPricesUpdated,staging=
  const rows=calculations.flatMap(({row,scenarios})=>{
  const normal=scenarios.find(s=>s.mode==="nonCampaign"),campaign=scenarios.find(s=>s.mode==="campaign"),late=scenarios.find(s=>s.mode==="normalLate");
  if(scenarios.some(s=>!packagePrefill(row,s.mode,s.result,s.suggested,row.id))||!normal||!campaign||!packagePrefill(row,normal.mode,normal.result,normal.suggested,row.id)||!packagePrefill(row,campaign.mode,campaign.result,campaign.suggested,row.id))return [];
- return [{requestId:crypto.randomUUID(),code:`PKG-${row.id}`,name:row.name,scenarios:scenarios.map(s=>packagePrefill(row,s.mode,s.result,s.suggested,row.id)?.calculatorSettings).filter((s):s is CalculatorSnapshot=>!!s),pricingMode:modeChoice,...(modeChoice==="split_normal"?{normalLate:Number(late!.result.requiredPrice.toFixed(2))}:{}),normal:Number(normal.result.requiredPrice.toFixed(2)),campaign:Number(campaign.result.requiredPrice.toFixed(2))}];});
- if(!rows.length){setBatchMessage("Complete package prices and quantities first.");return;}
+ return [{requestId:crypto.randomUUID(),code:`PKG-${row.id}`,name:row.name,scenarios:scenarios.map(s=>packagePrefill(row,s.mode,s.result,s.suggested,row.id)?.calculatorSettings).filter((s):s is CalculatorSnapshot=>!!s),pricingMode:"split_normal" as const,normalLate:Number(late!.result.requiredPrice.toFixed(2)),normal:Number(normal.result.requiredPrice.toFixed(2)),campaign:Number(campaign.result.requiredPrice.toFixed(2))}];});
+ if(!rows.length){setBatchMessage("Complete all three prices and the three Platform Voucher percentages before downloading.");return;}
  if(!storeId)throw Error('Select a store before exporting.');
  const response=await fetch('/api/calculator-exports',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({storeId,rows})});const saved=await response.json();if(!response.ok)throw Error(saved.error||'Unable to save Calculator settings.');
  const catalogResponse=await fetch('/api/inventory-skus?storeId='+encodeURIComponent(storeId),{cache:'no-store'});const catalog=await catalogResponse.json();if(!catalogResponse.ok)throw Error(catalog.error||'Unable to load products.');
- await (await import("./package-batch-excel")).saveBatch(rows.map((row,index)=>({...row,exportId:saved.rows[index].id})),batchMarket,{products:catalog.products,storeId,pricingMode:modeChoice});setBatchMessage(`${rows.length} packages downloaded. Fill Original Price, platform SKUs and inventory pairs across each row (SG / TH / PH prices are blank if selected), then use Batch Upload in Packages & Pricing.`);
+ await (await import("./package-batch-excel")).saveBatch(rows.map((row,index)=>({...row,exportId:saved.rows[index].id})),batchMarket,{products:catalog.products,storeId,pricingMode:"split_normal"});setBatchMessage(`${rows.length} packages downloaded. Fill Original Price, platform SKUs and inventory pairs across each row (SG / TH / PH prices are blank if selected), then use Batch Upload in Packages & Pricing.`);
  }catch(error){setBatchMessage(error instanceof Error?error.message:"Download failed. Please retry.");}}}>Download Excel</button>}{!storeName&&<small className="calculator-download-note" role="status">Select a store to download packages.</small>}{batchMessage&&<p className="calculator-download-note" role="status">{batchMessage}</p>}<button onClick={addPackage}>+ Add Package</button></div></div>
+      {voucherRates.normalLate===""&&<p role="status" className="calculator-download-note">Enter the Normal Day · 16th–End Platform Voucher %. This store has no saved late-month percentage.</p>}
+      {!storeId&&<p role="status" className="calculator-download-note">Select a store before creating or downloading packages.</p>}
       {<div className="calculator-selection-bar"><div className="calculator-selection-summary"><label><input type="checkbox" aria-label="Select all Calculator packages" checked={packages.length>0&&packages.every(p=>selectedRows.includes(p.id))} onChange={e=>setSelectedRows(e.target.checked?packages.map(p=>p.id):[])}/>Select All</label><span>{selectedRows.length} Packages Selected</span></div><div className="calculator-selection-actions"><button type="button" className="reprice-next" disabled={!storeId||!selectedReady} onClick={()=>setPendingConfirmation({kind:"batch",rows:selectedConfirmationRows})}>Create Selected Packages ({selectedRows.length})</button><button type="button" className="reprice-next" disabled={!storeId||!selectedReady} onClick={reviewSelectedPrices}>Update Existing Package Prices ({selectedRows.length})</button></div></div>}
-      {modeChoice==='uniform'&&<p className="period-mode-note">One recommended selling price is used all month. Buyer Payment and Order Income below reflect each period’s voucher and fees.</p>}<div className="package-result-list">{calculations.map(({row,scenarios})=><article className="package-result-card dual-package-card" key={row.id}>
+      <p className="period-mode-note">Compare three recommended prices. Choose one price for the whole month or keep all three when you create your package.</p><div className="package-result-list">{calculations.map(({row,scenarios})=><article className="package-result-card dual-package-card" key={row.id}>
         {<label className="calculator-select-label"><input type="checkbox" aria-label={`Select Calculator package ${row.id}`} checked={selectedRows.includes(row.id)} onChange={e=>setSelectedRows(current=>e.target.checked?[...current,row.id]:current.filter(id=>id!==row.id))}/>Select Package</label>}
         <div className="dual-package-inputs">
           <label className="result-input"><span>Package</span><input className="package-name-input" value={row.name} onChange={event=>updatePackage(row.id,"name",event.target.value)}/></label>
@@ -334,10 +330,10 @@ export function PriceCalculator({ recalculateTargets=[],onPricesUpdated,staging=
               <div className={`scenario-badge ${mode}`}><b>{scenarioLabel(mode)}</b><small>Service Fee {pct(SERVICE_MODES[mode].rate)} · Voucher {pct(positive(voucherRates[mode]))}</small><small className="scenario-goal">Goal: {pricingGoalSummary(mode)}</small></div>
               <div className="result-metric suggested-price"><span>Shopee Price</span><strong>{money(result.requiredPrice)}</strong><small>Listing Price</small></div>
               {pricingGoals[mode].goal==="cheaperCustomerPrice"?<label className="result-metric customer-price-editor"><span>Buyer Payment</span><div className="money-input"><b>RM</b><input aria-label={`${row.name} ${scenarioLabel(mode)} buyer payment`} type="number" min="0" step=".01" value={row.customerTargets[mode]??result.customerPrice.toFixed(2)} onChange={event=>updateCustomerTarget(row.id,mode,event.target.value)}/></div><small>Edit for this package</small></label>:<div className="result-metric"><span>Buyer Payment</span><strong>{money(result.customerPrice)}</strong><small>After Shopee Voucher</small></div>}
-              <label className="result-metric markup-editor"><span>Markup</span><div><input disabled={modeChoice==="uniform"} type="number" min="0" step=".01" value={modeChoice==="uniform"?result.markupRate.toFixed(2):row.markupRates[mode] ?? suggested.markupRate.toFixed(2)} onChange={event=>updateMarkup(row.id,mode,event.target.value)}/><b>%</b></div><small>Markup (RM) · {money(result.markupAmount)}</small></label>
+              <label className="result-metric markup-editor"><span>Markup</span><div><input type="number" min="0" step=".01" value={row.markupRates[mode] ?? suggested.markupRate.toFixed(2)} onChange={event=>updateMarkup(row.id,mode,event.target.value)}/><b>%</b></div><small>Markup (RM) · {money(result.markupAmount)}</small></label>
               <div className="result-metric payout"><span>Order Income</span><strong>{money(result.payout)}</strong><small className="facebook-payout">Meta Order Income {money(positive(row.facebookPrice)-positive(fees.facebookShipping))}</small></div>
               <div className="result-metric customer-ppu"><span>Price Per Unit</span><strong>{calculatePricePerUnit(result.customerPrice,row.mainProductQuantity)===null?"—":money(calculatePricePerUnit(result.customerPrice,row.mainProductQuantity)!)}</strong><small>Buyer Payment ÷ Qty</small></div>
-              <div className="package-result-actions"><button className="create-package-link" disabled={!row.name.trim()||!result.valid} onClick={()=>{const item=confirmationRow(row,mode,result,suggested);if(item)setPendingConfirmation(modeChoice==="normal_campaign"?{kind:"single",rows:[item]}:{kind:"batch",rows:readyConfirmationRows.filter(r=>r.prefill.calculatorGroupId===`calculator-row-${row.id}`)});}}>Create Package</button></div>
+              <div className="package-result-actions"><button className="create-package-link" disabled={!row.name.trim()||!result.valid||readyConfirmationRows.filter(r=>r.prefill.calculatorGroupId===`calculator-row-${row.id}`).length!==3} onClick={()=>{const item=confirmationRow(row,mode,result,suggested);if(item)setPendingConfirmation({kind:"batch",rows:readyConfirmationRows.filter(r=>r.prefill.calculatorGroupId===`calculator-row-${row.id}`)});}}>Create Package</button></div>
             </div>
             <details className="fee-breakdown"><summary>View {scenarioLabel(mode)} Fee Breakdown</summary><div className="fee-breakdown-grid">
               <div><span>Transaction Fee · {pct(transactionRate)}</span><strong>{money(result.transactionFee)}</strong></div>
@@ -352,7 +348,7 @@ export function PriceCalculator({ recalculateTargets=[],onPricesUpdated,staging=
         })}</div>
       </article>)}</div>
     </section>
-    {modeChoice==="normal_campaign"&&ladderReviews.length>0&&<section className="package-ladder-review card"><div className="calculator-section-head"><div><p className="kicker">STEP 3 · PACKAGE PPU COMPARISON</p><h3>Package Price Per Unit (PPU) Review</h3><span>Shows packages with Main Product Qty</span></div></div><div className="ladder-sheet"><div className="ladder-sheet-head"><span>Package</span><span>Qty</span><span>Non-Campaign Price Per Unit</span><span>Non-Campaign Level</span><span>Campaign Price Per Unit</span><span>Campaign Level</span></div>{packages.flatMap(row=>{const nonCampaign=ladderRowsByMode.get("nonCampaign")?.get(row.name);const campaign=ladderRowsByMode.get("campaign")?.get(row.name);if(!nonCampaign||!campaign)return[];return [<div className="ladder-sheet-row" key={row.id}><b>{row.name}</b><span>{positive(row.mainProductQuantity)}</span><strong>{money(nonCampaign.ppu)}</strong><em className={nonCampaign.status}>{nonCampaign.label}</em><strong>{money(campaign.ppu)}</strong><em className={campaign.status}>{campaign.label}</em></div>];})}</div></section>}
+    {ladderReviews.length>0&&<section className="package-ladder-review card"><div className="calculator-section-head"><div><p className="kicker">STEP 3 · PACKAGE PPU COMPARISON</p><h3>Package Price Per Unit (PPU) Review</h3><span>Shows packages with Main Product Qty</span></div></div><div className="ladder-sheet"><div className="ladder-sheet-head"><span>Package</span><span>Qty</span><span>Non-Campaign Price Per Unit</span><span>Non-Campaign Level</span><span>Campaign Price Per Unit</span><span>Campaign Level</span></div>{packages.flatMap(row=>{const nonCampaign=ladderRowsByMode.get("nonCampaign")?.get(row.name);const campaign=ladderRowsByMode.get("campaign")?.get(row.name);if(!nonCampaign||!campaign)return[];return [<div className="ladder-sheet-row" key={row.id}><b>{row.name}</b><span>{positive(row.mainProductQuantity)}</span><strong>{money(nonCampaign.ppu)}</strong><em className={nonCampaign.status}>{nonCampaign.label}</em><strong>{money(campaign.ppu)}</strong><em className={campaign.status}>{campaign.label}</em></div>];})}</div></section>}
     {priceReview&&<PackagePricingReview storeId={storeId} rows={priceReview} onClose={()=>setPriceReview(null)} onComplete={ids=>{setPriceReview(null);onPricesUpdated?.(ids);}}/>}
     {pendingConfirmation&&createPortal(<div className="calculator-confirm-overlay" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setPendingConfirmation(null);}}><section className="calculator-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="calculator-confirm-title"><header><div><p className="kicker">FINAL CHECK</p><h3 id="calculator-confirm-title">Check Final Packages & Prices</h3><span>Continue to Packages & Pricing after you confirm.</span></div><button aria-label="Close confirmation" onClick={()=>setPendingConfirmation(null)}>×</button></header><div className="calculator-confirm-table"><table><thead><tr><th>Package</th><th>Day</th><th>Main Product Qty</th><th>Meta Price</th><th>Meta Price Per Unit</th><th>Shopee Price</th><th>Buyer Payment</th><th>Price Per Unit</th></tr></thead><tbody>{pendingConfirmation.rows.map((item,index)=><tr key={`${item.prefill.requestId}-${index}`}><td><b>{item.prefill.name}</b></td><td>{item.scenario}</td><td>{item.quantity||"—"}</td><td>{money(item.prefill.calculatorSettings.facebookPrice)}</td><td>{item.facebookPpu===null?"—":money(item.facebookPpu)}</td><td><strong>{money(item.prefill.sellingPrice)}</strong></td><td>{money(item.prefill.calculatorSettings.customerVoucherPrice)}</td><td>{item.customerPpu===null?"—":money(item.customerPpu)}</td></tr>)}</tbody></table></div>{createError&&<p className="calculator-handoff-error package-message error" role="alert">{createError}</p>}<footer><button className="confirm-cancel" onClick={()=>setPendingConfirmation(null)}>Back to Edit</button><button className="confirm-create" onClick={confirmCreate}>Confirm & Continue</button></footer></section></div>,document.body)}
   </div>;

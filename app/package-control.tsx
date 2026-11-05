@@ -1,6 +1,6 @@
 "use client";
 import "./pricing-periods.css";
-import {PRICING_MODES,pricingMode,pricingModeLabels,readNormalMonthlyRule,normalPeriodAmounts,pricingPeriodLabels,snapshotPeriod,type PricingMode} from "./pricing-periods";
+import {PACKAGE_PRICING_MODES,PRICE_SOURCE_PERIODS,type PriceApplication,type PriceSourcePeriod,pricingMode,pricingModeLabels,readNormalMonthlyRule,normalPeriodAmounts,pricingPeriodLabels,snapshotPeriod,type PricingMode} from "./pricing-periods";
 import {eligibleRepriceTarget,type RepriceTarget} from "./package-repricing";
 import "./package-repricing.css";
 import {changedPackageStart,startedPackageDates} from "./package-start-date-policy";
@@ -87,7 +87,7 @@ type MarketPrices = {nonCampaignOriginal:string;nonCampaignSelling:string;campai
 const blankMarketPrices = ():Record<MarketName,MarketPrices> => Object.fromEntries(MARKET_CODES.map(market=>[market,{nonCampaignOriginal:"",nonCampaignSelling:"",campaignOriginal:"",campaignSelling:"",normalLateSelling:""}])) as Record<MarketName,MarketPrices>;
 const blankForm = (market:MarketName="MY") => ({
   name:"", markets:[market] as MarketName[],
-  samePricing:false,pricingMode:"normal_campaign" as PricingMode,
+  samePricing:false,pricingMode:"split_normal" as PricingMode,
   longTerm:false,
   campaignLongTerm:false,
   nonCampaign:blankPeriod(), campaign:{...blankPeriod(),promotionType:"custom" as const,campaignEvents:["dday"] as CampaignEvent[]},
@@ -252,6 +252,8 @@ export function PackageControl({ onRecalculate,highlightedIds=[],storeId, storeN
   const originalInventory=useRef<ComponentLine[]>([]);
   const inventoryDuplicates=duplicateInventory(components);
   const [priceAdjustmentReason,setPriceAdjustmentReason]=useState("");
+  const [priceApplication,setPriceApplication]=useState<PriceApplication|undefined>();
+  const [threePeriodPrices,setThreePeriodPrices]=useState<Record<MarketName,MarketPrices>|null>(null);
   const [platforms,setPlatforms] = useState<PlatformLine[]>([{platform:"Shopee",packageSku:""}]);
   const [calculatorSettings,setCalculatorSettings] = useState<CalculatorSnapshot|null>(null);
   const [prefillQueue,setPrefillQueue] = useState<PackagePrefill[][]>([]);
@@ -486,6 +488,7 @@ export function PackageControl({ onRecalculate,highlightedIds=[],storeId, storeN
   const drafts = scopedItems.filter(item=>item.status==="draft"||item.status==="review").length;
 
   function resetForm() {
+    setPriceApplication(undefined);setThreePeriodPrices(null);
     originalCampaignSchedules.current=[];
     originalRecurringCampaign.current=false;
     setCampaignPeriods([]);
@@ -568,7 +571,7 @@ export function PackageControl({ onRecalculate,highlightedIds=[],storeId, storeN
   }
 
   function updatePrice(market:MarketName,key:keyof ReturnType<typeof blankForm>["prices"]["MY"],value:string) {
-    setForm(current=>({...current,prices:{...current.prices,[market]:{...current.prices[market],[key]:value}}}));
+    setForm(current=>({...current,prices:{...current.prices,[market]:{...current.prices[market],[key]:value,...(current.samePricing&&key==="nonCampaignSelling"?{campaignSelling:value,normalLateSelling:value}:{}),...(current.pricingMode==="split_normal"&&key==="nonCampaignOriginal"?{campaignOriginal:value}:{})}}}));
   }
 
   function recurringRule():RecurringCampaignRule|null {
@@ -727,6 +730,7 @@ export function PackageControl({ onRecalculate,highlightedIds=[],storeId, storeN
       }
     }
 
+    if(form.samePricing&&threePeriodPrices&&!priceApplication)addError("Pricing & Promotion","Choose which price to use for the whole month.");
     form.markets.forEach(market=>{
       const validatePrice=(label:string,originalValue:string,sellingValue:string)=>{
         const original=Number(originalValue);
@@ -778,7 +782,7 @@ export function PackageControl({ onRecalculate,highlightedIds=[],storeId, storeN
       const response = await fetch("/api/packages",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({priceAdjustmentReason,name:form.name,mode,clientRequestId,...(inventoryCatalogEnabled?{captureInventory:true}:{}),markets:form.markets,changeNote:form.changeNote,
+        body:JSON.stringify({priceApplication,priceAdjustmentReason,name:form.name,mode,clientRequestId,...(inventoryCatalogEnabled?{captureInventory:true}:{}),markets:form.markets,changeNote:form.changeNote,
           pricingMode:form.samePricing?"uniform":form.pricingMode,normalMonthlyRule:form.pricingMode==="split_normal"?{schema:1,prices:Object.fromEntries(form.markets.map(m=>[m,{early:{originalPrice:Number(form.prices[m].nonCampaignOriginal),sellingPrice:Number(form.prices[m].nonCampaignSelling)},late:{originalPrice:Number(form.prices[m].nonCampaignOriginal),sellingPrice:Number(form.prices[m].normalLateSelling)}}]))}:null,priceSchedules:schedules,samePricing:form.samePricing,longTerm:form.longTerm,campaignLongTerm:form.campaignLongTerm||campaignLines.length>0&&campaignLines.every(line=>line.effectiveTo===null),recurringCampaign:recurringRule(),storeId:editingStore?.id??storeId,storeName:editingStore?.name??storeName,components,platforms,packageId:editingPackageId,expectedVersion:editingVersion??undefined,
           calculatorSettings:calculatorSettings?{scenarios:prefillBatch.filter(item=>batchIdentity(item)===batchIdentity(prefillBatch[0])).map(item=>item.calculatorSettings)}:null}),
       });
@@ -950,6 +954,8 @@ export function PackageControl({ onRecalculate,highlightedIds=[],storeId, storeN
     setPriceAdjustmentReason(String((item.calculatorSettings?._pricingEvidence as PricingEvidence|undefined)?.adjustmentReason??""));
     setPlatforms((item.platforms?.length ? item.platforms : [{platform:"Shopee" as const,packageSku:item.packageSku}]).map(line=>({...line})));
     setCalculatorSettings(null);
+    setPriceApplication((item.calculatorSettings?._pricingEvidence as PricingEvidence|undefined)?.priceApplication);
+    setThreePeriodPrices(null);
     setFormErrors([]);
     setEditingDraft(stored&&item.status==="draft");
     setShowCreate(true);
@@ -1076,7 +1082,13 @@ export function PackageControl({ onRecalculate,highlightedIds=[],storeId, storeN
       </section>
 
       <section className="form-section pricing-section"><div className="form-section-title"><span>2</span><div><h4>Pricing & Promotion Periods</h4><p>{form.samePricing?"Set one price and period for both day types":"Set Non-Campaign and Campaign prices for each market"}</p></div></div>
-        <div className="pricing-mode-options" role="group" aria-label="Package Pricing Mode">{PRICING_MODES.map(mode=><button type="button" key={mode} className={(form.samePricing?'uniform':form.pricingMode)===mode?'active':''} aria-pressed={(form.samePricing?'uniform':form.pricingMode)===mode} onClick={()=>setForm(current=>({...current,pricingMode:mode,samePricing:mode==='uniform',campaignLongTerm:mode==='uniform'?false:current.campaignLongTerm}))}>{pricingModeLabels[mode]}</button>)}</div>
+        <div className="pricing-mode-options" role="group" aria-label="Package Pricing Mode">{PACKAGE_PRICING_MODES.map(mode=><button type="button" key={mode} className={(form.samePricing?'uniform':form.pricingMode)===mode?'active':''} aria-pressed={(form.samePricing?'uniform':form.pricingMode)===mode} onClick={()=>{
+          if(mode==='uniform'&&!form.samePricing){setThreePeriodPrices(structuredClone(form.prices));setPriceApplication(undefined);}
+          if(mode==='split_normal'){if(threePeriodPrices)setForm(current=>({...current,prices:threePeriodPrices}));setThreePeriodPrices(null);setPriceApplication(undefined);}
+          setForm(current=>({...current,pricingMode:mode,samePricing:mode==='uniform',campaignLongTerm:mode==='uniform'?false:current.campaignLongTerm}));
+        }}>{pricingModeLabels[mode]}</button>)}</div>
+        {form.samePricing&&threePeriodPrices&&<label className="uniform-price-source">Whole-month Price From<select aria-label="Whole-month Price From" value={priceApplication?.sourcePeriod??''} onChange={e=>{if(!e.target.value)return;const period=e.target.value as PriceSourcePeriod,key=period==='campaign'?'campaignSelling':period==='normal_16_end'?'normalLateSelling':'nonCampaignSelling';setPriceApplication({mode:'uniform',sourcePeriod:period});setForm(current=>({...current,prices:Object.fromEntries(MARKET_CODES.map(m=>[m,{...current.prices[m],nonCampaignSelling:threePeriodPrices[m][key],campaignSelling:threePeriodPrices[m][key],normalLateSelling:threePeriodPrices[m][key]}])) as Record<MarketName,MarketPrices>}));}}><option value="">Select a price</option>{PRICE_SOURCE_PERIODS.map(period=><option key={period} value={period}>{pricingPeriodLabels[period]}</option>)}</select></label>}
+
         {form.samePricing&&<div className="same-pricing-note">Campaign prices will match Non-Campaign prices. {originalRecurringCampaign.current&&form.samePricing?"The monthly Campaign rules will be removed when you save. ":null}{editingPackageId?"Previously saved Campaign dates are preserved. Uncheck this option to edit or extend them. Campaign date edits will not be saved if you check it again.":"Campaign dates will follow Non-Campaign dates."}</div>}
         {([['nonCampaign','Non-Campaign'],['campaign','Campaign']] as const).map(([periodKey,title])=>{
           if (periodKey==="campaign"&&form.samePricing) return null;
@@ -1092,7 +1104,11 @@ export function PackageControl({ onRecalculate,highlightedIds=[],storeId, storeN
               const originalKey=`${prefix}Original` as keyof typeof form.prices.MY;
               const sellingKey=`${prefix}Selling` as keyof typeof form.prices.MY;
               const same=Boolean(form.prices[market][originalKey])&&Number(form.prices[market][originalKey])===Number(form.prices[market][sellingKey]);
-              return <div className={`market-price-card ${same?"same-price-warning":""}`} key={market}><strong>{market} <small>{MARKET_CONFIG[market].symbol}</small></strong><label>Original Price <em>*</em><input required type="number" min="0.01" step="0.01" value={form.prices[market][originalKey]} onChange={event=>updatePrice(market,originalKey,event.target.value)}/></label><label>{periodKey==='nonCampaign'&&form.pricingMode==='split_normal'?'Selling Price · 1st–15th':'Selling Price'}<input required type="number" min="0.01" step="0.01" value={form.prices[market][sellingKey]} onChange={event=>updatePrice(market,sellingKey,event.target.value)}/></label>{periodKey==='nonCampaign'&&form.pricingMode==='split_normal'&&<label className="normal-late-price-input">Selling Price · 16th–End<input type="number" min=".01" step=".01" value={form.prices[market].normalLateSelling} onChange={e=>updatePrice(market,'normalLateSelling',e.target.value)}/></label>}{same&&<div className="same-price-alert">⚠️ Original Price equals Selling Price — please double-check.</div>}</div>;
+              return <div className={`market-price-card ${same?"same-price-warning":""}`} key={market}><strong>{market} <small>{MARKET_CONFIG[market].symbol}</small></strong>
+                {periodKey==='nonCampaign'&&form.pricingMode==='split_normal'&&<b className="price-period-row">Normal Day · 1st–15th</b>}
+                <label>Original Price <em>*</em><input required type="number" min="0.01" step="0.01" value={form.prices[market][originalKey]} onChange={event=>updatePrice(market,originalKey,event.target.value)}/></label><label>Disc Price<input required type="number" min="0.01" step="0.01" value={form.prices[market][sellingKey]} onChange={event=>updatePrice(market,sellingKey,event.target.value)}/></label>
+                {periodKey==='nonCampaign'&&form.pricingMode==='split_normal'&&<><b className="price-period-row">Normal Day · 16th–End</b><label>Original Price (Same)<input aria-label={`${market} Late Original Price`} readOnly value={form.prices[market].nonCampaignOriginal}/></label><label>Disc Price<input type="number" min=".01" step=".01" value={form.prices[market].normalLateSelling} onChange={e=>updatePrice(market,'normalLateSelling',e.target.value)}/></label></>}
+                {same&&<div className="same-price-alert">⚠️ Original Price equals Disc Price — please double-check.</div>}</div>;
             })}</div>
 
             {periodKey==="campaign"?(form.campaignLongTerm?recurringCampaignEditor():finiteCampaignEditor()):form.longTerm?<div className="date-fields"><label>Start Date<input type="date" disabled={Boolean(normalStart)} value={period.effectiveFrom} onChange={event=>setForm({...form,nonCampaign:{...form.nonCampaign,effectiveFrom:event.target.value}})}/></label><span>End Date: Ongoing</span>{editingPackageId&&<button type="button" onClick={()=>setForm(current=>({...current,longTerm:false,nonCampaign:{...current.nonCampaign,promotionType:"custom",effectiveTo:marketDate(marketFromPlatform(editingStore?.platform??storePlatform))<current.nonCampaign.effectiveFrom?current.nonCampaign.effectiveFrom:marketDate(marketFromPlatform(editingStore?.platform??storePlatform))}}))}>Set End Date</button>}</div>:period.promotionType==="monthly"?<div className="normal-month-editor"><label>Add a Normal Day month<input type="month" min={normalStart?.slice(0,7)} value="" onChange={event=>{const month=event.target.value;if(!month||nonCampaignMonths.includes(month)||normalStart&&month<normalStart.slice(0,7))return;setNonCampaignMonths(current=>[...current,month].sort());const dates=monthDates(month);setForm(current=>({...current,nonCampaign:{...current.nonCampaign,promotionMonth:month,effectiveFrom:normalStart||dates.from,effectiveTo:dates.to}}));}}/></label><div className="selected-months">{nonCampaignMonths.map(month=><span key={month}>{shortMonthLabel(month)} <button type="button" onClick={()=>setNonCampaignMonths(current=>current.filter(value=>value!==month))} disabled={Boolean(normalStart&&month===normalStart.slice(0,7))} aria-label={`Remove ${shortMonthLabel(month)} Normal Day month`}>×</button></span>)}</div></div>:<div className="date-fields"><label>Start Date<input type="date" disabled={Boolean(normalStart)} value={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveFrom:event.target.value}})}/></label><label>End Date<input type="date" value={period.effectiveTo} min={period.effectiveFrom} onChange={event=>setForm({...form,[periodKey]:{...period,effectiveTo:event.target.value}})}/></label></div>}
