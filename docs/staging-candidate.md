@@ -39,3 +39,13 @@ Actual UI/UX and Function QC: PENDING USER by explicit request. The prior candid
 
 ## 5 November — approved release supplement
 Feature branch codex/release-fixed-three-platform-voucher-20261105. Preserves all existing Staging permissions/Xero work; only adds the accepted By Product Name batch default and scoped Supabase-backed Platform Voucher lookup. Stage database ubjfuveoqbvouryldqfu: nullable late_month_average migration applied; 35 independently mapped source Sheet rows imported and read back with zero mismatches. Main base 0e4a22a941e643ef09e5fff4dbff6abb5822aa86. User accepted the three-price workflow/UI and explicitly approved Production on 5 November. No agent browser QC repeated. 30 focused tests, TypeScript and webpack build PASS on release source. Production delivery only through GitHub PR/main automatic Vercel release.
+
+
+## 5 November — same-price summary display fix
+
+- Package integration queue: `codex/package-same-price-summary-20261105`, feature commit `8c6e767ac6af421c9ba773c942a1ff2a5f7d8ddc`, based on Production `fed634cc32b3743c120c820122a491ff985c16b0`.
+- Integrated onto Staging `97061a530a711cc850fc4c49e1d002517a311b53`; retain the current permissions/Xero candidate and Platform Voucher supplement.
+- Same early-month, Campaign and late-month prices collapse to one price/Original/Period per market; differing prices remain detailed. Display-only: no schema or saved customer records changed.
+- 9 component checks, 10 pricing checks, TypeScript and feature build PASS. Existing country-filter test has the same stale-selector failure on the unchanged Production baseline; recorded in release notes.
+- Actual UI/UX and Function QC await user review at the fixed Staging entry. Production PR, merge and deployment are not executed for this fix.
+- Release notes: `docs/releases/package-same-price-summary-20261105.md`.

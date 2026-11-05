@@ -162,7 +162,7 @@ function PackagePriceSummary({item,country="all"}:{item:PackageItem;country?:"al
   return <div className="package-market-prices">{markets.map(market=>{
     const marketSchedules=schedules.filter(line=>line.market===market);
     const halves=normalPeriodAmounts(readNormalMonthlyRule(item.calculatorSettings),market);
-    if(halves.length)return <div className="package-market-column" key={market}><h4>{market} <small>{MARKET_CONFIG[market].symbol}</small></h4>{[halves[0],{period:'campaign' as const,...(item.recurringCampaign?.events[0]?.prices[market]??marketSchedules.find(s=>s.priceType==='campaign'))},halves[1]].map(p=><div className="package-market-price-row" key={p.period}><div className="package-market-price-head"><span>{pricingPeriodLabels[p.period]}</span><div className="package-market-price-values"><small>Original Price <del>{money(p.originalPrice??0,market)}</del></small><strong>{money(p.sellingPrice??0,market)}</strong></div></div><div className="package-normal-period">{p.period==='campaign'?(item.recurringCampaign?'Every month · '+item.recurringCampaign.events.map(e=>recurringEventLabels[e.id]).join(' | '):marketSchedules.filter(s=>s.priceType==='campaign').map(s=>shortMonthLabel(s.effectiveFrom.slice(0,7))+' · '+packageCampaignMonths(s.effectiveFrom,s.effectiveTo).map(v=>v.label).join(' | ')).join(' · ')):'Period: '+normalPeriodLabel(marketSchedules.filter(s=>s.priceType==='non_campaign'))}</div></div>)}</div>;
+
     const campaign=item.recurringCampaign
       ? item.recurringCampaign.events.flatMap(event=>event.prices[market]?[{...event.prices[market]!,months:[{month:"Every month",label:recurringEventLabels[event.id]}]}]:[])
       : marketSchedules.filter(line=>line.priceType==="campaign").map(line=>({...line,months:packageCampaignMonths(line.effectiveFrom,line.effectiveTo)}));
@@ -182,7 +182,12 @@ function PackagePriceSummary({item,country="all"}:{item:PackageItem;country?:"al
     };
     marketSchedules.filter(line=>line.priceType==="non_campaign").forEach(line=>add(line.originalPrice,line.sellingPrice,true,[],line));
     campaign.forEach(line=>add(line.originalPrice,line.sellingPrice,false,line.months));
-    const oneSharedPrice=groups.size===1&&campaign.length>0&&marketSchedules.some(line=>line.priceType==="non_campaign");
+    const sharedPrice=groups.size===1?[...groups.values()][0]:undefined;
+    // Check every saved price, including both Normal halves, before collapsing the display.
+    const oneSharedPrice=Boolean(sharedPrice)&&campaign.length>0&&marketSchedules.some(line=>line.priceType==="non_campaign")
+      &&halves.every(line=>Math.round(line.originalPrice*100)===Math.round(sharedPrice!.originalPrice*100)
+        &&Math.round(line.sellingPrice*100)===Math.round(sharedPrice!.sellingPrice*100));
+    if(halves.length&&!oneSharedPrice)return <div className="package-market-column" key={market}><h4>{market} <small>{MARKET_CONFIG[market].symbol}</small></h4>{[halves[0],{period:'campaign' as const,...(item.recurringCampaign?.events[0]?.prices[market]??marketSchedules.find(s=>s.priceType==='campaign'))},halves[1]].map(p=><div className="package-market-price-row" key={p.period}><div className="package-market-price-head"><span>{pricingPeriodLabels[p.period]}</span><div className="package-market-price-values"><small>Original Price <del>{money(p.originalPrice??0,market)}</del></small><strong>{money(p.sellingPrice??0,market)}</strong></div></div><div className="package-normal-period">{p.period==='campaign'?(item.recurringCampaign?'Every month · '+item.recurringCampaign.events.map(e=>recurringEventLabels[e.id]).join(' | '):marketSchedules.filter(s=>s.priceType==='campaign').map(s=>shortMonthLabel(s.effectiveFrom.slice(0,7))+' · '+packageCampaignMonths(s.effectiveFrom,s.effectiveTo).map(v=>v.label).join(' | ')).join(' · ')):'Period: '+normalPeriodLabel(marketSchedules.filter(s=>s.priceType==='non_campaign'))}</div></div>)}</div>;
     return <div className="package-market-column" key={market}>
       <h4>{market} <small>{MARKET_CONFIG[market].symbol}</small></h4>
       {[...groups.entries()].map(([key,group])=><div className="package-market-price-row" key={key}>
