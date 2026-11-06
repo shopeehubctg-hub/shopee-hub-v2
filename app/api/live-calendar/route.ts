@@ -1,3 +1,4 @@
+import {restStoreAccessIds} from "../../store-access";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { supabaseRest } from "../../supabase-rest";
 import { canonicalStoreId, storeZone, parseStoreLocal, readAllCalendarPages } from "../../live-calendar-model";
@@ -34,10 +35,14 @@ async function access() {
   }
   const storeRows = await supabaseRest<Store[]>(`stores?select=id,name,display_name,bigseller_name,platform&tenant_id=eq.${encodeURIComponent(member.tenant_id)}&order=name.asc`);
   const stores=storeRows.filter(store=>canonicalStoreId(store.id)===store.id);
-  if (member.role === "superadmin" || member.role !== "customer" && member.store_access_mode === "all") return { member, user, stores };
-  const assigned = await supabaseRest<Array<{store_id:string}>>(`user_store_access?select=store_id&enabled=eq.true&user_id=eq.${member.id}`);
-  const ids = new Set(assigned.map(row=>canonicalStoreId(row.store_id)));
-  return { member, user, stores:stores.filter(store=>ids.has(store.id)) };
+  const ids=await restStoreAccessIds(member);
+  // Calendar's existing customer policy requires explicit store grants even for legacy all-mode users.
+  if(member.role==='customer'&&member.store_access_mode==='all'){
+    const assigned=await supabaseRest<Array<{store_id:string}>>(`user_store_access?select=store_id&enabled=eq.true&user_id=eq.${member.id}`);
+    const explicit=new Set(assigned.map(row=>canonicalStoreId(row.store_id)));
+    for(const id of ids)if(!explicit.has(id))ids.delete(id);
+  }
+  return {member,user,stores:stores.filter(store=>ids.has(store.id))};
 }
 
 function cleanInput(body:SessionInput, stores:Store[]) {

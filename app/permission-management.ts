@@ -1,9 +1,9 @@
 import "server-only";
+import {restStoreAccessIds} from "./store-access";
 
 import { getChatGPTUser } from "./chatgpt-auth";
 import { effectiveAccessIds, type PortalModuleId } from "./module-permissions";
 import { supabaseRest } from "./supabase-rest";
-import { canonicalStoreId } from "./live-calendar-model";
 
 // An explicit administrative capability, never a role default or client module.
 export type PermissionMember = {
@@ -34,20 +34,17 @@ export async function permissionManagement(request?: Request): Promise<Permissio
   const actor = user.email.toLowerCase();
   const [member] = await supabaseRest<PermissionMember[]>(`customer_users?select=*&email=eq.${encodeURIComponent(actor)}&limit=1`);
   if (!member?.active) return {error: Response.json({error: "Permission Settings access required"}, {status: 403})};
-  const [tenants, userRows, tenantRows, stores, assigned] = await Promise.all([
+  const [tenants, userRows, tenantRows, storeIds] = await Promise.all([
     supabaseRest<Array<{active: boolean}>>(`tenants?select=active&id=eq.${encodeURIComponent(member.tenant_id)}&limit=1`),
     supabaseRest<Array<{module_id: string; enabled: boolean; additive_grant:boolean}>>(`user_module_permissions?select=module_id,enabled,additive_grant&user_id=eq.${member.id}`),
     supabaseRest<Array<{module_id: string; enabled: boolean}>>(`tenant_module_permissions?select=module_id,enabled&tenant_id=eq.${encodeURIComponent(member.tenant_id)}`),
-    supabaseRest<Array<{id: string}>>(`stores?select=id&tenant_id=eq.${encodeURIComponent(member.tenant_id)}`),
-    member.store_access_mode === "selected" ? supabaseRest<Array<{store_id: string}>>(`user_store_access?select=store_id&enabled=eq.true&user_id=eq.${member.id}`) : Promise.resolve([]),
+    restStoreAccessIds(member),
   ]);
   const isSuperAdmin = member.role === "superadmin";
   if (!tenants[0]?.active || !isSuperAdmin && member.can_manage_permissions !== true)
     return {error: Response.json({error: "Permission Settings access required"}, {status: 403})};
-  const assignedIds = new Set(assigned.map(row => canonicalStoreId(row.store_id)));
-  const storeIds = stores.filter(store => canonicalStoreId(store.id) === store.id)
-    .filter(store => isSuperAdmin || member.store_access_mode === "all" || assignedIds.has(store.id)).map(store => store.id);
-  return {member, actor, isSuperAdmin, storeIds, grantableModules: effectivePermissionModules(member, tenantRows, userRows)} satisfies PermissionContext;
+
+  return {member, actor, isSuperAdmin, storeIds:[...storeIds], grantableModules: effectivePermissionModules(member, tenantRows, userRows)} satisfies PermissionContext;
 }
 
 export function manageablePermissionUser(auth: PermissionContext, target: PermissionMember, targetStores: string[], delegated: boolean) {
@@ -58,6 +55,7 @@ export function manageablePermissionUser(auth: PermissionContext, target: Permis
 
 export function permissionSaveError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
+  if(/STORE_SERVICE_INACTIVE|STORE_ACCESS_REGRANT_REQUIRED/.test(message))return Response.json({error:"This store is inactive or requires explicit access approval. Refresh the store selection."},{status:409});
   if (/PERMISSION_ACCESS_DENIED|PERMISSION_SCOPE|PERMISSION_PROTECTED/.test(message)) return Response.json({error: "This change is outside your authorized access. Refresh Permission Settings."}, {status: 403});
   if (/PERMISSION_VERSION|PERMISSION_REQUEST_CONFLICT/.test(message)) return Response.json({error: "This user changed. Refresh Permission Settings before saving."}, {status: 409});
   if (/PERMISSION_INVALID|PERMISSION_SELF/.test(message)) return Response.json({error: "Check the user, modules and store selection."}, {status: 400});

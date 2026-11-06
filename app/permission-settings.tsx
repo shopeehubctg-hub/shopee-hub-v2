@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import {StoreProjectEditor} from "./store-project-editor";
+import "./permission-settings-refined.css";
+import { StoreStatusControl } from "./store-status-control";
 import { StoreExchangeRateField } from "./store-exchange-rate-field";
 import { MARKET_CODES, MARKET_CONFIG, marketFromPlatform, type MarketCode } from "./markets";
 import { useFeePlans } from "./fee-plan-context";
 import { PORTAL_MODULES, OVERVIEW_LEADERBOARD_PERMISSION, OVERVIEW_STORE_SALES_PERMISSION, RELEASABLE_PERMISSION_IDS, type PortalModuleId } from "./module-permissions";
 import { AccountSetupFields, accountSetupError, emptyAccountSetup, accountSetupPayload, resetAccountSetupSelection, malaysiaMonth, type AccountSetupDraft } from "./store-account-setup-fields";
 
-type Props = { accountSetupPreview?:boolean; initialEnabledModules: PortalModuleId[]; onStoreChanged?: () => void };
+type Props = { staging?:boolean; accountSetupPreview?:boolean; initialEnabledModules: PortalModuleId[]; onStoreChanged?: () => void };
 type Role = "customer" | "manager" | "superadmin";
 type AdsTopUpOwner = "Client" | "Client Approval" | "Shopee Hub";
 type ProjectLink = { project: string; href: string; driveLink?: string };
@@ -18,7 +21,7 @@ type StoreLinks = {
   adsTopUpOwner: AdsTopUpOwner | "";
 };
 type StoreDraft = StoreLinks & { name: string; market: MarketCode };
-type Store = { id: string; name: string; platform: string; bigseller_name?: string; accountUnit?: { rosterKey: string; legalEntity: string; billingEntity?: string | null; latestVersion: string } | null; accountUnitCount?: number } & Partial<StoreLinks>;
+type Store = { id: string; name: string; serviceStatus?: "active"|"inactive"|"ended"; platform: string; bigseller_name?: string; accountUnit?: { rosterKey: string; legalEntity: string; billingEntity?: string | null; latestVersion: string } | null; accountUnitCount?: number } & Partial<StoreLinks>;
 const emptyStoreDraft = (): StoreDraft => ({ name: "", market: "MY", projectLinks: [], storeGroupLink: "", googleDriveLink: "", adsTopUpOwner: "" });
 
 function projectLinkError(link: ProjectLink) {
@@ -80,7 +83,7 @@ type UserData = {
   access: PermissionAccess;
 };
 
-export function PermissionSettings({ initialEnabledModules, onStoreChanged, accountSetupPreview=false }: Props) {
+export function PermissionSettings({ staging=false, initialEnabledModules, onStoreChanged, accountSetupPreview=false }: Props) {
   const { plans } = useFeePlans();
   const [tab, setTab] = useState<"users" | "stores" | "modules">("users");
   const [enabled, setEnabled] = useState(new Set(initialEnabledModules));
@@ -97,8 +100,12 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
   const [userError, setUserError] = useState("");
   const [storeError, setStoreError] = useState("");
   const [search, setSearch] = useState("");
+  const [storeSearch,setStoreSearch]=useState("");
+  const [storeCountry,setStoreCountry]=useState<"all"|MarketCode>("all");
+  const [storeService,setStoreService]=useState("all");
   const [adding, setAdding] = useState(false);
   const [addingStore, setAddingStore] = useState(false);
+  const [projectEditor,setProjectEditor]=useState<{storeId?:string}|null>(null);
   const [editingStore, setEditingStore] = useState<Store | null>(null);
   const [storeDraft, setStoreDraft] = useState<StoreDraft>(emptyStoreDraft);
   const [newStore, setNewStore] = useState<StoreDraft>(emptyStoreDraft);
@@ -110,7 +117,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
   const userRequest = useRef<{ payload: string; id: string } | null>(null);
   const storeModalRef = useRef<HTMLDivElement>(null);
   const storeNameInputRef = useRef<HTMLInputElement>(null);
-  const storeReturnFocusRef = useRef<HTMLButtonElement | null>(null);
+  const storeReturnFocusRef = useRef<HTMLElement | null>(null);
   const updateNewStore = (patch: Partial<StoreDraft>) => { setStoreError(""); setNewStore(current => ({ ...current, ...patch })); };
   const updateStoreDraft = (patch: Partial<StoreDraft>) => { setStoreError(""); setStoreDraft(current => ({ ...current, ...patch })); };
   const updateNewAccount = (patch: Partial<AccountSetupDraft>) => { setStoreError(""); setNewAccount(current => ({ ...current, ...patch })); };
@@ -356,6 +363,25 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
       setSaving(false);
     }
   }
+  function beginStoreEdit(store:Store,trigger:HTMLElement){
+                  storeReturnFocusRef.current = trigger.closest('details')?.querySelector('summary') as HTMLElement ?? trigger;
+                  const menu=trigger.closest('details');if(menu)menu.open=false;
+                  setMessage("");
+                  setStoreError("");
+                  setEditingStore(store);
+                  setStoreDraft({
+                    name: store.name,
+                    market: marketFromPlatform(store.platform),
+                    projectLinks: store.projectLinks?.map(link => ({ ...link })) ?? [],
+                    storeGroupLink: store.storeGroupLink ?? "",
+                    googleDriveLink: store.googleDriveLink ?? "",
+                    adsTopUpOwner: store.adsTopUpOwner ?? "",
+                  });
+                  setEditLegalEntity(store.accountUnit?.legalEntity ?? "");
+                  setEditBillingEntity(store.accountUnit?.billingEntity ?? "");
+                  setEditEntityMonth(malaysiaMonth());
+                  }
+  const visibleStores=(data?.stores??[]).filter(store=>(!storeSearch.trim()||store.name.toLowerCase().includes(storeSearch.trim().toLowerCase()))&&(storeCountry==="all"||marketFromPlatform(store.platform)===storeCountry)&&(storeService==="all"||(store.serviceStatus??"active")===storeService));
   const users =
     data?.users.filter((user) =>
       `${user.displayName} ${user.email} ${user.role}`
@@ -374,18 +400,11 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
       return next;
     });
   }
-  if (!data) return <div className="permission-page"><section className="permission-hero"><div><p className="kicker">PERMISSION SETTINGS</p><h2>User Access Management</h2></div></section>{loadError?<div className="access-error" role="alert">{loadError} <button type="button" onClick={loadUsers}>Retry</button></div>:<div className="access-toolbar card" role="status" aria-busy="true">Loading permissions…</div>}</div>;
+  if (!data) return <div className="permission-page"><section className="permission-hero permission-heading"><div><h2>Permission settings</h2></div></section>{loadError?<div className="access-error" role="alert">{loadError} <button type="button" onClick={loadUsers}>Retry</button></div>:<div className="access-toolbar card" role="status" aria-busy="true">Loading permissions…</div>}</div>;
   return (
-    <div className="permission-page">
-      <section className="permission-hero">
-        <div>
-          <p className="kicker">{isSuperAdmin ? "SUPER ADMIN" : "PERMISSION SETTINGS"}</p>
-          <h2>User Access Management</h2>
-          <p>
-            Manage portal users, roles, account status, store access and
-            individual module permissions from one place.
-          </p>
-        </div>
+    <div className="permission-page" onClick={event=>{if(!(event.target as HTMLElement).closest('.directory-menu'))document.querySelectorAll<HTMLDetailsElement>('.directory-menu[open]').forEach(menu=>{menu.open=false;});}}>
+      <section className="permission-hero permission-heading">
+        <div className="permission-heading-title"><h2>Permission settings</h2>{staging&&<span className="permission-stage" data-environment="staging">Staging</span>}</div>
         {isSuperAdmin && <span className="superadmin-badge">Super Admin</span>}
       </section>
       <div className="access-tabs">
@@ -570,44 +589,35 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
 
       {tab === "stores" && access?.canManageStores && (
         <>
-          <section className="access-toolbar card">
-            <div>
-              <strong>{data?.stores.length ?? 0} registered stores</strong>
-              <span>Add a store to make it available in the portal.</span>
+          <section className="store-directory card" aria-labelledby="store-directory-title">
+            <div className="directory-heading"><div><h3 id="store-directory-title">Stores <span>{data.stores.length}</span></h3></div><button type="button" className="directory-add" onClick={event=>{storeReturnFocusRef.current=event.currentTarget;setMessage("");setStoreError("");if(isSuperAdmin)setProjectEditor({});else setAddingStore(true);}}><span aria-hidden="true">＋</span> Add store</button></div>
+            <div className="directory-filters">
+              <label className="directory-search"><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><input type="search" aria-label="Search stores" placeholder="Search stores…" value={storeSearch} onInput={event=>setStoreSearch(event.currentTarget.value)} onChange={event=>setStoreSearch(event.target.value)}/></label>
+              <select aria-label="Filter stores by country" value={storeCountry} onChange={event=>setStoreCountry(event.target.value as "all"|MarketCode)}><option value="all">All countries</option>{MARKET_CODES.map(market=><option key={market} value={market}>{MARKET_CONFIG[market].name}</option>)}</select>
+              <select aria-label="Filter stores by service status" value={storeService} onChange={event=>setStoreService(event.target.value)}><option value="all">All statuses</option><option value="active">Active</option><option value="inactive">Paused</option><option value="ended">Service ended</option></select>
+              {(storeSearch||storeCountry!=="all"||storeService!=="all")&&<button type="button" className="directory-clear" onClick={()=>{setStoreSearch("");setStoreCountry("all");setStoreService("all");}}>Reset</button>}
             </div>
-            <span className="store-access-note">Customer visibility is managed separately under Users & roles.</span>
-            <button disabled={!data} onClick={event => { storeReturnFocusRef.current = event.currentTarget; setMessage(""); setStoreError(""); setAddingStore(true); }}>+ Add store</button>
-          </section>
-          <section className="store-access-list">
-            {data?.stores.map(store => (
-              <article className="card store-access-row" key={store.id}>
-                <div>
-                  <h3>{store.name}</h3>
-                </div>
-                <span>{store.platform}</span>
-                <button className="edit-access" onClick={event => {
-                  storeReturnFocusRef.current = event.currentTarget;
-                  setMessage("");
-                  setStoreError("");
-                  setEditingStore(store);
-                  setStoreDraft({
-                    name: store.name,
-                    market: marketFromPlatform(store.platform),
-                    projectLinks: store.projectLinks?.map(link => ({ ...link })) ?? [],
-                    storeGroupLink: store.storeGroupLink ?? "",
-                    googleDriveLink: store.googleDriveLink ?? "",
-                    adsTopUpOwner: store.adsTopUpOwner ?? "",
-                  });
-                  setEditLegalEntity(store.accountUnit?.legalEntity ?? "");
-                  setEditBillingEntity(store.accountUnit?.billingEntity ?? "");
-                  setEditEntityMonth(malaysiaMonth());
-                }}>Edit store</button>
-              </article>
+            <table className="store-directory-table" aria-label="Store directory"><colgroup><col/><col className="directory-country-col"/><col className="directory-platform-col"/><col className="directory-status-col"/><col className="directory-actions-col"/></colgroup><thead><tr><th scope="col">Store</th><th scope="col" className="directory-country">Country</th><th scope="col" className="directory-platform">Platform</th><th scope="col">Service</th><th scope="col" className="directory-actions">Actions</th></tr></thead><tbody>
+            {visibleStores.map(store=> (
+              <tr key={store.id}><th scope="row"><span className="directory-store-name" title={store.name}>{store.name}</span><span className="directory-mobile-market">{marketFromPlatform(store.platform)} · Shopee</span></th>
+                <td className="directory-country"><span className="directory-country-code">{marketFromPlatform(store.platform)}</span></td><td className="directory-platform">Shopee</td>
+                <td><span className={`directory-status ${store.serviceStatus??"active"}`}><i aria-hidden="true"/>{store.serviceStatus==="ended"?"Ended":store.serviceStatus==="inactive"?"Paused":"Active"}</span></td>
+                <td className="directory-actions"><div className="directory-row-actions">
+                {isSuperAdmin&&<button type="button" className="directory-manage" aria-label={`Manage ${store.name}`} onClick={()=>setProjectEditor({storeId:store.id})}>Manage</button>}{!isSuperAdmin&&<button type="button" className="directory-manage" onClick={event=>beginStoreEdit(store,event.currentTarget)}>Edit</button>}
+                <details className="directory-menu" onToggle={event=>{if(event.currentTarget.open)document.querySelectorAll<HTMLDetailsElement>('.directory-menu[open]').forEach(menu=>{if(menu!==event.currentTarget)menu.open=false;});}} onKeyDown={event=>{if(event.key==='Escape'&&!(event.target as Element).closest('dialog')){event.currentTarget.open=false;event.currentTarget.querySelector('summary')?.focus();}}}><summary aria-label={`More actions for ${store.name}`}><span aria-hidden="true">⋯</span></summary><div className="directory-menu-panel">
+                <button type="button" className="directory-menu-item" aria-label={`Edit details for ${store.name}`} onClick={event=>beginStoreEdit(store,event.currentTarget)}>Edit details</button>
+                {isSuperAdmin&&<StoreStatusControl storeId={store.id} storeName={store.name} status={store.serviceStatus} triggerLabel="Change service status" onSaved={()=>{void loadUsers();onStoreChanged?.();}}/>}
+                </div></details></div></td>
+              </tr>
             ))}
+            </tbody></table>
+            {!visibleStores.length&&<div className="directory-empty"><strong>No stores found</strong><span>Try a different search or filter.</span></div>}
+            <div className="directory-footer">{visibleStores.length} of {data.stores.length} stores</div>
           </section>
         </>
       )}
 
+      {projectEditor&&<StoreProjectEditor initialStoreId={projectEditor.storeId} onClose={()=>setProjectEditor(null)} onSaved={()=>{void loadUsers();onStoreChanged?.();}}/>}
       {addingStore && (
         <div className="access-modal" role="dialog" aria-modal="true" aria-label="Add store" onKeyDown={handleStoreModalKeyDown}>
           <div className="access-editor card" ref={storeModalRef}>
@@ -806,7 +816,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                               onClick={() =>
                                 updateEditing({
                                   storeIds:
-                                    data?.stores.map((store) => store.id) ?? [],
+                                    data?.stores.filter(store=>editing.role==="superadmin"||!store.serviceStatus||store.serviceStatus==="active").map((store) => store.id) ?? [],
                                 })
                               }
                             >
@@ -826,6 +836,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                             <input
                               type="checkbox"
                               checked={editing.storeIds.includes(store.id)}
+                              disabled={editing.role!=="superadmin"&&!!store.serviceStatus&&store.serviceStatus!=="active"}
                               onChange={() =>
                                 updateEditing({
                                   storeIds: editing.storeIds.includes(store.id)
@@ -838,7 +849,7 @@ export function PermissionSettings({ initialEnabledModules, onStoreChanged, acco
                             />
                             <span>
                               {store.name}
-                              <small>{store.platform}</small>
+                              <small>{store.platform}{store.serviceStatus&&store.serviceStatus!=="active"?` · ${store.serviceStatus==="ended"?"Service ended":"Inactive"}`:""}</small>
                             </span>
                           </label>
                         ))}

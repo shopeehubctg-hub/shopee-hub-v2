@@ -1,3 +1,4 @@
+import {restStoreAccessIds} from "../../../store-access";
 import { getChatGPTUser } from '../../../chatgpt-auth';
 import { effectivePermissionModules } from '../../../permission-management';
 import { supabaseRest } from '../../../supabase-rest';
@@ -54,8 +55,7 @@ export async function GET(request:Request){
     supabaseRest<Array<{module_id:string;enabled:boolean}>>(`tenant_module_permissions?select=module_id,enabled&tenant_id=eq.${tenant}`),
    ]);
    if(!effectivePermissionModules(member,tenantRows,userRows).includes('overview_store_sales'))return json({error:'Store Daily Sales access required'},403);
-   const assignedRows=member.store_access_mode==='selected'?await supabaseRest<Array<{store_id:string}>>(`user_store_access?select=store_id&enabled=eq.true&user_id=eq.${member.id}`):await supabaseRest<Array<{id:string}>>(`stores?select=id&tenant_id=eq.${tenant}`);
-   const storeIds=[...new Set(assignedRows.map(row=>'store_id'in row?row.store_id:row.id))];
+   const storeIds=[...await restStoreAccessIds(member)];
    if(!storeIds.length)return json({month:requested??'',latestDate:null,rows:[],sample:false,scope:'assigned',storeCount:0});
    const storeFilter=`store_id=in.(${storeIds.map(encodeURIComponent).join(',')})`,today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);
    const latest=await supabaseRest<Array<{report_date:string}>>(`bigseller_store_daily?select=report_date&tenant_id=eq.${tenant}&${storeFilter}&report_date=lte.${today}&order=report_date.desc&limit=1`);
