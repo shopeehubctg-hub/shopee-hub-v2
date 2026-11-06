@@ -1,0 +1,27 @@
+.portal-sign-out button {
+  min-height: 36px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.portal-sign-out button:disabled {
+  cursor: wait;
+}
+
+.portal-sign-out p {
+  margin: 4px 0 0;
+  color: var(--red);
+  font-size: 12px;
+}
+
+@media (max-width: 680px) {
+  .side .portal-sign-out {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+}

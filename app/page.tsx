@@ -1,5 +1,6 @@
 "use client";
 import {CalculatorCountryAvailability} from "./calculator-country-availability";
+import {PortalSignOut} from "./portal-sign-out";
 import {SidebarNavigation} from "./sidebar-navigation";
 import type {RepriceTarget} from "./package-repricing";
 
@@ -388,6 +389,7 @@ export default function Home() {
     <p role={loadError ? "alert" : "status"}>{loadError || (!data ? "Preparing your account and workspace." : "Please contact your administrator to request access.")}</p>
     {loadError && <button onClick={()=>load()} disabled={loading}>Try again</button>}
     {(loadError || data) && <a href="/login">Back to sign in</a>}
+    {shellData?.environment === "staging" && <PortalSignOut />}
   </section></main>;
   return <main className={`app-shell${sidebarCollapsed?" sidebar-collapsed":""}${section==="advertising"&&allStoresSelected?" advertising-all-shell":""}`}>
     <FeatureAnnouncementDialog />
@@ -397,6 +399,7 @@ export default function Home() {
       <SidebarNavigation items={nav} section={section} onSelect={setSection} userKey={data.user.email} collapsed={sidebarCollapsed}/>
       <div className="fleet contact-card"><p>Contact Shopee Hub Specialist</p><strong>{allStoresSelected ? "Select a project" : (store?.contacts.length ? store.name : "Link unavailable")}</strong><div>{!allStoresSelected && store?.contacts.map(contact=><a key={contact.href} href={contact.href} target="_blank" rel="noopener noreferrer" title={contact.project}>{store.contacts.length > 1 ? contact.project : "Contact"} →</a>)}{!allStoresSelected && store?.storeGroupLink && <a href={store.storeGroupLink} target="_blank" rel="noopener noreferrer">Store group →</a>}</div></div>
       <p className="access">{data.access?.role === "superadmin" ? "Super Admin access" : "Private access"}<br/><b>{data.user.email}</b></p>
+      {shellData?.environment === "staging" && <PortalSignOut />}
     </aside>
 
     <section className="workspace">
