@@ -27,7 +27,8 @@ const AccountPanel=lazy(()=>import("./account-panel").then(module=>({default:mod
 const StoreHealth=lazy(()=>import("./store-health").then(module=>({default:module.StoreHealth})));
 const OverviewStoreSales=lazy(()=>import("./overview-store-sales").then(module=>({default:module.OverviewStoreSales})));
 const OverviewSales=lazy(()=>import("./overview-sales").then(module=>({default:module.OverviewSales})));
-const SNAPSHOT_SECTIONS=new Set(["overview","advertising","actions","calculator","orders","health","protection"]);
+const LateShipmentOrders=lazy(()=>import("./late-shipment-orders").then(module=>({default:module.LateShipmentOrders})));
+const SNAPSHOT_SECTIONS=new Set(["overview","advertising","actions","calculator","health","protection"]);
 
 type Store = { id: string; name: string; sourceName?: string; platform: string; contacts: { project: string; href: string; driveLink?: string }[]; storeGroupLink?: string | null; driveLink?: string | null };
 type ManagementAction = { actionDate: string; category: string; title: string; detail: string };
@@ -306,7 +307,7 @@ export default function Home() {
   const staticSnapshot = !isStaging&&store ? storeSnapshots[store.sourceName ?? store.name] : null;
   const live = data?.snapshot?.payload ?? staticSnapshot ?? {};
   const noSample = isStaging||Boolean(live.noSample);
-  const stagingSnapshotUnavailable=section!=="health"&&!salesOverview&&isStaging&&((!data?.snapshot&&["overview","orders","health","protection"].includes(section))||(section==="protection"&&(!Array.isArray(live.fakeSellerCases)||!live.fakeSellerCases.length)));
+  const stagingSnapshotUnavailable=section!=="health"&&!salesOverview&&isStaging&&((!data?.snapshot&&["overview","health","protection"].includes(section))||(section==="protection"&&(!Array.isArray(live.fakeSellerCases)||!live.fakeSellerCases.length)));
   const overview = Array.isArray(live.overview) ? live.overview : isStaging?overviewFallback.map(([label])=>[label,"暂无数据",""]):overviewFallback;
   const adsBase = data?.adPerformance?.length ? { ...unavailableAdvertising, ...(live.advertising ?? {}) } : unavailableAdvertising;
   const relevantDailyAds = data?.adPerformance ?? [];
@@ -365,7 +366,6 @@ export default function Home() {
   const importantWarningCount = warningOrders.length + (adFunds.needsTopUp ? 1 : 0);
   const target = live.target;
   const losses = live.losses;
-  const orderSummary = live.orderSummary;
   const fakeSellerCases = Array.isArray(live.fakeSellerCases) ? live.fakeSellerCases as FakeSellerCase[] : isStaging?[]:undefined;
   const nav = useMemo(() => {
     const allowed = new Set(data?.access?.enabledModules ?? []);
@@ -484,7 +484,7 @@ export default function Home() {
         {!allStoresSelected && <section className="campaign-section" aria-label="Individual Ads"><div className="campaign-heading"><div><h3>Individual ads</h3></div></div><div className="card individual-ads-empty" role="status"><p>Individual ad data is temporarily unavailable.</p></div></section>}
       </div>}
 
-      {section==="orders" && <div className="page"><div className="page-title"><div><p className="kicker">ORDERS & INVENTORY</p><h2>Today’s orders & deadlines</h2></div></div><section className="metric-grid three"><article className="metric"><span>Today’s Orders</span><strong>{orderSummary?.today ?? (noSample ? "暂无数据" : 98)}</strong></article><article className="metric warn"><span>Expiring Today</span><strong>{orderSummary?.expiringToday ?? (noSample ? "暂无数据" : 7)}</strong></article><article className="metric danger"><span>Expired</span><strong>{orderSummary?.expired ?? (noSample ? "暂无数据" : 2)}</strong></article></section><div className="card table-card"><table><thead><tr><th>Order</th><th>Buyer</th><th>Product</th><th>Order Time</th><th>Order Value</th><th>Expire Time</th><th>Time Left</th><th>Status</th></tr></thead><tbody>{orders.map((o:any)=><tr key={o.id}><td><b>{o.id}</b></td><td>{o.buyer}</td><td>{o.product}</td><td>{o.time}</td><td>{o.value}</td><td>{o.expire}</td><td>{o.left}</td><td><span className={`badge ${o.status.toLowerCase()}`}>{o.status}</span></td></tr>)}{noSample && !orders.length && <tr><td colSpan={8}>暂无数据</td></tr>}</tbody></table></div></div>}
+      {section==="orders" && <LateShipmentOrders key={`${storeId}:${dataRevision}`} storeId={storeId}/>}
 
       {section==="health" && <StoreHealth key={storeId} storeId={storeId} refreshKey={dataRevision} canView={shellData?.access?.role==="superadmin"}/>}
 
