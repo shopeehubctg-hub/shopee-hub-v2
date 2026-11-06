@@ -19,7 +19,7 @@ type SourceOrder = { order_no: string; store_name: string; expire_time: Date | s
 
 export async function GET(request: Request) {
   try {
-    if (assertDeploymentIsolation() !== "staging") return reply({ error: "Orders are unavailable" }, 404);
+    if (assertDeploymentIsolation() === "local") return reply({ error: "Orders are unavailable" }, 404);
     const actor = await getChatGPTUser();
     if (!actor) return reply({ error: "Authentication required" }, 401);
 
