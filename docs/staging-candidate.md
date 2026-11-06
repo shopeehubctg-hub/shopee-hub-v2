@@ -1,5 +1,11 @@
 # Fixed Staging candidate — 2 November 2026
 
+## 6 November — manual whole-month price source correction
+
+Package queue feature `codex/package-manual-uniform-price-20261106` at `da9e648ce620dea6a11287a1b8c7ead5c7037161`, based on main `45abc8d2c944b5194b2ea6f83139579843fa96c0`, is integrated onto Staging `c45cba822c2237fbd4cefafcd5bae77a2220ffa9`. Existing Xero, Account, permissions and sign-out changes are retained. Manual single-package creation hides and does not require the Calculator-only source selector; genuine three-recommendation handoffs keep source selection and all calculation evidence.
+
+Feature validation: 12 focused component/pricing tests, TypeScript, Next webpack build and diff checks PASS. No Supabase changes, migrations, business-data copying or cleanup. Independent Staging DB remains `ubjfuveoqbvouryldqfu`. Actual fixed-Staging UI/UX and Function QC remain pending until the deployed page is reviewed; automated checks are not these gates. No Production PR, merge or deployment for this fix. Release notes: `docs/releases/package-manual-uniform-price-20261106.md`.
+
 ## Store master and service status — 3 November 2026
 
 Integration starts from main `1b0d347` and preserves Staging `5efafda`, including Xero, Registered Names and Package work below. Store status feature `39bd252` was integrated as `60c2b2a`; the only conflict combined Billing identity and service-status Store fields. `e77e0a3` retains existing saved currency for later mapping/name/fee edits, preventing imported SG units from failing future saves.
