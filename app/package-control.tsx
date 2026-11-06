@@ -261,6 +261,7 @@ export function PackageControl({ onRecalculate,highlightedIds=[],storeId, storeN
   const [threePeriodPrices,setThreePeriodPrices]=useState<Record<MarketName,MarketPrices>|null>(null);
   const [platforms,setPlatforms] = useState<PlatformLine[]>([{platform:"Shopee",packageSku:""}]);
   const [calculatorSettings,setCalculatorSettings] = useState<CalculatorSnapshot|null>(null);
+  const hasCalculatorRecommendations=calculatorSettings?.calculationKind==="three_period_recommendations";
   const [prefillQueue,setPrefillQueue] = useState<PackagePrefill[][]>([]);
   const [prefillBatch,setPrefillBatch] = useState<PackagePrefill[]>([]);
   const createRequestId=useRef<string>("");
@@ -735,7 +736,7 @@ export function PackageControl({ onRecalculate,highlightedIds=[],storeId, storeN
       }
     }
 
-    if(form.samePricing&&threePeriodPrices&&!priceApplication)addError("Pricing & Promotion","Choose which price to use for the whole month.");
+    if(form.samePricing&&hasCalculatorRecommendations&&threePeriodPrices&&!priceApplication)addError("Pricing & Promotion","Choose which price to use for the whole month.");
     form.markets.forEach(market=>{
       const validatePrice=(label:string,originalValue:string,sellingValue:string)=>{
         const original=Number(originalValue);
@@ -1092,7 +1093,7 @@ export function PackageControl({ onRecalculate,highlightedIds=[],storeId, storeN
           if(mode==='split_normal'){if(threePeriodPrices)setForm(current=>({...current,prices:threePeriodPrices}));setThreePeriodPrices(null);setPriceApplication(undefined);}
           setForm(current=>({...current,pricingMode:mode,samePricing:mode==='uniform',campaignLongTerm:mode==='uniform'?false:current.campaignLongTerm}));
         }}>{pricingModeLabels[mode]}</button>)}</div>
-        {form.samePricing&&threePeriodPrices&&<label className="uniform-price-source">Whole-month Price From<select aria-label="Whole-month Price From" value={priceApplication?.sourcePeriod??''} onChange={e=>{if(!e.target.value)return;const period=e.target.value as PriceSourcePeriod,key=period==='campaign'?'campaignSelling':period==='normal_16_end'?'normalLateSelling':'nonCampaignSelling';setPriceApplication({mode:'uniform',sourcePeriod:period});setForm(current=>({...current,prices:Object.fromEntries(MARKET_CODES.map(m=>[m,{...current.prices[m],nonCampaignSelling:threePeriodPrices[m][key],campaignSelling:threePeriodPrices[m][key],normalLateSelling:threePeriodPrices[m][key]}])) as Record<MarketName,MarketPrices>}));}}><option value="">Select a price</option>{PRICE_SOURCE_PERIODS.map(period=><option key={period} value={period}>{pricingPeriodLabels[period]}</option>)}</select></label>}
+        {form.samePricing&&hasCalculatorRecommendations&&threePeriodPrices&&<label className="uniform-price-source">Whole-month Price From<select aria-label="Whole-month Price From" value={priceApplication?.sourcePeriod??''} onChange={e=>{if(!e.target.value)return;const period=e.target.value as PriceSourcePeriod,key=period==='campaign'?'campaignSelling':period==='normal_16_end'?'normalLateSelling':'nonCampaignSelling';setPriceApplication({mode:'uniform',sourcePeriod:period});setForm(current=>({...current,prices:Object.fromEntries(MARKET_CODES.map(m=>[m,{...current.prices[m],nonCampaignSelling:threePeriodPrices[m][key],campaignSelling:threePeriodPrices[m][key],normalLateSelling:threePeriodPrices[m][key]}])) as Record<MarketName,MarketPrices>}));}}><option value="">Select a price</option>{PRICE_SOURCE_PERIODS.map(period=><option key={period} value={period}>{pricingPeriodLabels[period]}</option>)}</select></label>}
 
         {form.samePricing&&<div className="same-pricing-note">Campaign prices will match Non-Campaign prices. {originalRecurringCampaign.current&&form.samePricing?"The monthly Campaign rules will be removed when you save. ":null}{editingPackageId?"Previously saved Campaign dates are preserved. Uncheck this option to edit or extend them. Campaign date edits will not be saved if you check it again.":"Campaign dates will follow Non-Campaign dates."}</div>}
         {([['nonCampaign','Non-Campaign'],['campaign','Campaign']] as const).map(([periodKey,title])=>{
