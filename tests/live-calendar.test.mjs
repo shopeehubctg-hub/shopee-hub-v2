@@ -11,11 +11,13 @@ const compiled=await build({
   stdin:{contents:'export { GET, POST, PATCH } from "./app/api/live-calendar/route"; export { PATCH as updateUser } from "./app/api/admin/users/route"; export * from "./app/live-calendar-model";',resolveDir:process.cwd(),loader:"ts"},
   bundle:true,write:false,platform:"node",format:"esm",
   plugins:[{name:"calendar-test-adapters",setup(build){
-    build.onResolve({filter:/^(server-only|.*\/(chatgpt-auth|supabase-rest|store-directory))$/},args=>({path:args.path.split("/").pop(),namespace:"calendar-test"}));
-    build.onLoad({filter:/.*/,namespace:"calendar-test"},args=>({contents:args.path==="server-only"?"":args.path==="chatgpt-auth"?'export async function getChatGPTUser(){return globalThis.__calendarUser;}':args.path==="store-directory"?'export async function storeDirectory(){return {byId:new Map(),links:new Map()};} export function storeDetails(){return {projectLinks:[],storeGroupLink:"",googleDriveLink:"",adsTopUpOwner:null};}':'export async function supabaseRest(path,init){return globalThis.__calendarRest(path,init);} export function supabaseConfig(){return {url:"https://unused.test",secret:"test"};}',loader:"js"}));
+    build.onResolve({filter:/^(server-only|.*\/(chatgpt-auth|supabase-rest|store-directory|account-security-server))$/},args=>({path:args.path.split("/").pop(),namespace:"calendar-test"}));
+    build.onLoad({filter:/.*/,namespace:"calendar-test"},args=>({contents:args.path==="server-only"?"":args.path==="account-security-server"?'export async function accountAccessGranted(){return true;} export async function accountSecurityGate(){return null;}':args.path==="chatgpt-auth"?'export async function getChatGPTUser(){return globalThis.__calendarUser;}':args.path==="store-directory"?'export async function storeDirectory(){return {byId:new Map(),links:new Map()};} export function storeDetails(){return {projectLinks:[],storeGroupLink:"",googleDriveLink:"",adsTopUpOwner:null};}':'export async function supabaseRest(path,init){return globalThis.__calendarRest(path,init);} export function supabaseConfig(){return {url:"https://unused.test",secret:"test"};}',loader:"js"}));
   }}],
 });
-const api=await import(`data:text/javascript;base64,${Buffer.from(compiled.outputFiles[0].text).toString("base64")}`);
+const originalApi=await import(`data:text/javascript;base64,${Buffer.from(compiled.outputFiles[0].text).toString("base64")}`);
+// Scope fixtures intentionally use September sessions; keep their query window independent of the machine date.
+const api={...originalApi,GET(request){const url=new URL(request.url);if(!url.searchParams.has('from'))url.searchParams.set('from','2026-09-01T00:00:00Z');if(!url.searchParams.has('to'))url.searchParams.set('to','2026-10-31T00:00:00Z');return originalApi.GET(new Request(url,request));}};
 
 const sg={id:"shopee-skindae-sg",tenant_id:"j-packaging",name:"SkinDae SG",bigseller_name:"SkinDae SG by CTG4u",platform:"Shopee SG"};
 const my={id:"shopee-skindae-my-by-ctg4u",tenant_id:"j-packaging",name:"SkinDae MY by CTG4u",bigseller_name:"SkinDae MY by CTG4u",platform:"Shopee"};
@@ -29,6 +31,7 @@ beforeEach(()=>{
   globalThis.__calendarUser={email:"admin@example.test"};
   state={member:{id:1,tenant_id:"j-packaging",role:"superadmin",active:true,module_access_mode:"role_default",store_access_mode:"all"},tenantActive:true,tenantModule:true,userModule:true,stores:[my,sg],assigned:[sg.id],sessions:[],calls:[]};
   globalThis.__calendarRest=async(path,init={})=>{
+    if(path==='rpc/permission_effective_stores')return state.stores.filter(store=>state.member.role==='superadmin'||state.member.role!=='customer'&&state.member.store_access_mode==='all'||state.assigned.map(id=>id==='shopee-skindae-sg-by-ctg4u'?'shopee-skindae-sg':id).includes(store.id)).map(store=>store.id);
     state.calls.push({path,init});
     const url=new URL(path,"https://rest.test/");const table=url.pathname.slice(1);const q=url.searchParams;
     if(table==="customer_users")return[q.get("id")?state.targetUser:state.member];

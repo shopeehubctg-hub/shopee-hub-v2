@@ -1,3 +1,4 @@
+import {restLeaderboardStoreIds} from "../../../store-access";
 import {getChatGPTUser} from '../../../chatgpt-auth';
 import {effectivePermissionModules} from '../../../permission-management';
 import {canonicalStoreId} from '../../../live-calendar-model';
@@ -21,13 +22,13 @@ export async function GET(request:Request){
   ]);
   const effective=effectivePermissionModules(member,tenantRows,userRows);
   if(!effective.includes('overview_leaderboard'))return json({error:'Leaderboard access required'},403);
-  const allBoard=member.role==='superadmin'||effective.includes('overview_leaderboard_all_stores');
-  const assigned=!allBoard&&member.store_access_mode==='selected'?await supabaseRest<Array<{store_id:string}>>(`user_store_access?select=store_id&enabled=eq.true&user_id=eq.${member.id}`):[];
-  const assignedIds=new Set(assigned.map(row=>canonicalStoreId(row.store_id)));
+
+  const serviceAllowed=await restLeaderboardStoreIds(member);
   const registry=await supabaseRest<SourceStore[]>(`stores?select=id,tenant_id,name,display_name,bigseller_name,platform&tenant_id=eq.${tenant}&limit=500`);
   const resolveStore=sourceStoreResolver(member.tenant_id,registry);
   const labelShops=<T extends {name:string}>(shops:T[])=>shops.map(shop=>{const mapped=resolveStore(shop.name);return {...shop,name:mapped?(mapped.display_name??mapped.name):shop.name,storeId:mapped?.id??null};});
-  const allowedIds=new Set(registry.filter(store=>canonicalStoreId(store.id)===store.id&&(allBoard||member.store_access_mode==='all'||assignedIds.has(store.id))).map(store=>store.id));
+  const allowedIds=new Set(registry.filter(store=>canonicalStoreId(store.id)===store.id&&serviceAllowed.has(store.id)).map(store=>store.id));
+  const scoped=(board:Parameters<typeof scopeLeaderboard>[0])=>({...scopeLeaderboard(board,member.role==='superadmin',allowedIds),scope:member.role==='superadmin'||effective.includes('overview_leaderboard_all_stores')?'all' as const:'assigned' as const});
   const params=new URL(request.url).searchParams,mode=params.get('mode')||'weekly';
   if(!['weekly','monthly'].includes(mode))return json({error:'Choose a valid period.'},400);
   const monthly=mode==='monthly',month=params.get('month')||monthBounds().start.slice(0,7);
@@ -39,11 +40,11 @@ export async function GET(request:Request){
   const bounds=monthly?`report_kind=eq.month_to_date&period_start=eq.${start}&period_end=gte.${start}&period_end=lte.${period.end<today?period.end:today}&order=period_end.desc,synced_at.desc`:`report_kind=eq.weekly&period_start=eq.${start}&period_end=eq.${period.end}`;
   const fields='status,currency,observed_sales_cents,observed_shops,missing_shops,synced_at,period_end';
   const [row]=await supabaseRest<Array<Record<string,unknown>>>(`live_leaderboard_snapshots?select=${fields}&tenant_id=eq.${tenant}&${bounds}&limit=1`);
-  if(row){const result=publicLeaderboard(row);return json({period,mode,through:row.period_end,...scopeLeaderboard({...result,shops:labelShops(result.shops)},allBoard,allowedIds)});}
+  if(row){const result=publicLeaderboard(row);return json({period,mode,through:row.period_end,...scoped({...result,shops:labelShops(result.shops)})});}
   // Reuse only names for the empty period, never amounts or freshness from another period.
   const [roster]=await supabaseRest<Array<Record<string,unknown>>>(`live_leaderboard_snapshots?select=observed_shops,missing_shops&tenant_id=eq.${tenant}&order=period_end.desc,synced_at.desc&limit=1`);
   const names=new Map<string,string>();
   for(const source of [roster?.observed_shops,roster?.missing_shops])if(Array.isArray(source))for(const shop of source){const name=typeof shop?.shop_username==='string'?shop.shop_username.trim():'';if(name)names.set(name.toLowerCase(),name);}
-  return json({period,mode,through:null,...scopeLeaderboard({status:'pending',currency:'MYR',shops:labelShops([...names.values()].sort().map(name=>({name,salesCents:0,observed:false,rank:0}))),pending:[],totalCents:null,updated:null},allBoard,allowedIds)});
+  return json({period,mode,through:null,...scoped({status:'pending',currency:'MYR',shops:labelShops([...names.values()].sort().map(name=>({name,salesCents:0,observed:false,rank:0}))),pending:[],totalCents:null,updated:null})});
  }catch{return json({error:'Unable to load leaderboard. Please try again.'},503);}
 }

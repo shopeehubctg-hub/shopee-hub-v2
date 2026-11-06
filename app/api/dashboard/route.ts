@@ -1,6 +1,7 @@
+import {restStoreAccessIds,dbStoreAccessIds} from "../../store-access";
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { coFundVouchers, customerUsers, dashboardSnapshots, linkDirectoryProjects, linkDirectoryStores, projectProductCatalog, stores, tenantModulePermissions, tenants, userModulePermissions, userStoreAccess } from "../../../db/schema";
+import { coFundVouchers, customerUsers, dashboardSnapshots, linkDirectoryProjects, linkDirectoryStores, projectProductCatalog, stores, tenantModulePermissions, tenants, userModulePermissions } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { ALL_PORTAL_MODULE_IDS, effectiveAccessIds } from "../../module-permissions";
 import { storeDirectory } from "../../store-directory";
@@ -235,11 +236,11 @@ export async function GET(request: Request) {
     const memberships = await supabaseRest<Array<{id:number;tenant_id:string;role:"customer"|"manager"|"superadmin";active:boolean;can_manage_permissions:boolean;module_access_mode:"role_default"|"custom";store_access_mode:"all"|"selected"}>>(`customer_users?select=id,tenant_id,role,active,can_manage_permissions,module_access_mode,store_access_mode&email=eq.${encodeURIComponent(user.email.toLowerCase())}&limit=1`);
     const membership=memberships[0];
     if(!membership?.active)return Response.json({error:"Portal access is disabled"},{status:403});
-    const [tenantModules,userModules,userStores,tenantStatus]=await Promise.all([
+    const [tenantModules,userModules,tenantStatus,allowedStoreIds]=await Promise.all([
       supabaseRest<Array<{module_id:string;enabled:boolean}>>(`tenant_module_permissions?select=module_id,enabled&tenant_id=eq.${encodeURIComponent(membership.tenant_id)}`),
       supabaseRest<Array<{module_id:string;enabled:boolean;additive_grant:boolean}>>(`user_module_permissions?select=module_id,enabled,additive_grant&user_id=eq.${membership.id}`),
-      membership.store_access_mode==="selected"?supabaseRest<Array<{store_id:string}>>(`user_store_access?select=store_id&enabled=eq.true&user_id=eq.${membership.id}`):Promise.resolve([]),
       supabaseRest<Array<{active:boolean}>>(`tenants?select=active&id=eq.${encodeURIComponent(membership.tenant_id)}&limit=1`),
+      restStoreAccessIds(membership),
     ]);
     if(!tenantStatus[0]?.active)return Response.json({error:"Tenant access is disabled"},{status:403});
     const tenantEnabled=new Map(tenantModules.map(row=>[row.module_id,row.enabled]));
@@ -248,17 +249,17 @@ export async function GET(request: Request) {
     const clientEnabledModules=ALL_PORTAL_MODULE_IDS.filter(id=>id==="live_calendar"?tenantEnabled.get(id)===true:tenantEnabled.get(id)!==false);
     const enabledModules=effectiveAccessIds(membership.role,membership.module_access_mode,tenantEnabled,customEnabled,additiveEnabled);
     if(!dashboardSectionAllowed(plan.section,enabledModules,membership.role,membership.role==="superadmin"||membership.can_manage_permissions===true))return Response.json({error:"Module access denied"},{status:403});
-    const assignedStoreIds=new Set(userStores.map(row=>canonicalStoreId(row.store_id)));
+
     const [registry,directory]=await Promise.all([
-      supabaseRest<RegistryStore[]>(`stores?select=id,name,display_name,platform,bigseller_name&tenant_id=eq.${encodeURIComponent(membership.tenant_id)}&order=name.asc`),
+      supabaseRest<Array<RegistryStore&{service_status?:string}>>(`stores?select=id,name,display_name,platform,bigseller_name,service_status&tenant_id=eq.${encodeURIComponent(membership.tenant_id)}&order=name.asc`),
       storeDirectory(membership.tenant_id),
     ]);
-    const visibleStores = registry.filter(store=>canonicalStoreId(store.id)===store.id).map(store=>({
+    const visibleStores = registry.filter(store=>canonicalStoreId(store.id)===store.id&&store.service_status!=='ended').map(store=>({
       id:store.id,name:store.display_name??store.name,
       sourceName:directory.byId.get(store.id)?.store_name??store.bigseller_name,
       bigsellerName:store.bigseller_name,platform:store.platform,
     }))
-      .filter(store=>membership.role==="superadmin"||membership.store_access_mode==="all"||assignedStoreIds.has(store.id));
+      .filter(store=>allowedStoreIds.has(store.id));
     const requestedStoreId = new URL(request.url).searchParams.get("storeId");
     const allStoresRequested = !requestedStoreId || requestedStoreId === "all";
     const selectedStore = allStoresRequested ? undefined : visibleStores.find((store) => store.id === requestedStoreId);
@@ -331,10 +332,10 @@ export async function GET(request: Request) {
   if (!tenant) return Response.json({ error: "Customer dashboard is inactive" }, { status: 403 });
 
   const allTenantStores = await db.select().from(stores).where(eq(stores.tenantId, tenant.id));
-  const assignedStoreRows = membership.storeAccessMode === "selected" ? await db.select({ storeId:userStoreAccess.storeId }).from(userStoreAccess).where(and(eq(userStoreAccess.userId,membership.id),eq(userStoreAccess.enabled,true))) : [];
-  const assignedStoreIds = new Set(assignedStoreRows.map(row=>canonicalStoreId(row.storeId)));
+
   const canonicalTenantStores=allTenantStores.filter(store=>canonicalStoreId(store.id)===store.id);
-  const tenantStores = membership.role === "superadmin" || membership.storeAccessMode === "all" ? canonicalTenantStores : canonicalTenantStores.filter(store=>assignedStoreIds.has(store.id));
+  const allowedStoreIds=await dbStoreAccessIds(db,membership);
+  const tenantStores = canonicalTenantStores.filter(store=>allowedStoreIds.has(store.id)&&store.serviceStatus!=='ended');
   const modulePermissionRows = await db.select().from(tenantModulePermissions).where(eq(tenantModulePermissions.tenantId, tenant.id));
   const configuredModules = new Map(modulePermissionRows.map((row) => [row.moduleId, row.enabled]));
   const clientEnabledModules = ALL_PORTAL_MODULE_IDS.filter((moduleId) => moduleId === "live_calendar" ? configuredModules.get(moduleId) === true : configuredModules.get(moduleId) !== false);

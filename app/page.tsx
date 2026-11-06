@@ -1,6 +1,5 @@
 "use client";
 import {CalculatorCountryAvailability} from "./calculator-country-availability";
-import {StoreProjectSelector} from "./store-project-selector";
 import {SidebarNavigation} from "./sidebar-navigation";
 import type {RepriceTarget} from "./package-repricing";
 
@@ -29,6 +28,8 @@ const OverviewStoreSales=lazy(()=>import("./overview-store-sales").then(module=>
 const OverviewSales=lazy(()=>import("./overview-sales").then(module=>({default:module.OverviewSales})));
 const LateShipmentOrders=lazy(()=>import("./late-shipment-orders").then(module=>({default:module.LateShipmentOrders})));
 const SNAPSHOT_SECTIONS=new Set(["overview","advertising","actions","calculator","health","protection"]);
+
+import {StoreProjectSelector} from "./store-project-selector";
 
 type Store = { id: string; name: string; sourceName?: string; platform: string; contacts: { project: string; href: string; driveLink?: string }[]; storeGroupLink?: string | null; driveLink?: string | null };
 type ManagementAction = { actionDate: string; category: string; title: string; detail: string };
@@ -181,8 +182,13 @@ export default function Home() {
     setLoading(true);
     setLoadError("");
     try {
-      const response = await fetch(`/api/dashboard?section=bootstrap${id ? `&storeId=${encodeURIComponent(id)}` : ""}`, { cache:"no-store",signal:controller.signal });
+      let response = await fetch(`/api/dashboard?section=bootstrap${id ? `&storeId=${encodeURIComponent(id)}` : ""}`, { cache:"no-store",signal:controller.signal });
       if (sequence !== loadSequence.current) return;
+      if(response.status===403&&id&&id!=='all'){
+        setModuleResult(null);setShellData(null);setStoreSelectionMade(false);
+        response=await fetch('/api/dashboard?section=bootstrap',{cache:'no-store',signal:controller.signal});
+        if(sequence!==loadSequence.current)return;
+      }
       if (response.status === 401) { window.location.replace("/login"); return; }
       if (!response.ok) throw new Error(response.status === 403 ? "Your account does not have access to this dashboard or store." : "Unable to load your dashboard. Please try again.");
       const next = await response.json();
@@ -245,6 +251,7 @@ export default function Home() {
         const response=await fetch(`/api/dashboard?section=${encodeURIComponent(section)}&storeId=${encodeURIComponent(storeId)}${forceRefresh?"&refresh=1":""}`,{cache:"no-store",signal:controller.signal});
         if(controller.signal.aborted||sequence!==moduleSequence.current)return;
         if(response.status===401){window.location.replace("/login");return;}
+        if(response.status===403){setModuleResult(null);setShellData(null);setStoreSelectionMade(false);void load(undefined,true);return;}
         if(!response.ok)throw Error(response.status===403?"Your account does not have access to this module or store.":"Unable to load this module. Please try again.");
         const next=await response.json();
         if(controller.signal.aborted||sequence!==moduleSequence.current)return;
@@ -393,13 +400,13 @@ export default function Home() {
     </aside>
 
     <section className="workspace">
-      <header className="header">
+      {section!=="permissions"&&<header className="header">
         <div><p className="kicker">{section==="account"?"SHOPEE HUB":"SHOPEE HUB PERFORMANCE"}{isStaging&&<span data-environment="staging"> · STAGING</span>}</p><h1>{section==="account"?"Account":section==="packages"&&!storeSelectionMade?"No Store Selected":allStoresSelected ? "All Stores" : (store?.name ?? (isStaging?"Selected Store":"J Packaging"))}</h1></div>
         {section!=="account"&&<div className="toolbar">
-          <StoreProjectSelector stores={data?.stores??[]} storeId={storeId} onSelect={selectStore} revision={dataRevision} placeholder={section==="packages"&&!storeSelectionMade}/>
+          <StoreProjectSelector stores={data?.stores??[]} storeId={storeId} onSelect={selectStore} revision={dataRevision} projectEndpoint="/api/store-projects" placeholder={section==="packages"&&!storeSelectionMade}/>
           <button onClick={()=>load(storeId,true)} disabled={loading}>{loading?"Updating…":"Update data"}</button>
         </div>}
-      </header>
+      </header>}
 
       <DashboardModuleBoundary key={section}><Suspense fallback={<ModuleLoading/>}>
       {needsModuleData&&!storeId?<div className="card" role="status">No stores are available. Select or add a store to view this module.</div>:!moduleReady?(currentModule?.error?<div className="card" role="alert"><p>{currentModule.error}</p><button type="button" onClick={()=>setModuleRetry(value=>value+1)}>Retry module</button></div>:<ModuleLoading/>):stagingSnapshotUnavailable?<div className="card" role="status"><h2>No data</h2><p>No Staging snapshot is available for this store.</p></div>:<>
@@ -420,7 +427,7 @@ export default function Home() {
       {section==="calculator" && <div className="page" aria-label="Price Calculator"><CalculatorCountryAvailability platform={allStoresSelected?undefined:store?.platform} onOpenPackages={allowedSections.includes("packages")?()=>setSection("packages"):undefined}><PriceCalculator recalculateTargets={recalculateTargets} onPricesUpdated={finishPriceUpdate} staging={isStaging} storeId={allStoresSelected?"":store?.id??""} storeName={allStoresSelected?"":(store?.name??"")} productProfile={allStoresSelected?null:data?.productProfile} platformVoucher={allStoresSelected?null:data?.platformVoucher??null} coFundVouchers={allStoresSelected?[]:data?.coFundVouchers} onCreatePackage={prefill=>openPackageDraft([prefill])} onCreatePackages={openPackageDraft} /></CalculatorCountryAvailability></div>}
       {section==="design" && <div className="page"><DesignChecker key={storeId} storeId={storeId}/></div>}
       {section==="protection" && <div className="page"><FakeSellerReport storeName={store?.name ?? "Selected store"} allStores={allStoresSelected} cases={fakeSellerCases}/></div>}
-      {section==="permissions" && data?.access?.canManagePermissions && <div className="page"><PermissionSettings accountSetupPreview initialEnabledModules={data.access.clientEnabledModules} onStoreChanged={()=>load(storeId && storeId!=="all" ? storeId : undefined,true)}/></div>}
+      {section==="permissions" && data?.access?.canManagePermissions && <div className="page"><PermissionSettings staging={isStaging} accountSetupPreview initialEnabledModules={data.access.clientEnabledModules} onStoreChanged={()=>load(storeId && storeId!=="all" ? storeId : undefined,true)}/></div>}
       {section==="account" && data?.access?.role==="superadmin" && <div className="page"><AccountPanel /></div>}
       {section==="live_calendar" && <div className="page"><LiveCalendar key={storeId} initialStoreId={storeId} initialView={data.access?.role==="superadmin"?"month":"list"}/></div>}
 

@@ -19,7 +19,7 @@ async function portalUsers(auth: PermissionContext){
   const [users,tenantModules,tenantStoreRows,directory,accountStatus,storeSetupAvailable,registeredNamesAvailable]=await Promise.all([
     supabaseRest<Member[]>(`customer_users?select=*&tenant_id=eq.${encodeURIComponent(tenantId)}&order=email.asc`),
     supabaseRest<Array<{module_id:string;enabled:boolean}>>(`tenant_module_permissions?select=module_id,enabled&tenant_id=eq.${encodeURIComponent(tenantId)}`),
-    supabaseRest<Array<{id:string;name:string;display_name:string|null;platform:string;bigseller_name:string}>>(`stores?select=id,name,display_name,platform,bigseller_name&tenant_id=eq.${encodeURIComponent(tenantId)}&order=name.asc`),
+    supabaseRest<Array<{id:string;name:string;display_name:string|null;platform:string;bigseller_name:string;service_status:"active"|"inactive"|"ended";service_status_version:string}>>(`stores?select=id,name,display_name,platform,bigseller_name,service_status,service_status_version::text&tenant_id=eq.${encodeURIComponent(tenantId)}&order=name.asc`),
     storeDirectory(tenantId),
     (accountReadable?supabaseRest<Array<{roster_key:string;legal_entity:string;billing_registered_name?:string|null;change_action?:string;version:string;store_id:string|null;effective_month:string}>>(`account_billing_unit_versions?select=roster_key,legal_entity,billing_registered_name,change_action,version::text,store_id,effective_month&tenant_id=eq.${encodeURIComponent(tenantId)}&order=version.desc`):Promise.resolve([]))
       .catch(error=>{if(accountReadable&&error instanceof Error&&/"code":"(PGRST204|42703)"/.test(error.message))return supabaseRest<Array<{roster_key:string;legal_entity:string;billing_registered_name?:string|null;change_action?:string;version:string;store_id:string|null;effective_month:string}>>(`account_billing_unit_versions?select=roster_key,legal_entity,change_action,version::text,store_id,effective_month&tenant_id=eq.${encodeURIComponent(tenantId)}&order=version.desc`);throw error;})
@@ -63,7 +63,7 @@ async function portalUsers(auth: PermissionContext){
   }
   const tenantStores=tenantStoreRows.filter(store=>canonicalStoreId(store.id)===store.id).map(store=>{
     const units=unitsByStore.get(store.id)??[];
-    return {...store,name:store.display_name??store.name,...storeDetails(directory,store.id),...(accountReadable?{accountUnit:units.length===1?units[0]:null,accountUnitCount:units.length}:{})};
+    return {...store,serviceStatus:store.service_status,serviceStatusVersion:store.service_status_version,name:store.display_name??store.name,...storeDetails(directory,store.id),...(accountReadable?{accountUnit:units.length===1?units[0]:null,accountUnitCount:units.length}:{})};
   });
   const ids=users.map(user=>user.id);const [moduleRows,storeRows]=ids.length?await Promise.all([
     supabaseRest<Array<{user_id:number;module_id:string;enabled:boolean;additive_grant:boolean}>>(`user_module_permissions?select=user_id,module_id,enabled,additive_grant&user_id=in.(${ids.join(",")})`),

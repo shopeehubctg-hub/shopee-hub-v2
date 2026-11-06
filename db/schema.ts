@@ -57,10 +57,27 @@ export const userModulePermissions = pgTable("user_module_permissions", {
   updatedAt:timestamp("updated_at", { withTimezone:true, mode:"string" }).notNull().defaultNow(),
 }, table=>[uniqueIndex("user_module_permission_idx").on(table.userId,table.moduleId),index("user_module_permissions_user_idx").on(table.userId)]);
 
+export const storeProjects = pgTable("store_projects", {
+  id:uuid("id").primaryKey().defaultRandom(),tenantId:text("tenant_id").notNull().references(()=>tenants.id),
+  name:text("name").notNull(),requestedMarkets:text("requested_markets").array().notNull().default(sql`array[]::text[]`),
+  version:bigint("version",{mode:"bigint"}).notNull().default(BigInt(1)),createdAt:createdAt(),
+  updatedAt:timestamp("updated_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),
+},table=>[unique("store_projects_tenant_id_id_key").on(table.tenantId,table.id),
+  uniqueIndex("store_projects_tenant_name_idx").on(table.tenantId,sql`lower(regexp_replace(trim(${table.name}),'[[:space:]]+',' ','g'))`),
+  check("store_projects_name_check",sql`${table.name}=trim(${table.name}) and length(${table.name}) between 1 and 120`),
+  check("store_projects_version_check",sql`${table.version}>0`),
+  check("store_projects_requested_markets_check",sql`cardinality(${table.requestedMarkets})<=4 and array_position(${table.requestedMarkets},null) is null and ${table.requestedMarkets}<@array['MY','SG','TH','PH']::text[]`)]);
+
 export const stores = pgTable("stores", {
   id:text("id").primaryKey(), tenantId:text("tenant_id").notNull().references(()=>tenants.id), name:text("name").notNull(),
+  projectId:uuid("project_id"),
+  serviceStatus:text("service_status",{enum:["active","inactive","ended"]}).notNull().default("active"),
+  serviceStatusVersion:bigint("service_status_version",{mode:"bigint"}).notNull().default(BigInt(0)),
+  serviceStatusUpdatedAt:timestamp("service_status_updated_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),
   displayName:text("display_name"), platform:text("platform").notNull().default("Shopee"), bigSellerName:text("bigseller_name").notNull(), createdAt:createdAt(),
-}, table=>[index("stores_tenant_id_idx").on(table.tenantId),unique("stores_tenant_id_id_key").on(table.tenantId,table.id)]);
+}, table=>[index("stores_tenant_id_idx").on(table.tenantId),unique("stores_tenant_id_id_key").on(table.tenantId,table.id),
+  foreignKey({name:"stores_project_tenant_fk",columns:[table.tenantId,table.projectId],foreignColumns:[storeProjects.tenantId,storeProjects.id]}),
+  index("stores_tenant_project_idx").on(table.tenantId,table.projectId,table.id)]);
 
 export const liveSessions = pgTable("live_sessions", {
   id:uuid("id").primaryKey().defaultRandom(),
@@ -92,6 +109,7 @@ export const userStoreAccess = pgTable("user_store_access", {
   userId:bigint("user_id", { mode:"number" }).notNull().references(()=>customerUsers.id,{onDelete:"cascade"}),
   storeId:text("store_id").notNull().references(()=>stores.id,{onDelete:"cascade"}),
   enabled:boolean("enabled").notNull().default(true),
+  serviceAccessVersion:bigint("service_access_version",{mode:"bigint"}).notNull().default(BigInt(0)),
   createdAt:createdAt(),
 }, table=>[uniqueIndex("user_store_access_idx").on(table.userId,table.storeId),index("user_store_access_user_idx").on(table.userId)]);
 
