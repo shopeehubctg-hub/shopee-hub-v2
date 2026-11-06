@@ -491,7 +491,7 @@ export default function Home() {
         {!allStoresSelected && <section className="campaign-section" aria-label="Individual Ads"><div className="campaign-heading"><div><h3>Individual ads</h3></div></div><div className="card individual-ads-empty" role="status"><p>Individual ad data is temporarily unavailable.</p></div></section>}
       </div>}
 
-      {section==="orders" && <LateShipmentOrders key={`${storeId}:${dataRevision}`} storeId={storeId}/>}
+      {section==="orders" && <LateShipmentOrders key={`${storeId}:${dataRevision}`} storeId={storeId} canPreview={stagingPreview&&shellData?.environment==="staging"&&shellData?.access?.role==="superadmin"}/>}
 
       {section==="health" && <StoreHealth key={storeId} storeId={storeId} refreshKey={dataRevision} canView={shellData?.access?.role==="superadmin"}/>}
 
