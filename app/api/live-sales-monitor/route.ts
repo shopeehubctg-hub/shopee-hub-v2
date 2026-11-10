@@ -12,6 +12,18 @@ const reply = (body: unknown, status = 200) => Response.json(body, {
 type Peer = { token?: string; offer?: string; answer?: string; seen?: number };
 type Room = { room_id: string; host_id: string | number; viewers: Record<string, Peer>; active: boolean };
 
+function relayServers(): RTCIceServer[] {
+  const value = process.env.SALES_CAST_TURN;
+  if (!value) return [];
+  const { url, username, credential, expiresAt } = JSON.parse(value);
+  if (typeof url !== "string" || !/^turns:[a-z0-9.-]+:443(?:\?transport=tcp)?$/i.test(url) ||
+      typeof username !== "string" || !username || typeof credential !== "string" || !credential ||
+      typeof expiresAt !== "string" || !(Date.parse(expiresAt) > Date.now())) {
+    throw Error("Invalid sales cast relay configuration");
+  }
+  return [{ urls: url, username, credential }];
+}
+
 async function handle(request: Request) {
   if (assertDeploymentIsolation() !== "staging") return reply({}, 404);
   if (request.method === "POST" && request.headers.get("origin") !== new URL(request.url).origin) return reply({}, 403);
@@ -42,6 +54,15 @@ async function handle(request: Request) {
   let body;
   try { body = JSON.parse(raw); } catch { return reply({}, 400); }
   if (!body || typeof body !== "object") return reply({}, 400);
+
+  if (body.action === "connect") {
+    const [room] = await db.execute<Room>(sql`select room_id, host_id, viewers, expires_at > now() as active
+      from public.staging_sales_cast where tenant_id = ${member.tenant}`);
+    if (!room?.active || (body.room && body.room !== room.room_id)) return reply({}, 410);
+    const host = isAdmin && body.room === room.room_id && String(room.host_id) === String(member.id);
+    if (!host && !Object.hasOwn(room.viewers, String(member.id))) return reply({}, 403);
+    return reply({ room: room.room_id, iceServers: relayServers() });
+  }
 
   return db.transaction(async tx => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext('staging-sales-cast'), hashtext(${member.tenant}))`);
@@ -90,7 +111,7 @@ async function handle(request: Request) {
     } else {
       if (!viewer || !["join", "watch"].includes(body.action)) return reply({}, 403);
       if (body.action === "join") {
-        if (typeof body.offer !== "string" || body.offer.length > 14000) return reply({}, 400);
+        if (body.room !== room.room_id || typeof body.offer !== "string" || body.offer.length > 14000) return reply({}, 400);
         viewers[String(member.id)] = { token: randomUUID(), offer: body.offer, seen: Date.now() };
       } else {
         if (!viewer.token || viewer.token !== body.token || body.room !== room.room_id) return reply({}, 403);
