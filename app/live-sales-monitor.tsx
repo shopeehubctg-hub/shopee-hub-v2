@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export const salesMonitorUrl = "/api/live-sales-monitor";
 type Crop = { x: number; y: number; width: number; height: number };
@@ -59,7 +59,7 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
   const [status, setStatus] = useState("Offline");
   const [busy, setBusy] = useState(false);
 
-  function stop() {
+  const stop = useCallback(() => {
     clean.current();
     clean.current = () => {};
     capture.current?.getTracks().forEach(track => track.stop());
@@ -70,7 +70,7 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
     setCrop(null);
     setStatus("Offline");
     setBusy(false);
-  }
+  }, []);
 
   useEffect(() => {
     mounted.current = true;
@@ -195,16 +195,16 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
             const connection = new RTCPeerConnection();
             connections.set(peer.token, connection);
             const sender = connection.addTrack(castTrack, media);
-            const params = sender.getParameters();
-            if (params.encodings.length) {
-              params.degradationPreference = "maintain-resolution";
-              params.encodings[0].maxBitrate = 4_000_000;
-              params.encodings[0].maxFramerate = 15;
-              void sender.setParameters(params).catch(() => {});
-            }
             try {
               await connection.setRemoteDescription({ type: "offer", sdp: peer.offer });
               const answer = await gather(connection, await connection.createAnswer());
+              const params = sender.getParameters();
+              if (params.encodings.length) {
+                params.degradationPreference = "maintain-resolution";
+                params.encodings[0].maxBitrate = 6_000_000;
+                params.encodings[0].maxFramerate = 15;
+                void sender.setParameters(params).catch(() => {});
+              }
               if (running) await signal({ action: "host", room, viewer: peer.id, token: peer.token, answer });
             } catch {
               connection.close();
@@ -224,7 +224,7 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
     }
   }
 
-  async function watch() {
+  const watch = useCallback(async () => {
     setBusy(true);
     setStatus("Connecting…");
     const peer = new RTCPeerConnection();
@@ -251,6 +251,7 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
     };
     try {
       const offer = await gather(peer, await peer.createOffer());
+      if (!active) return;
       const { room, token } = await signal({ action: "join", offer });
       const tick = async () => {
         if (!active) return;
@@ -269,7 +270,11 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
       }, 25000);
       void tick();
     } catch { if (active) { stop(); setStatus("The cast is offline or your account has not been invited."); } }
-  }
+  }, [stop]);
+
+  useEffect(() => {
+    if (!canCast) void watch();
+  }, [canCast, watch]);
 
   return <section className="page sales-cast">
     <header className="page-title"><div><p className="kicker">ANALYTICS · STAGING PILOT</p><h2>Live Sales Monitor</h2></div>
@@ -326,11 +331,11 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
           height: `${crop.height * 100}%`, border: "2px solid #38c6ff", boxShadow: "0 0 0 200vmax #0007" }} />}
         </div>
         {preview && status !== "Live" && <p>Drag over the data area, then check the crop before starting. Use sample data for this pilot.</p>}
-      </> : <button type="button" onClick={watch} disabled={busy}>Watch live</button>}
+      </> : !busy && <button type="button" onClick={watch}>Reconnect</button>}
       {!canCast && busy && <button type="button" onClick={stop}>Leave</button>}
       <video ref={output} aria-label="Live Sales Monitor broadcast" autoPlay muted playsInline controls hidden={canCast ? status !== "Live" : !busy}
         onPlaying={() => { if (!canCast) setStatus("Live"); }}
-        style={{ width: "100%", background: "#15212c" }} />
+        style={{ maxWidth: "100%", height: "auto", justifySelf: "center", background: "#15212c" }} />
     </div>
   </section>;
 }
