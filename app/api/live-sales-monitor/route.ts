@@ -24,6 +24,14 @@ async function handle(request: Request) {
   if (!member) return reply({}, 403);
   const isAdmin = member.role === "superadmin";
   if (request.method === "GET") {
+    if (isAdmin && new URL(request.url).searchParams.has("viewers")) {
+      const viewers = await db.select({ email: customerUsers.email, name: customerUsers.displayName })
+        .from(customerUsers)
+        .where(and(eq(customerUsers.tenantId, member.tenant), eq(customerUsers.active, true),
+          sql`${customerUsers.role} <> 'superadmin'`))
+        .orderBy(customerUsers.displayName, customerUsers.email);
+      return reply({ viewers });
+    }
     const [room] = await db.execute<Room>(sql`select room_id, host_id, viewers, expires_at > now() as active
       from public.staging_sales_cast where tenant_id = ${member.tenant}`);
     const peer = room?.viewers[String(member.id)];
