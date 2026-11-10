@@ -336,10 +336,11 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
         </div>
         {preview && status !== "Live" && <p>Drag over the data area, then check the crop before starting. Use sample data for this pilot.</p>}
       </> : !busy && <button type="button" onClick={watch}>Reconnect</button>}
-      {!canCast && busy && <button type="button" onClick={stop}>Leave</button>}
-      <video ref={output} aria-label="Live Sales Monitor broadcast" autoPlay muted playsInline hidden={canCast ? status !== "Live" : !busy}
+      {!canCast && busy && status !== "Live" && <p role="status">Loading live sales…</p>}
+      {!canCast && busy && status === "Live" && <button type="button" onClick={stop}>Leave</button>}
+      <video ref={output} aria-label="Live Sales Monitor broadcast" autoPlay muted playsInline hidden={status !== "Live"}
         onPlaying={() => { if (!canCast) setStatus("Live"); }}
-        style={{ maxWidth: "100%", height: "auto", justifySelf: "center", background: "#15212c" }} />
+        style={{ maxWidth: "100%", height: "auto", justifySelf: "center" }} />
     </div>
   </section>;
 }
