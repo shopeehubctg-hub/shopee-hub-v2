@@ -9,7 +9,7 @@ const castConnectionConfig: RTCConfiguration = {
 type Crop = { x: number; y: number; width: number; height: number };
 type Peer = { id: string; token: string; offer: string; answered: boolean };
 type Viewer = { email: string; name: string | null };
-type Signal = { room?: string; token?: string; answer?: string; peers?: Peer[] };
+type Signal = { iceServers?: RTCIceServer[]; room?: string; token?: string; answer?: string; peers?: Peer[] };
 
 async function signal(body: object): Promise<Signal> {
   const response = await fetch(salesMonitorUrl, {
@@ -18,6 +18,10 @@ async function signal(body: object): Promise<Signal> {
   });
   if (!response.ok) throw Error(String(response.status));
   return response.json();
+}
+
+function createPeer(iceServers: RTCIceServer[] = []) {
+  return new RTCPeerConnection({ iceServers: [...(castConnectionConfig.iceServers ?? []), ...iceServers] });
 }
 
 async function gather(peer: RTCPeerConnection, sdp: RTCSessionDescriptionInit) {
@@ -88,7 +92,7 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
     setCrop(null);
     setStatus("Offline");
     setBusy(false);
-  }, []);
+  }, [setStatus]);
 
   useEffect(() => {
     mounted.current = true;
@@ -103,12 +107,14 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
   useEffect(() => {
     if (!canCast) return;
     const controller = new AbortController();
-    setViewerError(false);
     fetch(`${salesMonitorUrl}?viewers`, { signal: controller.signal, cache: "no-store" })
       .then(async response => {
         if (!response.ok) throw Error("Viewer list unavailable");
         const data: { viewers: Viewer[] } = await response.json();
-        if (!controller.signal.aborted) setViewers(data.viewers);
+        if (!controller.signal.aborted) {
+          setViewers(data.viewers);
+          setViewerError(false);
+        }
       }).catch(() => { if (!controller.signal.aborted) setViewerError(true); });
     return () => controller.abort();
   }, [canCast, viewerRetry]);
@@ -170,13 +176,14 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
         return;
       }
       if (output.current) output.current.srcObject = media;
+      let hostConfig: Signal | undefined;
       const connections = new Map<string, RTCPeerConnection>();
       let running = true;
       let lastDraw = 0;
       let frameId = 0;
       const onFrame = (now: number) => {
         if (!running) return;
-        if (now - lastDraw >= 65) {
+        if (now - lastDraw >= 200) {
           lastDraw = now;
           draw();
         }
@@ -201,6 +208,7 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
       const tick = async () => {
         try {
           const { peers = [] } = await signal({ action: "host", room });
+          hostConfig ??= await signal({ action: "connect", room });
           if (!running) return;
           clearTimeout(expiry);
           expiry = window.setTimeout(stop, 18000);
@@ -210,7 +218,7 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
           for (const peer of peers) {
             if (!running) return;
             if (connections.has(peer.token)) continue;
-            const connection = new RTCPeerConnection(castConnectionConfig);
+            const connection = createPeer(hostConfig.iceServers);
             connections.set(peer.token, connection);
             const sender = connection.addTrack(castTrack, media);
             void (async () => {
@@ -220,8 +228,8 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
                 const params = sender.getParameters();
                 if (params.encodings.length) {
                   params.degradationPreference = "maintain-resolution";
-                  params.encodings[0].maxBitrate = 6_000_000;
-                  params.encodings[0].maxFramerate = 15;
+                  params.encodings[0].maxBitrate = 900_000;
+                  params.encodings[0].maxFramerate = 5;
                   void sender.setParameters(params).catch(() => {});
                 }
                 if (running && connections.get(peer.token) === connection) await signal({ action: "host", room, viewer: peer.id, token: peer.token, answer });
@@ -232,7 +240,9 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
             })();
           }
           if (running) timer = window.setTimeout(tick, 1500);
-        } catch { if (running) stop(); }
+        } catch {
+          if (running) timer = window.setTimeout(tick, 2500);
+        }
       };
       roomRef.current = room;
       setRoomId(room);
@@ -269,60 +279,78 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
     }
   }
 
-  const watch = useCallback(async () => {
-    setBusy(true);
-    setStatus("Connecting…");
-    const peer = new RTCPeerConnection(castConnectionConfig);
+  const watch = useCallback(() => {
+    clean.current();
     let active = true;
     let timer: number;
-    let expiry: number;
+    let peer: RTCPeerConnection | undefined;
+    let attempt = 0;
     clean.current = () => {
       active = false;
       clearTimeout(timer);
-      clearTimeout(expiry);
-      peer.close();
+      peer?.close();
     };
-    peer.addTransceiver("video", { direction: "recvonly" });
-    peer.ontrack = event => {
-      if (output.current && active) {
-        output.current.srcObject = event.streams[0];
-        void output.current.play().catch(() => {
-          if (!active) return;
-          stop();
-          setStatus("Live feed unavailable. Reconnect to try again.");
-        });
-      }
-    };
-    peer.onconnectionstatechange = () => {
-      if (!active) return;
-
-      if (peer.connectionState === "failed") { stop(); setStatus("Access granted, but the video connection failed."); }
-    };
-    try {
-      const offer = await gather(peer, await peer.createOffer());
-      if (!active) return;
-      const { room, token } = await signal({ action: "join", offer });
-      const tick = async () => {
-        if (!active) return;
-        try {
-          const { answer } = await signal({ action: "watch", room, token });
-          if (!active) return;
-          if (answer && !peer.currentRemoteDescription) await peer.setRemoteDescription({ type: "answer", sdp: answer });
-          if (active) timer = window.setTimeout(tick, 2000);
-        } catch { if (active) { stop(); setStatus("The stream ended or access changed."); } }
+    const connect = async () => {
+      setBusy(true);
+      setStatus("Connecting…");
+      const id = ++attempt;
+      const current = () => active && id === attempt;
+      const retry = (message: string) => {
+        if (!current()) return;
+        attempt++;
+        clearTimeout(timer);
+        peer?.close();
+        if (output.current) output.current.srcObject = null;
+        setStatus(message);
+        timer = window.setTimeout(connect, 5000);
       };
-      expiry = window.setTimeout(() => {
-        if (active && !output.current?.videoWidth) {
-          stop();
-          setStatus("Could not connect. Access is granted, but no video arrived.");
-        }
-      }, 25000);
-      void tick();
-    } catch { if (active) { stop(); setStatus("The cast is offline or your account has not been invited."); } }
-  }, [stop]);
+      try {
+        const { room, iceServers } = await signal({ action: "connect" });
+        if (!current()) return;
+        if (!room) throw Error("Missing room");
+        const connection = createPeer(iceServers);
+        peer = connection;
+        connection.addTransceiver("video", { direction: "recvonly" });
+        connection.ontrack = event => {
+          if (!current() || !output.current) return;
+          output.current.srcObject = event.streams[0];
+          void output.current.play().catch(() => retry("Reconnecting…"));
+        };
+        connection.onconnectionstatechange = () => {
+          if (connection.connectionState === "failed") retry("Reconnecting…");
+        };
+        const offer = await gather(connection, await connection.createOffer());
+        if (!current()) return;
+        const { token } = await signal({ action: "join", room, offer });
+        const deadline = Date.now() + 18000;
+        const tick = async () => {
+          if (!current()) return;
+          try {
+            const { answer } = await signal({ action: "watch", room, token });
+            if (!current()) return;
+            if (answer && !connection.currentRemoteDescription) {
+              await connection.setRemoteDescription({ type: "answer", sdp: answer });
+            }
+            if (!current()) return;
+            const state = connection.connectionState;
+            if (Date.now() > deadline && (state !== "connected" || !output.current?.videoWidth)) {
+              retry("Reconnecting…");
+              return;
+            }
+            timer = window.setTimeout(tick, 2000);
+          } catch { retry("Waiting for live sales…"); }
+        };
+        void tick();
+      } catch { retry("Waiting for live sales…"); }
+    };
+    void connect();
+  }, []);
 
   useEffect(() => {
-    if (!canCast) void watch();
+    if (!canCast) {
+      watch();
+      return () => clean.current();
+    }
   }, [canCast, watch]);
 
   return <section className="page sales-cast">
