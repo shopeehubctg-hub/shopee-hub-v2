@@ -10,7 +10,7 @@ const source = ts.transpileModule(readFileSync("app/portal-session-store.ts", "u
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 const sessionId = randomBytes(32).toString("base64url");
-function fixture(result = "created") {
+function fixture(result = "created", env = { SHOPEE_ACCOUNT_SECURITY_ENABLED: "1" }) {
   const calls = [];
   const state = { result, active: true, tenantActive: true, fail: false };
   const exports = {};
@@ -23,9 +23,16 @@ function fixture(result = "created") {
       return state.result;
     },
   } : realRequire(name);
-  new Function("require", "exports", "process", source)(mockedRequire, exports, { env: { SHOPEE_ACCOUNT_SECURITY_ENABLED: "1" } });
+  new Function("require", "exports", "process", source)(mockedRequire, exports, { env });
   return { store: exports, calls, state };
 }
+
+test("the Production portal switch requires revocable sessions independently of Account", () => {
+  const env = { SHOPEE_PORTAL_SESSION_SECURITY_ENABLED: "1" };
+  assert.equal(fixture(undefined, { ...env, VERCEL_ENV: "production" }).store.portalSecurityEnabled(), true);
+  assert.equal(fixture(undefined, { ...env, VERCEL_ENV: "preview" }).store.portalSecurityEnabled(), false);
+  assert.equal(fixture(undefined, { VERCEL_ENV: "production" }).store.portalSecurityEnabled(), false);
+});
 
 test("register uses canonical IDs, exact expiry, digest and expected RPC result", async () => {
   const { store, calls } = fixture();

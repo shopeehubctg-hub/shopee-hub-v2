@@ -7,7 +7,8 @@ type Principal = { userId: string; tenantId: string };
 const MAX_BIGINT_ID = "9223372036854775807";
 
 export function portalSecurityEnabled() {
-  return process.env.SHOPEE_ACCOUNT_SECURITY_ENABLED === "1";
+  return process.env.SHOPEE_ACCOUNT_SECURITY_ENABLED === "1" ||
+    (process.env.VERCEL_ENV === "production" && process.env.SHOPEE_PORTAL_SESSION_SECURITY_ENABLED === "1");
 }
 
 function bigintId(value: unknown): value is string {
