@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 export const salesMonitorUrl = "/api/live-sales-monitor";
 type Crop = { x: number; y: number; width: number; height: number };
 type Peer = { id: string; token: string; offer: string; answered: boolean };
+type Viewer = { email: string; name: string | null };
 type Signal = { room?: string; token?: string; answer?: string; peers?: Peer[] };
 
 async function signal(body: object): Promise<Signal> {
@@ -47,7 +48,14 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
   const drag = useRef<{ x: number; y: number } | null>(null);
   const [crop, setCrop] = useState<Crop | null>(null);
   const [preview, setPreview] = useState(false);
-  const [emails, setEmails] = useState("");
+  const [viewers, setViewers] = useState<Viewer[] | null>(null);
+  const [viewerError, setViewerError] = useState(false);
+  const [viewerRetry, setViewerRetry] = useState(0);
+  const [emails, setEmails] = useState<string[]>([]);
+  const [search, setSearch] = useState("");
+  const filteredViewers = viewers?.filter(viewer =>
+    `${viewer.name ?? ""} ${viewer.email}`.toLowerCase().includes(search.trim().toLowerCase())
+  );
   const [status, setStatus] = useState("Offline");
   const [busy, setBusy] = useState(false);
 
@@ -74,6 +82,19 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!canCast) return;
+    const controller = new AbortController();
+    setViewerError(false);
+    fetch(`${salesMonitorUrl}?viewers`, { signal: controller.signal, cache: "no-store" })
+      .then(async response => {
+        if (!response.ok) throw Error("Viewer list unavailable");
+        const data: { viewers: Viewer[] } = await response.json();
+        if (!controller.signal.aborted) setViewers(data.viewers);
+      }).catch(() => { if (!controller.signal.aborted) setViewerError(true); });
+    return () => controller.abort();
+  }, [canCast, viewerRetry]);
+
   async function chooseTab() {
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
@@ -90,7 +111,10 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
       }
       capture.current = stream;
       track.addEventListener("ended", stop, { once: true });
-      if (source.current) source.current.srcObject = stream;
+      if (source.current) {
+        source.current.srcObject = stream;
+        void source.current.play().catch(() => setStatus("Could not play the selected tab."));
+      }
       setPreview(true);
       setStatus("Select the area to share");
     } catch { setStatus("No tab selected"); }
@@ -108,21 +132,42 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
     canvas.width = Math.round(originalWidth * crop.width);
     canvas.height = Math.round(originalHeight * crop.height);
     if (canvas.width < 80 || canvas.height < 60) { setBusy(false); setStatus("Select a larger area."); return; }
+    const media = canvas.captureStream(0);
+    const castTrack = media.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack;
+    castTrack.contentHint = "detail";
     const draw = () => {
+      if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
       if (video.videoWidth !== originalWidth || video.videoHeight !== originalHeight) { stop(); return; }
       context.drawImage(video, crop.x * originalWidth, crop.y * originalHeight, canvas.width, canvas.height,
         0, 0, canvas.width, canvas.height);
+      castTrack.requestFrame();
     };
     draw();
-    const media = canvas.captureStream(10);
     try {
-      const { room } = await signal({ action: "start", emails: emails.split(/[\s,]+/).filter(Boolean).map(email => email.toLowerCase()) });
+      const { room } = await signal({ action: "start", emails });
       if (!room) throw Error("No room");
-      if (!capture.current) { void signal({ action: "stop", room }).catch(() => {}); return; }
+      if (!capture.current) {
+        castTrack.stop();
+        void signal({ action: "stop", room }).catch(() => {});
+        return;
+      }
       if (output.current) output.current.srcObject = media;
       const connections = new Map<string, RTCPeerConnection>();
       let running = true;
-      const frames = window.setInterval(draw, 100);
+      let lastDraw = 0;
+      let frameId = 0;
+      const onFrame = (now: number) => {
+        if (!running) return;
+        if (now - lastDraw >= 65) {
+          lastDraw = now;
+          draw();
+        }
+        if (running) frameId = video.requestVideoFrameCallback(onFrame);
+      };
+      const frames = window.setInterval(() => {
+        if (performance.now() - lastDraw >= 200) draw();
+      }, 200);
+      if (typeof video.requestVideoFrameCallback === "function") frameId = video.requestVideoFrameCallback(onFrame);
       let timer: number;
       let expiry: number;
       clean.current = () => {
@@ -130,6 +175,7 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
         clearTimeout(timer);
         clearTimeout(expiry);
         clearInterval(frames);
+        if (frameId) video.cancelVideoFrameCallback(frameId);
         connections.forEach(peer => peer.close());
         media.getTracks().forEach(track => track.stop());
         void signal({ action: "stop", room }).catch(() => {});
@@ -148,7 +194,14 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
             if (connections.has(peer.token)) continue;
             const connection = new RTCPeerConnection();
             connections.set(peer.token, connection);
-            media.getTracks().forEach(track => connection.addTrack(track, media));
+            const sender = connection.addTrack(castTrack, media);
+            const params = sender.getParameters();
+            if (params.encodings.length) {
+              params.degradationPreference = "maintain-resolution";
+              params.encodings[0].maxBitrate = 4_000_000;
+              params.encodings[0].maxFramerate = 15;
+              void sender.setParameters(params).catch(() => {});
+            }
             try {
               await connection.setRemoteDescription({ type: "offer", sdp: peer.offer });
               const answer = await gather(connection, await connection.createAnswer());
@@ -167,7 +220,7 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
     } catch {
       media.getTracks().forEach(track => track.stop());
       setBusy(false);
-      setStatus("Could not start. Check the Staging viewer emails and whether another session is live.");
+      setStatus("Could not start. Check the selected viewers and whether another session is live.");
     }
   }
 
@@ -186,11 +239,14 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
     };
     peer.addTransceiver("video", { direction: "recvonly" });
     peer.ontrack = event => {
-      if (output.current && active) output.current.srcObject = event.streams[0];
+      if (output.current && active) {
+        output.current.srcObject = event.streams[0];
+        void output.current.play().catch(() => setStatus("Press Play to start watching."));
+      }
     };
     peer.onconnectionstatechange = () => {
       if (!active) return;
-      if (peer.connectionState === "connected") setStatus("Live");
+
       if (peer.connectionState === "failed") { stop(); setStatus("Could not connect to the casting computer."); }
     };
     try {
@@ -206,7 +262,7 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
         } catch { if (active) stop(); }
       };
       expiry = window.setTimeout(() => {
-        if (active && peer.connectionState !== "connected") {
+        if (active && !output.current?.videoWidth) {
           stop();
           setStatus("Could not connect. Try watching from the same network as the casting computer.");
         }
@@ -215,15 +271,38 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
     } catch { if (active) { stop(); setStatus("The cast is offline or your account has not been invited."); } }
   }
 
-  return <section className="page">
+  return <section className="page sales-cast">
     <header className="page-title"><div><p className="kicker">ANALYTICS · STAGING PILOT</p><h2>Live Sales Monitor</h2></div>
-      <span role="status">{status}</span>
+      <span className="period" role="status">{status}</span>
     </header>
-    <div className="card">
+    <div className="card sales-cast-card">
       {canCast ? <>
-        <label>Staging viewer emails <input type="text" value={emails} disabled={busy} onChange={event => setEmails(event.target.value)} placeholder="Up to 4 emails, separated by commas" /></label>
-        {!preview && <button type="button" onClick={chooseTab}>Choose tab</button>}
-        <div style={{ position: "relative", lineHeight: 0, overflow: "hidden" }} hidden={!preview || status === "Live"}>
+        <div className="sales-cast-setup">
+          <fieldset disabled={busy}>
+            <legend>Viewers <span>{emails.length} / 4 selected</span></legend>
+            <input type="search" aria-label="Find a viewer" placeholder="Search name or email" value={search} onChange={event => setSearch(event.target.value)} />
+            {viewerError ? <p>Could not load users. <button type="button" onClick={() => setViewerRetry(value => value + 1)}>Retry</button></p>
+              : !filteredViewers ? <p>Loading users…</p>
+              : !filteredViewers.length ? <p>No matching users.</p>
+              : <div className="sales-cast-viewers">{filteredViewers.map(viewer => {
+                const email = viewer.email.toLowerCase();
+                const checked = emails.includes(email);
+                return <label key={email}>
+                  <input type="checkbox" checked={checked} disabled={!checked && emails.length >= 4}
+                    onChange={() => setEmails(current => checked ? current.filter(value => value !== email) : [...current, email])} />
+                  <span><strong>{viewer.name || viewer.email}</strong>{viewer.name && <small>{viewer.email}</small>}</span>
+                </label>;
+              })}</div>}
+          </fieldset>
+          <div className="sales-cast-source">
+            <h3>Share a tab</h3>
+            <p>Choose the sales tab and outline the area viewers should see.</p>
+            {!preview && <button type="button" onClick={chooseTab}>Choose tab</button>}
+            {preview && <button className="sales-cast-primary" type="button" onClick={start} disabled={busy || !crop || !emails.length}>Start casting</button>}
+            {(busy || preview) && <button type="button" onClick={stop}>Stop</button>}
+          </div>
+        </div>
+        <div className="sales-cast-crop" hidden={!preview}>
         <video ref={source} autoPlay muted playsInline
           aria-label="Local preview. Drag to select the data area."
           style={{ display: "block", width: "100%", touchAction: "none", cursor: "crosshair" }}
@@ -247,10 +326,10 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
           height: `${crop.height * 100}%`, border: "2px solid #38c6ff", boxShadow: "0 0 0 200vmax #0007" }} />}
         </div>
         {preview && status !== "Live" && <p>Drag over the data area, then check the crop before starting. Use sample data for this pilot.</p>}
-        {preview && <button type="button" onClick={start} disabled={busy || !crop || !emails.trim()}>Start casting</button>}
       </> : <button type="button" onClick={watch} disabled={busy}>Watch live</button>}
-      {(busy || preview) && <button type="button" onClick={stop}>{canCast ? "Stop" : "Leave"}</button>}
-      <video ref={output} aria-label="Live Sales Monitor broadcast" autoPlay muted playsInline controls hidden={status !== "Live"}
+      {!canCast && busy && <button type="button" onClick={stop}>Leave</button>}
+      <video ref={output} aria-label="Live Sales Monitor broadcast" autoPlay muted playsInline controls hidden={canCast ? status !== "Live" : !busy}
+        onPlaying={() => { if (!canCast) setStatus("Live"); }}
         style={{ width: "100%", background: "#15212c" }} />
     </div>
   </section>;
