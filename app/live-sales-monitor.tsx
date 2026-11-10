@@ -53,8 +53,10 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
   const [viewerRetry, setViewerRetry] = useState(0);
   const [emails, setEmails] = useState<string[]>([]);
   const [grantedEmails, setGrantedEmails] = useState<string[]>([]);
-  const hasAccessChanges = emails.length !== grantedEmails.length || emails.some(email => !grantedEmails.includes(email));
+  const [savedSelection, setSavedSelection] = useState<string[]>([]);
   const [roomId, setRoomId] = useState("");
+  const savedViewers = roomId ? grantedEmails : savedSelection;
+  const hasAccessChanges = emails.length !== savedViewers.length || emails.some(email => !savedViewers.includes(email));
   const [savingAccess, setSavingAccess] = useState(false);
   const [accessMessage, setAccessMessage] = useState("");
   const roomRef = useRef("");
@@ -75,6 +77,7 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
     roomRef.current = "";
     setRoomId("");
     setGrantedEmails([]);
+    setSavedSelection([]);
     setEmails([]);
     setSavingAccess(false);
     setAccessMessage("");
@@ -230,6 +233,7 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
       };
       roomRef.current = room;
       setRoomId(room);
+      setAccessMessage("");
       setStatus("Live");
       expiry = window.setTimeout(stop, 18000);
       void tick();
@@ -241,7 +245,12 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
   }
 
   async function saveViewers(nextEmails: string[]) {
-    if (!roomId || savingAccess) return;
+    if (savingAccess) return;
+    if (!roomId) {
+      setSavedSelection(nextEmails);
+      setAccessMessage("Selection saved. Start casting, then save access to let them watch.");
+      return;
+    }
     setSavingAccess(true);
     setAccessMessage("");
     try {
@@ -322,7 +331,7 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
         <div className="sales-cast-setup">
           <fieldset disabled={savingAccess}>
             <legend>Viewers <span>{emails.length} selected</span></legend>
-            {!roomId && <p>Select viewers now. Start casting, then choose Save access to let them watch.</p>}
+            {!roomId && <p>Save a viewer selection now. After you start casting and check the preview, choose Save access to let them watch.</p>}
             <input type="search" aria-label="Find a viewer" placeholder="Search name or email" value={search} onChange={event => setSearch(event.target.value)} />
             {viewerError ? <p>Could not load users. <button type="button" onClick={() => setViewerRetry(value => value + 1)}>Retry</button></p>
               : !filteredViewers ? <p>Loading users…</p>
@@ -337,9 +346,9 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
                 </label>;
               })}</div>}
             <div className="sales-cast-access-actions">
-              <button type="button" disabled={!roomId || !hasAccessChanges}
-                onClick={() => void saveViewers(emails)}>Save access</button>
-              {hasAccessChanges && <button type="button" onClick={() => setEmails(grantedEmails)}>Cancel changes</button>}
+              <button type="button" disabled={!hasAccessChanges}
+                onClick={() => void saveViewers(emails)}>{roomId ? "Save access" : "Save selection"}</button>
+              {hasAccessChanges && <button type="button" onClick={() => setEmails(savedViewers)}>Cancel changes</button>}
               <button type="button" disabled={!roomId || !grantedEmails.length} onClick={() => void saveViewers([])}>Revoke all access</button>
             </div>
             <div className="sales-cast-viewers" aria-label="Authorized viewers">
