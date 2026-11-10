@@ -241,7 +241,11 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
     peer.ontrack = event => {
       if (output.current && active) {
         output.current.srcObject = event.streams[0];
-        void output.current.play().catch(() => setStatus("Press Play to start watching."));
+        void output.current.play().catch(() => {
+          if (!active) return;
+          stop();
+          setStatus("Live feed unavailable. Reconnect to try again.");
+        });
       }
     };
     peer.onconnectionstatechange = () => {
@@ -333,7 +337,7 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
         {preview && status !== "Live" && <p>Drag over the data area, then check the crop before starting. Use sample data for this pilot.</p>}
       </> : !busy && <button type="button" onClick={watch}>Reconnect</button>}
       {!canCast && busy && <button type="button" onClick={stop}>Leave</button>}
-      <video ref={output} aria-label="Live Sales Monitor broadcast" autoPlay muted playsInline controls hidden={canCast ? status !== "Live" : !busy}
+      <video ref={output} aria-label="Live Sales Monitor broadcast" autoPlay muted playsInline hidden={canCast ? status !== "Live" : !busy}
         onPlaying={() => { if (!canCast) setStatus("Live"); }}
         style={{ maxWidth: "100%", height: "auto", justifySelf: "center", background: "#15212c" }} />
     </div>
