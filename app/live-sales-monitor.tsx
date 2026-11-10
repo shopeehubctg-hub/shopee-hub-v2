@@ -52,6 +52,11 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
   const [viewerError, setViewerError] = useState(false);
   const [viewerRetry, setViewerRetry] = useState(0);
   const [emails, setEmails] = useState<string[]>([]);
+  const [grantedEmails, setGrantedEmails] = useState<string[]>([]);
+  const [roomId, setRoomId] = useState("");
+  const [savingAccess, setSavingAccess] = useState(false);
+  const [accessMessage, setAccessMessage] = useState("");
+  const roomRef = useRef("");
   const [search, setSearch] = useState("");
   const filteredViewers = viewers?.filter(viewer =>
     `${viewer.name ?? ""} ${viewer.email}`.toLowerCase().includes(search.trim().toLowerCase())
@@ -66,6 +71,12 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
     capture.current = null;
     if (source.current) source.current.srcObject = null;
     if (output.current) output.current.srcObject = null;
+    roomRef.current = "";
+    setRoomId("");
+    setGrantedEmails([]);
+    setEmails([]);
+    setSavingAccess(false);
+    setAccessMessage("");
     setPreview(false);
     setCrop(null);
     setStatus("Offline");
@@ -144,7 +155,7 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
     };
     draw();
     try {
-      const { room } = await signal({ action: "start", emails });
+      const { room } = await signal({ action: "start" });
       if (!room) throw Error("No room");
       if (!capture.current) {
         castTrack.stop();
@@ -214,13 +225,32 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
           if (running) timer = window.setTimeout(tick, 1500);
         } catch { if (running) stop(); }
       };
+      roomRef.current = room;
+      setRoomId(room);
       setStatus("Live");
       expiry = window.setTimeout(stop, 18000);
       void tick();
     } catch {
       media.getTracks().forEach(track => track.stop());
       setBusy(false);
-      setStatus("Could not start. Check the selected viewers and whether another session is live.");
+      setStatus("Could not start. Check whether another session is live.");
+    }
+  }
+
+  async function saveViewers(nextEmails: string[]) {
+    if (!roomId || savingAccess) return;
+    setSavingAccess(true);
+    setAccessMessage("");
+    try {
+      await signal({ action: "viewers", room: roomId, emails: nextEmails });
+      if (roomRef.current !== roomId) return;
+      setEmails(nextEmails);
+      setGrantedEmails(nextEmails);
+      setAccessMessage(nextEmails.length ? "Viewer access updated." : "All viewer access revoked.");
+    } catch {
+      if (roomRef.current === roomId) setAccessMessage("Could not update viewer access. Try again.");
+    } finally {
+      if (roomRef.current === roomId) setSavingAccess(false);
     }
   }
 
@@ -287,8 +317,9 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
     <div className="card sales-cast-card">
       {canCast ? <>
         <div className="sales-cast-setup">
-          <fieldset disabled={busy}>
+          <fieldset disabled={!roomId || savingAccess}>
             <legend>Viewers <span>{emails.length} / 4 selected</span></legend>
+            {!roomId && <p>Start casting to grant viewer access.</p>}
             <input type="search" aria-label="Find a viewer" placeholder="Search name or email" value={search} onChange={event => setSearch(event.target.value)} />
             {viewerError ? <p>Could not load users. <button type="button" onClick={() => setViewerRetry(value => value + 1)}>Retry</button></p>
               : !filteredViewers ? <p>Loading users…</p>
@@ -302,12 +333,18 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
                   <span><strong>{viewer.name || viewer.email}</strong>{viewer.name && <small>{viewer.email}</small>}</span>
                 </label>;
               })}</div>}
+            {roomId && <div className="sales-cast-access-actions">
+              <button type="button" disabled={emails.length === grantedEmails.length && emails.every(email => grantedEmails.includes(email))}
+                onClick={() => void saveViewers(emails)}>Save access</button>
+              <button type="button" disabled={!grantedEmails.length} onClick={() => void saveViewers([])}>Revoke all access</button>
+            </div>}
+            {accessMessage && <p role="status">{accessMessage}</p>}
           </fieldset>
           <div className="sales-cast-source">
             <h3>Share a tab</h3>
             <p>Choose the sales tab and outline the area viewers should see.</p>
             {!preview && <button type="button" onClick={chooseTab}>Choose tab</button>}
-            {preview && <button className="sales-cast-primary" type="button" onClick={start} disabled={busy || !crop || !emails.length}>Start casting</button>}
+            {preview && <button className="sales-cast-primary" type="button" onClick={start} disabled={busy || !crop}>Start casting</button>}
             {(busy || preview) && <button type="button" onClick={stop}>Stop</button>}
           </div>
         </div>

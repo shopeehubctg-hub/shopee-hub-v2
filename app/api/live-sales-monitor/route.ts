@@ -47,23 +47,30 @@ async function handle(request: Request) {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext('staging-sales-cast'), hashtext(${member.tenant}))`);
     const [room] = await tx.execute<Room>(sql`select room_id, host_id, viewers, expires_at > now() as active
       from public.staging_sales_cast where tenant_id = ${member.tenant}`);
-    if (body.action === "start") {
+    if (body.action === "start" || body.action === "viewers") {
       if (!isAdmin) return reply({}, 403);
-      if (room?.active) return reply({}, 409);
-      if (!Array.isArray(body.emails) || !body.emails.length || body.emails.length > 4 ||
+      if (body.action === "start") {
+        if (room?.active) return reply({}, 409);
+        const id = randomUUID();
+        await tx.execute(sql`insert into public.staging_sales_cast (tenant_id, room_id, host_id, expires_at)
+          values (${member.tenant}, ${id}, ${member.id}, now() + interval '20 seconds')
+          on conflict (tenant_id) do update set room_id = excluded.room_id, host_id = excluded.host_id,
+          viewers = excluded.viewers, expires_at = excluded.expires_at`);
+        return reply({ room: id });
+      }
+
+      if (!room?.active || body.room !== room.room_id || String(room.host_id) !== String(member.id)) return reply({}, 403);
+      if (!Array.isArray(body.emails) || body.emails.length > 4 ||
           body.emails.some((email: unknown) => typeof email !== "string" || email.length > 254)) return reply({}, 400);
       const emails: string[] = [...new Set<string>(body.emails)];
-      const members = await tx.execute<{ id: string }>(sql`select id from public.customer_users
-        where tenant_id = ${member.tenant} and active and id <> ${member.id}
-        and lower(email) in (${sql.join(emails.map(email => sql`${email}`), sql`, `)})`);
+      const members = emails.length ? await tx.execute<{ id: string }>(sql`select id from public.customer_users
+        where tenant_id = ${member.tenant} and active and role <> 'superadmin'
+        and lower(email) in (${sql.join(emails.map(email => sql`${email}`), sql`, `)})`) : [];
       if (members.length !== emails.length) return reply({}, 400);
-      const id = randomUUID();
-      const viewers = Object.fromEntries(members.map(user => [String(user.id), {}]));
-      await tx.execute(sql`insert into public.staging_sales_cast (tenant_id, room_id, host_id, viewers, expires_at)
-        values (${member.tenant}, ${id}, ${member.id}, ${JSON.stringify(viewers)}::jsonb, now() + interval '20 seconds')
-        on conflict (tenant_id) do update set room_id = excluded.room_id, host_id = excluded.host_id,
-        viewers = excluded.viewers, expires_at = excluded.expires_at`);
-      return reply({ room: id });
+      const viewers = Object.fromEntries(members.map(user => [String(user.id), room.viewers[String(user.id)] ?? {}]));
+      await tx.execute(sql`update public.staging_sales_cast set viewers = ${JSON.stringify(viewers)}::jsonb
+        where tenant_id = ${member.tenant}`);
+      return reply({});
     }
 
     if (!room?.active || (body.room && body.room !== room.room_id)) return reply({}, 410);
