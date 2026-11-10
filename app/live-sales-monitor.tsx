@@ -320,9 +320,9 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
     <div className="card sales-cast-card">
       {canCast ? <>
         <div className="sales-cast-setup">
-          <fieldset disabled={!roomId || savingAccess}>
+          <fieldset disabled={savingAccess}>
             <legend>Viewers <span>{emails.length} selected</span></legend>
-            {!roomId && <p>Start casting to grant viewer access.</p>}
+            {!roomId && <p>Select viewers now. Start casting, then choose Save access to let them watch.</p>}
             <input type="search" aria-label="Find a viewer" placeholder="Search name or email" value={search} onChange={event => setSearch(event.target.value)} />
             {viewerError ? <p>Could not load users. <button type="button" onClick={() => setViewerRetry(value => value + 1)}>Retry</button></p>
               : !filteredViewers ? <p>Loading users…</p>
@@ -336,20 +336,21 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
                   <span><strong>{viewer.name || viewer.email}</strong>{viewer.name && <small>{viewer.email}</small>}</span>
                 </label>;
               })}</div>}
-            {roomId && <div className="sales-cast-access-actions">
-              <button type="button" disabled={!hasAccessChanges}
+            <div className="sales-cast-access-actions">
+              <button type="button" disabled={!roomId || !hasAccessChanges}
                 onClick={() => void saveViewers(emails)}>Save access</button>
               {hasAccessChanges && <button type="button" onClick={() => setEmails(grantedEmails)}>Cancel changes</button>}
-              <button type="button" disabled={!grantedEmails.length} onClick={() => void saveViewers([])}>Revoke all access</button>
-            </div>}
-            {grantedEmails.length > 0 && <div className="sales-cast-viewers" aria-label="Authorized viewers">
+              <button type="button" disabled={!roomId || !grantedEmails.length} onClick={() => void saveViewers([])}>Revoke all access</button>
+            </div>
+            <div className="sales-cast-viewers" aria-label="Authorized viewers">
               <strong>Authorized viewers ({grantedEmails.length})</strong>
+              {!grantedEmails.length && <p>No viewers have access yet.</p>}
               {grantedEmails.map(email => <div key={email} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "6px 0" }}>
                 <span style={{ overflowWrap: "anywhere" }}>{email}</span>
                 <button type="button" aria-label={`Revoke access for ${email}`}
                   onClick={() => void saveViewers(grantedEmails.filter(granted => granted !== email))}>Revoke access</button>
               </div>)}
-            </div>}
+            </div>
             {accessMessage && <p role="status">{accessMessage}</p>}
           </fieldset>
           <div className="sales-cast-source">
