@@ -395,10 +395,15 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
           </fieldset>
           <div className="sales-cast-source">
             <h3>Share a tab</h3>
-            <p>Choose the sales tab and outline the area viewers should see.</p>
+            <p id="sales-cast-source-help">
+              {!preview ? "Choose the sales tab you want to share."
+                : busy ? "Only the outlined area is shared."
+                : crop ? "Check the blue outline, then start casting."
+                : "Click and drag across the preview below to outline the area. This enables Start casting."}
+            </p>
             {!preview && <button type="button" onClick={chooseTab}>Choose tab</button>}
-            {preview && <button className="sales-cast-primary" type="button" onClick={start} disabled={busy || !crop}>Start casting</button>}
-            {(busy || preview) && <button type="button" onClick={stop}>Stop</button>}
+            {preview && <button className="sales-cast-primary" type="button" onClick={start} aria-describedby="sales-cast-source-help" disabled={busy || !crop}>Start casting</button>}
+            {(busy || preview) && <button type="button" onClick={stop}>{busy ? "Stop" : "Cancel preview"}</button>}
           </div>
         </div>
         <div className="sales-cast-crop" hidden={!preview}>
@@ -424,7 +429,7 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
           left: `${crop.x * 100}%`, top: `${crop.y * 100}%`, width: `${crop.width * 100}%`,
           height: `${crop.height * 100}%`, border: "2px solid #38c6ff", boxShadow: "0 0 0 200vmax #0007" }} />}
         </div>
-        {preview && status !== "Live" && <p>Drag over the data area, then check the crop before starting. Use sample data for this pilot.</p>}
+        {preview && !busy && <p>Use sample data for this pilot.</p>}
       </> : !busy && <button type="button" onClick={watch}>Reconnect</button>}
       {!canCast && busy && status !== "Live" && <p role="status">Loading live sales…</p>}
       {!canCast && busy && status === "Live" && <button type="button" onClick={stop}>Leave</button>}
