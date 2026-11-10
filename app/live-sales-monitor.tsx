@@ -46,7 +46,7 @@ async function gather(peer: RTCPeerConnection, sdp: RTCSessionDescriptionInit) {
   return peer.localDescription?.sdp ?? "";
 }
 
-export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
+export function LiveSalesMonitor({ canCast, staging }: { canCast: boolean; staging: boolean }) {
   const source = useRef<HTMLVideoElement>(null);
   const output = useRef<HTMLVideoElement>(null);
   const clean = useRef<() => void>(() => {});
@@ -354,7 +354,7 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
   }, [canCast, watch]);
 
   return <section className="page sales-cast">
-    <header className="page-title"><div><p className="kicker">ANALYTICS · STAGING PILOT</p><h2>Live Sales Monitor</h2></div>
+    <header className="page-title"><div><p className="kicker">ANALYTICS{staging ? " · STAGING PILOT" : ""}</p><h2>Live Sales Monitor</h2></div>
       <span className="period" role="status">{status}</span>
     </header>
     <div className="card sales-cast-card">
@@ -429,7 +429,7 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
           left: `${crop.x * 100}%`, top: `${crop.y * 100}%`, width: `${crop.width * 100}%`,
           height: `${crop.height * 100}%`, border: "2px solid #38c6ff", boxShadow: "0 0 0 200vmax #0007" }} />}
         </div>
-        {preview && !busy && <p>Use sample data for this pilot.</p>}
+        {staging && preview && !busy && <p>Use sample data for this pilot.</p>}
       </> : !busy && <button type="button" onClick={watch}>Reconnect</button>}
       {!canCast && busy && status !== "Live" && <p role="status">Loading live sales…</p>}
       {!canCast && busy && status === "Live" && <button type="button" onClick={stop}>Leave</button>}

@@ -4,6 +4,7 @@ import { getDb } from "../../../db";
 import { customerUsers, tenants } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { assertDeploymentIsolation } from "../../deployment-isolation";
+import { portalSecurityEnabled } from "../../portal-session-store";
 
 export const dynamic = "force-dynamic";
 const reply = (body: unknown, status = 200) => Response.json(body, {
@@ -12,8 +13,7 @@ const reply = (body: unknown, status = 200) => Response.json(body, {
 type Peer = { token?: string; offer?: string; answer?: string; seen?: number };
 type Room = { room_id: string; host_id: string | number; viewers: Record<string, Peer>; active: boolean };
 
-function relayServers(): RTCIceServer[] {
-  const value = process.env.SALES_CAST_TURN;
+function relayServers(value: string | undefined): RTCIceServer[] {
   if (!value) return [];
   const { url, username, credential, expiresAt } = JSON.parse(value);
   if (typeof url !== "string" || !/^turns:[a-z0-9.-]+:443(?:\?transport=tcp)?$/i.test(url) ||
@@ -25,7 +25,12 @@ function relayServers(): RTCIceServer[] {
 }
 
 async function handle(request: Request) {
-  if (assertDeploymentIsolation() !== "staging") return reply({}, 404);
+  const target = assertDeploymentIsolation();
+  const relayConfig = target === "production" ? process.env.SALES_CAST_PRODUCTION_TURN : process.env.SALES_CAST_TURN;
+  if (target === "local" || (target === "production" && (!relayConfig || !portalSecurityEnabled()))) {
+    return reply({}, 404);
+  }
+  const rooms = target === "staging" ? sql`public.staging_sales_cast` : sql`public.live_sales_cast_rooms`;
   if (request.method === "POST" && request.headers.get("origin") !== new URL(request.url).origin) return reply({}, 403);
   const actor = await getChatGPTUser();
   if (!actor) return reply({}, 401);
@@ -45,7 +50,7 @@ async function handle(request: Request) {
       return reply({ viewers });
     }
     const [room] = await db.execute<Room>(sql`select room_id, host_id, viewers, expires_at > now() as active
-      from public.staging_sales_cast where tenant_id = ${member.tenant}`);
+      from ${rooms} where tenant_id = ${member.tenant}`);
     const peer = room?.viewers[String(member.id)];
     return reply({ allowed: isAdmin || Boolean(room?.active && peer) });
   }
@@ -57,23 +62,24 @@ async function handle(request: Request) {
 
   if (body.action === "connect") {
     const [room] = await db.execute<Room>(sql`select room_id, host_id, viewers, expires_at > now() as active
-      from public.staging_sales_cast where tenant_id = ${member.tenant}`);
+      from ${rooms} where tenant_id = ${member.tenant}`);
     if (!room?.active || (body.room && body.room !== room.room_id)) return reply({}, 410);
     const host = isAdmin && body.room === room.room_id && String(room.host_id) === String(member.id);
     if (!host && !Object.hasOwn(room.viewers, String(member.id))) return reply({}, 403);
-    return reply({ room: room.room_id, iceServers: relayServers() });
+    return reply({ room: room.room_id, iceServers: relayServers(relayConfig) });
   }
 
   return db.transaction(async tx => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('staging-sales-cast'), hashtext(${member.tenant}))`);
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('live-sales-cast'), hashtext(${member.tenant}))`);
     const [room] = await tx.execute<Room>(sql`select room_id, host_id, viewers, expires_at > now() as active
-      from public.staging_sales_cast where tenant_id = ${member.tenant}`);
+      from ${rooms} where tenant_id = ${member.tenant}`);
     if (body.action === "start" || body.action === "viewers") {
       if (!isAdmin) return reply({}, 403);
       if (body.action === "start") {
         if (room?.active) return reply({}, 409);
+        if (target === "production") relayServers(relayConfig);
         const id = randomUUID();
-        await tx.execute(sql`insert into public.staging_sales_cast (tenant_id, room_id, host_id, expires_at)
+        await tx.execute(sql`insert into ${rooms} (tenant_id, room_id, host_id, expires_at)
           values (${member.tenant}, ${id}, ${member.id}, now() + interval '20 seconds')
           on conflict (tenant_id) do update set room_id = excluded.room_id, host_id = excluded.host_id,
           viewers = excluded.viewers, expires_at = excluded.expires_at`);
@@ -89,7 +95,7 @@ async function handle(request: Request) {
         and lower(email) in (${sql.join(emails.map(email => sql`${email}`), sql`, `)})`) : [];
       if (members.length !== emails.length) return reply({}, 400);
       const viewers = Object.fromEntries(members.map(user => [String(user.id), room.viewers[String(user.id)] ?? {}]));
-      await tx.execute(sql`update public.staging_sales_cast set viewers = ${JSON.stringify(viewers)}::jsonb
+      await tx.execute(sql`update ${rooms} set viewers = ${JSON.stringify(viewers)}::jsonb
         where tenant_id = ${member.tenant}`);
       return reply({});
     }
@@ -99,7 +105,7 @@ async function handle(request: Request) {
     const viewer = viewers[String(member.id)];
     const host = isAdmin && String(room.host_id) === String(member.id) && body.room === room.room_id;
     if (host && body.action === "stop") {
-      await tx.execute(sql`update public.staging_sales_cast set expires_at = now(), viewers = '{}'::jsonb
+      await tx.execute(sql`update ${rooms} set expires_at = now(), viewers = '{}'::jsonb
         where tenant_id = ${member.tenant}`);
       return reply({});
     }
@@ -118,7 +124,7 @@ async function handle(request: Request) {
         viewer.seen = Date.now();
       }
     }
-    await tx.execute(sql`update public.staging_sales_cast set viewers = ${JSON.stringify(viewers)}::jsonb
+    await tx.execute(sql`update ${rooms} set viewers = ${JSON.stringify(viewers)}::jsonb
       ${host ? sql`, expires_at = now() + interval '20 seconds'` : sql``} where tenant_id = ${member.tenant}`);
     if (host) {
       const activeMembers = await tx.execute<{ id: string }>(sql`select id from public.customer_users
