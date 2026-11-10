@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export const salesMonitorUrl = "/api/live-sales-monitor";
+const castConnectionConfig: RTCConfiguration = {
+  iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }],
+};
 type Crop = { x: number; y: number; width: number; height: number };
 type Peer = { id: string; token: string; offer: string; answered: boolean };
 type Viewer = { email: string; name: string | null };
@@ -20,7 +23,7 @@ async function signal(body: object): Promise<Signal> {
 async function gather(peer: RTCPeerConnection, sdp: RTCSessionDescriptionInit) {
   await peer.setLocalDescription(sdp);
   if (peer.iceGatheringState !== "complete") {
-    await new Promise<void>((resolve, reject) => {
+    await new Promise<void>(resolve => {
       const check = () => {
         if (peer.iceGatheringState === "complete") {
           clearTimeout(timer);
@@ -30,7 +33,7 @@ async function gather(peer: RTCPeerConnection, sdp: RTCSessionDescriptionInit) {
       };
       const timer = window.setTimeout(() => {
         peer.removeEventListener("icegatheringstatechange", check);
-        reject(Error("ICE gathering timed out"));
+        resolve();
       }, 5000);
       peer.addEventListener("icegatheringstatechange", check);
       check();
@@ -207,7 +210,7 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
           for (const peer of peers) {
             if (!running) return;
             if (connections.has(peer.token)) continue;
-            const connection = new RTCPeerConnection();
+            const connection = new RTCPeerConnection(castConnectionConfig);
             connections.set(peer.token, connection);
             const sender = connection.addTrack(castTrack, media);
             void (async () => {
@@ -269,7 +272,7 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
   const watch = useCallback(async () => {
     setBusy(true);
     setStatus("Connecting…");
-    const peer = new RTCPeerConnection();
+    const peer = new RTCPeerConnection(castConnectionConfig);
     let active = true;
     let timer: number;
     let expiry: number;
@@ -293,7 +296,7 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
     peer.onconnectionstatechange = () => {
       if (!active) return;
 
-      if (peer.connectionState === "failed") { stop(); setStatus("Could not connect to the casting computer."); }
+      if (peer.connectionState === "failed") { stop(); setStatus("Access granted, but the video connection failed."); }
     };
     try {
       const offer = await gather(peer, await peer.createOffer());
@@ -306,12 +309,12 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
           if (!active) return;
           if (answer && !peer.currentRemoteDescription) await peer.setRemoteDescription({ type: "answer", sdp: answer });
           if (active) timer = window.setTimeout(tick, 2000);
-        } catch { if (active) stop(); }
+        } catch { if (active) { stop(); setStatus("The stream ended or access changed."); } }
       };
       expiry = window.setTimeout(() => {
         if (active && !output.current?.videoWidth) {
           stop();
-          setStatus("Could not connect. Try watching from the same network as the casting computer.");
+          setStatus("Could not connect. Access is granted, but no video arrived.");
         }
       }, 25000);
       void tick();
