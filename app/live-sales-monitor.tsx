@@ -53,6 +53,7 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
   const [viewerRetry, setViewerRetry] = useState(0);
   const [emails, setEmails] = useState<string[]>([]);
   const [grantedEmails, setGrantedEmails] = useState<string[]>([]);
+  const hasAccessChanges = emails.length !== grantedEmails.length || emails.some(email => !grantedEmails.includes(email));
   const [roomId, setRoomId] = useState("");
   const [savingAccess, setSavingAccess] = useState(false);
   const [accessMessage, setAccessMessage] = useState("");
@@ -206,21 +207,23 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
             const connection = new RTCPeerConnection();
             connections.set(peer.token, connection);
             const sender = connection.addTrack(castTrack, media);
-            try {
-              await connection.setRemoteDescription({ type: "offer", sdp: peer.offer });
-              const answer = await gather(connection, await connection.createAnswer());
-              const params = sender.getParameters();
-              if (params.encodings.length) {
-                params.degradationPreference = "maintain-resolution";
-                params.encodings[0].maxBitrate = 6_000_000;
-                params.encodings[0].maxFramerate = 15;
-                void sender.setParameters(params).catch(() => {});
+            void (async () => {
+              try {
+                await connection.setRemoteDescription({ type: "offer", sdp: peer.offer });
+                const answer = await gather(connection, await connection.createAnswer());
+                const params = sender.getParameters();
+                if (params.encodings.length) {
+                  params.degradationPreference = "maintain-resolution";
+                  params.encodings[0].maxBitrate = 6_000_000;
+                  params.encodings[0].maxFramerate = 15;
+                  void sender.setParameters(params).catch(() => {});
+                }
+                if (running && connections.get(peer.token) === connection) await signal({ action: "host", room, viewer: peer.id, token: peer.token, answer });
+              } catch {
+                connection.close();
+                connections.delete(peer.token);
               }
-              if (running) await signal({ action: "host", room, viewer: peer.id, token: peer.token, answer });
-            } catch {
-              connection.close();
-              connections.delete(peer.token);
-            }
+            })();
           }
           if (running) timer = window.setTimeout(tick, 1500);
         } catch { if (running) stop(); }
@@ -318,7 +321,7 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
       {canCast ? <>
         <div className="sales-cast-setup">
           <fieldset disabled={!roomId || savingAccess}>
-            <legend>Viewers <span>{emails.length} / 4 selected</span></legend>
+            <legend>Viewers <span>{emails.length} selected</span></legend>
             {!roomId && <p>Start casting to grant viewer access.</p>}
             <input type="search" aria-label="Find a viewer" placeholder="Search name or email" value={search} onChange={event => setSearch(event.target.value)} />
             {viewerError ? <p>Could not load users. <button type="button" onClick={() => setViewerRetry(value => value + 1)}>Retry</button></p>
@@ -328,15 +331,24 @@ export function LiveSalesMonitor({ canCast }: { canCast: boolean }) {
                 const email = viewer.email.toLowerCase();
                 const checked = emails.includes(email);
                 return <label key={email}>
-                  <input type="checkbox" checked={checked} disabled={!checked && emails.length >= 4}
+                  <input type="checkbox" checked={checked}
                     onChange={() => setEmails(current => checked ? current.filter(value => value !== email) : [...current, email])} />
                   <span><strong>{viewer.name || viewer.email}</strong>{viewer.name && <small>{viewer.email}</small>}</span>
                 </label>;
               })}</div>}
             {roomId && <div className="sales-cast-access-actions">
-              <button type="button" disabled={emails.length === grantedEmails.length && emails.every(email => grantedEmails.includes(email))}
+              <button type="button" disabled={!hasAccessChanges}
                 onClick={() => void saveViewers(emails)}>Save access</button>
+              {hasAccessChanges && <button type="button" onClick={() => setEmails(grantedEmails)}>Cancel changes</button>}
               <button type="button" disabled={!grantedEmails.length} onClick={() => void saveViewers([])}>Revoke all access</button>
+            </div>}
+            {grantedEmails.length > 0 && <div className="sales-cast-viewers" aria-label="Authorized viewers">
+              <strong>Authorized viewers ({grantedEmails.length})</strong>
+              {grantedEmails.map(email => <div key={email} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "6px 0" }}>
+                <span style={{ overflowWrap: "anywhere" }}>{email}</span>
+                <button type="button" aria-label={`Revoke access for ${email}`}
+                  onClick={() => void saveViewers(grantedEmails.filter(granted => granted !== email))}>Revoke access</button>
+              </div>)}
             </div>}
             {accessMessage && <p role="status">{accessMessage}</p>}
           </fieldset>

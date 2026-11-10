@@ -60,7 +60,7 @@ async function handle(request: Request) {
       }
 
       if (!room?.active || body.room !== room.room_id || String(room.host_id) !== String(member.id)) return reply({}, 403);
-      if (!Array.isArray(body.emails) || body.emails.length > 4 ||
+      if (!Array.isArray(body.emails) ||
           body.emails.some((email: unknown) => typeof email !== "string" || email.length > 254)) return reply({}, 400);
       const emails: string[] = [...new Set<string>(body.emails)];
       const members = emails.length ? await tx.execute<{ id: string }>(sql`select id from public.customer_users
