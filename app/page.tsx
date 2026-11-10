@@ -143,8 +143,9 @@ export default function Home() {
   const [loadError, setLoadError] = useState("");
   const loadSequence = useRef(0);
   const [canWatchCast, setCanWatchCast] = useState<boolean | null>(null);
+  const castEnvironment = shellData?.environment === "staging" || shellData?.environment === "production";
   useEffect(() => {
-    if (shellData?.environment !== "staging") return;
+    if (!castEnvironment) return;
     const controller = new AbortController();
     const check = () => fetch(salesMonitorUrl, { cache: "no-store", signal: controller.signal })
       .then(response => response.ok ? response.json() : null)
@@ -153,9 +154,9 @@ export default function Home() {
     void check();
     const timer = window.setInterval(check, 8000);
     return () => { controller.abort(); clearInterval(timer); };
-  }, [shellData?.environment]);
+  }, [castEnvironment]);
   const allowedSections = shellData?.access?.enabledModules ?? [];
-  const section = (requestedSection === "live_sales_monitor" ? shellData?.environment === "staging" : requestedSection === "account" ? shellData?.access?.role === "superadmin" : requestedSection === "permissions" ? shellData?.access?.canManagePermissions : allowedSections.includes(requestedSection as PortalModuleId))
+  const section = (requestedSection === "live_sales_monitor" ? castEnvironment : requestedSection === "account" ? shellData?.access?.role === "superadmin" : requestedSection === "permissions" ? shellData?.access?.canManagePermissions : allowedSections.includes(requestedSection as PortalModuleId))
     ? requestedSection : allowedSections[0] ?? (shellData?.access?.canManagePermissions ? "permissions" : "");
   const [storeId, setStoreId] = useState("");
   const [storeSelectionMade,setStoreSelectionMade] = useState(false);
@@ -444,7 +445,7 @@ export default function Home() {
       {section==="permissions" && data?.access?.canManagePermissions && <div className="page"><PermissionSettings staging={isStaging} accountSetupPreview initialEnabledModules={data.access.clientEnabledModules} onStoreChanged={()=>load(storeId && storeId!=="all" ? storeId : undefined,true)}/></div>}
       {section==="account" && data?.access?.role==="superadmin" && <div className="page"><AccountPanel /></div>}
       {section==="live_sales_monitor" && (canWatchCast
-        ? <LiveSalesMonitor canCast={data.access?.role==="superadmin"}/>
+        ? <LiveSalesMonitor canCast={data.access?.role==="superadmin"} staging={shellData?.environment==="staging"}/>
         : <section className="page">
             <header className="page-title"><h2>Live Sales Monitor</h2></header>
             <div className="card" role="status">{canWatchCast === null ? "Checking viewer access…" : "Waiting for the host to start casting and grant access. This page updates automatically."}</div>
