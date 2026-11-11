@@ -41,6 +41,8 @@ function setup() {
     execute: async query => {
       const flatten = value => value.queryChunks ? value.queryChunks.map(flatten).join("") : value.value?.join("") ?? String(value);
       const sql = flatten(query);
+      if (sql.includes("to_regclass")) return [{ available: true }];
+      if (sql.includes("public.job_runs")) return state.runs ?? [];
       if (sql.includes("permission_effective_stores")) return [{ ids: state.scope }];
       if (sql.includes("public.late_shipment_orders")) {
         state.reads++;
@@ -66,14 +68,14 @@ test("stale alerts return a successful empty state", async () => {
   setup().source = [row("OLD", "Shop A", "2026-11-04")];
   const response = await GET(request());
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { orders: [], importDate: null });
+  assert.deepEqual(await response.json(), { orders: [], importDate: null, importStatus: "not_imported" });
 });
 
 test("all stores only returns authorized current-day orders and canonical labels", async () => {
   setup().source = [row("A", "Shop A"), row("B", "Shop B"), row("C", "Ended"), row("OLD", "Shop A", "2026-11-04")];
   const response = await GET(request());
   assert.match(response.headers.get("cache-control"), /private, no-store/);
-  assert.deepEqual(await response.json(), { orders: [{ key: "store-a:A", orderNo: "A", storeId: "store-a", storeName: "Current A", expiresAt: null }], importDate: "2026-11-06" });
+  assert.deepEqual(await response.json(), { orders: [{ key: "store-a:A", orderNo: "A", storeId: "store-a", storeName: "Current A", expiresAt: null }], importDate: "2026-11-06", importStatus: "ready" });
 });
 
 test("unauthorized store, module and tenant never read order source", async () => {
@@ -91,7 +93,7 @@ test("ambiguous aliases across tenants fail closed", async () => {
   const state = setup();
   state.registry.push({ id: "foreign", tenant_id: "another-tenant", name: "Shop A", platform: "Shopee" });
   state.source = [row("A", "Shop A")];
-  assert.deepEqual(await (await GET(request())).json(), { orders: [], importDate: null });
+  assert.deepEqual(await (await GET(request())).json(), { orders: [], importDate: null, importStatus: "ready" });
 });
 
 test("latest returns only the most recent nonfuture batch and authorized orders", async () => {
@@ -103,10 +105,15 @@ test("latest returns only the most recent nonfuture batch and authorized orders"
   const response = await GET(request("all", "latest"));
   assert.deepEqual(await response.json(), {
     orders: [{ key: "store-a:LATEST", orderNo: "LATEST", storeId: "store-a", storeName: "Current A", expiresAt: null }],
-    importDate: "2026-11-04",
+    importDate: "2026-11-04", importStatus: "ready",
   });
   state.source = [row("OLDER", "Shop A", "2026-11-03"), row("PRIVATE", "Shop B", "2026-11-04")];
-  assert.deepEqual(await (await GET(request("store-a", "latest"))).json(), { orders: [], importDate: null });
+  assert.deepEqual(await (await GET(request("store-a", "latest"))).json(), { orders: [], importDate: null, importStatus: "ready" });
   assert.equal((await GET(request("store-b", "latest"))).status, 403);
   assert.equal((await GET(request("all", "invalid"))).status, 400);
+});
+
+test("Today shows confirmed empty after a completed zero-order import", async () => {
+  setup().runs = [{ status: "success", rows_written: 0, expected_rows: 0, finished_at: "2026-11-06T04:00:00Z" }];
+  assert.deepEqual(await (await GET(request())).json(), { orders: [], importDate: null, importStatus: "ready" });
 });

@@ -17,6 +17,8 @@ type RegistryStore = SourceStore & { service_status: string | null };
 type DirectoryStore = { tenant_id: string; store_id: string; store_name: string };
 type SourceOrder = { alert_date: string; order_no: string; store_name: string; expire_time: Date | string | null };
 
+type ImportRun = { status: string; rows_written: number | string | null; expected_rows: number | string | null; finished_at: string | null };
+
 export async function GET(request: Request) {
   try {
     if (assertDeploymentIsolation() !== "staging") return reply({ error: "Orders are unavailable" }, 404);
@@ -44,9 +46,18 @@ export async function GET(request: Request) {
     if (!Array.isArray(scope?.ids)) throw Error("Store access cannot be verified");
     const allowed = new Set(scope.ids);
     if (selected !== "all" && !allowed.has(selected)) return reply({ error: "Store access denied" }, 403);
-    if (!allowed.size) return reply({ orders: [], importDate: null });
+    if (!allowed.size) return reply({ orders: [], importDate: null, importStatus: "ready" });
 
     const today = malaysiaDate();
+    // The staging pilot can run before its importer has a job receipt table.
+    const [receiptTable] = mode === "today" ? await db.execute<{ available: boolean }>(sql`
+      select to_regclass('public.job_runs') is not null as available
+    `) : [];
+    const [run] = receiptTable?.available ? await db.execute<ImportRun>(sql`
+      select status, rows_written, expected_rows, finished_at from public.job_runs
+      where job_name = 'late_shipment' and business_date = ${today}::date
+      order by finished_at desc nulls last, id desc limit 1
+    `) : [];
     const batchDate = mode === "latest"
       ? sql`(select max(alert_date) from public.late_shipment_orders where alert_date <= ${today}::date)`
       : sql`${today}::date`;
@@ -58,7 +69,16 @@ export async function GET(request: Request) {
       limit 5001
     `);
     if (rows.length > 5000) throw Error("Late shipment read limit exceeded");
-    if (rows.length === 0) return reply({ orders: [], importDate: null });
+    const incomplete = Boolean(run && (run.status !== "success" || !run.finished_at));
+    if (rows.length === 0) {
+      const confirmedEmpty = run && !incomplete && String(run.rows_written) === "0" && String(run.expected_rows) === "0";
+      return reply({
+        orders: [], importDate: null,
+        importStatus: mode === "latest" || confirmedEmpty ? "ready" : run ? "incomplete" : "not_imported",
+      });
+    }
+
+
 
     const [registry, directory] = await Promise.all([
       db.execute<RegistryStore>(sql`
@@ -87,7 +107,7 @@ export async function GET(request: Request) {
       seen.add(key);
       orders.push({ key, orderNo: row.order_no, storeId: store.id, storeName: store.display_name ?? store.name, expiresAt: row.expire_time });
     }
-    return reply({ orders, importDate: orders.length ? rows[0].alert_date : null });
+    return reply({ orders, importDate: orders.length ? rows[0].alert_date : null, importStatus: incomplete ? "incomplete" : "ready" });
   } catch {
     return reply({ error: "Unable to load orders. Please try again." }, 503);
   }

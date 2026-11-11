@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { malaysiaDate } from "./ad-balance-validation.js";
 
 type ShipmentOrder = { key: string; orderNo: string; storeId: string; storeName: string; expiresAt: string | null };
-type Result = { orders: ShipmentOrder[]; importDate: string | null } | { error: true };
+type Result = { orders: ShipmentOrder[]; importDate: string | null; importStatus: "ready" | "not_imported" | "incomplete" } | { error: true };
 const deadline = new Intl.DateTimeFormat("en-MY", {
   dateStyle: "medium",
   timeStyle: "short",
@@ -31,7 +31,7 @@ export function LateShipmentOrders({ storeId, canPreview = false }: { storeId: s
     </header>
     {showingExamples ? <>
       <p className="card" role="status"><strong>Staging example.</strong> These are sample orders.</p>
-      <ShipmentTable mode="today" allStores={allStores} result={{ importDate: null, orders: [
+      <ShipmentTable mode="today" allStores={allStores} result={{ importDate: null, importStatus: "ready", orders: [
         { key: "demo-1", storeId: "demo-a", orderNo: "DEMO-001", storeName: "Example Store A", expiresAt: `${malaysiaDate()}T12:00:00+08:00` },
         { key: "demo-2", storeId: "demo-b", orderNo: "DEMO-002", storeName: "Example Store B", expiresAt: `${malaysiaDate()}T16:30:00+08:00` },
       ] }} />
@@ -64,6 +64,13 @@ function ShipmentResults({ storeId, mode, allStores }: {
     <p>Unable to load orders.</p>
     <button type="button" onClick={() => { setResult(null); setRetry(value => value + 1); }}>Try again</button>
   </div>;
+  if (mode === "today" && result.importStatus === "not_imported") return <div className="card" role="status">
+    Today’s Late Shipment orders haven’t been imported yet.
+  </div>;
+  if (mode === "today" && result.importStatus === "incomplete") return <>
+    <div className="card" role="status">Today’s import is incomplete. The list may be missing orders.</div>
+    {result.orders.length > 0 && <ShipmentTable result={result} mode={mode} allStores={allStores} />}
+  </>;
   if (!result.orders.length) return <div className="card" role="status">
     {mode === "today" ? "No orders need attention today." : "No orders for your stores in the latest import."}
   </div>;
