@@ -32,7 +32,7 @@ function setup() {
       { id: "store-b", tenant_id: "j-packaging", name: "Shop B", platform: "Shopee" },
       { id: "ended", tenant_id: "j-packaging", name: "Ended", platform: "Shopee", service_status: "ended" },
     ],
-    source: [],
+    source: [], hasReceiptTable: true, runs: [],
   };
   state.db = {
     select: () => ({ from: () => ({ innerJoin: () => ({ where: () => ({
@@ -41,6 +41,8 @@ function setup() {
     execute: async query => {
       const sql = query.queryChunks.flatMap(chunk => chunk.value ?? [chunk]).join(" ");
       if (sql.includes("permission_effective_stores")) return [{ ids: state.scope }];
+      if (sql.includes("to_regclass")) return [{ available: state.hasReceiptTable }];
+      if (sql.includes("public.job_runs")) return state.runs;
       if (sql.includes("public.late_shipment_orders")) {
         state.reads++;
         assert.match(sql, /where alert_date =\s*2026-11-06\s*::date/);
@@ -56,18 +58,40 @@ function setup() {
 }
 const row = (order_no, store_name, alert_date = "2026-11-06") => ({ order_no, store_name, alert_date, expire_time: null });
 
-test("stale alerts return a successful empty state", async () => {
+test("stale alerts without a current receipt are not imported today", async () => {
   setup().source = [row("OLD", "Shop A", "2026-11-04")];
   const response = await GET(request());
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { orders: [] });
+  assert.deepEqual(await response.json(), { orders: [], importStatus: "not_imported" });
+});
+
+test("a completed zero-order import is empty, but partial or inconsistent receipts are incomplete", async () => {
+  const state = setup();
+  state.runs = [{ status: "success", rows_written: 0, expected_rows: 0, finished_at: "2026-11-06T04:00:00Z" }];
+  assert.deepEqual(await (await GET(request())).json(), { orders: [], importStatus: "ready" });
+  state.runs[0].rows_written = 3;
+  assert.deepEqual(await (await GET(request())).json(), { orders: [], importStatus: "incomplete" });
+  state.runs[0].status = "partial";
+  state.source = [row("A", "Shop A")];
+  const partial = await (await GET(request())).json();
+  assert.equal(partial.importStatus, "incomplete");
+  assert.equal(partial.orders.length, 1);
+});
+
+test("Staging can still show current orders without a receipt table", async () => {
+  const state = setup();
+  state.hasReceiptTable = false;
+  state.source = [row("A", "Shop A")];
+  const result = await (await GET(request())).json();
+  assert.equal(result.importStatus, "ready");
+  assert.equal(result.orders.length, 1);
 });
 
 test("all stores only returns authorized current-day orders and canonical labels", async () => {
   setup().source = [row("A", "Shop A"), row("B", "Shop B"), row("C", "Ended"), row("OLD", "Shop A", "2026-11-04")];
   const response = await GET(request());
   assert.match(response.headers.get("cache-control"), /private, no-store/);
-  assert.deepEqual(await response.json(), { orders: [{ key: "store-a:A", orderNo: "A", storeName: "Current A", expiresAt: null }] });
+  assert.deepEqual(await response.json(), { orders: [{ key: "store-a:A", orderNo: "A", storeName: "Current A", expiresAt: null }], importStatus: "ready" });
 });
 
 test("unauthorized store, module and tenant never read order source", async () => {
@@ -85,5 +109,5 @@ test("ambiguous aliases across tenants fail closed", async () => {
   const state = setup();
   state.registry.push({ id: "foreign", tenant_id: "another-tenant", name: "Shop A", platform: "Shopee" });
   state.source = [row("A", "Shop A")];
-  assert.deepEqual(await (await GET(request())).json(), { orders: [] });
+  assert.deepEqual(await (await GET(request())).json(), { orders: [], importStatus: "ready" });
 });
