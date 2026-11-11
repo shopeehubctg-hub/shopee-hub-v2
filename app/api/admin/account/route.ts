@@ -52,7 +52,7 @@ export async function GET(request:Request) {
         const ids=[...new Set((row.candidates??[]).flatMap(candidate=>candidate.storeId&&canonicalStores.has(candidate.storeId)?[candidate.storeId]:[]))];
         const store=canonicalStores.get(row.storeId??(ids.length===1?ids[0]:''));
         row.storeAliases=store?[...new Set([store.display_name,store.name,store.bigseller_name].filter((name):name is string=>typeof name==='string'&&Boolean(name.trim())))]:[];
-        row.previewRateDefaultsEligible=member.tenant_id==='j-packaging';delete row.previewServiceFxRate;}
+        row.previewRateDefaultsEligible=member.tenant_id==='j-packaging'&&!row.historicalIdentityOnly;delete row.previewServiceFxRate;}
       const bonlife=decorated.stores.filter(row=>row.market==='SG'&&row.salesCurrency==='SGD'&&(row.fxPolicy==='bnm-service-average'||member.tenant_id==='j-packaging'&&row.currency==='SGD'&&row.rosterKey==='roster-2026-10-sg-3'&&row.project==='BONLIFE SG'));
       await Promise.all([
         ...(bonlife.length?[bnmServiceRate(invoiceMonth).then(rate=>{if(rate&&rate.policy==='bnm-service-average'&&rate.verified===true&&Boolean(rate.reference)&&rate.serviceMonth===previousMonth(invoiceMonth))for(const row of bonlife)row.previewServiceFxRate={...rate,currency:'SGD',quotationUnit:1};})]:[]),
