@@ -12,6 +12,7 @@ export type AccountStoreRow = {
   salesCurrency?: AccountCurrency;
   previewMarketFxEligible?: boolean;
   previewRateDefaultsEligible?: boolean;
+  historicalIdentityOnly?: boolean;
   previewServiceFxRate?: {serviceMonth:string;rate:string;policy:'bnm-service-average';verified:true;reference:string;currency?:AccountCurrency;quotationUnit?:1};
   entity?: string; billingEntity?:string|null; storeAliases?:string[]; market?: MarketCode; termsVersion?: "NEW" | "OLD";
   mappingStatus?: "resolved" | "candidate" | "ambiguous" | "missing"; mappingReason?: string;
