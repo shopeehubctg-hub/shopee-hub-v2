@@ -44,7 +44,7 @@ export function mergeAccountRoster(account:AccountResponse,roster:AccountRespons
   account.stores.push(...roster.stores.filter(row=>!represented.has(row.rosterKey!)));
   account.rosterUpdatedAt=roster.rosterUpdatedAt;
   for(const summary of account.summaries) {
-    summary.pendingStores=account.stores.filter(row=>row.currency===summary.currency&&row.expectedNetFee===null).length;
+    summary.pendingStores=account.stores.filter(row=>!row.historicalIdentityOnly&&row.currency===summary.currency&&row.expectedNetFee===null).length;
     if(summary.pendingStores) summary.expectedNetFee=null;
   }
   return account;
@@ -73,6 +73,6 @@ export function appendAccountMarketStores(account:AccountResponse,tenantStores:A
   if(account.stores.some(row=>row.storeId===store.id||row.rosterKey===key))continue;
   account.stores.push({id:key,rosterKey:key,storeId:store.id,storeName:store.display_name??store.name,project:store.display_name??store.name,market,currency:MARKET_CONFIG[market].currency,salesCurrency:MARKET_CONFIG[market].currency,previewMarketFxEligible:true,statementMonth:account.statementMonth,invoiceMonth:account.invoiceMonth,servicePeriodStart:null,servicePeriodEnd:null,status:'pending_terms',mappingStatus:'resolved',candidates:[{mappingId:'',username:'',storeId:store.id,storeName:store.display_name??store.name}],expectedNetFee:null,billed:null,collected:null,outstanding:null});
  }
- for(const summary of account.summaries){summary.pendingStores=account.stores.filter(row=>row.currency===summary.currency&&row.expectedNetFee===null).length;if(summary.pendingStores)summary.expectedNetFee=null;}
+ for(const summary of account.summaries){summary.pendingStores=account.stores.filter(row=>!row.historicalIdentityOnly&&row.currency===summary.currency&&row.expectedNetFee===null).length;if(summary.pendingStores)summary.expectedNetFee=null;}
  return account;
 }

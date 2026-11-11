@@ -5,6 +5,18 @@ const zero={currency:'MYR',expectedNetFee:null,billed:null,collected:null,outsta
 function account(month){return {invoiceMonth:month,statementMonth:'2026-09',today:'2026-10-07',timezone:'Asia/Kuala_Lumpur',status:'ready',updatedAt:null,summaries:[{...zero}],stores:[]};}
 const rule={type:'fixed',currency:'MYR',basis:'fixed_monthly',fixedAmount:'100.00'};
 function version(v,month,action,storeId,feeRule){return {id:`v${v}`,roster_key:'roster-2026-10-my-2',roster_project:'Project',legal_entity:'Entity',currency:'MYR',change_action:action,version:String(v),effective_month:`${month}-01`,store_id:storeId,fee_rule:feeRule,created_at:'2026-10-07T00:00:00Z'};}
+test('January can select a current mapped billing client without backdating fees or amounts',()=>{
+ const settings=[version(1,'2026-10','setup','shopee-a',rule)];
+ const stores=new Map([['shopee-a','Store A']]);
+ const row=applyAccountSettings(account('2026-01'),settings,stores,'j-packaging').stores[0];
+ assert.equal(row.storeId,'shopee-a');
+ assert.equal(row.historicalIdentityOnly,true);
+ assert.equal(row.rateRule,null);
+ assert.equal(row.billed,null);
+ assert.equal(row.appliedSettingsVersion,null);
+ assert.equal(row.latestSettingsVersion,'1');
+ assert.equal(applyAccountSettings(account('2026-01'),settings,stores,'other').stores.length,0);
+});
 test('future configured unit appears in November preserving market, but not October or other 57 unconfirmed units',()=>{const settings=[version(1,'2026-11','mapping','store',null)];assert.equal(applyAccountSettings(account('2026-10'),settings,new Map([['store','Store']])).stores.length,0);const row=applyAccountSettings(account('2026-11'),settings,new Map([['store','Store']])).stores[0];assert.equal(row.storeId,'store');assert.equal(row.market,'MY');assert.equal(row.expectedNetFee,null);assert.equal(row.calculatedFee,null);});
 test('future mapping then current fee persists both timelines independently',()=>{const settings=[version(1,'2026-11','mapping','store',null),version(2,'2026-10','fee_rule',null,rule)];const october=applyAccountSettings(account('2026-10'),settings,new Map([['store','Store']])).stores[0];assert.equal(october.storeId,null);assert.equal(october.rateRule.fixedAmount,'100.00');const november=applyAccountSettings(account('2026-11'),settings,new Map([['store','Store']])).stores[0];assert.equal(november.storeId,'store');assert.equal(november.rateRule.fixedAmount,'100.00');assert.equal(november.mappingEffectiveMonth,'2026-11');assert.equal(november.rateEffectiveMonth,'2026-10');assert.equal(november.rateHistory.length,1);});
 test('future fee then current mapping persists reverse timeline and leaves old month fee pending',()=>{const settings=[version(1,'2026-11','fee_rule',null,rule),version(2,'2026-10','mapping','store',null)];const october=applyAccountSettings(account('2026-10'),settings,new Map([['store','Store']])).stores[0];assert.equal(october.storeId,'store');assert.equal(october.rateRule,null);const november=applyAccountSettings(account('2026-11'),settings,new Map([['store','Store']])).stores[0];assert.equal(november.storeId,'store');assert.equal(november.rateRule.fixedAmount,'100.00');assert.equal(november.latestSettingsVersion,'2');});

@@ -1,4 +1,4 @@
-import {projectAccountUnitCrosswalk} from './account-unit-crosswalk';
+import {ACCOUNT_UNIT_CROSSWALK,projectAccountUnitCrosswalk} from './account-unit-crosswalk';
 import {MARKET_CONFIG,MARKET_CODES} from './markets';
 import { cents, previousMonth } from './account-ledger';
 import type { AccountCurrency, AccountFeeRule, AccountResponse,AccountStoreRow } from './account-contract';
@@ -33,6 +33,9 @@ export function applyAccountSettings(account:AccountResponse,settings:AccountSet
   const units=new Map<string,AccountSetting>();
   for(const setting of settings.filter(s=>s.effective_month.slice(0,7)<=account.invoiceMonth).sort((a,b)=>a.effective_month.localeCompare(b.effective_month)||(BigInt(a.version)<BigInt(b.version)?-1:1)))units.set(setting.roster_key,setting);
   for(const setting of units.values())if(!represented.has(setting.roster_key)){account.stores.push({id:setting.roster_key,rosterKey:setting.roster_key,project:setting.roster_project,entity:setting.legal_entity,billingEntity:setting.billing_registered_name??null,market:setting.market??MARKET_CODES.find(market=>MARKET_CONFIG[market].currency===setting.currency),storeId:null,storeName:setting.roster_project,currency:setting.currency,statementMonth:previousMonth(account.invoiceMonth),invoiceMonth:account.invoiceMonth,servicePeriodStart:null,servicePeriodEnd:null,status:'pending_terms',expectedNetFee:null,billed:null,collected:null,outstanding:null});}
+  if (tenantId === 'j-packaging' && /^2026-0[1-9]$/.test(account.invoiceMonth)) {
+    appendHistoricalClientIdentities(account, settings, storeNames);
+  }
   projectAccountUnitCrosswalk(account,settings,storeNames,tenantId);
   for(const row of account.stores) {
     row.market??=MARKET_CODES.find(market=>MARKET_CONFIG[market].currency===row.currency);
@@ -58,6 +61,46 @@ export function applyAccountSettings(account:AccountResponse,settings:AccountSet
     row.calculationStatus=row.rateRule?'pending_statement':'pending_rule';
     if(currentMapping?.store_id&&storeNames.has(currentMapping.store_id)) { row.storeId=currentMapping.store_id;row.storeName=storeNames.get(currentMapping.store_id)!;row.mappingStatus='resolved';row.mappingReason='Manually selected by Super Admin';row.candidates=[{mappingId:'',username:'',storeId:currentMapping.store_id,storeName:row.storeName}];if(row.status==='pending_mapping')row.status=row.rateRule?'pending_statement':'pending_terms'; }
   }
-  for(const summary of account.summaries){summary.pendingStores=account.stores.filter(row=>row.currency===summary.currency&&row.expectedNetFee===null).length;if(summary.pendingStores)summary.expectedNetFee=null;}
+  for(const summary of account.summaries){summary.pendingStores=account.stores.filter(row=>!row.historicalIdentityOnly&&row.currency===summary.currency&&row.expectedNetFee===null).length;if(summary.pendingStores)summary.expectedNetFee=null;}
   return account;
+}
+
+/** Show the current client catalog in historical views without applying current fee terms. */
+function appendHistoricalClientIdentities(account:AccountResponse, settings:AccountSetting[], storeNames:Map<string,string>) {
+  const represented = new Set(account.stores.flatMap(row => [row.rosterKey, row.sourceRosterKey, row.id]));
+  const occupiedStores = new Set(account.stores.map(row => row.storeId).filter(Boolean));
+  const current = new Map<string, AccountSetting>();
+  const identity = new Map<string, AccountSetting>();
+  const ordered = [...settings].sort((a,b) => a.effective_month.localeCompare(b.effective_month) ||
+    (BigInt(a.version) < BigInt(b.version) ? -1 : 1));
+  for (const setting of ordered) {
+    if (setting.effective_month.slice(0,7) > account.today.slice(0,7)) continue;
+    current.set(setting.roster_key, setting);
+    if ((setting.change_action === 'mapping' || setting.change_action === 'setup') &&
+        billingUnitAcceptsStore(setting.roster_key, setting.store_id)) identity.set(setting.roster_key, setting);
+  }
+  for (const [alias, canonical] of Object.entries(ACCOUNT_UNIT_CROSSWALK)) {
+    const aliasStore = identity.get(alias)?.store_id;
+    if (aliasStore && aliasStore === identity.get(canonical)?.store_id && canonical === `store:${aliasStore}`) {
+      identity.delete(alias);
+    }
+  }
+  const owners = new Map<string, number>();
+  for (const mapping of identity.values()) {
+    if (mapping.store_id) owners.set(mapping.store_id, (owners.get(mapping.store_id) ?? 0) + 1);
+  }
+  for (const [key, mapping] of identity) {
+    const storeId = mapping.store_id;
+    const latest = current.get(key);
+    if (!storeId || !latest || !storeNames.has(storeId) || represented.has(key) ||
+        occupiedStores.has(storeId) || owners.get(storeId) !== 1 || !billingUnitAcceptsStore(key, storeId)) continue;
+    account.stores.push({
+      id:key, rosterKey:key, project:latest.roster_project, entity:latest.legal_entity,
+      market:latest.market ?? mapping.market, currency:latest.currency, storeId,
+      storeName:storeNames.get(storeId)!, mappingStatus:'resolved', historicalIdentityOnly:true,
+      statementMonth:previousMonth(account.invoiceMonth), invoiceMonth:account.invoiceMonth,
+      servicePeriodStart:null, servicePeriodEnd:null, status:'pending_terms',
+      expectedNetFee:null, billed:null, collected:null, outstanding:null,
+    });
+  }
 }
