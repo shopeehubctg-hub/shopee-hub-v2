@@ -95,7 +95,14 @@ export function AccountXeroSettings({data,onSaved}:{data:AccountResponse;onSaved
  const working=busy||refreshPending;
  if(!xero)return null;
  const targetSource=xero.targets??data.stores.map(row=>({unitKey:row.rosterKey??row.id,name:row.project||row.storeName,entity:row.entity??'',billingEntity:row.billingEntity,storeId:row.storeId,storeName:row.storeName}));
- const targets=targetSource.filter(row=>row.storeId&&row.entity?.trim()).map(row=>({key:row.unitKey,name:row.name,entity:row.billingEntity||row.entity}));
+ const targets=targetSource
+  .filter(row=>row.storeId&&row.entity?.trim())
+  .map(row=>({
+   key:row.unitKey,
+   name:row.name.trim().toUpperCase(),
+   entity:(row.billingEntity?.trim()||row.entity.trim()).toUpperCase(),
+  }))
+  .sort((a,b)=>a.name.localeCompare(b.name,'en')||a.entity.localeCompare(b.entity,'en')||a.key.localeCompare(b.key,'en'));
  const validTargets=new Set(targets.map(row=>row.key));
  const unresolved=xero.groups.filter(group=>group.invoiceCount>0&&!['mapped','split'].includes(group.status));
  const visibleGroups=showLinked?xero.groups.filter(group=>group.invoiceCount>0):unresolved;
