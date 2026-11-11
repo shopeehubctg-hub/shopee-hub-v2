@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 
 type ShipmentOrder = { key: string; orderNo: string; storeName: string; expiresAt: string | null };
-type Result = { orders: ShipmentOrder[] } | { error: true };
+type OrdersResult = { orders: ShipmentOrder[]; importStatus: "not_imported" | "incomplete" | "ready" };
+type Result = OrdersResult | { error: true };
 const deadline = new Intl.DateTimeFormat("en-MY", {
   dateStyle: "medium",
   timeStyle: "short",
@@ -21,7 +22,7 @@ export function LateShipmentOrders({ storeId }: { storeId: string }) {
       signal: controller.signal,
     }).then(async response => {
       if (!response.ok) throw Error("Unable to load orders");
-      const data: { orders: ShipmentOrder[] } = await response.json();
+      const data: OrdersResult = await response.json();
       if (!controller.signal.aborted) setResult(data);
     }).catch(() => {
       if (!controller.signal.aborted) setResult({ error: true });
@@ -36,8 +37,16 @@ export function LateShipmentOrders({ storeId }: { storeId: string }) {
         <p>Unable to load orders.</p>
         <button type="button" onClick={() => { setResult(null); setRetry(value => value + 1); }}>Try again</button>
       </div>
-      : result.orders.length === 0 ? <div className="card" role="status">No orders need attention.</div>
-      : <div className="card table-card" role="region" aria-label="Late Shipment orders" tabIndex={0}>
+      : <>
+        {result.importStatus === "incomplete" && <div className="card" role="status">
+          Today’s import is incomplete. The list may be missing orders.
+        </div>}
+        {result.importStatus === "not_imported" && <div className="card" role="status">
+          Today’s Late Shipment orders haven’t been imported yet.
+        </div>}
+        {result.importStatus === "ready" && result.orders.length === 0 &&
+          <div className="card" role="status">No orders need attention.</div>}
+        {result.orders.length > 0 && <div className="card table-card" role="region" aria-label="Late Shipment orders" tabIndex={0}>
         <table>
           <thead><tr><th scope="col">Order</th><th scope="col">Store</th><th scope="col">Ship by (MYT)</th></tr></thead>
           <tbody>{result.orders.map(order => <tr key={order.key}>
@@ -46,6 +55,7 @@ export function LateShipmentOrders({ storeId }: { storeId: string }) {
             <td>{order.expiresAt ? <time dateTime={order.expiresAt}>{deadline.format(new Date(order.expiresAt))}</time> : "—"}</td>
           </tr>)}</tbody>
         </table>
-      </div>}
+        </div>}
+      </>}
   </section>;
 }
