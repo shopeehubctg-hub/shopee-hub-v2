@@ -1,4 +1,4 @@
-import {projectAccountUnitCrosswalk} from './account-unit-crosswalk';
+import {ACCOUNT_UNIT_CROSSWALK,projectAccountUnitCrosswalk} from './account-unit-crosswalk';
 import {MARKET_CONFIG,MARKET_CODES} from './markets';
 import { cents, previousMonth } from './account-ledger';
 import type { AccountCurrency, AccountFeeRule, AccountResponse,AccountStoreRow } from './account-contract';
@@ -61,7 +61,7 @@ export function applyAccountSettings(account:AccountResponse,settings:AccountSet
     row.calculationStatus=row.rateRule?'pending_statement':'pending_rule';
     if(currentMapping?.store_id&&storeNames.has(currentMapping.store_id)) { row.storeId=currentMapping.store_id;row.storeName=storeNames.get(currentMapping.store_id)!;row.mappingStatus='resolved';row.mappingReason='Manually selected by Super Admin';row.candidates=[{mappingId:'',username:'',storeId:currentMapping.store_id,storeName:row.storeName}];if(row.status==='pending_mapping')row.status=row.rateRule?'pending_statement':'pending_terms'; }
   }
-  for(const summary of account.summaries){summary.pendingStores=account.stores.filter(row=>row.currency===summary.currency&&row.expectedNetFee===null).length;if(summary.pendingStores)summary.expectedNetFee=null;}
+  for(const summary of account.summaries){summary.pendingStores=account.stores.filter(row=>!row.historicalIdentityOnly&&row.currency===summary.currency&&row.expectedNetFee===null).length;if(summary.pendingStores)summary.expectedNetFee=null;}
   return account;
 }
 
@@ -78,6 +78,12 @@ function appendHistoricalClientIdentities(account:AccountResponse, settings:Acco
     current.set(setting.roster_key, setting);
     if ((setting.change_action === 'mapping' || setting.change_action === 'setup') &&
         billingUnitAcceptsStore(setting.roster_key, setting.store_id)) identity.set(setting.roster_key, setting);
+  }
+  for (const [alias, canonical] of Object.entries(ACCOUNT_UNIT_CROSSWALK)) {
+    const aliasStore = identity.get(alias)?.store_id;
+    if (aliasStore && aliasStore === identity.get(canonical)?.store_id && canonical === `store:${aliasStore}`) {
+      identity.delete(alias);
+    }
   }
   const owners = new Map<string, number>();
   for (const mapping of identity.values()) {
