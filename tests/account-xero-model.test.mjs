@@ -13,6 +13,15 @@ const company=(extra={})=>({contactId:'contact',companyName:'Company a',category
 const mapping=(extra={})=>({contactId:'contact',categoryId:'category',optionId:'p0',unitKey:'a',effectiveMonth:'2026-10',version:'1',...extra});
 const snapshot=(invoices=[invoice()],companies=[company()])=>({month:'2026-10',scope,companies,report:{rows:invoices}});
 const run=(extra={})=>project({rows:[row('a')],snapshot:snapshot(),mappings:[],month:'2026-10',...extra});
+test('missing store labels require an explicit invoice match, and conflicting labels stay unlinked',()=>{
+ const maps=[mapping({invoiceId:'i1'})];
+ const missing=snapshot([invoice('i1',{storeNames:[]})]);
+ assert.equal(run({snapshot:missing}).unmappedInvoiceCount,1);
+ assert.equal(run({snapshot:missing,mappings:[mapping()]}).unmappedInvoiceCount,1);
+ assert.equal(run({snapshot:missing,mappings:maps}).byUnit.a.invoices.length,1);
+ const conflict=snapshot([invoice('i1',{storeNames:['Store b']})]);
+ assert.equal(run({rows:[row('a'),row('b')],snapshot:conflict,mappings:maps}).unmappedInvoiceCount,1);
+});
 test('unique exact company match is only a candidate until stable ID mapping is saved',()=>{
  const rows=[row('a')],before=structuredClone(rows);const result=run({rows,snapshot:snapshot([invoice()],[company({companyName:'  COMPANY   A '})])});
  assert.equal(result.groups[0].status,'candidate');assert.equal(result.groups[0].suggestedUnitKey,'a');assert.equal(result.groups[0].expectedVersion,'0');assert.equal(result.byUnit.a.status,'unmapped');assert.deepEqual(result.byUnit.a.byCurrency,[]);assert.equal(result.unmappedTotals[0].invoiced,'108.00');assert.deepEqual(rows,before);

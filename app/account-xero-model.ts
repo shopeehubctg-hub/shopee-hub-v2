@@ -118,7 +118,9 @@ export function buildAccountXeroProjection({rows,snapshot,mappings,month,lastSyn
    if(savedUnitKey&&applied?.invoiceId&&evidence.state==='ambiguous'&&evidence.storeNames.length===1&&evidence.candidateUnitKeys.includes(savedUnitKey)){evidence.state='matched';evidence.suggestedUnitKey=savedUnitKey;evidence.reason='Saved invoice mapping confirms STORE NAME country ambiguity.';}
    const disagreement=Boolean(savedUnitKey&&evidence.state==='matched'&&evidence.suggestedUnitKey!==savedUnitKey);
    if(disagreement){evidence.state='conflict';evidence.reason='Saved mapping conflicts with invoice STORE NAME.';evidence.suggestedUnitKey=null;}
-   const unitKey=savedUnitKey&&evidence.state==='matched'?savedUnitKey:null;
+   const manuallyConfirmed=Boolean(applied?.invoiceId&&evidence.state==='missing'&&evidence.storeNames.length===0);
+   const unitKey=savedUnitKey&&(evidence.state==='matched'||manuallyConfirmed)?savedUnitKey:null;
+   if(unitKey&&manuallyConfirmed)evidence.reason='Client confirmed manually.';
    const choice:AccountXeroInvoiceChoice={invoiceId:invoice.invoiceId,invoiceNumber:invoice.invoiceNumber,currency:invoice.currency,invoiced:invoice.gross!,received:invoice.amountPaid!,outstanding:invoice.amountDue!,tax:invoice.tax!,credits:invoice.amountCredited??'0',date:invoice.date??null,dueDate:invoice.dueDate??null,xeroUrl:`https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=${encodeURIComponent(invoice.invoiceId)}`,mappedUnitKey:unitKey,appliedVersion:applied?.version??null,effectiveMonth:applied?.effectiveMonth??null,status:unitKey?'mapped':applied?'conflict':'missing',storeEvidence:evidence,suggestedUnitKey:evidence.suggestedUnitKey};
    group.invoiceChoices.push(choice);
    if(unitKey){const list=assigned.get(unitKey)??[];list.push(invoice);assigned.set(unitKey,list);group.mappedInvoiceCount++;}else unassigned.push(invoice);
