@@ -151,3 +151,16 @@ test('activated canonical client resolves historical source mapping after effect
  const maps=[mapping({unitKey:source,invoiceId:'i1'}),mapping({unitKey:canonical,invoiceId:'i1',version:'2',effectiveMonth:'2026-11'})];const result=run({rows,mappings:maps});assert.equal(result.byUnit[canonical].invoices.length,1);assert.equal(result.byUnit[canonical].byCurrency[0].invoiced,'108.00');assert.equal(result.groups[0].invoiceChoices[0].appliedVersion,'1');assert.equal(result.groups[0].expectedVersion,'2');assert.equal(result.groups[0].invoiceChoices[0].mappedUnitKey,canonical);assert.equal(maps[0].unitKey,source);assert.equal(result.unmappedInvoiceCount,0);
  const blocked=run({rows:[row(canonical,{storeName:'Store a'})],mappings:[mapping({unitKey:source})]});assert.deepEqual(blocked.byUnit[canonical].byCurrency,[]);assert.equal(blocked.unmappedInvoiceCount,1);
 });
+
+test('Shopee focus keeps only the two selected projects in billing totals and review',()=>{
+ const data=snapshot([
+  invoice('i1'),invoice('i2',{project:'Shopee Hub Internal'}),
+  invoice('i3',{project:'Lazada Hub'}),invoice('i4',{project:'Tik Tok Hub'}),
+ ],names.map((name,i)=>company({optionId:`p${i}`,project:name})));
+ const result=run({snapshot:data,projects:['Shopee Hub','Shopee Hub Internal'],mappings:[mapping(),mapping({optionId:'p3'})]});
+ assert.equal(result.invoiceCount,2);
+ assert.equal(result.unmappedInvoiceCount,1);
+ assert.equal(result.invoiceTotals[0].invoiced,'216.00');
+ assert.deepEqual(result.byUnit.a.invoices.map(item=>item.invoiceId),['i1']);
+ assert.deepEqual(result.groups.map(group=>group.project),['Shopee Hub','Shopee Hub Internal']);
+});

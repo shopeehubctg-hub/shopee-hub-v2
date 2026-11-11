@@ -54,6 +54,7 @@ export type AccountSettingsHistory = { action:'fee_rule'; version:string; effect
 
 export type AccountXeroStatus={
  configured:boolean;connected:boolean;organisationName?:string;status:string;lastSyncedAt?:string|null;lastError?:string|null;
+ invoiceCount?:number;
  month:string;today?:string;groups:AccountXeroGroup[];targets?:AccountXeroTarget[];sourceRunId?:string|null;unmappedInvoiceCount:number;
  unmappedTotals:Array<{currency:string;invoiced:string;received:string;outstanding:string;tax?:string;credits?:string}>;
  totals:Array<{currency:string;gross:string;amountPaid:string;amountDue:string;tax:string;amountCredited:string}>;

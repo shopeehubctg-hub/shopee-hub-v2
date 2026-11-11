@@ -1,6 +1,8 @@
 import type {AccountStoreRow} from './account-contract';
 import {XERO_PROJECT_NAMES,xeroMoney,xeroDecimal,type XeroProjectName,type XeroProjectScope} from './xero-model';
 
+export const ACCOUNT_SHOPEE_PROJECTS = ['Shopee Hub', 'Shopee Hub Internal'] as const;
+
 export type AccountXeroCompany={contactId:string;companyName:string;categoryId:string;optionId:string;project:XeroProjectName};
 /** Tenant, connection and organisation are checked by the server before calling this pure model. */
 export type AccountXeroMappingVersion={contactId:string;categoryId:string;optionId:string;unitKey:string;effectiveMonth:string;version:string;invoiceId?:string|null};
@@ -47,12 +49,12 @@ function totals(rows:AccountXeroInvoice[]):AccountXeroCurrency[]{
  return [...currencies].sort(([a],[b])=>a.localeCompare(b)).map(([currency,current])=>({currency,invoiced:xeroDecimal(current.invoiced),received:xeroDecimal(current.received),outstanding:xeroDecimal(current.outstanding),tax:xeroDecimal(current.tax),credits:xeroDecimal(current.credits)}));
 }
 /** Source-authoritative projection. Legacy ledger amounts and fee/store configuration are never overwritten or added. */
-export function buildAccountXeroProjection({rows,snapshot,mappings,month,lastSyncedAt=null}:{rows:AccountStoreRow[];snapshot:AccountXeroSnapshot|null|undefined;mappings:AccountXeroMappingVersion[];month:string;lastSyncedAt?:string|null}){
+export function buildAccountXeroProjection({rows,snapshot,mappings,month,lastSyncedAt=null,projects}:{rows:AccountStoreRow[];snapshot:AccountXeroSnapshot|null|undefined;mappings:AccountXeroMappingVersion[];month:string;lastSyncedAt?:string|null;projects?:readonly XeroProjectName[]}){
  if(!validMonth(month))throw Error('Invalid invoice month');
  const targets=accountXeroTargets(rows),targetByKey=new Map(targets.map(target=>[target.unitKey,target]));
  const canonicalTargetKey=(key:string)=>targetByKey.has(key)?key:targets.find(target=>target.sourceRosterKey===key)?.unitKey??key;
  const byUnit:Record<string,AccountXeroActuals>=Object.fromEntries(targets.map(target=>[target.unitKey,{status:'not_synced',invoiceMonth:month,lastSyncedAt,byCurrency:[],invoices:[]} as AccountXeroActuals]));
- if(!snapshot||snapshot.month!==month)return {groups:[] as AccountXeroGroup[],targets,byUnit,unmappedInvoiceCount:0,unmappedTotals:[] as AccountXeroCurrency[],needsIdentitySync:true};
+ if(!snapshot||snapshot.month!==month)return {groups:[] as AccountXeroGroup[],targets,byUnit,unmappedInvoiceCount:0,unmappedTotals:[] as AccountXeroCurrency[],needsIdentitySync:true,invoiceCount:0,invoiceTotals:[] as AccountXeroCurrency[]};
  const scope={categoryId:canonicalId(snapshot.scope.categoryId),options:snapshot.scope.options.map(option=>({...option,id:canonicalId(option.id)}))};
  if(!scope.categoryId||scope.options.length!==4||new Set(scope.options.map(option=>option.id)).size!==4||new Set(scope.options.map(option=>option.project)).size!==4||scope.options.some(option=>!XERO_PROJECT_NAMES.includes(option.project)))throw Error('Invalid project scope');
  const projectOptions=new Map(scope.options.map(option=>[option.project,option.id]));
@@ -68,14 +70,18 @@ export function buildAccountXeroProjection({rows,snapshot,mappings,month,lastSyn
   const key=xeroSourceKey(contactId,scope.categoryId,optionId);let group=groups.get(key);
   if(!group){group={groupKey:key,contactId,categoryId:scope.categoryId,optionId,project,companyName:companies.get(key)?.companyName??null,status:'missing',mappedUnitKey:null,suggestedUnitKey:null,candidateUnitKeys:[],expectedVersion:'0',appliedVersion:null,effectiveMonth:null,invoiceCount:0,mappedInvoiceCount:0,invoiceChoices:[]};groups.set(key,group);}return group;
  };
- for(const company of companies.values())ensure(company.contactId,company.optionId,company.project);
+ const inView=(project:XeroProjectName|null)=>!projects||(project!==null&&projects.includes(project));
+ const visibleInvoices:AccountXeroInvoice[]=[];
+ for(const company of companies.values())if(inView(company.project))ensure(company.contactId,company.optionId,company.project);
  const invoiceIds=new Set<string>();let pending=false;const unassigned:AccountXeroInvoice[]=[];
  for(const invoice of snapshot.report.rows){
   if(!invoice.invoiceId||invoiceIds.has(canonicalId(invoice.invoiceId)))throw Error('Duplicate invoice ID');invoiceIds.add(canonicalId(invoice.invoiceId));
+  if(!inView(invoice.project))continue;
   if(invoice.state==='pending'){pending=true;continue;}if(invoice.state!=='eligible')continue;
   if(monthOf(invoice.date)!==month)throw Error('Wrong invoice month');
   const optionId=invoice.project&&projectOptions.get(invoice.project);
   if(!optionId)throw Error('Out-of-scope invoice');
+  visibleInvoices.push(invoice);
   if(!invoice.contactId){unassigned.push(invoice);continue;}
   const group=ensure(invoice.contactId,optionId,invoice.project!);group.invoiceCount++;
   const list=groupInvoices.get(group.groupKey)??[];list.push(invoice);groupInvoices.set(group.groupKey,list);
@@ -84,9 +90,11 @@ export function buildAccountXeroProjection({rows,snapshot,mappings,month,lastSyn
  for(const mapping of mappings){
   if(mapping.invoiceId!==undefined&&mapping.invoiceId!==null&&(!mapping.invoiceId||typeof mapping.invoiceId!=='string'))throw Error('Invalid invoice override');
   if(!mapping.contactId||canonicalId(mapping.categoryId)!==scope.categoryId||!scope.options.some(option=>option.id===canonicalId(mapping.optionId))||!validMonth(mapping.effectiveMonth)||!/^\d{1,18}$/.test(mapping.version)||BigInt(mapping.version)<BigInt(1))throw Error('Invalid mapping version');
+  const option=scope.options.find(option=>option.id===canonicalId(mapping.optionId))!;
+  if(!inView(option.project))continue;
   const key=xeroSourceKey(mapping.contactId,mapping.categoryId,mapping.optionId),versions=versionsByKey.get(key)??[];
   if(versions.some(version=>version.version===mapping.version))throw Error('Duplicate mapping version');versions.push(mapping);versionsByKey.set(key,versions);
-  const option=scope.options.find(option=>option.id===canonicalId(mapping.optionId))!;ensure(mapping.contactId,mapping.optionId,option.project);
+  ensure(mapping.contactId,mapping.optionId,option.project);
  }
  const assigned=new Map<string,AccountXeroInvoice[]>();
  const appliedFor=(versions:AccountXeroMappingVersion[],invoiceId:string|null)=>versions.filter(version=>version.effectiveMonth<=month&&(version.invoiceId?canonicalId(version.invoiceId):null)===invoiceId).sort((a,b)=>b.effectiveMonth.localeCompare(a.effectiveMonth)||(BigInt(a.version)>BigInt(b.version)?-1:1))[0];
@@ -126,5 +134,5 @@ export function buildAccountXeroProjection({rows,snapshot,mappings,month,lastSyn
   const invoices=assigned.get(target.unitKey)??[];const mapped=invoices.length>0||related.some(group=>group.status==='mapped'&&group.mappedUnitKey===target.unitKey);const incomplete=related.some(group=>group.mappedInvoiceCount<group.invoiceCount);
   byUnit[target.unitKey]={status:related.some(group=>group.status==='conflict')?'conflict':pending||mapped&&incomplete?'pending':mapped?'mapped':related.length?'unmapped':'not_synced',invoiceMonth:month,lastSyncedAt,byCurrency:totals(invoices),invoices:invoices.map(invoice=>({...invoice,xeroUrl:`https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=${encodeURIComponent(invoice.invoiceId)}`}))};
  }
- return {groups:[...groups.values()].sort((a,b)=>(a.companyName??a.contactId).localeCompare(b.companyName??b.contactId)||a.project.localeCompare(b.project)),targets,byUnit,unmappedInvoiceCount:unassigned.length,unmappedTotals:totals(unassigned),needsIdentitySync:snapshot.companies===undefined||snapshot.report.rows.some(invoice=>invoice.state==='eligible'&&invoice.storeNames===undefined)};
+ return {groups:[...groups.values()].sort((a,b)=>(a.companyName??a.contactId).localeCompare(b.companyName??b.contactId)||a.project.localeCompare(b.project)),targets,byUnit,unmappedInvoiceCount:unassigned.length,unmappedTotals:totals(unassigned),invoiceCount:visibleInvoices.length,invoiceTotals:totals(visibleInvoices),needsIdentitySync:snapshot.companies===undefined||snapshot.report.rows.some(invoice=>invoice.state==='eligible'&&invoice.storeNames===undefined)};
 }

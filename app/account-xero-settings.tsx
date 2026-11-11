@@ -33,15 +33,26 @@ export function XeroRowAmounts({row,field,active}:{row:AccountStoreRow;field:'in
 export function XeroInvoiceDetails({row}:{row:AccountStoreRow}){
  const [open,setOpen]=useState(false);const ref=useRef<HTMLDialogElement>(null);
  useEffect(()=>{if(open&&!ref.current?.open)ref.current?.showModal();},[open]);
- if(!row.xeroActuals?.invoices.length)return <span className="account-xero-muted" title="No synced invoices assigned to this client">—</span>;
+ if(!row.xeroActuals?.invoices.length)return <span className="account-xero-muted" >{row.xeroActuals?.status==='unmapped'||row.xeroActuals?.status==='conflict'?'Needs matching':'No linked invoices'}</span>;
  if(row.xeroActuals.status==='not_synced'||!row.xeroActuals.byCurrency.length||row.xeroActuals.byCurrency.some(amount=>!/^\d+(?:\.\d{1,2})?$/.test(amount.invoiced)))return <XeroRowAmounts row={row} field="invoiced" active/>;
  return <><button type="button" className="account-xero-invoice-open account-xero-invoice-amount" aria-label={`View invoices for ${row.project||row.storeName}`} aria-haspopup="dialog" onClick={()=>setOpen(true)}><XeroRowAmounts row={row} field="invoiced" active/></button>{open&&typeof document!=='undefined'&&createPortal(<dialog ref={ref} className="account-xero-invoice-dialog" aria-label={`Invoices for ${row.project||row.storeName}`} onCancel={()=>setOpen(false)} onClose={()=>setOpen(false)}><header><h3>{row.project||row.storeName} invoices</h3><button type="button" onClick={()=>setOpen(false)}>Close</button></header><p>Paid / applied includes allocations. Credits are shown separately.</p><div className="account-xero-invoice-scroll"><table><thead><tr><th>Invoice</th><th>Project</th><th>Date</th><th>Invoiced</th><th>Paid / applied</th><th>Credits</th><th>Outstanding</th></tr></thead><tbody>{row.xeroActuals.invoices.map(invoice=><tr key={invoice.invoiceId}><th>{invoice.xeroUrl?<a href={invoice.xeroUrl} target="_blank" rel="noopener noreferrer">{invoice.invoiceNumber??invoice.invoiceId}</a>:invoice.invoiceNumber??invoice.invoiceId}</th><td>{invoice.project??'—'}</td><td>{invoiceDate(invoice.date)}</td><td>{xeroDisplayMoney(invoice.gross,invoice.currency)}</td><td>{xeroDisplayMoney(invoice.amountPaid,invoice.currency)}</td><td>{xeroDisplayMoney(invoice.amountCredited,invoice.currency)}</td><td>{xeroDisplayMoney(invoice.amountDue,invoice.currency)}</td></tr>)}</tbody></table></div></dialog>,document.body)}</>;
 }
 export function AccountXeroSummary({data}:{data:AccountResponse}){
  const xero=data.xero;if(!xero?.configured)return null;
- const currencies=[...new Set([...xero.totals.map(t=>t.currency),...xero.collections.map(t=>t.currency)])];
- if(!currencies.length)return <p className="account-notice" role="status">{xero.lastError?'Accounting sync needs attention. Open Accounting settings.':xero.connected?'No synced invoices for this month.':'Connect Xero in Accounting settings to see invoices and receipts.'}</p>;
- return <section className="account-finance-overview" aria-label="Income by currency">{currencies.map(currency=>{const total=xero.totals.find(t=>t.currency===currency),cash=xero.collections.find(t=>t.currency===currency);return <section className="account-summary-market" key={currency} aria-label={`${currency} income overview`}><h3>{currency} income</h3><div className="account-overview-metrics">{[{label:'Cash received today',value:(!xero.today||xero.today===data.today)?cash?.todayCollected:null,period:data.today},{label:'Cash received',value:cash?.monthCollected,period:data.invoiceMonth},{label:'Invoiced',value:total?.gross,period:data.invoiceMonth},{label:'Outstanding',value:total?.amountDue,period:`Invoices in ${data.invoiceMonth}`}].map(metric=><article className="metric" key={metric.label}><span>{metric.label}</span><strong>{xeroDisplayMoney(metric.value,currency)}</strong><small>{metric.period}</small></article>)}</div></section>;})}</section>;
+ const imported = xero.connected && !['not_synced','unavailable','access_required'].includes(xero.status);
+ const count = xero.invoiceCount ?? 0;
+ return <section className="account-finance-overview" aria-label="Shopee invoice overview">
+  <p className="account-notice" role="status">
+   <strong>Shopee Hub &amp; Shopee Hub Internal</strong>{' · '}
+   {xero.lastError || xero.status==='unavailable' ? 'Invoice sync needs attention' : imported ? `${count} invoices · ${count-xero.unmappedInvoiceCount} linked · ${xero.unmappedInvoiceCount} to match` : 'No invoices synced for this month'}
+  </p>
+  {xero.totals.map(total=><section className="account-summary-market" key={total.currency} aria-label={`${total.currency} invoice totals`}>
+   <h3>{total.currency} invoices</h3>
+   <div className="account-overview-metrics">
+    {[['Invoiced',total.gross],['Paid / applied',total.amountPaid],['Outstanding',total.amountDue]].map(([label,value])=><article className="metric" key={label}><span>{label}</span><strong>{xeroDisplayMoney(value,total.currency)}</strong></article>)}
+   </div>
+  </section>)}
+ </section>;
 }
 export function AccountXeroSettings({data,onSaved}:{data:AccountResponse;onSaved:()=>void}){
  const xero=data.xero;const [choices,setChoices]=useState<Record<string,string>>({}),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
