@@ -1,6 +1,7 @@
 import {getChatGPTUser} from '../../chatgpt-auth';
 import {supabaseRest} from '../../supabase-rest';
 import {assertDeploymentIsolation} from '../../deployment-isolation';
+import {restStoreAccessIds} from '../../store-access';
 import owner from '../../account-roster-data.json';
 import {canonicalStoreId} from '../../live-calendar-model';
 import {sourceStoreResolver,type SourceStore} from '../../source-store-mapping';
@@ -15,18 +16,28 @@ export async function GET(request:Request){
   // Both isolated Staging and Production are valid read environments.
   assertDeploymentIsolation();
   const actor=await getChatGPTUser();if(!actor)return Response.json({error:'Authentication required'},{status:401,headers});
-  const [member]=await supabaseRest<Array<{tenant_id:string;role:string;active:boolean}>>(`customer_users?select=tenant_id,role,active&email=eq.${encodeURIComponent(actor.email.toLowerCase())}&limit=1`);
-  if(!member?.active||member.role!=='superadmin'||member.tenant_id!==owner.tenantId)return Response.json({error:'Store Health access is unavailable.'},{status:403,headers});
+  const [member]=await supabaseRest<Array<{id:number;tenant_id:string;role:string;active:boolean}>>(`customer_users?select=id,tenant_id,role,active&email=eq.${encodeURIComponent(actor.email.toLowerCase())}&limit=1`);
+  if(!member?.active||member.tenant_id!==owner.tenantId)return Response.json({error:'Store Health access is unavailable.'},{status:403,headers});
   const [tenant]=await supabaseRest<Array<{active:boolean}>>(`tenants?select=active&id=eq.${encodeURIComponent(member.tenant_id)}&limit=1`);if(!tenant?.active)return Response.json({error:'Active tenant access required'},{status:403,headers});
-  const registry=await bounded<SourceStore>('stores?select=id,tenant_id,name,display_name,bigseller_name,platform&order=id.asc',5000);
-  const allowed=new Set(registry.filter(store=>store.tenant_id===member.tenant_id&&canonicalStoreId(store.id)===store.id).map(store=>store.id));
+  const userId = member.id;
+  if (member.role !== 'superadmin') {
+    const [grant] = await supabaseRest<Array<{enabled:boolean;additive_grant:boolean}>>(
+      `user_module_permissions?select=enabled,additive_grant&user_id=eq.${userId}&module_id=eq.health&limit=1`,
+    );
+    if (grant?.enabled !== true || grant.additive_grant !== true) {
+      return Response.json({error:'Store Health access is unavailable.'},{status:403,headers});
+    }
+  }
+  const allowed = await restStoreAccessIds(member);
   const selectedStoreId=canonicalStoreId(new URL(request.url).searchParams.get('storeId')??'all');
   if(selectedStoreId!=='all'&&!allowed.has(selectedStoreId))return Response.json({error:'Store access denied'},{status:403,headers});
+  if (!allowed.size) return Response.json({stores:[],selectedStoreId,latestCheckDate:null},{headers});
+  const registry=await bounded<SourceStore>(`stores?select=id,tenant_id,name,display_name,bigseller_name,platform&order=id.asc`,5000);
   const today=malaysiaDate();
   const [latest]=await supabaseRest<Array<{check_date:string}>>(`store_health_snapshots?select=check_date&platform=eq.Shopee&check_date=lte.${today}&order=check_date.desc&limit=1`);
   if(!latest)return Response.json({stores:[],selectedStoreId,latestCheckDate:null},{headers});
   if(!/^20\d{2}-\d{2}-\d{2}$/.test(latest.check_date))throw Error('Invalid check date');
-  const directory=await bounded<{store_id:string;store_name:string;tenant_id:string}>('link_directory_stores?select=store_id,store_name,tenant_id&order=store_id.asc',5000);
+  const directory=await bounded<{store_id:string;store_name:string;tenant_id:string}>(`link_directory_stores?select=store_id,store_name,tenant_id&order=store_id.asc`,5000);
   // Show one current daily snapshot, never silently revive an older missing store check.
   const rows=await bounded<HealthSourceRow>(`store_health_snapshots?select=check_date,store_name,platform,penalty_points,nfr,lsr,fhr,response_rate,rating,failing,created_at&platform=eq.Shopee&check_date=eq.${latest.check_date}&order=created_at.desc,id.asc`,5000);
   return Response.json(buildStoreHealth(rows,sourceStoreResolver(member.tenant_id,registry,directory),allowed,today,selectedStoreId),{headers});

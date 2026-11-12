@@ -1,4 +1,4 @@
-import {isReleasablePermissionId} from '../../../module-permissions';
+import {isReleasablePermissionId,isSelectedPermissionId} from '../../../module-permissions';
 import {permissionManagement,permissionSaveError} from '../../../permission-management';
 import {supabaseRest} from '../../../supabase-rest';
 
@@ -9,9 +9,9 @@ export async function POST(request:Request){
   const auth=await permissionManagement(request);if('error'in auth)return auth.error;
   if(!auth.isSuperAdmin)return Response.json({error:'Super Admin access required'},{status:403});
   const body=await request.json().catch(()=>null)as{moduleId?:unknown;requestId?:unknown;action?:unknown;users?:unknown}|null;
-  if(!body||!isReleasablePermissionId(body.moduleId)||typeof body.requestId!=='string'||!uuid.test(body.requestId))return Response.json({error:'Choose a valid feature release'},{status:400});
+  if(!body||typeof body.requestId!=='string'||!uuid.test(body.requestId))return Response.json({error:'Choose a valid feature release'},{status:400});
   if ('action' in body || 'users' in body) {
-    if ((body.action !== 'grant' && body.action !== 'revoke') ||
+    if (!isSelectedPermissionId(body.moduleId) || (body.action !== 'grant' && body.action !== 'revoke') ||
       !Array.isArray(body.users) || body.users.length < 1 || body.users.length > 1000 ||
       body.users.some(user => !user || !Number.isSafeInteger(user.id) || user.id < 1 ||
         !Number.isSafeInteger(user.version) || user.version < 0) ||
@@ -26,6 +26,7 @@ export async function POST(request:Request){
     });
     return Response.json(result, { headers: { 'Cache-Control': 'private, no-store' } });
   }
+  if(!isReleasablePermissionId(body.moduleId))return Response.json({error:'Choose a valid feature release'},{status:400});
   const result=await supabaseRest<{granted:number;skipped:number;alreadyEnabled:number}>('rpc/grant_feature_to_all',{method:'POST',body:JSON.stringify({p_tenant:auth.member.tenant_id,p_actor:auth.actor,p_module:body.moduleId,p_request_id:body.requestId})});
   return Response.json(result,{headers:{'Cache-Control':'private, no-store'}});
  }catch(error){return permissionSaveError(error);}
