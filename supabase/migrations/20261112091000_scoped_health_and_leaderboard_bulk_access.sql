@@ -88,8 +88,9 @@ begin
 
     before_modules := public.permission_effective_modules(p_tenant,target.id);
     if (p_module=any(before_modules)) = (p_action='grant')
-      and not (p_action='revoke' and p_module='overview_leaderboard_all_stores' and exists(
-        select 1 from public.user_module_permissions where user_id=target.id and module_id=p_module and enabled
+      and not (p_action='revoke' and p_module in ('overview_leaderboard','overview_leaderboard_all_stores','overview_store_sales') and exists(
+        select 1 from public.user_module_permissions where user_id=target.id and enabled
+          and (module_id=p_module or (p_module='overview_leaderboard' and module_id='overview_leaderboard_all_stores'))
       ))
     then
       unchanged := unchanged+1;
@@ -142,7 +143,8 @@ begin
     if p_action='revoke' then
       update public.feature_grant_notifications set acknowledged_at=now()
         where tenant_id=p_tenant and user_id=target.id and acknowledged_at is null
-          and module_id=any(before_modules) and not(module_id=any(after_modules));
+          and (module_id=any(before_modules) or module_id=any(removed_modules))
+          and not(module_id=any(after_modules));
     end if;
     update public.customer_users set permissions_version=permissions_version+1 where id=target.id and tenant_id=p_tenant;
     insert into public.user_access_audit_log(tenant_id,actor_user_id,target_user_id,actor_email,request_id,request_payload,before_value,after_value,result)

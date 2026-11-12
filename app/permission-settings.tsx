@@ -511,12 +511,14 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
               </select>
               <button className="edit-access" onClick={() => setSelectedUsers([])}>Clear</button>
               {(["grant", "revoke"] as const).map(action =>
-                <button key={action} className={action === "grant" ? "primary" : "edit-access"} disabled={!bulkModule || saving}
+                <button key={action} className={action === "grant" ? "primary" : "edit-access"} disabled={!bulkModule || saving || (action === "grant" && bulkModule.startsWith("overview_") && !saved.has("overview"))}
                   onClick={() => { bulkRequest.current = null; setBulkError(""); setBulkAction(action); }}>
                   {action === "grant" ? "Grant access" : "Revoke access"}
                 </button>
               )}
             </div>
+            {bulkModule.startsWith("overview_") && !saved.has("overview") &&
+              <p role="status">Turn on Overview in Client module defaults before granting this feature.</p>}
           </section>}
           <section className="user-access-list" aria-label="User permissions">
             {data && !users.length && <p>No users match these filters.</p>}
@@ -646,7 +648,7 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
                 </div>
               </article>
             ))}
-            <h3>Managed separately</h3>
+            <h3 style={{gridColumn: "1 / -1"}}>Managed separately</h3>
             {BULK_FEATURES.filter(module => !DEFAULT_MODULES.some(item => item.id === module.id)).map(module => (
               <article className="card permission-row" key={module.id}>
                 <div className="permission-module-icon">{module.label[0]}</div>
