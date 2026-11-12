@@ -500,6 +500,11 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
                 {ACCESS_MODULES.filter(module => RELEASABLE_PERMISSION_IDS.includes(module.id)).map(module =>
                   <option key={module.id} value={module.id}>{module.label}</option>
                 )}
+                <optgroup label="Managed separately">
+                  <option disabled value="health">Store Health — Super Admin only</option>
+                  <option disabled value="live_sales_monitor">Live Sales Monitor — manage in the live session</option>
+                  <option disabled value="overview_leaderboard_all_stores">Leaderboard · All stores — manage per user</option>
+                </optgroup>
               </select>
               <button className="edit-access" onClick={() => setSelectedUsers([])}>Clear</button>
               {(["grant", "revoke"] as const).map(action =>
