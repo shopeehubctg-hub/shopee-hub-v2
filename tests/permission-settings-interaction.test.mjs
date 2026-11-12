@@ -140,3 +140,36 @@ test('store directory filters country and service status without changing stores
  await change(document.querySelector('[aria-label="Filter stores by country"]'),'all');await change(document.querySelector('[aria-label="Filter stores by service status"]'),'ended');assert.equal(rows().length,1);assert.match(rows()[0].textContent,/Beta MY/);assert.equal(writes,0);const summary=document.querySelector('.directory-menu summary');await click(summary);assert.equal(summary.parentElement.open,true);assert.equal(document.querySelector('.directory-menu-item').getAttribute('aria-label'),'Edit details for Beta MY');await act(()=>summary.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));assert.equal(summary.parentElement.open,false);assert.equal(document.activeElement,summary);
  });
 });
+
+test('access filters find deviations and standard preset saves the four modules for a manager', async () => {
+  const standard = ['calculator', 'packages', 'advertising', 'actions'];
+  const response = data(true);
+  response.users = [
+    user({displayName: 'Standard customer', enabledModules: standard}),
+    user({id: 3, displayName: 'Manager with extra access', role: 'manager', enabledModules: [...standard, 'overview']}),
+    user({id: 4, displayName: 'Customer missing access', enabledModules: standard.slice(0, 3)}),
+  ];
+  let posted;
+  await withApp(async (url, init = {}) => {
+    assert.equal(url, '/api/admin/users');
+    if (init.method === 'PATCH') {
+      posted = JSON.parse(init.body);
+      response.users[1] = {...response.users[1], enabledModules: posted.enabledModules};
+    }
+    return Response.json(response);
+  }, async ({click, change}) => {
+    const filter = document.querySelector('.access-module-filter select');
+    const visible = () => [...document.querySelectorAll('.user-access-row h3')].map(node => node.textContent);
+    await change(filter, 'missing_standard');
+    assert.deepEqual(visible(), ['Customer missing access']);
+    await change(filter, 'outside_standard');
+    assert.deepEqual(visible(), ['Manager with extra access']);
+    await click(document.querySelector('.user-access-row .edit-access'));
+    const button = text => [...document.querySelectorAll('.access-modal button')].find(node => node.textContent.trim() === text);
+    await click(button('Set four standard modules'));
+    await click(button('Save user access'));
+    assert.deepEqual(new Set(posted.enabledModules), new Set(standard));
+    assert.deepEqual(posted.storeIds, ['shopee-one']);
+    assert.deepEqual(visible(), []);
+  });
+});
