@@ -514,7 +514,7 @@ export default function Home() {
 
       {section==="orders" && <LateShipmentOrders key={`${storeId}:${dataRevision}`} storeId={storeId}/>}
 
-      {section==="health" && <StoreHealth key={storeId} storeId={storeId} refreshKey={dataRevision} canView={shellData?.access?.role==="superadmin"}/>}
+      {section==="health" && <StoreHealth key={storeId} storeId={storeId} refreshKey={dataRevision} canView={shellData?.access?.enabledModules.includes("health") === true}/>}
 
       {section==="actions" && <div className="page"><div className="page-title"><div><p className="kicker">CLIENT ACTION CENTER</p><h2>What we need from the client</h2></div><span className="warning-pill">{visibleClientActions.length} open items</span></div>{adFunds.topUpOwner === "shopee_hub" && adFunds.needsTopUp && <div className="managed-note">Top-up {formatRinggit(adFunds.recommendedTopUp)} · Managed by Shopee Hub</div>}{visibleClientActions.length ? <div className="action-list">{visibleClientActions.map((a:any)=><article className="card action" key={a.title}><div className={`type ${a.type.toLowerCase()}`}>{a.type.slice(0,1)}</div><div><span className="category">{a.type}</span><h3>{a.title}</h3><p>{a.client} · Due {a.due}</p>{a.message&&<p className="action-message">{a.message}</p>}</div>{a.href?<a className="action-link" href={a.href} target="_blank" rel="noopener noreferrer">{a.action}</a>:<button>{a.action}</button>}</article>)}</div> : <article className="card empty-actions"><h3>No client action needed</h3><p>当前没有需要客户处理的事项。</p></article>}</div>}
       </>}

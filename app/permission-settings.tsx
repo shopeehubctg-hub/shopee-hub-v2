@@ -74,6 +74,7 @@ type PortalUser = {
   permissionsVersion: number;
 };
 const STANDARD_CLIENT_MODULES: PortalModuleId[] = ["calculator", "packages", "advertising", "actions"];
+const DEFAULT_MODULES = PORTAL_MODULES.filter(module => module.id !== "health");
 const ACCESS_MODULES = [...PORTAL_MODULES, OVERVIEW_LEADERBOARD_PERMISSION, OVERVIEW_STORE_SALES_PERMISSION];
 
 type PermissionAccess = { isSuperAdmin: boolean; canManageStores: boolean; canManageDefaults: boolean; grantableModules: PortalModuleId[] };
@@ -497,13 +498,12 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
             <div className="feature-release-actions">
               <select aria-label="Feature to update" value={bulkModule} onChange={event => setBulkModule(event.target.value)}>
                 <option value="">Choose a feature</option>
-                {ACCESS_MODULES.filter(module => RELEASABLE_PERMISSION_IDS.includes(module.id)).map(module =>
+                {ACCESS_MODULES.map(module =>
                   <option key={module.id} value={module.id}>{module.label}</option>
                 )}
+                <option value="overview_leaderboard_all_stores">Leaderboard · All stores</option>
                 <optgroup label="Managed separately">
-                  <option disabled value="health">Store Health — Super Admin only</option>
                   <option disabled value="live_sales_monitor">Live Sales Monitor — manage in the live session</option>
-                  <option disabled value="overview_leaderboard_all_stores">Leaderboard · All stores — manage per user</option>
                 </optgroup>
               </select>
               <button className="edit-access" onClick={() => setSelectedUsers([])}>Clear</button>
@@ -592,22 +592,22 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
             <div>
               <span>Default customer access</span>
               <strong>
-                {enabled.size} of {PORTAL_MODULES.length} modules
+                {DEFAULT_MODULES.filter(module => enabled.has(module.id)).length} of {DEFAULT_MODULES.length} modules
               </strong>
             </div>
             <div className="permission-quick-actions">
               <button
                 onClick={() =>
-                  setEnabled(new Set(PORTAL_MODULES.map(({ id }) => id)))
+                  setEnabled(new Set([...DEFAULT_MODULES.map(({ id }) => id), ...(enabled.has("health") ? ["health" as const] : [])]))
                 }
               >
                 Enable all
               </button>
-              <button onClick={() => setEnabled(new Set())}>Disable all</button>
+              <button onClick={() => setEnabled(new Set(enabled.has("health") ? ["health"] : []))}>Disable all</button>
             </div>
           </section>
           <section className="permission-list">
-            {PORTAL_MODULES.map((module) => (
+            {DEFAULT_MODULES.map((module) => (
               <article className="card permission-row" key={module.id}>
                 <div className="permission-module-icon">{module.label[0]}</div>
                 <div>
@@ -659,12 +659,15 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
       {bulkAction && <div className="access-modal">
         <div className="access-editor card feature-release-confirm" role="dialog" aria-modal="true" aria-labelledby="bulk-access-title"
           onKeyDown={event => { if (event.key === "Escape" && !saving) setBulkAction(null); }}>
-          <h3 id="bulk-access-title">{bulkAction === "grant" ? "Grant" : "Revoke"} access for {selectedUsers.length} users?</h3>
-          <p>{ACCESS_MODULES.find(module => module.id === bulkModule)?.label} · Store access stays the same.</p>
+          <h3 id="bulk-access-title">{bulkAction === "grant" ? "Grant" : "Revoke"} access for {selectedUsers.length} {selectedUsers.length === 1 ? "user" : "users"}?</h3>
+          <p>{bulkModule === "overview_leaderboard_all_stores" ? "Leaderboard · All stores" : ACCESS_MODULES.find(module => module.id === bulkModule)?.label} · Store access stays the same.</p>
           <p>{data?.users.filter(user => selectedUsers.includes(user.id)).map(user => user.displayName || user.email).join(", ")}</p>
           {bulkAction === "revoke" && <p>Users who inherit this feature switch to Custom access. They keep their other current modules and stop following future role defaults.
             {bulkModule === "overview" && " Overview sections also become unavailable."}</p>}
-          {bulkAction === "grant" && bulkModule.startsWith("overview_") && <p>Overview will also be enabled where needed.</p>}
+          {bulkAction === "grant" && bulkModule.startsWith("overview_") && bulkModule !== "overview_leaderboard_all_stores" && <p>Overview will also be enabled where needed.</p>}
+          {bulkModule === "overview_leaderboard_all_stores" && <p>{bulkAction === "grant"
+            ? "This applies to users with Custom access and Leaderboard enabled. It lets them see all participating stores on the Leaderboard."
+            : "Users with Leaderboard access will return to their assigned stores on the board."}</p>}
           {bulkError && <p className="access-error" role="alert">{bulkError}</p>}
           <div className="feature-release-actions">
             <button autoFocus className="edit-access" disabled={saving} onClick={() => setBulkAction(null)}>Cancel</button>
@@ -997,7 +1000,7 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
                               type="button"
                               onClick={() =>
                                 updateEditing({
-                                  enabledModules: grantableModules.map(
+                                  enabledModules: grantableModules.filter(module => module.id !== "health" || editing.enabledModules.includes("health")).map(
                                     (module) => module.id,
                                   ),
                                 })
@@ -1020,7 +1023,7 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
                           <label key={module.id} style={module.id==="overview_leaderboard"||module.id==="overview_store_sales"?{paddingLeft:24}:undefined}>
                             <input
                               type="checkbox"
-                              disabled={(module.id==="overview_leaderboard"||module.id==="overview_store_sales")&&!editing.enabledModules.includes("overview")}
+                              disabled={(module.id==="health"&&!editing.enabledModules.includes("health")) || ((module.id==="overview_leaderboard"||module.id==="overview_store_sales")&&!editing.enabledModules.includes("overview"))}
                               checked={editing.enabledModules.includes(
                                 module.id,
                               )}
@@ -1035,7 +1038,7 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
                                 })
                               }
                             />
-                            <span>{module.label}</span>
+                            <span>{module.label}{module.id === "health" && !editing.enabledModules.includes("health") ? " · Grant from Users & roles" : ""}</span>
                           </label>
                         ))}
                         </div>
