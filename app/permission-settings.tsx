@@ -73,6 +73,9 @@ type PortalUser = {
   editable: boolean;
   permissionsVersion: number;
 };
+const STANDARD_CLIENT_MODULES: PortalModuleId[] = ["calculator", "packages", "advertising", "actions"];
+const ACCESS_MODULES = [...PORTAL_MODULES, OVERVIEW_LEADERBOARD_PERMISSION, OVERVIEW_STORE_SALES_PERMISSION];
+
 type PermissionAccess = { isSuperAdmin: boolean; canManageStores: boolean; canManageDefaults: boolean; grantableModules: PortalModuleId[] };
 type UserData = {
   users: PortalUser[];
@@ -100,6 +103,7 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
   const [userError, setUserError] = useState("");
   const [storeError, setStoreError] = useState("");
   const [search, setSearch] = useState("");
+  const [moduleFilter, setModuleFilter] = useState<PortalModuleId | "all" | "outside_standard">("all");
   const [storeSearch,setStoreSearch]=useState("");
   const [storeCountry,setStoreCountry]=useState<"all"|MarketCode>("all");
   const [storeService,setStoreService]=useState("all");
@@ -386,7 +390,9 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
     data?.users.filter((user) =>
       `${user.displayName} ${user.email} ${user.role}`
         .toLowerCase()
-        .includes(search.toLowerCase()),
+        .includes(search.trim().toLowerCase()) && (moduleFilter === "all" || (moduleFilter === "outside_standard"
+        ? user.active && user.role === "customer" && user.enabledModules.some(id => !STANDARD_CLIENT_MODULES.includes(id))
+        : user.active && user.enabledModules.includes(moduleFilter))),
     ) ?? [];
   function updateEditing(patch: Partial<PortalUser>) {
     setEditing((current) => {
@@ -447,7 +453,16 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
             />
             <button disabled={!data} onClick={() => { setUserError(""); setAdding(true); }}>+ Add user</button>
           </section>
-          <section className="user-access-list">
+          <label className="access-module-filter">
+            Filter by access
+            <select value={moduleFilter} onChange={event => setModuleFilter(event.target.value as typeof moduleFilter)}>
+              <option value="all">All users</option>
+              <option value="outside_standard">Clients with extra access</option>
+              {ACCESS_MODULES.map(module => <option key={module.id} value={module.id}>{module.label}</option>)}
+            </select>
+          </label>
+          <section className="user-access-list" aria-label="User permissions">
+            {data && !users.length && <p>No users match these filters.</p>}
             {users.map((user) => (
               <article
                 className={`card user-access-row${user.active ? "" : " inactive"}`}
@@ -478,6 +493,12 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
                       ? `${user.enabledModules.length} custom modules`
                       : "Role defaults"}
                   </span>
+                  {user.active && <div className="access-module-labels" aria-label="Enabled modules">
+                    {user.enabledModules.length === 0 ? <span>No modules</span> :
+                      ACCESS_MODULES.filter(module => user.enabledModules.includes(module.id)).map(module =>
+                        <span key={module.id}>{module.label}{module.id === "overview_leaderboard" &&
+                          user.enabledModules.includes("overview_leaderboard_all_stores") ? " · All stores" : ""}</span>)}
+                  </div>}
                 </div>
                 <span
                   className={
@@ -884,6 +905,13 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
                         Custom access
                       </button>
                     </div> : <p className="access-scope-note">Custom access</p>}
+                    {isSuperAdmin && editing.role === "customer" && (
+                      <button type="button" className="edit-access" onClick={() => updateEditing({
+                        moduleAccessMode: "custom", enabledModules: [...STANDARD_CLIENT_MODULES],
+                      })}>
+                        Set four standard modules
+                      </button>
+                    )}
                     {editing.moduleAccessMode === "custom" && (
                       <>
                         <div className="access-bulk-actions">
