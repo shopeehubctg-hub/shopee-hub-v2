@@ -470,3 +470,8 @@ body{background:var(--paper);color:var(--ink)}
 .sales-cast-crop{position:relative;line-height:0;overflow:hidden;border-radius:10px}
 .sales-cast-card>video{border-radius:10px}
 @media(max-width:680px){.sales-cast-setup{grid-template-columns:1fr}}
+
+.access-module-filter{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:700}
+.access-module-filter select{padding:8px;border:1px solid var(--line);border-radius:8px;background:#fff}
+.access-module-labels{display:flex;flex-wrap:wrap;gap:4px}
+.access-module-labels span{border-radius:5px;background:#edf2f5;color:#31596b;padding:3px 6px;font-size:11px}
