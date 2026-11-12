@@ -103,7 +103,7 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
   const [userError, setUserError] = useState("");
   const [storeError, setStoreError] = useState("");
   const [search, setSearch] = useState("");
-  const [moduleFilter, setModuleFilter] = useState<PortalModuleId | "all" | "outside_standard">("all");
+  const [moduleFilter, setModuleFilter] = useState<PortalModuleId | "all" | "outside_standard" | "missing_standard">("all");
   const [storeSearch,setStoreSearch]=useState("");
   const [storeCountry,setStoreCountry]=useState<"all"|MarketCode>("all");
   const [storeService,setStoreService]=useState("all");
@@ -391,8 +391,10 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
       `${user.displayName} ${user.email} ${user.role}`
         .toLowerCase()
         .includes(search.trim().toLowerCase()) && (moduleFilter === "all" || (moduleFilter === "outside_standard"
-        ? user.active && user.role === "customer" && user.enabledModules.some(id => !STANDARD_CLIENT_MODULES.includes(id))
-        : user.active && user.enabledModules.includes(moduleFilter))),
+        ? user.active && user.role !== "superadmin" && user.enabledModules.some(id => !STANDARD_CLIENT_MODULES.includes(id))
+        : moduleFilter === "missing_standard"
+          ? user.active && user.role !== "superadmin" && STANDARD_CLIENT_MODULES.some(id => !user.enabledModules.includes(id))
+          : user.active && user.enabledModules.includes(moduleFilter))),
     ) ?? [];
   function updateEditing(patch: Partial<PortalUser>) {
     setEditing((current) => {
@@ -457,7 +459,8 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
             Filter by access
             <select value={moduleFilter} onChange={event => setModuleFilter(event.target.value as typeof moduleFilter)}>
               <option value="all">All users</option>
-              <option value="outside_standard">Clients with extra access</option>
+              <option value="outside_standard">Users with extra access</option>
+              <option value="missing_standard">Users missing standard access</option>
               {ACCESS_MODULES.map(module => <option key={module.id} value={module.id}>{module.label}</option>)}
             </select>
           </label>
@@ -905,7 +908,7 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
                         Custom access
                       </button>
                     </div> : <p className="access-scope-note">Custom access</p>}
-                    {isSuperAdmin && editing.role === "customer" && (
+                    {isSuperAdmin && editing.role !== "superadmin" && (
                       <button type="button" className="edit-access" onClick={() => updateEditing({
                         moduleAccessMode: "custom", enabledModules: [...STANDARD_CLIENT_MODULES],
                       })}>
