@@ -13,6 +13,8 @@ language sql security invoker set search_path='' as $$
   select m.id from member u cross join modules m where m.id like 'overview_%' and(
    u.role='superadmin' or(
     exists(select 1 from base where id='overview')
+    and not exists(select 1 from public.tenant_module_permissions t
+      where t.tenant_id=p_tenant and t.module_id='overview' and not t.enabled)
     and case when m.id='overview_leaderboard_all_stores' then
       u.module_access_mode='custom' and exists(select 1 from public.user_module_permissions p where p.user_id=u.id and p.module_id=m.id and p.enabled and not p.additive_grant)
       and exists(select 1 from public.user_module_permissions p where p.user_id=u.id and p.module_id='overview_leaderboard' and p.enabled and (p.additive_grant or u.module_access_mode='custom'))

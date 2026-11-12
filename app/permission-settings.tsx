@@ -75,7 +75,12 @@ type PortalUser = {
 };
 const STANDARD_CLIENT_MODULES: PortalModuleId[] = ["calculator", "packages", "advertising", "actions"];
 const DEFAULT_MODULES = PORTAL_MODULES.filter(module => module.id !== "health");
+const SEPARATE_MODULES = [
+  { id: "overview_leaderboard_all_stores", label: "Leaderboard · All stores", description: "Grant to selected users with Custom access" },
+  { id: "live_sales_monitor", label: "Live Sales Monitor", description: "Manage viewers in the live session" },
+] as const;
 const ACCESS_MODULES = [...PORTAL_MODULES, OVERVIEW_LEADERBOARD_PERMISSION, OVERVIEW_STORE_SALES_PERMISSION];
+const BULK_FEATURES = [...ACCESS_MODULES, ...SEPARATE_MODULES];
 
 type PermissionAccess = { isSuperAdmin: boolean; canManageStores: boolean; canManageDefaults: boolean; grantableModules: PortalModuleId[] };
 type UserData = {
@@ -498,13 +503,11 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
             <div className="feature-release-actions">
               <select aria-label="Feature to update" value={bulkModule} onChange={event => setBulkModule(event.target.value)}>
                 <option value="">Choose a feature</option>
-                {ACCESS_MODULES.map(module =>
-                  <option key={module.id} value={module.id}>{module.label}</option>
-                )}
-                <option value="overview_leaderboard_all_stores">Leaderboard · All stores</option>
-                <optgroup label="Managed separately">
-                  <option disabled value="live_sales_monitor">Live Sales Monitor — manage in the live session</option>
-                </optgroup>
+                {BULK_FEATURES.map(module => (
+                  <option key={module.id} value={module.id} disabled={module.id === "live_sales_monitor"}>
+                    {module.label}{module.id === "live_sales_monitor" ? " — manage in the live session" : ""}
+                  </option>
+                ))}
               </select>
               <button className="edit-access" onClick={() => setSelectedUsers([])}>Clear</button>
               {(["grant", "revoke"] as const).map(action =>
@@ -640,6 +643,19 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
                   >
                     <i />
                   </button>
+                </div>
+              </article>
+            ))}
+            <h3>Managed separately</h3>
+            {BULK_FEATURES.filter(module => !DEFAULT_MODULES.some(item => item.id === module.id)).map(module => (
+              <article className="card permission-row" key={module.id}>
+                <div className="permission-module-icon">{module.label[0]}</div>
+                <div>
+                  <h3>{module.label}</h3>
+                  <p>{module.description}</p>
+                </div>
+                <div className="permission-state">
+                  <span>{module.id === "live_sales_monitor" ? "Live session" : "Users & roles"}</span>
                 </div>
               </article>
             ))}
