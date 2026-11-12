@@ -15,6 +15,15 @@ test('bulk release is SA-only, validates capability and derives tenant and actor
  const code=await compile('app/api/admin/feature-release/route.ts');const ctx={module:{exports:{}},exports:{},Response,Request,URL,crypto,sameOrigin:true,writes:[],manage:async()=>({member:{tenant_id:'tenant-a'},actor:'owner@example.test',isSuperAdmin:true}),rest:async(p,o)=>{ctx.writes.push({p,o});return {granted:4,skipped:1,alreadyEnabled:2};}};vm.runInNewContext(code,ctx);const post=body=>ctx.module.exports.POST(new Request('https://test/api/admin/feature-release',{method:'POST',headers:{origin:'https://test','content-type':'application/json'},body:JSON.stringify(body)}));
  let response=await post({moduleId:'packages',requestId:'4bcb2c62-f394-4ae8-8e60-e5d194aed183',tenant:'evil'});assert.equal(response.status,200);assert.equal(ctx.writes.length,1);assert.equal(ctx.writes[0].p,'rpc/grant_feature_to_all');const payload=JSON.parse(ctx.writes[0].o.body);assert.equal(payload.p_tenant,'tenant-a');assert.equal(payload.p_actor,'owner@example.test');assert.equal(payload.p_module,'packages');assert.equal(payload.p_request_id,'4bcb2c62-f394-4ae8-8e60-e5d194aed183');assert.equal('tenant' in payload,false);
  response=await post({moduleId:'overview_leaderboard_all_stores',requestId:crypto.randomUUID()});assert.equal(response.status,400);
+ const requestId=crypto.randomUUID();
+ const users=[{id:12,version:1},{id:5,version:0}];
+ response=await post({moduleId:'packages',action:'revoke',users,requestId});
+ assert.equal(response.status,200);
+ assert.equal(ctx.writes[1].p,'rpc/change_selected_feature_access');
+ assert.deepEqual(JSON.parse(ctx.writes[1].o.body).p_users,[users[1],users[0]]);
+ for(const invalid of [{action:'revoke',users:[]},{users},{action:'grant',users:[users[0],users[0]]}])
+   assert.equal((await post({moduleId:'packages',requestId,...invalid})).status,400);
+ assert.equal(ctx.writes.length,2);
  ctx.manage=async()=>({member:{tenant_id:'tenant-a'},actor:'delegate@example.test',isSuperAdmin:false});assert.equal((await post({moduleId:'packages',requestId:crypto.randomUUID()})).status,403);
 });
 
