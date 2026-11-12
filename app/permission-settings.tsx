@@ -529,9 +529,9 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
 
       {tab === "modules" && access?.canManageDefaults && (
         <>
-          {isSuperAdmin&&<section className="feature-release card">
-            <div><span>Release a feature</span><strong>Give every active user access in one step</strong><p>Existing store scope stays unchanged. Each user sees a one-time welcome message.</p></div>
-            <label>Feature<select value={releaseModule} onChange={event=>{setReleaseModule(event.target.value as PortalModuleId);releaseRequest.current=null;}}>{[...PORTAL_MODULES,OVERVIEW_LEADERBOARD_PERMISSION,OVERVIEW_STORE_SALES_PERMISSION].filter(item=>RELEASABLE_PERMISSION_IDS.includes(item.id)).map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+          {isSuperAdmin&&<section className="feature-release card" aria-label="Release a feature">
+            <strong>Release a feature</strong>
+            <label><select aria-label="Feature to release" value={releaseModule} onChange={event=>{setReleaseModule(event.target.value as PortalModuleId);releaseRequest.current=null;}}>{[...PORTAL_MODULES,OVERVIEW_LEADERBOARD_PERMISSION,OVERVIEW_STORE_SALES_PERMISSION].filter(item=>RELEASABLE_PERMISSION_IDS.includes(item.id)).map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
             <button type="button" onClick={()=>{setReleaseResult("");setReleaseOpen(true);}}>Release to everyone</button>
             {releaseResult&&<p className="feature-release-result" role="status">{releaseResult}</p>}
           </section>}
