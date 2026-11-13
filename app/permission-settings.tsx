@@ -218,7 +218,8 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
     } else setMessage("Unable to save module visibility.");
   }
   async function saveBulkAccess() {
-    if (!bulkAction || !bulkModule || !selectedUsers.length) return;
+    const targets = selectableUsers.filter(user => selectedUsers.includes(user.id));
+    if (!bulkAction || !bulkModule || !targets.length || targets.length !== selectedUsers.length) return;
     setSaving(true);
     setBulkError("");
     bulkRequest.current ??= crypto.randomUUID();
@@ -226,7 +227,7 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
       const response = await fetch("/api/admin/feature-release", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ moduleId: bulkModule, action: bulkAction, users: selectedUsers.map(id => ({ id, version: data?.users.find(user => user.id === id)?.permissionsVersion })), requestId: bulkRequest.current }),
+        body: JSON.stringify({ moduleId: bulkModule, action: bulkAction, users: targets.map(user => ({ id: user.id, version: user.permissionsVersion })), requestId: bulkRequest.current }),
       });
       const result = await response.json().catch(() => null);
       if (!response.ok) throw Error(result?.error ?? "Unable to update feature access.");
@@ -422,7 +423,7 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
   const visibleStores=(data?.stores??[]).filter(store=>(!storeSearch.trim()||store.name.toLowerCase().includes(storeSearch.trim().toLowerCase()))&&(storeCountry==="all"||marketFromPlatform(store.platform)===storeCountry)&&(storeService==="all"||(store.serviceStatus??"active")===storeService));
   const users =
     data?.users.filter((user) =>
-      `${user.displayName} ${user.email} ${user.role}`
+      `${user.displayName} ${user.email}`
         .toLowerCase()
         .includes(search.trim().toLowerCase()) && (moduleFilter === "all" || (moduleFilter === "outside_standard"
         ? user.active && user.role !== "superadmin" && user.enabledModules.some(id => !STANDARD_CLIENT_MODULES.includes(id))
@@ -430,6 +431,13 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
           ? user.active && user.role !== "superadmin" && STANDARD_CLIENT_MODULES.some(id => !user.enabledModules.includes(id))
           : user.active && user.enabledModules.includes(moduleFilter))),
     ) ?? [];
+  const selectableUsers = isSuperAdmin
+    ? users.filter(user => user.editable && user.active && user.role !== "superadmin")
+    : [];
+  const selectableIds = new Set(selectableUsers.map(user => user.id));
+  const selectedCount = selectedUsers.filter(id => selectableIds.has(id)).length;
+  const allFilteredSelected = selectableUsers.length > 0 && selectedCount === selectableUsers.length;
+
   function updateEditing(patch: Partial<PortalUser>) {
     setEditing((current) => {
       if (!current) return current;
@@ -482,8 +490,9 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
               </span>
             </div>
             <input
-              aria-label="Search users"
-              placeholder="Search name, email or role"
+              type="search"
+              aria-label="Search by name or email"
+              placeholder="Search by name or email"
               value={search}
               onChange={(event) => { setSearch(event.target.value); setSelectedUsers([]); }}
             />
@@ -498,6 +507,16 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
               {ACCESS_MODULES.map(module => <option key={module.id} value={module.id}>{module.label}</option>)}
             </select>
           </label>
+          {isSuperAdmin && <label className="access-module-filter">
+            <input
+              type="checkbox"
+              checked={allFilteredSelected}
+              ref={input => { if (input) input.indeterminate = selectedCount > 0 && !allFilteredSelected; }}
+              disabled={!selectableUsers.length || saving || bulkAction !== null}
+              onChange={event => setSelectedUsers(event.target.checked ? selectableUsers.map(user => user.id) : [])}
+            />
+            Select all filtered users ({selectableUsers.length})
+          </label>}
           {isSuperAdmin && selectedUsers.length > 0 && <section className="feature-release-bar card" aria-label="Selected users">
             <strong>{selectedUsers.length} selected</strong>
             <div className="feature-release-actions">
@@ -527,7 +546,7 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
                 className={`card user-access-row${user.active ? "" : " inactive"}`}
                 key={user.id}
               >
-                {isSuperAdmin && user.editable && user.active && user.role !== "superadmin" ?
+                {selectableIds.has(user.id) ?
                   <input type="checkbox" aria-label={`Select ${user.email}`} checked={selectedUsers.includes(user.id)}
                     onChange={event => setSelectedUsers(current => event.target.checked ? [...current, user.id] : current.filter(id => id !== user.id))} /> :
                   <div className="user-avatar">{(user.displayName || user.email).slice(0, 1).toUpperCase()}</div>}
