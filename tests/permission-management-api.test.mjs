@@ -20,12 +20,29 @@ beforeEach(()=>{
     if(options?.method==='POST'&&path==='customer_users'){state.writes.push({path,body:JSON.parse(options.body)});return;}
     assert.equal(options?.method===undefined||['rpc/account_store_setup_v2_available','rpc/account_registered_names_available'].includes(path),true,`Unexpected mutation: ${path}`);
     state.reads.push(path);
-    if(path.startsWith('customer_users?')){const email=path.match(/&email=eq\.([^&]+)/)?.[1];return email?state.users.filter(u=>u.email===decodeURIComponent(email)):state.users;}
+    const params = new URLSearchParams(path.split("?")[1]);
+    const page = rows => {
+      if (!params.has("limit")) return rows;
+      const cursor = params.get("id")?.slice(3);
+      if (cursor && state.failLaterPage && path.startsWith("user_module_permissions?")) throw Error("later page failed");
+      return rows.filter(row => !cursor || (typeof row.id === "number" ? row.id > Number(cursor) : String(row.id) > cursor))
+        .slice(0, Math.min(Number(params.get("limit")), state.restCap ?? 500));
+    };
+    const requestedUserIds = params.get("user_id")?.match(/^in\.\((.*)\)$/)?.[1].split(",").map(Number);
+    if(path.startsWith('customer_users?')){const email=path.match(/&email=eq\.([^&]+)/)?.[1];return email?state.users.filter(u=>u.email===decodeURIComponent(email)):page(state.users);}
     if(path.startsWith('tenants?'))return [{active:state.tenantActive}];
     if(path.startsWith('tenant_module_permissions?'))return ['overview','design','calculator','packages','advertising','orders','health','protection','actions','live_calendar'].map(module_id=>({module_id,enabled:state.modules.includes(module_id)}));
-    if(path.startsWith('user_module_permissions?')){const id=Number(path.match(/&user_id=eq\.(\d+)/)?.[1]);return state.users.filter(u=>!id||u.id===id).flatMap(u=>state.modules.map(module_id=>({user_id:u.id,module_id,enabled:true})));}
-    if(path.startsWith('stores?'))return state.stores;
-    if(path.startsWith('user_store_access?')){assert.match(path,/enabled=eq.true/);const id=Number(path.match(/&user_id=eq\.(\d+)/)?.[1]);return state.assignments.filter(row=>!id||row.user_id===id);}
+    if(path.startsWith('user_module_permissions?')){
+      const id=Number(path.match(/&user_id=eq\.(\d+)/)?.[1]);
+      return page(state.users.flatMap(u=>state.modules.map((module_id,index)=>({id:u.id*100+index,user_id:u.id,module_id,enabled:true})))
+        .filter(row=>requestedUserIds ? requestedUserIds.includes(row.user_id) : !id||row.user_id===id));
+    }
+    if(path.startsWith('stores?'))return page(state.stores);
+    if(path.startsWith('user_store_access?')){
+      assert.match(path,/enabled=eq.true/);
+      const id=Number(path.match(/&user_id=eq\.(\d+)/)?.[1]);
+      return page(state.assignments.map((row,index)=>({...row,id:index+1})).filter(row=>requestedUserIds ? requestedUserIds.includes(row.user_id) : !id||row.user_id===id));
+    }
     if(path.startsWith('account_billing_unit_versions?'))return [];
     if(path==='rpc/account_store_setup_v2_available')return true;if(path==='rpc/account_registered_names_available')return true;
     throw Error(`Unexpected path ${path}`);
@@ -64,4 +81,23 @@ test('Delegate cannot create a privileged role; duplicate login does not touch e
 test('Store metadata exposes distinct saved Platform and Billing names without replacing either',async()=>{
  const original=globalThis.__permissionRest;globalThis.__permissionRest=async(path,options)=>path.startsWith('account_billing_unit_versions?')?[{roster_key:'store:store-a',legal_entity:'Platform Company',billing_registered_name:'Billing Company',change_action:'company',version:'2',store_id:'store-a',effective_month:'2026-10-01'}]:original(path,options);
  const response=await GET();assert.equal(response.status,200);const data=await response.json();assert.equal(data.accountRegisteredNamesAvailable,true);const unit=data.stores.find(store=>store.id==='store-a').accountUnit;assert.equal(unit.legalEntity,'Platform Company');assert.equal(unit.billingEntity,'Billing Company');
+});
+
+test('GET loads complete permissions even when the REST cap is below the requested page size', async () => {
+  state.restCap = 250;
+  const template = state.users[2];
+  for (let id = 5; id <= 275; id++) {
+    state.users.push({...template, id, email: `client-${id}@test.local`});
+    state.assignments.push({user_id:id,store_id:'store-b'});
+  }
+  const response = await GET();
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.users.length, 275);
+  assert.equal(data.users.filter(user => user.enabledModules.includes('actions')).length, 275);
+  assert.deepEqual(data.users.find(user => user.id === 275).storeIds, ['store-b']);
+  assert.deepEqual(data.clientDefaults, state.modules);
+  assert.deepEqual(state.writes, []);
+  state.failLaterPage = true;
+  assert.equal((await GET()).status, 503);
 });
