@@ -13,13 +13,38 @@ type Role="customer"|"manager"|"superadmin";
 type Member=PermissionMember & { permissions_version: number };
 const headers={"Cache-Control":"private, no-store"};
 
+// PostgREST caps each response. Advance by the primary key until the source is exhausted.
+async function readAllRows<Row extends { id: string | number }>(path: string): Promise<Row[]> {
+  const rows: Row[] = [];
+  let cursor: Row["id"] | undefined;
+  while (true) {
+    const page = await supabaseRest<Row[]>(
+      `${path}&order=id.asc&limit=500${cursor === undefined ? "" : `&id=gt.${encodeURIComponent(cursor)}`}`,
+    );
+    if (!page.length) return rows;
+    const next = page[page.length - 1].id;
+    if (next === undefined || next === cursor) throw new Error("Permission list pagination did not advance");
+    rows.push(...page);
+    cursor = next;
+  }
+}
+
+async function readUserAccessRows<Row extends { id: string }>(path: string, ids: number[]): Promise<Row[]> {
+  const rows: Row[] = [];
+  for (let start = 0; start < ids.length; start += 100) {
+    const batch = ids.slice(start, start + 100);
+    rows.push(...await readAllRows<Row>(`${path}&user_id=in.(${batch.join(",")})`));
+  }
+  return rows;
+}
+
 async function portalUsers(auth: PermissionContext){
   const tenantId=auth.member.tenant_id;
   const accountReadable=await accountAccessGranted();
   const [users,tenantModules,tenantStoreRows,directory,accountStatus,storeSetupAvailable,registeredNamesAvailable]=await Promise.all([
-    supabaseRest<Member[]>(`customer_users?select=*&tenant_id=eq.${encodeURIComponent(tenantId)}&order=email.asc`),
+    readAllRows<Member>(`customer_users?select=*&tenant_id=eq.${encodeURIComponent(tenantId)}`),
     supabaseRest<Array<{module_id:string;enabled:boolean}>>(`tenant_module_permissions?select=module_id,enabled&tenant_id=eq.${encodeURIComponent(tenantId)}`),
-    supabaseRest<Array<{id:string;name:string;display_name:string|null;platform:string;bigseller_name:string;service_status:"active"|"inactive"|"ended";service_status_version:string}>>(`stores?select=id,name,display_name,platform,bigseller_name,service_status,service_status_version::text&tenant_id=eq.${encodeURIComponent(tenantId)}&order=name.asc`),
+    readAllRows<{id:string;name:string;display_name:string|null;platform:string;bigseller_name:string;service_status:"active"|"inactive"|"ended";service_status_version:string}>(`stores?select=id,name,display_name,platform,bigseller_name,service_status,service_status_version::text&tenant_id=eq.${encodeURIComponent(tenantId)}`),
     storeDirectory(tenantId),
     (accountReadable?supabaseRest<Array<{roster_key:string;legal_entity:string;billing_registered_name?:string|null;change_action?:string;version:string;store_id:string|null;effective_month:string}>>(`account_billing_unit_versions?select=roster_key,legal_entity,billing_registered_name,change_action,version::text,store_id,effective_month&tenant_id=eq.${encodeURIComponent(tenantId)}&order=version.desc`):Promise.resolve([]))
       .catch(error=>{if(accountReadable&&error instanceof Error&&/"code":"(PGRST204|42703)"/.test(error.message))return supabaseRest<Array<{roster_key:string;legal_entity:string;billing_registered_name?:string|null;change_action?:string;version:string;store_id:string|null;effective_month:string}>>(`account_billing_unit_versions?select=roster_key,legal_entity,change_action,version::text,store_id,effective_month&tenant_id=eq.${encodeURIComponent(tenantId)}&order=version.desc`);throw error;})
@@ -65,10 +90,17 @@ async function portalUsers(auth: PermissionContext){
     const units=unitsByStore.get(store.id)??[];
     return {...store,serviceStatus:store.service_status,serviceStatusVersion:store.service_status_version,name:store.display_name??store.name,...storeDetails(directory,store.id),...(accountReadable?{accountUnit:units.length===1?units[0]:null,accountUnitCount:units.length}:{})};
   });
-  const ids=users.map(user=>user.id);const [moduleRows,storeRows]=ids.length?await Promise.all([
-    supabaseRest<Array<{user_id:number;module_id:string;enabled:boolean;additive_grant:boolean}>>(`user_module_permissions?select=user_id,module_id,enabled,additive_grant&user_id=in.(${ids.join(",")})`),
-    supabaseRest<Array<{user_id:number;store_id:string}>>(`user_store_access?select=user_id,store_id&enabled=eq.true&user_id=in.(${ids.join(",")})`),
-  ]):[[],[]];
+  users.sort((a, b) => a.email.localeCompare(b.email));
+  tenantStores.sort((a, b) => a.name.localeCompare(b.name));
+  const ids = users.map(user => user.id);
+  const [moduleRows, storeRows] = await Promise.all([
+    readUserAccessRows<{id:string;user_id:number;module_id:string;enabled:boolean;additive_grant:boolean}>(
+      "user_module_permissions?select=id::text,user_id,module_id,enabled,additive_grant", ids,
+    ),
+    readUserAccessRows<{id:string;user_id:number;store_id:string}>(
+      "user_store_access?select=id::text,user_id,store_id&enabled=eq.true", ids,
+    ),
+  ]);
   const clientDefaults=ALL_PORTAL_MODULE_IDS.filter(id=>id==="live_calendar"?tenantModules.find(row=>row.module_id===id)?.enabled===true:tenantModules.find(row=>row.module_id===id)?.enabled!==false);
   const allowedStores=tenantStores.filter(store=>auth.storeIds.includes(store.id));
   const exposedUsers=users.flatMap(user=>{
