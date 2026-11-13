@@ -507,6 +507,7 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
               {ACCESS_MODULES.map(module => <option key={module.id} value={module.id}>{module.label}</option>)}
             </select>
           </label>
+          <p role="status">{users.length} matching {users.length === 1 ? "user" : "users"}{isSuperAdmin && ` · ${selectableUsers.length} selectable`}</p>
           {isSuperAdmin && <label className="access-module-filter">
             <input
               type="checkbox"
@@ -515,7 +516,7 @@ export function PermissionSettings({ staging=false, initialEnabledModules, onSto
               disabled={!selectableUsers.length || saving || bulkAction !== null}
               onChange={event => setSelectedUsers(event.target.checked ? selectableUsers.map(user => user.id) : [])}
             />
-            Select all filtered users ({selectableUsers.length})
+            Select all filtered users
           </label>}
           {isSuperAdmin && selectedUsers.length > 0 && <section className="feature-release-bar card" aria-label="Selected users">
             <strong>{selectedUsers.length} selected</strong>
