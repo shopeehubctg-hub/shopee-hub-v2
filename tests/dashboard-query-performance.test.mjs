@@ -86,3 +86,15 @@ test('Production release retains Super Admin-only permissions without delegated 
  const body=await response.json();assert.deepEqual(body.stores.map(store=>store.id),['store-b']);
  assert.equal((await GET(req('section=bootstrap&storeId=store-a'))).status,403);
  });
+
+test('Legacy dashboard reads management actions only with module access and scoped stores', async()=>{
+ state.member.role='customer';
+ state.member.store_access_mode='selected';
+ state.modules=['calculator'];
+ assert.equal((await GET(req('storeId=all'))).status,200);
+ assert.ok(!state.calls.some(path=>path.startsWith('management_actions?')));
+ state.modules.push('actions');
+ assert.equal((await GET(req('storeId=all'))).status,200);
+ const actionQuery=state.calls.find(path=>path.startsWith('management_actions?'));
+ assert.equal(new URLSearchParams(actionQuery.split('?')[1]).get('store_id'),'in.(store-a)');
+});
