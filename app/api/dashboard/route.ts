@@ -276,7 +276,7 @@ export async function GET(request: Request) {
       selectedStore&&plan.vouchers?readCoFundVouchers(selectedStore.id,membership.tenant_id):Promise.resolve([]),
       readAdPerformance(authorizedAdStoreIds(visibleStores,selectedStore,canViewAdvertising),membership.tenant_id,allStoresRequested,plan.refresh),
       snapshotRowsPromise,
-      plan.actions?readActions(selectedStore?[selectedStore.id]:visibleStores.map(store=>store.id),membership.tenant_id):Promise.resolve([]),
+      plan.actions&&enabledModules.includes("actions")?readActions(selectedStore?[selectedStore.id]:visibleStores.map(store=>store.id),membership.tenant_id):Promise.resolve([]),
     ]);
     const staticPayload=deploymentTarget()==="staging"?null:selectedStore?(storeSnapshots[selectedStore.sourceName]??storeSnapshots[selectedStore.bigsellerName]??null):null;
     const snapshotPayload=plan.snapshot?(snapshotRows[0]?.payload??staticPayload):null;
@@ -385,7 +385,7 @@ export async function GET(request: Request) {
   const topUpOwner = selectedStore
     ? normalizeTopUpOwner(directoryById.get(selectedStore.id)?.adsTopUpOwner)
     : null;
-  const actions = plan.actions?await readActions(selectedStore?[selectedStore.id]:visibleStores.map(store=>store.id),tenant.id):[];
+  const actions = plan.actions&&enabledModules.includes("actions")?await readActions(selectedStore?[selectedStore.id]:visibleStores.map(store=>store.id),tenant.id):[];
   const selectedCoFundVouchers = selectedStore&&plan.vouchers ? await readCoFundVouchers(selectedStore.id,tenant.id) : [];
   const sourceShopName=selectedStore&&plan.catalog?sourceShopNameFor(selectedStore.directoryName):null;
   const storedProducts=!sourceShopName?[]:await db.select().from(projectProductCatalog)
