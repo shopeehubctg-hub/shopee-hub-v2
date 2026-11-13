@@ -4,3 +4,11 @@ const identities=[['ninoko_childhood_guardian','shopee-ninoko-official-store'],[
 const registry=identities.map(([name,id])=>({id,name:'Current '+name,display_name:null,bigseller_name:'Import '+name,tenant_id:'j-packaging',platform:'Shopee'}));
 test('all eight reviewed usernames resolve to canonical selector IDs and current labels',()=>{const r=resolve('j-packaging',registry);for(const [username,id] of identities){assert.equal(r(username).id,id);assert.equal(r(username).name,'Current '+username);}assert.equal(r(' MIZINO.PREMIUM ').id,'shopee-mizino-premium');});
 test('renamed labels update dynamically, SG cannot be guessed and ambiguous/cross-tenant aliases fail closed',()=>{const renamed=registry.map(s=>({...s,display_name:s.id==='shopee-ninoko-official-store'?'New store name':null}));assert.equal(resolve('j-packaging',renamed)('ninoko_childhood_guardian').display_name,'New store name');assert.equal(resolve('j-packaging',registry)('skindae.os.sg'),null);assert.equal(resolve('test-staging',registry)('ninoko_childhood_guardian'),null);const conflict=[...registry,{id:'shopee-other',tenant_id:'other',name:'Current ninoko_childhood_guardian',platform:'Shopee'}];assert.equal(resolve('j-packaging',conflict)('Current ninoko_childhood_guardian'),null);assert.equal(resolve('j-packaging',registry)('ninoko'),null);});
+
+test('Supu import name resolves only to its verified Malaysia storefront',()=>{
+ const supu={id:'shopee-supu',name:'Supu',tenant_id:'j-packaging',platform:'Shopee MY'};
+ assert.equal(resolve('j-packaging',[supu])('SUPU • 食补')?.id,supu.id);
+ assert.equal(resolve('j-packaging',[{...supu,platform:'Shopee SG'}])('SUPU • 食补'),null);
+ const conflicting={...supu,id:'shopee-other',name:'SUPU • 食补',platform:'Shopee SG'};
+ assert.equal(resolve('j-packaging',[supu,conflicting])('SUPU • 食补'),null);
+});
