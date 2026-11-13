@@ -12,6 +12,7 @@ export function sourceStoreResolver(tenantId:string,registry:SourceStore[],direc
  const aliases=new Map<string,Set<string>>();
  const add=(alias:unknown,id:string)=>{if(typeof alias!=='string'||!alias.trim())return;const key=normalize(alias);const ids=aliases.get(key)??new Set<string>();ids.add(id);aliases.set(key,ids);};
  for(const store of canonical){for(const alias of [store.name,store.display_name,store.bigseller_name])add(alias,store.id);}
+ if(tenantId===roster.tenantId&&canonical.some(store=>store.id==='shopee-supu'&&store.tenant_id===tenantId&&store.platform==='Shopee MY'))add('SUPU • 食补','shopee-supu');
  for(const row of directory)if(canonical.some(store=>store.id===row.store_id&&store.tenant_id===row.tenant_id))add(row.store_name,row.store_id);
  if(tenantId===roster.tenantId)for(const row of roster.rows){
   const resolved=accountSelectorCandidates(row.candidates,row.market as MarketCode,names);
