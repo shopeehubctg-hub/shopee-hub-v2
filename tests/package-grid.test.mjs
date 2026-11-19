@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 
 const {outputFiles} = await build({entryPoints:['app/package-grid-model.ts'],write:false,bundle:true,platform:'node',format:'esm'});
-const {editGridCells,indexGridProducts,clipboardRows, gridColumns, gridReview, pasteGrid} = await import('data:text/javascript;base64,'+Buffer.from(outputFiles[0].contents).toString('base64'));
+const {roundMYPrices,editGridCells,indexGridProducts,clipboardRows, gridColumns, gridReview, pasteGrid} = await import('data:text/javascript;base64,'+Buffer.from(outputFiles[0].contents).toString('base64'));
 const catalog = [{sku:'0001',name:'A Product'}, {sku:'0002',name:'Shared'}, {sku:'0003',name:'Shared'}];
 const line = ['Starter','100','80','70','75','009','','','A Product','2'];
 test('TSV handles spreadsheet quoting, CRLF, empty cells and offsets',()=>{
@@ -53,4 +53,30 @@ test('replacing a selected library item clears its old counterpart and preserves
   assert.equal(editGridCells({}, {'0.name':'Shared','0.sku':'0002'},library)['0.sku'],'0002');
   const edited=pasteGrid([old],'MY','sku',20,0,8,'0002\t2',library);
   assert.deepEqual(edited.rows,[{'0.name':'Shared','0.sku':'0002','0.qty':'2'}]);
+});
+
+test('nearest RM rounds at 50 sen for three MY selling prices only',()=>{
+  const manual={priceAdjustmentReason:'Campaign update','MY.original':'500.35','SG.normal':'40.55','0.qty':'3'};
+  const row={...manual,'MY.normal':'406.03','MY.campaign':'358.50','MY.normalLate':'308.49'};
+  const rounded=roundMYPrices(row,{scenarios:[]});
+  assert.deepEqual(rounded,{...manual,'MY.normal':'406','MY.campaign':'359','MY.normalLate':'308'});
+  assert.equal(roundMYPrices(rounded,{scenarios:[]}),rounded);
+  const partial={...manual,'MY.normal':'','MY.campaign':'bad','MY.normalLate':'25.00'};
+  assert.deepEqual(roundMYPrices(partial,{scenarios:[]}),{...partial,'MY.normalLate':'25'});
+});
+
+test('original price may equal the highest selling price and is checked separately per market',()=>{
+  const {rows}=pasteGrid([],'MY','product',1,0,0,line.join('\t'));
+  const base={...rows[0],'MY.original':'358.52','MY.normal':'327.78','MY.campaign':'358.52','MY.normalLate':'308.93',
+    'SG.original':'20','SG.normal':'18','SG.campaign':'19','SG.normalLate':'20.01'};
+  const issues=gridReview([base],'MY+SG',1,catalog).issues;
+  assert.deepEqual(issues.map(i=>i.fields),[['SG.original']]);
+  assert.match(issues[0].message,/20.01.*16th/);
+  for(const [field,period] of [['normal','1st'],['campaign','Campaign Day'],['normalLate','16th']]){
+    const changed={...base,['MY.'+field]:'400','SG.original':'20.01'};
+    const errors=gridReview([changed],'MY+SG',1,catalog).issues;
+    assert.equal(errors.length,1);
+    assert.deepEqual(errors[0].fields,['MY.original']);
+    assert(errors[0].message.includes('RM400')&&errors[0].message.includes(period));
+  }
 });

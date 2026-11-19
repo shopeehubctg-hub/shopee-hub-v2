@@ -35,3 +35,9 @@ Read-only schema review on Staging and Production confirmed package version comp
 In the Calculator handoff and direct batch table, an unsuccessful product or SKU search offers **+ Add New Product**. The form carries over the current item's name and SKU. **Add to Item** fills both cells and returns focus to that item's quantity. Cancel keeps the item as it was when the form opened. An existing SKU with a conflicting name is flagged in the form. Catalog persistence follows the existing package save flow.
 
 The Calculator browser regression covers pointer and keyboard activation, both inventory modes, leading-zero SKUs, cancellation, conflicting names, correct row and slot, quantity preservation, draft refresh and the final mocked package requests. No database migration is involved.
+
+## Round Calculator prices and check Original Price during entry
+
+The MY price header in Create Packages from Calculator offers **Round to nearest RM** for all package rows. It rounds only early-month, campaign and late-month MY selling prices. RM406.03 becomes RM406 and RM406.50 becomes RM407. The original Calculator recommendations remain available in pricing history. Rounding an unmodified recommendation supplies an editable price change reason.
+
+An Original Price below a selling price shows an inline error immediately, including the minimum amount, currency and period. Typing, pasting and rounding all update the warning. Each market is checked independently, and an Original Price equal to the highest selling price is valid.

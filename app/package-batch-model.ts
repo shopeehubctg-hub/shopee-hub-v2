@@ -1,6 +1,6 @@
 import {pricingMode,type PricingMode,type PriceApplication,type PriceSourcePeriod} from './pricing-periods';
 import {defaultRecurringEvent,recurringEventWindow,recurringEventIds,type RecurringEventId} from './recurring-campaign';
-import type {MarketCode} from './markets';
+import {MARKET_CONFIG, type MarketCode} from './markets';
 import {MAX_INVENTORY_ITEMS,duplicateInventory} from './inventory-items';
 import {adjustedPrices,type ExportSnapshot} from './pricing-evidence';
 export type BatchMarket=MarketCode;
@@ -33,6 +33,20 @@ export function dateIssues(d:BatchDates|null,same:boolean):string[]{
  }
  return errors;
 }
+export function originalPriceWarning(market:BatchMarket, prices:NonNullable<BatchPackage['prices'][BatchMarket]>, split:boolean) {
+ const original = Number(prices.original);
+ if (!prices.original.trim() || !Number.isFinite(original)) return '';
+ const periods = [
+  {label: split ? 'Normal · 1st–15th' : 'Normal Day', amount: Number(prices.normal)},
+  {label: 'Campaign Day', amount: Number(prices.campaign)}
+ ];
+ if (split) periods.push({label:'Normal · 16th–End', amount:Number(prices.normalLate)});
+ const above = periods.filter(period => Number.isFinite(period.amount) && period.amount > 0 && period.amount > original);
+ if (!above.length) return '';
+ const highest = above.reduce((a,b) => a.amount >= b.amount ? a : b);
+ return `Original Price must be at least ${MARKET_CONFIG[market].symbol}${highest.amount} (${highest.label}).`;
+}
+
 export function batchIssues(p:BatchPackage,all:BatchPackage[],includeDates=true){
  const issues:string[]=[];if(!p.name.trim())issues.push('Package Name: required.');
  if(!Object.values(p.skus).some(v=>v.trim()))issues.push('Platform SKU: fill at least one platform.');
@@ -42,9 +56,9 @@ export function batchIssues(p:BatchPackage,all:BatchPackage[],includeDates=true)
  if(p.pricingMode==='uniform'&&p.threePeriodPrices&&!p.priceApplication)issues.push('Whole-month Price: choose a source period.');
  if(p.pricingMode==='uniform'&&Object.values(p.prices).some(v=>v.campaign&&Number(v.campaign)!==Number(v.normal)))issues.push('Same Price All Month: Normal and Campaign prices must match.');
  try{pricingMode(p.pricingMode);}catch(e){issues.push((e as Error).message);}
- if(p.pricingMode==='split_normal')for(const [market,v] of Object.entries(p.prices))if(!v.normalLate||!Number.isFinite(Number(v.normalLate))||Number(v.normalLate)<=0||Number(v.normalLate)>Number(v.original))issues.push(`${market} late-month price: enter a positive price within Original Price.`);
+ if(p.pricingMode==='split_normal')for(const [market,v] of Object.entries(p.prices))if(!v.normalLate||!Number.isFinite(Number(v.normalLate))||Number(v.normalLate)<=0)issues.push(`${market} late-month price: enter a positive price within Original Price.`);
  for(const [market,v] of Object.entries(p.prices))for(const key of ['original','normal','campaign'] as const){if(key==='campaign'&&!v[key])continue;if(!v[key].trim()||!Number.isFinite(Number(v[key]))||Number(v[key])<=0)issues.push(`${market} ${key} price: enter a positive number.`);}
- for(const [market,v] of Object.entries(p.prices)){if(Number(v.normal)>Number(v.original)||Number(v.campaign||v.normal)>Number(v.original))issues.push(`${market} selling price cannot exceed Original Price.`);if(Object.values(v).some(x=>x&&Math.abs(Number(x)*100-Math.round(Number(x)*100))>0.000001))issues.push(`${market} prices: use at most two decimal places.`);}
+ for(const [market,v] of Object.entries(p.prices)){const warning=originalPriceWarning(market as BatchMarket,v,p.pricingMode==='split_normal');if(warning)issues.push(market+' '+warning);if(Object.values(v).some(x=>x&&Math.abs(Number(x)*100-Math.round(Number(x)*100))>0.000001))issues.push(`${market} prices: use at most two decimal places.`);}
  const entered=p.items.filter(i=>i.sku||i.quantity);if(!entered.length)issues.push('Inventory: add at least one item.');if(entered.length>MAX_INVENTORY_ITEMS)issues.push(`Inventory: maximum ${MAX_INVENTORY_ITEMS} items.`);
  entered.forEach((i,index)=>{if(!i.sku.trim()||!Number.isInteger(Number(i.quantity))||Number(i.quantity)<=0||Number(i.quantity)>100000)issues.push(`Inventory ${index+1}: SKU and whole quantity 1–100,000 required.`);if(p.catalogRequired&&!i.name?.trim())issues.push(`Inventory ${index+1}: enter a Product Name for this new SKU.`);});
  issues.push(...duplicateInventory(p.items).map(d=>d.message));
