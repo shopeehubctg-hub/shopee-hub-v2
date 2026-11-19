@@ -49,3 +49,5 @@ Applying dates to the last packages that need them opens Final Preview in one cl
 ## One Dashboard package editor
 
 Create Packages opens the By Product grid for one or more packages. The Calculator sends its selected rows directly to the same editor. Package creation now takes place entirely in the Dashboard, including multi-row paste, product lookup and final preview. The package list offers one creation action and reserves package selection for fulfillment. Existing package prices can be updated from Price Calculator.
+
+The Calculator opens new package tables with the three MY prices filled in. Choose additional selling markets in Create Packages under Markets. Reopening a saved table restores its market selection.
