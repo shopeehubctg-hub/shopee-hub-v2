@@ -1,7 +1,6 @@
 "use client";
 import "./pricing-periods.css";
 import {PACKAGE_PRICING_MODES,PRICE_SOURCE_PERIODS,type PriceApplication,type PriceSourcePeriod,pricingMode,pricingModeLabels,readNormalMonthlyRule,normalPeriodAmounts,pricingPeriodLabels,snapshotPeriod,type PricingMode} from "./pricing-periods";
-import {eligibleRepriceTarget,type RepriceTarget} from "./package-repricing";
 import "./package-repricing.css";
 import {changedPackageStart,startedPackageDates} from "./package-start-date-policy";
 import {duplicateInventory,MAX_INVENTORY_ITEMS,inventoryLinesUnchanged} from "./inventory-items";
@@ -76,7 +75,7 @@ const durationLabel=(item:PackageItem)=>({"long-term":"Long Term","monthly":"Mon
 
 type KitExportPreview = { packageCount:number; rowCount:number; signature:string };
 type KitExportResponse = KitExportPreview & { rows:Array<{kitSku:string;inventorySku:string;quantity:number;price:1}> };
-type Props = { calculatorBatch?:CalculatorBatch|null; onCalculatorExit?:()=>void; onRecalculate?:(targets:RepriceTarget[])=>void; highlightedIds?:string[]; storeId:string; storeName:string; storePlatform?:string; canCreate?:boolean; allowSamplePreview?:boolean; staging?:boolean; prefills?:PackagePrefill[]; standaloneCreate?:boolean; draftStorageKey?:string; onPrefillsAccepted?:()=>void };
+type Props = { calculatorBatch?:CalculatorBatch|null; onCalculatorExit?:()=>void; highlightedIds?:string[]; storeId:string; storeName:string; storePlatform?:string; canCreate?:boolean; allowSamplePreview?:boolean; staging?:boolean; prefills?:PackagePrefill[]; standaloneCreate?:boolean; draftStorageKey?:string; onPrefillsAccepted?:()=>void };
 type StoredBatch = { prefills:PackagePrefill[]; storeId?:string; requestIds?:Record<string,string> };
 
 const PLATFORM_NAMES:PlatformName[] = ["Shopee","Lazada","TikTok Shop"];
@@ -203,7 +202,7 @@ function PackagePriceSummary({item,country="all"}:{item:PackageItem;country?:"al
   })}</div>;
 }
 
-export function PackageControl({ calculatorBatch,onCalculatorExit,onRecalculate,highlightedIds=[],storeId, storeName, storePlatform, canCreate=true, allowSamplePreview=false, staging=false, prefills=[], standaloneCreate:initialStandaloneCreate=false, draftStorageKey, onPrefillsAccepted }:Props) {
+export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds=[],storeId, storeName, storePlatform, canCreate=true, allowSamplePreview=false, staging=false, prefills=[], standaloneCreate:initialStandaloneCreate=false, draftStorageKey, onPrefillsAccepted }:Props) {
   const [batchStore,setBatchStore] = useState<string|null>(null);
   const [batchListView,setBatchListView] = useState(false);
   const standaloneCreate=initialStandaloneCreate&&!batchListView;
@@ -515,14 +514,6 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,onRecalculate,
     setPlatforms([{platform:"Shopee",packageSku:""}]);
     setCalculatorSettings(null);
     setFormErrors([]);
-  }
-
-  function openNew() {
-    setPrefillQueue([]);
-    setPrefillBatch([]);
-    resetForm();
-    setMessage("");
-    setShowCreate(true);
   }
 
   function closeCreate() {
@@ -968,7 +959,7 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,onRecalculate,
     setShowCreate(true);
   }
 
-  function renderSelection(item:PackageItem) { if(sampleMode)return null; return <>{(canExportKits||onRecalculate)&&hasSelectedStore&&source==="database"&&<label className="kit-package-selector"><input type="checkbox" checked={selectedKitIds.includes(item.id)} disabled={item.sheetSyncStatus!=="synced"||Boolean(item.pendingVersion)||["draft","review"].includes(item.status)} onChange={event=>{setKitError("");setKitPreview(null);setSelectedKitIds(current=>event.target.checked?[...current,item.id]:current.filter(id=>id!==item.id));}} aria-label={`Select package ${item.name}`}/><span>{onRecalculate?"Select Package":"Select for Fulfillment Sheet"}</span></label>}</>; }
+  function renderSelection(item:PackageItem) { if(sampleMode)return null; return <>{canExportKits&&hasSelectedStore&&source==="database"&&<label className="kit-package-selector"><input type="checkbox" checked={selectedKitIds.includes(item.id)} disabled={item.sheetSyncStatus!=="synced"||Boolean(item.pendingVersion)||["draft","review"].includes(item.status)} onChange={event=>{setKitError("");setKitPreview(null);setSelectedKitIds(current=>event.target.checked?[...current,item.id]:current.filter(id=>id!==item.id));}} aria-label={`Select ${item.name} for fulfillment sheet`}/><span>Select for Fulfillment Sheet</span></label>}</>; }
   function renderHistory(item:PackageItem) {
     if(openHistory!==item.id)return null;
     const result=historyResults[historyKey(item)];
@@ -997,17 +988,15 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,onRecalculate,
       {item.recurringCampaign&&<div><b>Monthly campaign</b><span>{displayDate(item.recurringCampaign.startDate)} → {item.recurringCampaign.endDate?displayDate(item.recurringCampaign.endDate):"Ongoing"}</span></div>}</>;
   }
 
-  if(canCreate&&hasSelectedStore&&!sampleMode&&(batchStore===storeId||calculatorBatch?.storeId===storeId))return <PackageBatchPreview calculatorBatch={calculatorBatch??undefined} staging={staging} key={calculatorBatch?.id??storeId} storeId={storeId} storeName={storeName} backLabel={standaloneCreate?"Back to Single Package":"Back to Packages"} onExit={(notice)=>{if(calculatorBatch)onCalculatorExit?.();setBatchStore(null);if(notice){setBatchListView(true);setShowCreate(false);setMessage(notice);setMessageType("success");setFilter("all");setSearch("");}void load();}}/>;
+  if(canCreate&&hasSelectedStore&&!sampleMode&&(batchStore===storeId||calculatorBatch?.storeId===storeId))return <PackageBatchPreview calculatorBatch={calculatorBatch??undefined} staging={staging} key={calculatorBatch?.id??storeId} storeId={storeId} storeName={storeName} defaultMarket={marketFromPlatform(storePlatform)} onExit={(notice)=>{if(calculatorBatch)onCalculatorExit?.();setBatchStore(null);if(notice){setBatchListView(true);setShowCreate(false);setMessage(notice);setMessageType("success");setFilter("all");setSearch("");}void load();}}/>;
   return <div className={`package-control${standaloneCreate?" standalone-create":""}`}>
     <div className="package-hero">
       <div><p className="kicker">OXM PACKAGE CONTROL</p><h2>Packages & Pricing</h2><p>Create packages, choose platforms and set promotion dates. Every change is saved in history.</p></div>
       <div className="package-hero-actions">
         {!staging&&<a href={HISTORY_SHEET_URL} target="_blank" rel="noopener noreferrer">Google Sheet History</a>}
         <span>{sampleMode?"Sample data":!hasPackageScope?"Select a Store":allStoresSelected?"Accessible Stores":source==="sheet-migration-preview"?"Sheet Migration Preview":"Live Database"}</span>
-        {!sampleMode&&onRecalculate&&hasSelectedStore&&loadedStoreId===storeId&&source==="database"&&<button type="button" className="reprice-next" disabled={!selectedKitIds.length||scopedItems.filter(item=>selectedKitIds.includes(item.id)).some(item=>!eligibleRepriceTarget(item))} onClick={()=>onRecalculate(scopedItems.filter(item=>selectedKitIds.includes(item.id)))}>Recalculate Prices ({selectedKitIds.length})</button>}
         {!sampleMode&&canExportKits&&hasSelectedStore&&loadedStoreId===storeId&&source==="database"&&<button type="button" className="kit-export-button" onClick={previewKitExport} disabled={!selectedKitIds.length||kitBusy}>Generate Fulfillment Sheet{selectedKitIds.length?` (${selectedKitIds.length})`:""}</button>}
-        {!sampleMode&&canCreate&&hasSelectedStore&&<button onClick={openNew}>Create Single Package</button>}
-    {!sampleMode&&canCreate&&hasSelectedStore&&<button type="button" onClick={()=>setBatchStore(storeId)}>Batch Create Packages</button>}
+        {!sampleMode&&canCreate&&hasSelectedStore&&<button type="button" onClick={()=>setBatchStore(storeId)}>Create Packages</button>}
       </div>
     </div>
 
@@ -1059,7 +1048,6 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,onRecalculate,
 
     {showCreate&&<div className={`package-modal${standaloneCreate?" standalone":""}`} role={standaloneCreate?undefined:"dialog"} aria-modal={standaloneCreate?undefined:"true"} aria-labelledby={standaloneCreate?undefined:"package-form-title"}><div className="package-form">
       <div className="package-form-head"><div><p className="kicker">{editingDraft?"EDIT DRAFT":editingPackageId?"EDIT PACKAGE":"NEW PACKAGE"}</p><h3 id="package-form-title">{editingDraft?"Edit Draft":editingPackageId?"Edit / Modify Package":"Create A Package"}</h3><span>{editingStore?.name??storeName}{prefillQueue.length?` · ${prefillQueue.length} Ready Package${prefillQueue.length===1?"":"s"} Remaining`:""}</span></div><button onClick={closeCreate} aria-label="Close">×</button></div>
-      {canCreate&&hasSelectedStore&&!editingPackageId&&!editingDraft&&<button type="button" onClick={()=>setBatchStore(storeId)}>Switch to Batch Create Packages</button>}
 
       {editingPackageId&&!editingDraft&&<p className="package-edit-note">Saving creates a new version. Previous details, your account and the time of the edit are retained in View History for Super Admin review.</p>}
 
