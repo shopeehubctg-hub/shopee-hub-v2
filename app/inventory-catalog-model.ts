@@ -1,9 +1,10 @@
+import {MAX_INVENTORY_ITEMS} from './inventory-items';
 export const BERLANCO_CATALOG_STORE='shopee-berlanco-beauty-official';
 export type InventoryProduct={sku:string;name:string;id?:string};
 export type StoredInventoryProduct=InventoryProduct & {store_id:string|null;active:boolean};
 export class InventoryCatalogError extends Error {code='INVENTORY_CATALOG_CONFLICT';}
 export function catalogProducts(items:{inventorySku:string;name:string}[]):InventoryProduct[]{
- if(!items.length||items.length>100)throw new InventoryCatalogError('Use between 1 and 100 inventory items.');
+ if(!items.length||items.length>MAX_INVENTORY_ITEMS)throw new InventoryCatalogError(`Use between 1 and ${MAX_INVENTORY_ITEMS} inventory items.`);
  const products=new Map<string,InventoryProduct>();
  for(const item of items){const sku=item.inventorySku.trim(),name=item.name.trim(),key=sku.toLowerCase();
   if(!sku||sku.length>200||!name||name.length>300)throw new InventoryCatalogError('Each inventory item needs a SKU (up to 200 characters) and Product Name (up to 300 characters).');

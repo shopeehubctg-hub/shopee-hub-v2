@@ -47,8 +47,8 @@ test('an existing package can become long-term and then receive an end date', as
   try{
     await act(async()=>root.render(React.createElement(PackageControl,{storeId:'store-1',storeName:'Test Store'})));
     await click('Edit / Modify');
-    const topLevelCheckboxes=dom.window.document.querySelectorAll('.pricing-section > .same-pricing-toggle');
-    assert.equal(topLevelCheckboxes.length,1,'only the shared pricing toggle remains above the date cards');
+    const pricingModes=dom.window.document.querySelectorAll('[aria-label="Package Pricing Mode"]');
+    assert.equal(pricingModes.length,1,'one pricing mode selector is shown above the dates');
     const longTerm=dom.window.document.querySelector('.nonCampaign .promotion-toggle button:last-child');
     assert.equal(longTerm.textContent,'Long-term Package');
     assert.equal(longTerm.getAttribute('aria-pressed'),'false');
@@ -74,8 +74,12 @@ test('an existing package can become long-term and then receive an end date', as
     assert.equal(submitted[1].longTerm,false);
     assert.equal(submitted[1].priceSchedules.find(line=>line.priceType==='non_campaign').effectiveTo,'2026-11-15');
     await click('Edit / Modify');
-    const samePricing=dom.window.document.querySelector('.same-pricing-toggle input');
-    if(samePricing.checked) await act(async()=>samePricing.dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true})));
+    await click('Early Month, Campaign & Late Month Prices');
+    const late=dom.window.document.querySelectorAll('.nonCampaign .market-price-card input')[3];
+    await act(async()=>{
+      Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value').set.call(late,'90');
+      late.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+    });
     const campaignLongTerm=dom.window.document.querySelector('.campaign-duration button:last-child');
     assert.equal(campaignLongTerm.textContent,'Long-term Package');
     await act(async()=>campaignLongTerm.dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true})));
@@ -86,6 +90,7 @@ test('an existing package can become long-term and then receive an end date', as
     assert.equal(dom.window.document.querySelectorAll('.campaign .market-price-grid input').length,2,'one Campaign price for MY');
     assert.equal(dom.window.document.querySelector('.campaign .recurring-end-date-control input'),null);
     await click('Save Changes');
+    assert.ok(submitted[2],dom.window.document.querySelector('.package-error-popout')?.textContent);
     assert.equal(submitted[2].longTerm,false);
     assert.equal(submitted[2].campaignLongTerm,true);
     assert.equal(submitted[2].samePricing,false);
@@ -179,14 +184,14 @@ test('package card separates MY and SG and merges repeated campaign prices', asy
   }
 });
 
-test('new package saves selected Normal months and Campaign events as separate periods', async () => {
+test('editing a draft saves selected Normal months and Campaign events as separate periods', async () => {
   const dom=new JSDOM('<div id="root"></div>',{url:'https://local.test/'});
   const keys=['window','document','navigator','HTMLElement','Event','MouseEvent','fetch'];
   const old=Object.fromEntries(keys.map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
   for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,navigator:dom.window.navigator,HTMLElement:dom.window.HTMLElement,Event:dom.window.Event,MouseEvent:dom.window.MouseEvent})) Object.defineProperty(globalThis,key,{configurable:true,writable:true,value});
   globalThis.IS_REACT_ACT_ENVIRONMENT=true;
   let saved;
-  globalThis.fetch=async (_url,options={})=>options.method==='POST'?(saved=JSON.parse(options.body),{ok:true,json:async()=>({packageId:'new-1',version:1,status:'active'})}):{ok:true,json:async()=>({source:'database',packages:[],products:[]})};
+  globalThis.fetch=async (_url,options={})=>options.method==='POST'?(saved=JSON.parse(options.body),{ok:true,json:async()=>({packageId:'new-1',version:1,status:'active'})}):{ok:true,json:async()=>({source:'database',packages:[{id:'draft',storeId:'store-1',name:'Calendar draft',packageSku:'DRAFT',market:'MY',status:'draft',version:1,promotionType:'monthly',effectiveFrom:'2026-10-01',effectiveTo:'2026-10-31',originalPrice:12000,sellingPrice:10000,priceSchedules:[{market:'MY',priceType:'non_campaign',originalPrice:120,sellingPrice:100,promotionType:'monthly',effectiveFrom:'2026-10-01',effectiveTo:'2026-10-31'},{market:'MY',priceType:'campaign',originalPrice:120,sellingPrice:90,promotionType:'custom',effectiveFrom:'2026-10-14',effectiveTo:'2026-10-16'}],components:[{inventorySku:'',name:'',quantity:1,kind:'product'}]}],products:[]})};
   const {createRoot}=await import('react-dom/client');
   const root=createRoot(dom.window.document.getElementById('root'));
   const setValue=async(input,value)=>{
@@ -200,7 +205,7 @@ test('new package saves selected Normal months and Campaign events as separate p
   const click=async node=>{assert.ok(node,'expected button or checkbox');await act(async()=>node.dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true})));};
   try{
     await act(async()=>root.render(React.createElement(PackageControl,{storeId:'store-1',storeName:'Test Store'})));
-    await click([...dom.window.document.querySelectorAll('button')].find(node=>node.textContent==='Create Single Package'));
+    await click([...dom.window.document.querySelectorAll('button')].find(node=>node.textContent==='Edit Draft'));
     await setValue(dom.window.document.querySelector('input[placeholder="Customer-Facing Package Name"]'),'Multi-month test');
     await setValue(dom.window.document.querySelector('.listing-skus input'),'MULTI-MONTH-SKU');
     const prices=[...dom.window.document.querySelectorAll('.market-price-grid input')];
@@ -209,7 +214,7 @@ test('new package saves selected Normal months and Campaign events as separate p
     for(const month of ['2026-10','2026-11'])await setValue(dom.window.document.querySelector('.campaign-month-editor > label input[type="month"]'),month);
     const cards=[...dom.window.document.querySelectorAll('.campaign-month-card')];
     assert.equal(cards.length,2);
-    await click(cards[0].querySelectorAll('input[type="checkbox"]')[1]);
+    if(!cards[0].querySelectorAll('input[type="checkbox"]')[1].checked)await click(cards[0].querySelectorAll('input[type="checkbox"]')[1]);
     await click(cards[0].querySelectorAll('input[type="checkbox"]')[2]);
     await click(cards[1].querySelectorAll('input[type="checkbox"]')[0]);
     await act(async()=>dom.window.document.querySelector('[aria-label="Search Product / Inventory SKU 1"]').focus());

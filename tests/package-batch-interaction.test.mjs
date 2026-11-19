@@ -132,7 +132,7 @@ test("same pricing hides the Campaign card and copies Non-Campaign dates even af
 
     });
     await addInventory(harness.dom, "SAME-PRICE-ITEM");
-    await act(async () => harness.dom.window.document.querySelector('.same-pricing-toggle input').dispatchEvent(new harness.dom.window.MouseEvent('click', { bubbles: true })));
+    await act(async () => click(harness.dom, 'Same Price All Month'));
     assert.equal(harness.dom.window.document.querySelector('.scenario-editor.campaign'), null);
     assert.match(harness.dom.window.document.querySelector('.pricing-section').textContent, /Campaign dates will follow Non-Campaign dates/);
     await act(async () => click(harness.dom, "Save Draft"));

@@ -244,7 +244,7 @@ test("price calculator is available in navigation with all required outputs", as
   assert.match(page, /Price Calculator/);
   assert.match(page, /<PriceCalculator/);
   assert.match(page, /onCreatePackages/);
-  assert.match(calculator, /Create All Ready/);
+  assert.match(calculator, /Create Selected Packages/);
   assert.match(calculator, /readyPackages/);
   assert.match(packageControl, /prefillQueue/);
   assert.match(calculator, /Buyer Payment/);
@@ -342,7 +342,7 @@ test("price calculator is available in navigation with all required outputs", as
   assert.doesNotMatch(calculator, /showAdvanced/);
   assert.match(calculator, /suggestedShopeePrice:result\.requiredPrice/);
   assert.match(page, /openPackageDraft/);
-  assert.match(page, /window\.open/);
+  assert.match(page, /calculatorBatch/);
   assert.match(page, /packageDraft/);
   assert.match(packageControl, /standaloneCreate/);
   assert.match(packageControl, /Calculator Settings Attached/);

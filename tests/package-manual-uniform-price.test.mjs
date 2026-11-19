@@ -18,7 +18,7 @@ async function setup(prefills=[]){
   globalThis.fetch=async(url,options={})=>{
     if(options.method==='POST'){posts.push(JSON.parse(options.body));return {ok:true,json:async()=>({ok:true,packageId:'test-package',version:1,status:'draft'})};}
     if(String(url).includes('inventory-skus'))return {ok:true,json:async()=>({products:[],canEdit:false})};
-    return {ok:true,json:async()=>({packages:[],source:'database',canDelete:false})};
+    return {ok:true,json:async()=>({packages:prefills.length?[]:[{id:'draft',storeId:'test-store',name:'Manual draft',packageSku:'DRAFT',market:'MY',status:'draft',version:1,promotionType:'monthly',effectiveFrom:'2026-11-01',effectiveTo:'2026-11-30',originalPrice:99900,sellingPrice:8800,components:[{inventorySku:'',name:'',quantity:1,kind:'product'}]}],source:'database',canDelete:false})};
   };
   const {createRoot}=await import('react-dom/client'),root=createRoot(doc.getElementById('root'));
   const click=async(label,scope=doc)=>{const button=[...scope.querySelectorAll('button')].find(node=>node.textContent===label);assert.ok(button,`Missing button: ${label}`);await act(async()=>button.click());};
@@ -37,10 +37,10 @@ async function completeDetails(h){
   await h.set('[aria-label="Product Name 1"]','Test Product');
 }
 
-test('manual Same Price All Month has no source selector and submits one entered price for both day types',async()=>{
+test('editing a manual draft using Same Price All Month has no source selector and submits one entered price for both day types',async()=>{
   const h=await setup();
   try{
-    await h.click('Create Single Package');
+    await h.click('Edit Draft');
     await h.click('Same Price All Month',h.doc.querySelector('.pricing-mode-options'));
     assert.equal(h.doc.querySelector('[aria-label="Whole-month Price From"]'),null);
     await completeDetails(h);

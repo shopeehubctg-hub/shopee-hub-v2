@@ -16,7 +16,8 @@ test('four-market creation, draft editing and recurring prices preserve currenci
  for(const [key,value] of Object.entries(values))Object.defineProperty(globalThis,key,{configurable:true,writable:true,value});
  const markets=['MY','SG','TH','PH'];
  const base={id:'legacy-th',name:'Legacy Thailand',storeId:'store',packageSku:'TH-SKU',market:'TH',status:'active',version:1,promotionType:'custom',originalPrice:10000,sellingPrice:9000,effectiveFrom:'2026-10-01',effectiveTo:null,components:[{inventorySku:'TH-INV',name:'Product',quantity:1,kind:'product'}],platforms:[{platform:'Shopee',packageSku:'TH-SKU'}],sheetSyncStatus:'synced'};
- let packages=[base];const submitted=[];
+ const draft={...base,id:'four',name:'Four Markets',status:'draft',promotionType:'monthly',effectiveFrom:'2026-11-01',effectiveTo:'2026-11-30',components:[{inventorySku:'',name:'',quantity:1,kind:'product'}]};
+ let packages=[base,draft];const submitted=[];
  globalThis.fetch=async(url,options={})=>{if(options.method==='POST'){const body=JSON.parse(options.body);submitted.push(body);const item={...base,...body,id:'four',name:body.name,market:body.markets.join(','),status:body.mode==='draft'?'draft':'active',version:submitted.length,priceSchedules:body.priceSchedules.map(line=>({...line,originalPrice:Number(line.originalPrice),sellingPrice:Number(line.sellingPrice)}))};packages=[base,item];return {ok:true,json:async()=>({ok:true,packageId:'four',version:item.version,status:item.status})};}return {ok:true,json:async()=>({source:'database',packages})};};
  const {createRoot}=await import('react-dom/client');const root=createRoot(dom.window.document.getElementById('root'));const doc=dom.window.document;
  const click=async(text,scope=doc)=>{const button=[...scope.querySelectorAll('button')].find(b=>b.textContent===text);assert.ok(button,`button ${text}`);await act(async()=>button.click());};
@@ -25,7 +26,12 @@ test('four-market creation, draft editing and recurring prices preserve currenci
  try {
  await act(async()=>root.render(React.createElement(PackageControl,{storeId:'store',storeName:'Thailand Store',storePlatform:'Shopee TH'})));
  assert.match(doc.querySelector('.package-card').textContent,/฿ 90.00/);
- await click('Create Single Package');assert.deepEqual(marketChecks().filter(([,input])=>input.checked).map(([code])=>code),['TH']);
+ assert.deepEqual([...doc.querySelectorAll('.package-hero-actions button')].map(b=>b.textContent),['Create Packages']);
+ await click('Create Packages');
+ assert.equal(doc.querySelector('.batch-grid-tools select').value,'TH');
+ assert.equal(doc.querySelector('input[type=file]'),null);
+ await click('Back to Packages');
+ await click('Edit Draft');assert.deepEqual(marketChecks().filter(([,input])=>input.checked).map(([code])=>code),['TH']);
  for(const [,input] of marketChecks())if(!input.checked)await act(async()=>input.click());
  await set(doc.querySelector('input[placeholder="e.g. Golden Package 肾心健康"]')??doc.querySelector('.package-detail-grid input'),'Four Markets');
  await set(doc.querySelector('.listing-skus input'),'FOUR-SKU');
@@ -33,16 +39,17 @@ test('four-market creation, draft editing and recurring prices preserve currenci
  for(const [index,card] of [...doc.querySelectorAll('.nonCampaign .market-price-card')].entries()){const inputs=card.querySelectorAll('input');await set(inputs[0],String(100+index*100));await set(inputs[1],String(90+index*100));}
  await set(doc.querySelector('.nonCampaign input[type="month"]'),'2026-11');
  await act(async()=>doc.querySelector('[role="combobox"]').focus());await click('+ Add New Product');await set(doc.querySelector('[aria-label="New Inventory SKU 1"]'),'FOUR-INV');await set(doc.querySelector('[aria-label="Product Name 1"]'),'Four market product');
- await click('Save Draft');assert.equal(submitted.length,1,doc.querySelector('.package-form-errors')?.textContent);
+ await click('Save Draft');assert.equal(submitted.length,1,doc.querySelector('.package-error-popout')?.textContent);
  assert.deepEqual([...submitted[0].markets].sort(),markets.slice().sort());
  assert.equal(submitted[0].mode,'draft');assert.equal(submitted[0].priceSchedules.length,8);
  for(const market of markets){const normal=submitted[0].priceSchedules.find(line=>line.market===market&&line.priceType==='non_campaign');const campaign=submitted[0].priceSchedules.find(line=>line.market===market&&line.priceType==='campaign');assert.equal(campaign.sellingPrice,normal.sellingPrice);}
  await click('Edit Draft');assert.deepEqual(marketChecks().filter(([,input])=>input.checked).map(([code])=>code),markets);
  assert.equal([...doc.querySelectorAll('.nonCampaign .market-price-card')].find(card=>card.querySelector('strong').textContent.startsWith('TH')).querySelectorAll('input')[1].value,'90');
- await click('Normal & Campaign Prices',doc.querySelector('.pricing-mode-options'));
+ await click('Early Month, Campaign & Late Month Prices',doc.querySelector('.pricing-mode-options'));
+ for(const card of doc.querySelectorAll('.nonCampaign .market-price-card')){const inputs=card.querySelectorAll('input');await set(inputs[3],inputs[1].value);}
  await click('Long-term Package',doc.querySelector('.campaign-duration'));
  for(const card of doc.querySelectorAll('.campaign .market-price-card')){const [original,selling]=card.querySelectorAll('input');await set(original,'500');await set(selling,card.querySelector('strong').textContent.startsWith('PH')?'350':'400');}
- await click('Create Package',doc.querySelector('.form-actions'));assert.equal(submitted.length,2,doc.querySelector('.package-form-errors')?.textContent);
+ await click('Create Package',doc.querySelector('.form-actions'));assert.equal(submitted.length,2,doc.querySelector('.package-error-popout')?.textContent);
  assert.equal(submitted[1].mode,'publish');assert.equal(submitted[1].campaignLongTerm,true);
  for(const event of submitted[1].recurringCampaign.events){assert.deepEqual(Object.keys(event.prices),markets);assert.equal(event.prices.PH.sellingPrice,350);assert.equal(event.prices.TH.sellingPrice,400);}
  const four=[...doc.querySelectorAll('.package-card')].find(card=>card.querySelector('h3')?.textContent==='Four Markets');assert.match(four.textContent,/฿/);assert.match(four.textContent,/₱ 350.00/);assert.match(four.textContent,/S\$/);assert.match(four.textContent,/RM/);

@@ -29,94 +29,40 @@ async function setup({open=()=>null,storageBlocked=false,modules=['calculator','
  return {dom,calls,click,close:async()=>{await act(async()=>root.unmount());dom.window.close();for(const[k,v]of Object.entries(prior)){if(v)Object.defineProperty(globalThis,k,v);else delete globalThis[k];}}};
 }
 
-test('blocked popup transfers the full calculator batch to the same-tab package form',async()=>{
- const env=await setup();try{
-  await act(async()=>env.dom.window.document.querySelector('[aria-label="Select all Calculator packages"]').click());
-  await env.click('Create Selected Packages (3)');await env.click('Confirm & Continue');
-  await waitFor(()=>env.dom.window.document.querySelector('.package-modal.standalone'));
-  assert.match(env.dom.window.document.body.textContent,/3 Calculator Packages Remaining/);
-  const storage=env.dom.window.localStorage;
-  const key=Object.keys(storage).find(k=>k.startsWith('package-draft:'));
-  const batch=JSON.parse(storage.getItem(key));
-  assert.equal(batch.storeId,'test-store');assert.equal(batch.prefills.length,9);
-  assert.deepEqual([...new Set(batch.prefills.map(p=>p.name))],['Package A','Package B','Package C']);
-  assert.equal(batch.prefills[0].calculatorSettings.pricingGoal,'sameCustomerPrice');
-  assert.equal(batch.prefills[0].calculatorSettings.facebookPrice,289);
-  assert.equal(batch.prefills[0].sellingPrice,289);
-  assert.equal(env.dom.window.document.querySelector('[role="dialog"]'),null);
-  assert.ok(env.calls.every(c=>!c.options.method),'handoff must not save packages');
+const rowNames = doc => [...doc.querySelectorAll('input[aria-label$="Package · Package Name"]')].map(cell=>cell.value);
+const choose = async(env, id)=>act(async()=>env.dom.window.document.querySelector('[aria-label="Select Calculator package '+id+'"]').click());
+test('selected packages open directly in the same Dashboard grid with three Calculator prices', async()=>{
+ const env=await setup({open:()=>assert.fail('Unexpected popup')});
+ try{
+  const doc=env.dom.window.document;
+  assert.doesNotMatch(doc.body.textContent,/Download Excel/);
+  await choose(env,2);await choose(env,3);
+  await env.click('Create Selected Packages (2)');
+  await waitFor(()=>doc.querySelector('.batch-entry-table'));
+  assert.deepEqual(rowNames(doc),['Package B','Package C']);
+  assert.equal(doc.querySelector('input[aria-label="Row 1 · MY · RM · Normal · 1st–15th"]').value,'358.00');
+  assert.equal(doc.querySelector('input[aria-label="Row 1 · MY · RM · Campaign Day"]').value,'358.00');
+  assert.ok(Number(doc.querySelector('input[aria-label="Row 1 · MY · RM · Normal · 16th–End"]').value)>358);
+  assert.doesNotMatch(doc.body.textContent,/Import Excel|Replace File/);
+  assert.equal(doc.querySelector('input[type=file]'),null);
+  assert.equal(doc.querySelector('.batch-entry-table').closest('.batch-workspace').querySelectorAll('select')[1].value,'product');
+  assert.ok(env.calls.every(c=>!c.options.method),'opening the grid must not create packages or save pricing records');
  }finally{await env.close();}
 });
-
-test('allowed popup uses a persisted draft and clears its opener',async()=>{
- const opened=[];const tab={opener:{},location:{replace:url=>opened.push(url)}};
- const env=await setup({open:()=>tab});try{
-  await act(async()=>env.dom.window.document.querySelector('[aria-label="Select all Calculator packages"]').click());
-  await env.click('Create Selected Packages (3)');await env.click('Confirm & Continue');
-  assert.equal(opened.length,1);assert.equal(tab.opener,null);
-  const key=new URL(opened[0],env.dom.window.location.origin).searchParams.get('packageDraft');
-  assert.equal(JSON.parse(env.dom.window.localStorage.getItem('package-draft:'+key)).prefills.length,9);
+test('single creation works in memory when session storage is unavailable',async()=>{
+ const env=await setup({storageBlocked:true});
+ try{
+  await env.click('Create Package');
+  await waitFor(()=>env.dom.window.document.querySelector('.batch-entry-table'));
+  assert.deepEqual(rowNames(env.dom.window.document),['Package A']);
+ }finally{await env.close();}
+});
+test('accounts without package access stay in Calculator and see the reason',async()=>{
+ const env=await setup({modules:['calculator']});
+ try{
+  await choose(env,1);await env.click('Create Selected Packages (1)');
+  assert.match(env.dom.window.document.querySelector('[role=alert]').textContent,/access to Packages/);
   assert.ok(env.dom.window.document.querySelector('.price-calculator'));
- }finally{await env.close();}
-});
-
-test('a popup exception and unavailable storage still allow an in-memory single-package handoff',async()=>{
- const env=await setup({open:()=>{throw Error('Popup blocked');},storageBlocked:true});try{
-  await env.click('Create Package');await env.click('Confirm & Continue');
-  await waitFor(()=>env.dom.window.document.querySelector('.package-modal.standalone'));
-  assert.equal(env.dom.window.document.querySelector('input[placeholder="Package name"]')?.value??env.dom.window.document.querySelector('input[value="Package A"]')?.value,'Package A');
-  assert.match(env.dom.window.document.body.textContent,/Calculator Settings Attached/);
- }finally{await env.close();}
-});
-
-test('a store or package permission problem keeps the calculated data and explains how to continue',async()=>{
- for(const options of [{modules:['calculator']}]){
-  const env=await setup(options);try{
-   await act(async()=>env.dom.window.document.querySelector('[aria-label="Select all Calculator packages"]').click());
-  await env.click('Create Selected Packages (3)');await env.click('Confirm & Continue');
-   const dialog=env.dom.window.document.querySelector('[role="dialog"]');assert.ok(dialog);
-   assert.match(dialog.querySelector('[role="alert"]').textContent,options.storeId?/select a store/i:/access to Packages/i);
-   assert.equal(env.dom.window.document.querySelectorAll('.calculator-confirm-table tbody tr').length,9);
-  }finally{await env.close();}
- }
-});
-
-test('three packages start unchecked; choosing two transfers exactly two stable groups even with duplicate names',async()=>{
- const env=await setup();try{
-  assert.equal(env.dom.window.document.querySelectorAll('.calculator-select-label input:checked').length,0);
-  await act(async()=>{env.dom.window.document.querySelector('[aria-label="Select Calculator package 1"]').click();env.dom.window.document.querySelector('[aria-label="Select Calculator package 2"]').click();});
-  await env.click('Create Selected Packages (2)');await env.click('Confirm & Continue');
-  await waitFor(()=>env.dom.window.document.querySelector('.package-modal.standalone'));
-  const key=Object.keys(env.dom.window.localStorage).find(k=>k.startsWith('package-draft:'));
-  const batch=JSON.parse(env.dom.window.localStorage.getItem(key));assert.equal(batch.prefills.length,6);assert.equal(new Set(batch.prefills.map(p=>p.calculatorGroupId)).size,2);
-  assert.deepEqual([...new Set(batch.prefills.map(p=>p.name))],['Package A','Package B']);
- }finally{await env.close();}
-});
-
-test('Production customer sees selected create/update actions and transfers only selected packages',async()=>{
- const env=await setup({environment:'production'});try{
-  assert.ok(!env.dom.window.document.body.textContent.includes('Create All Ready'));
-  assert.ok(env.dom.window.document.body.textContent.includes('Update Existing Package Prices (0)'));
-  await act(async()=>env.dom.window.document.querySelector('[aria-label="Select Calculator package 2"]').click());
-  await env.click('Create Selected Packages (1)');await env.click('Confirm & Continue');
-  await waitFor(()=>env.dom.window.document.querySelector('.package-modal.standalone'));
-  const key=Object.keys(env.dom.window.localStorage).find(k=>k.startsWith('package-draft:'));
-  const batch=JSON.parse(env.dom.window.localStorage.getItem(key));assert.equal(batch.prefills.length,3);assert.ok(batch.prefills.every(p=>p.name==='Package B'));
- }finally{await env.close();}
-});
-
-
-test('three-period Calculator handoff groups all three settings into one selected package',async()=>{
- const env=await setup();try{
- assert.equal(env.dom.window.document.querySelector('.price-calculator .pricing-mode-options'),null);
- const doc=env.dom.window.document;const late=doc.querySelector('[aria-label="normalLate Platform Voucher percentage"]');
- const inputs=[...doc.querySelectorAll('[aria-label="normalLate Platform Voucher percentage"]')];
- if(inputs[0])await act(async()=>{Object.getOwnPropertyDescriptor(env.dom.window.HTMLInputElement.prototype,'value').set.call(inputs[0],'5');inputs[0].dispatchEvent(new env.dom.window.Event('input',{bubbles:true}));});
- await act(async()=>doc.querySelector('[aria-label="Select Calculator package 1"]').click());
- await env.click('Create Selected Packages (1)');await env.click('Confirm & Continue');
- await waitFor(()=>doc.querySelector('.package-modal.standalone'));
- const key=Object.keys(env.dom.window.localStorage).find(k=>k.startsWith('package-draft:'));
- const saved=JSON.parse(env.dom.window.localStorage.getItem(key));assert.equal(saved.prefills.length,3);assert.equal(new Set(saved.prefills.map(p=>p.calculatorGroupId)).size,1);assert.deepEqual(saved.prefills.map(p=>p.calculatorSettings.pricingPeriod),['normal_1_15','campaign','normal_16_end']);
- assert.equal(saved.prefills.every(p=>p.calculatorSettings.calculationKind==='three_period_recommendations'),true);
+  assert.ok(env.calls.every(c=>!c.options.method));
  }finally{await env.close();}
 });
