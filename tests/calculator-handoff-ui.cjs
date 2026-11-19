@@ -85,8 +85,33 @@ async function run() {
     assert.equal(await price(1,'Normal · 1st–15th').inputValue(),'321.11');
     assert.equal(await price(1,'Campaign Day').inputValue(),'361.25');
     assert.equal(await price(1,'Normal · 16th–End').inputValue(),'307.45');
-    await price(1,'Original Price').fill('600');await price(2,'Original Price').fill('700');
+    const original = price(1,'Original Price');
+    const warning = page.locator('#grid-original-0-MY');
+    await original.fill('200');
+    assert.equal(await warning.textContent(),'Original Price must be at least RM361.25 (Campaign Day).');
+    assert.equal(await original.getAttribute('aria-invalid'),'true');
+    await original.fill('361.25');
+    assert.equal(await warning.count(),0);
+    await original.fill('200');
+    await price(2,'Original Price').fill('700.20');
+    await price(2,'Normal · 1st–15th').fill('406.03');
+    await price(2,'Campaign Day').fill('444.50');
+    await page.getByLabel('Row 2 price change reason').fill('Market price update');
+    await button('Round to nearest RM').click();
+    assert.equal(await original.inputValue(),'200');
+    assert.equal(await warning.textContent(),'Original Price must be at least RM361 (Campaign Day).');
+    assert.equal(await price(2,'Original Price').inputValue(),'700.20');
+    assert.equal(await price(1,'Normal · 1st–15th').inputValue(),'321');
+    assert.equal(await price(1,'Campaign Day').inputValue(),'361');
+    assert.equal(await price(2,'Normal · 1st–15th').inputValue(),'406');
+    assert.equal(await price(2,'Campaign Day').inputValue(),'445');
+    assert.equal(await page.getByLabel('Row 1 price change reason').inputValue(),'Rounded MY selling prices to the nearest RM.');
+    assert.equal(await page.getByLabel('Row 2 price change reason').inputValue(),'Market price update');
+    assert(await button('Round to nearest RM').isDisabled());
+    await original.fill('600');
+    assert.equal(await warning.count(),0);
     await price(1,'Campaign Day').fill('355');
+    assert.equal(await page.getByLabel('Row 1 price change reason').inputValue(),'');
     await page.getByLabel('Row 1 price change reason').fill('November promotion');
     await cell(1,'Platform SKUs · Shopee SKU').evaluate((el)=>{
       const data=new DataTransfer();
@@ -158,7 +183,7 @@ async function run() {
     assert(posts.every(p=>p.components[0].inventorySku==='INV01'&&snapshots.has(p.exportId)&&p.storeId==='store-a'));
     assert.equal(posts[0].priceAdjustmentReason,'November promotion');
     assert.equal(posts[0].priceSchedules.find(p=>p.priceType==='campaign').sellingPrice,355);
-    assert.equal(posts[0].normalMonthlyRule.prices.MY.late.sellingPrice,307.45);
+    assert.equal(posts[0].normalMonthlyRule.prices.MY.late.sellingPrice,307);
     assert.deepEqual(errors,[]);
     console.log('PASS Calculator → selected rows → editable By Product table → multi-row paste → refresh → retry → dates → final preview → package submission and list.');
   }finally{if(browser)await browser.close();server.close();}

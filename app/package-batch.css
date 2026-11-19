@@ -126,3 +126,6 @@
 .batch-library-menu .batch-library-add{flex:none;min-height:44px;padding:10px 12px;border:0;border-top:1px solid #c7d5df;background:#edf6fa;color:#075670;text-align:left;font:inherit;font-size:13px;font-weight:700;cursor:pointer}
 .batch-library-add:focus-visible{outline:2px solid #08718d;outline-offset:-3px}
 .inventory-edit-dialog button:disabled{opacity:.5;cursor:default}
+
+.batch-workspace .batch-round-price{margin-left:12px;min-height:32px;padding:4px 10px;text-transform:none;letter-spacing:normal}
+.batch-entry-table .grid-original-warning{box-sizing:border-box;max-width:136px;padding:4px 8px 6px;color:#a52824;font-size:12px;font-weight:600;line-height:1.4;white-space:normal}
