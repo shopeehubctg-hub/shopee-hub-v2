@@ -13,3 +13,11 @@ Import Excel remains available with its template, By Product Name and By SKU tab
 ## Release scope
 
 Fixed Staging only. UI acceptance and final Staging function QC are pending. No Production PR or release is approved. Database structure review is not applicable because the change uses existing store-scoped inventory and package interfaces and introduces no database changes.
+
+## Calculator entry correction
+
+The Calculator’s single and selected-package Create actions now open the same Dashboard table in the current tab. Each selected Calculator package has one row with its original three recommended MY selling prices and any main product quantity. Other markets start with empty prices. Users can edit prices, products, SKUs and quantities directly, paste multiple rows, and choose package pricing and dates before final preview. There is no workbook action in this flow. Packages & Pricing still offers the standalone Excel import.
+
+Calculator drafts are scoped to the current tab, store and signed-in account. The entry and reviewed rows survive refresh when session storage is available. Review links the original recommendations using stable request IDs and the existing store-scoped calculator snapshot API. Package creation uses the existing idempotent save process. No change to Supabase schema, access policies or migrations is required.
+
+38 affected automated tests passed. Local Chrome with mock API responses exercised two packages from the actual Calculator buttons through edited prices with reasons, multi-row paste, refresh, retry after review failed, shared dates, final preview, creation requests and return to the package list. The standalone Excel regression and Next.js build passed. Fixed Staging visual acceptance and final function QC remain pending.

@@ -6,14 +6,21 @@ import { inventoryKey, MAX_INVENTORY_ITEMS } from './inventory-items';
 import { batchMarkets, marketChoices, marketChoiceLabel, type BatchPackage, type MarketChoice } from './package-batch-model';
 import { gridColumns, gridReview, MAX_GRID_ROWS, pasteGrid, type GridMode, type GridRow } from './package-grid-model';
 
+import {calculatorCells,readBatchSession,writeBatchSession,type CalculatorBatch} from './calculator-batch-entry';
+import {adjustedPrices,snapshotAmounts} from './pricing-evidence';
+
+type GridDraft = {rows:GridRow[];choice:MarketChoice;mode:GridMode;slots:number};
 const pageSize = 12;
-export function PackageEntryGrid({storeId, busy, onEdit, onReview}: {
-  storeId: string; busy: boolean; onEdit: () => void; onReview: (rows: BatchPackage[]) => void;
+export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBatch}: {
+  calculatorBatch?:CalculatorBatch; storeId: string; busy: boolean; onEdit: () => void; onReview: (rows: BatchPackage[]) => void;
 }) {
-  const [rows, setRows] = useState<GridRow[]>([{}, {}, {}]);
-  const [choice, setChoice] = useState<MarketChoice>('MY');
-  const [mode, setMode] = useState<GridMode>('product');
-  const [slots, setSlots] = useState(1);
+  const draftKey=calculatorBatch && 'calculator-grid:'+calculatorBatch.id;
+  const [draft]=useState(()=>readBatchSession<GridDraft>(draftKey));
+  const [rows, setRows] = useState<GridRow[]>(()=>draft?.rows ?? calculatorBatch?.entries.map(calculatorCells) ?? [{},{},{}]);
+  const [choice, setChoice] = useState<MarketChoice>(draft?.choice ?? calculatorBatch?.market ?? 'MY');
+  const [mode, setMode] = useState<GridMode>(draft?.mode ?? 'product');
+  const [slots, setSlots] = useState(draft?.slots ?? 1);
+  useEffect(()=>writeBatchSession(draftKey,{rows,choice,mode,slots}),[draftKey,rows,choice,mode,slots]);
   const [page, setPage] = useState(0);
   const [validate, setValidate] = useState(false);
   const [message, setMessage] = useState('');
@@ -44,9 +51,9 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview}: {
     if (group?.label === col.group) group.width++;
     else groups.push({label:col.group, width:1});
   }
-  const issues = useMemo(() => validate ? gridReview(rows, choice, slots, products ?? []).issues : [], [rows, choice, slots, products, validate]);
+  const issues = useMemo(() => validate ? gridReview(rows, choice, slots, products ?? [], calculatorBatch?.entries).issues : [], [rows, choice, slots, products, validate, calculatorBatch]);
   const goToCell = (row:number, col:number) => {
-    if (row < 0 || row >= MAX_GRID_ROWS) return;
+    if (row < 0 || row >= (calculatorBatch?.entries.length ?? MAX_GRID_ROWS)) return;
     setRows(current => current.length > row ? current : [...current, {}]);
     focusTarget.current = [row,col];
     setPage(Math.floor(row / pageSize));
@@ -68,7 +75,7 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview}: {
   }
   function review() {
     if (!products) return;
-    const result = gridReview(rows, choice, slots, products);
+    const result = gridReview(rows, choice, slots, products, calculatorBatch?.entries);
     setValidate(true);
     if (!result.rows.length) { setMessage('Enter at least one package.'); return; }
     if (result.issues.length) {
@@ -85,7 +92,7 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview}: {
       <label className="batch-country-picker">Inventory entry<select value={mode} disabled={busy} onChange={e=>setMode(e.target.value as GridMode)}><option value="product">By Product</option><option value="sku">By SKU</option></select></label>
       <button type="button" className="batch-secondary" disabled={busy || slots >= MAX_INVENTORY_ITEMS} onClick={()=>setSlots(slots+1)}>+ Item column</button>
     </div>
-    <p id="batch-grid-help">One package per row. Paste cells from a spreadsheet, or use Tab to move across and Enter to move down.</p>
+    <p id="batch-grid-help">{calculatorBatch ? 'Your three Calculator prices are filled in. Add original prices, platform SKUs and products for the selected packages.' : 'One package per row.'} Paste multiple rows, or use Tab to move across and Enter to move down.</p>
     {catalogError && <p role="alert" className="batch-error">{catalogError} <button type="button" className="batch-text-button" onClick={()=>setAttempt(attempt+1)}>Retry product library</button></p>}
     {!catalogError && !products && <p role="status">Loading product library…</p>}
     {products && !products.length && <p className="batch-muted">Your product library is empty. Enter a product name and inventory SKU for each new product.</p>}
@@ -95,10 +102,12 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview}: {
     <datalist id="batch-grid-skus">{products?.map(p=><option key={p.sku} value={p.sku}>{p.name}</option>)}</datalist>
     <div className="batch-grid-scroll" role="region" aria-label="Package entry table" tabIndex={0}>
       <table ref={table} className="batch-entry-table" aria-label="Batch package entry" aria-describedby="batch-grid-help">
-        <thead><tr><th scope="col" rowSpan={2}>Row</th>{groups.map(g=><th key={g.label} scope="colgroup" colSpan={g.width}>{g.label}</th>)}<th rowSpan={2} scope="col">Action</th></tr>
+        <thead><tr><th scope="col" rowSpan={2}>Row</th>{groups.map(g=><th key={g.label} scope="colgroup" colSpan={g.width}>{g.label}</th>)}{!calculatorBatch&&<th rowSpan={2} scope="col">Action</th>}</tr>
         <tr>{columns.map(col=><th key={col.key} scope="col">{col.label}</th>)}</tr></thead>
         <tbody>{rows.slice(start,start+pageSize).map((draft, offset) => {
           const index = start + offset;
+          const entry=calculatorBatch?.entries[index];
+          const adjusted=entry && adjustedPrices({MY:{normal:draft['MY.normal']??'', campaign:draft['MY.campaign']??'', normalLate:draft['MY.normalLate']??''}},snapshotAmounts(entry.scenarios));
           const rowIssues = issues.filter(issue=>issue.row===index);
           return <Fragment key={index}><tr><th scope="row">{index+1}</th>{columns.map((col,c)=>{
             const slot = col.key.split('.')[0];
@@ -118,17 +127,18 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview}: {
               onPaste={e=>{
                 const raw=e.clipboardData.getData('text/plain');if(!/[\r\n\t]/.test(raw))return;
                 e.preventDefault();
-                try {const next=pasteGrid(rows,choice,mode,slots,index,c,raw);setRows(next.rows);setSlots(next.slots);setMessage('');onEdit();}
+                try {const next=pasteGrid(rows,choice,mode,slots,index,c,raw);if(calculatorBatch && next.rows.length>rows.length)throw Error('Paste within the selected Calculator rows.');setRows(next.rows);setSlots(next.slots);setMessage('');onEdit();}
                 catch(err){setMessage((err as Error).message);}
               }}/></td>;
-          })}<td><button type="button" className="batch-text-button" aria-label={'Duplicate row '+(index+1)} disabled={busy||rows.length>=MAX_GRID_ROWS||!Object.values(draft).some(Boolean)}
-            onClick={()=>{setRows([...rows.slice(0,index+1),{...draft},...rows.slice(index+1)]);setPage(Math.floor((index+1)/pageSize));onEdit();}}>Duplicate</button></td></tr>
+          })}{!calculatorBatch&&<td><button type="button" className="batch-text-button" aria-label={'Duplicate row '+(index+1)} disabled={busy||rows.length>=MAX_GRID_ROWS||!Object.values(draft).some(Boolean)}
+            onClick={()=>{setRows([...rows.slice(0,index+1),{...draft},...rows.slice(index+1)]);setPage(Math.floor((index+1)/pageSize));onEdit();}}>Duplicate</button></td>}</tr>
+          {adjusted&&<tr><td colSpan={columns.length+1}><label>Price change reason <input aria-label={'Row '+(index+1)+' price change reason'} value={draft.priceAdjustmentReason??''} disabled={busy} onChange={e=>{const reason=e.target.value;setRows(current=>current.map((row,i)=>i===index?{...row,priceAdjustmentReason:reason}:row));onEdit();}}/></label></td></tr>}
           {!!rowIssues.length&&<tr><td colSpan={columns.length+2} id={'grid-errors-'+index} className="batch-grid-errors">Row {index+1} · {[...new Set(rowIssues.map(i=>i.message))].join(' ')}</td></tr>}
           </Fragment>;
         })}</tbody>
       </table>
     </div>
-    <div className="batch-grid-footer"><button type="button" disabled={busy||rows.length>=MAX_GRID_ROWS} className="batch-secondary" onClick={()=>goToCell(rows.length,0)}>+ Add row</button>
+    <div className="batch-grid-footer">{!calculatorBatch&&<button type="button" disabled={busy||rows.length>=MAX_GRID_ROWS} className="batch-secondary" onClick={()=>goToCell(rows.length,0)}>+ Add row</button>}
       {rows.length>pageSize&&<><button type="button" disabled={page===0} className="batch-text-button" onClick={()=>setPage(page-1)}>Previous</button><span>Rows {start+1}–{Math.min(start+pageSize,rows.length)} of {rows.length}</span><button type="button" disabled={start+pageSize>=rows.length} className="batch-text-button" onClick={()=>setPage(page+1)}>Next</button></>}
       <button type="button" className="batch-primary" disabled={busy||!products} onClick={review}>{busy?'Checking packages…':'Review Packages'}</button>
     </div>
