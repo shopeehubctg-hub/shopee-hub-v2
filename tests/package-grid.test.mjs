@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 
 const {outputFiles} = await build({entryPoints:['app/package-grid-model.ts'],write:false,bundle:true,platform:'node',format:'esm'});
-const {clipboardRows, gridColumns, gridReview, pasteGrid} = await import('data:text/javascript;base64,'+Buffer.from(outputFiles[0].contents).toString('base64'));
+const {editGridCells,indexGridProducts,clipboardRows, gridColumns, gridReview, pasteGrid} = await import('data:text/javascript;base64,'+Buffer.from(outputFiles[0].contents).toString('base64'));
 const catalog = [{sku:'0001',name:'A Product'}, {sku:'0002',name:'Shared'}, {sku:'0003',name:'Shared'}];
 const line = ['Starter','100','80','70','75','009','','','A Product','2'];
 test('TSV handles spreadsheet quoting, CRLF, empty cells and offsets',()=>{
@@ -14,13 +14,13 @@ test('TSV handles spreadsheet quoting, CRLF, empty cells and offsets',()=>{
   assert.equal(rows[0]['MY.normalLate'],'75'); assert.equal(rows[1]['MY.campaign'],'120');
   assert.deepEqual(original,[{name:'Keep',Shopee:'007'}]);
 });
-test('the 500-row and 20-item limits reject oversized pastes atomically',()=>{
+test('the 500-row and 100-item limits reject oversized pastes atomically',()=>{
   const text = Array.from({length:500},(_,i)=>'Package '+i).join('\n');
   assert.equal(pasteGrid([],'MY','product',1,0,0,text).rows.length,500);
   assert.throws(()=>pasteGrid([],'MY','product',1,1,0,text),/500/);
-  const width=gridColumns('MY',20,'sku').length;
-  assert.equal(pasteGrid([],'MY','sku',1,0,0,Array(width).fill('x').join('\t')).slots,20);
-  assert.throws(()=>pasteGrid([],'MY','sku',1,0,1,Array(width).fill('x').join('\t')),/20/);
+  const width=gridColumns('MY',100,'sku').length;
+  assert.equal(pasteGrid([],'MY','sku',1,0,0,Array(width).fill('x').join('\t')).slots,100);
+  assert.throws(()=>pasteGrid([],'MY','sku',1,0,1,Array(width).fill('x').join('\t')),/100/);
 });
 test('store products resolve by name or SKU, duplicates require disambiguation and new products retain both fields',()=>{
   const {rows}=pasteGrid([],'MY','product',1,0,0,line.join('\t'));
@@ -43,4 +43,14 @@ test('multi-market columns retain each market price and additional pasted produc
   assert.deepEqual(result.issues,[]);
   assert.equal(result.rows[0].prices.SG.normalLate,'42');
   assert.deepEqual(result.rows[0].items.map(i=>i.sku),['0001','0003']);
+});
+
+test('replacing a selected library item clears its old counterpart and preserves explicit pasted pairs',()=>{
+  const library=indexGridProducts(catalog);
+  const old={'0.name':'A Product','0.sku':'0001','0.qty':'3'};
+  assert.equal(editGridCells(old,{'0.name':'Shared'},library)['0.sku'],'');
+  assert.deepEqual(editGridCells(old,{'0.sku':'0003'},library),{'0.name':'Shared','0.sku':'0003','0.qty':'3'});
+  assert.equal(editGridCells({}, {'0.name':'Shared','0.sku':'0002'},library)['0.sku'],'0002');
+  const edited=pasteGrid([old],'MY','sku',20,0,8,'0002\t2',library);
+  assert.deepEqual(edited.rows,[{'0.name':'Shared','0.sku':'0002','0.qty':'2'}]);
 });

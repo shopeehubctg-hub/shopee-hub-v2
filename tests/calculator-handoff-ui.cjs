@@ -32,7 +32,7 @@ async function run() {
       const req=route.request(),endpoint=new URL(req.url()).pathname,body=req.postDataJSON();
       const send=(json,status=200)=>route.fulfill({status,json});
       if(endpoint==='/api/dashboard')return send({environment:'staging',user:{email:'customer@example.test'},access:{role:'customer',enabledModules:['calculator','packages'],clientEnabledModules:['calculator','packages']},stores:[{id:'store-a',name:'Store A',platform:'Shopee MY',contacts:[]}],selectedStoreId:'store-a',snapshot:null,actions:[],adPerformance:[],platformVoucher:{early:10,campaign:20,late:6},coFundVouchers:[]});
-      if(endpoint==='/api/inventory-skus')return send({products:[{name:'Day Cream',sku:'INV01'}]});
+      if(endpoint==='/api/inventory-skus')return send({products:[{name:'Day Cream',sku:'INV01'},{name:'Night Cream',sku:'00002'},{name:'Night Cream',sku:'00003'}]});
       if(endpoint==='/api/calculator-exports') {
         assert.equal(body.storeId,'store-a');captures.push(body.rows);
         const rows=body.rows.map(entry=>{
@@ -61,6 +61,26 @@ async function run() {
     assert.equal(await cell(2,'Inventory item 1 · Qty').inputValue(),'3');
     assert.equal(await page.getByText('Import Excel',{exact:true}).count(),0);
     assert.equal(await page.locator('input[type=file]').count(),0);
+    const inv=(row,slot,field)=>cell(row,'Inventory item '+slot+' · '+field);
+    assert.equal(await page.getByRole('columnheader',{name:/^Inventory item /}).count(),20);
+    await button('Product Library').click();
+    const library=page.getByRole('listbox',{name:'Product Library',exact:true});
+    await library.waitFor();
+    assert.equal(await library.getByRole('option').count(),3);
+    await inv(1,1,'Product Name').fill('0000');
+    assert.equal(await library.getByRole('option').count(),2);
+    await page.getByRole('option',{name:'Night Cream 00003'}).click();
+    assert.equal(await inv(1,1,'Product Name').inputValue(),'Night Cream');
+    assert.equal(await inv(1,1,'Inventory SKU').inputValue(),'00003');
+    await page.getByLabel('Columns to add').fill('5');
+    await button('Add columns').click();
+    assert.equal(await page.getByRole('columnheader',{name:/^Inventory item /}).count(),25);
+    await inv(1,21,'Inventory SKU').fill('Night Cream');
+    await inv(1,21,'Inventory SKU').press('ArrowDown');
+    await inv(1,21,'Inventory SKU').press('Enter');
+    assert.equal(await inv(1,21,'Inventory SKU').inputValue(),'00002');
+    assert.equal(await inv(1,21,'Product Name').inputValue(),'Night Cream');
+    await inv(1,21,'Qty').fill('4');
     const price=(row,label)=>cell(row,'MY · RM · '+label);
     assert.equal(await price(1,'Normal · 1st–15th').inputValue(),'321.11');
     assert.equal(await price(1,'Campaign Day').inputValue(),'361.25');
@@ -71,6 +91,13 @@ async function run() {
     await cell(1,'Platform SKUs · Shopee SKU').evaluate((el)=>{
       const data=new DataTransfer();
       data.setData('text/plain','00012\t\t\tDay Cream\t2\n00023\t\t\tDay Cream\t3');
+      el.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:data}));
+    });
+    assert.equal(await inv(1,1,'Inventory SKU').inputValue(),'INV01');
+    // Fill items 2 through 20, so 21 actual components pass review and reach the save request.
+    await inv(1,2,'Product Name').evaluate(el=>{
+      const data=new DataTransfer();
+      data.setData('text/plain',Array.from({length:19},(_,i)=>['Gift '+i,'1','GIFT'+i].join('\t')).join('\t'));
       el.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:data}));
     });
     await page.reload();
@@ -90,6 +117,8 @@ async function run() {
     await button('Create 2 Packages').click();
     await page.getByText('2 Packages Created · 0 Saved as Draft',{exact:true}).waitFor();
     assert.equal(posts.length,2);
+    assert.equal(posts[0].components.length,21);
+    assert.deepEqual(posts[0].components[20],{inventorySku:'00002',name:'Night Cream',quantity:4,kind:'product'});
     assert.deepEqual(posts.map(p=>p.name),['Package A','Package B']);
     assert.deepEqual(posts.map(p=>p.platforms[0].packageSku),['00012','00023']);
     assert.deepEqual(posts.map(p=>p.components[0].quantity),[2,3]);
