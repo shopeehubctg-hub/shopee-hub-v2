@@ -1,0 +1,120 @@
+import { batchIssues, batchMarkets, type BatchPackage, type MarketChoice } from './package-batch-model';
+import type { InventoryProduct } from './inventory-catalog-model';
+import { inventoryKey, MAX_INVENTORY_ITEMS } from './inventory-items';
+import { MARKET_CONFIG } from './markets';
+
+export const MAX_GRID_ROWS = 500;
+export type GridRow = Record<string, string>;
+export type GridMode = 'product' | 'sku';
+export type GridColumn = { key: string; label: string; group: string; lookup?: 'sku' | 'name' };
+const priceLabels = { original: 'Original Price', normal: 'Normal · 1st–15th', campaign: 'Campaign Day', normalLate: 'Normal · 16th–End' };
+const platforms = ['Shopee', 'Lazada', 'TikTok'] as const;
+
+export function gridColumns(choice: MarketChoice, slots: number, mode: GridMode): GridColumn[] {
+  const columns: GridColumn[] = [{key: 'name', label: 'Package Name', group: 'Package'}];
+  for (const market of batchMarkets(choice)) {
+    for (const [key, label] of Object.entries(priceLabels)) {
+      columns.push({key: market + '.' + key, label, group: market + ' · ' + MARKET_CONFIG[market].symbol});
+    }
+  }
+  for (const key of platforms) columns.push({key, label: key + ' SKU', group: 'Platform SKUs'});
+  for (let slot = 0; slot < slots; slot++) {
+    const group = 'Inventory item ' + (slot + 1);
+    const name: GridColumn = {key: slot + '.name', label: 'Product Name', group, lookup: 'name'};
+    const sku: GridColumn = {key: slot + '.sku', label: 'Inventory SKU', group, lookup: 'sku'};
+    columns.push(mode === 'product' ? name : sku, {key:slot + '.qty', label:'Qty', group}, mode === 'product' ? sku : name);
+  }
+  return columns;
+}
+
+// Spreadsheet clipboards quote cells containing tabs, double quotes, or line breaks.
+export function clipboardRows(raw: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [], cell = '', quoted = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (ch === '"' && quoted && raw[i + 1] === '"') { cell += '"'; i++; continue; }
+    if (ch === '"' && (quoted || cell === '')) { quoted = !quoted; continue; }
+    if (!quoted && ch === '\t') { row.push(cell); cell = ''; continue; }
+    if (!quoted && (ch === '\r' || ch === '\n')) {
+      if (ch === '\r' && raw[i+1] === '\n') i++;
+      row.push(cell); rows.push(row); row = []; cell = ''; continue;
+    }
+    cell += ch;
+  }
+  if (quoted) throw Error('The pasted cells contain an unclosed quote.');
+  if (cell || row.length || !rows.length) rows.push([...row, cell]);
+  return rows;
+}
+
+export function pasteGrid(rows: GridRow[], choice: MarketChoice, mode: GridMode, slots: number,
+                         rowIndex: number, colIndex: number, text: string) {
+  const data = clipboardRows(text);
+  if (rowIndex + data.length > MAX_GRID_ROWS) throw Error('Paste up to 500 package rows at a time.');
+  const fixedColumns = gridColumns(choice, 0, mode).length;
+  const width = Math.max(...data.map(row => row.length));
+  const nextSlots = Math.max(slots, Math.ceil((colIndex + width - fixedColumns) / 3));
+  if (nextSlots > MAX_INVENTORY_ITEMS) throw Error('Use up to 20 inventory items per package.');
+  const columns = gridColumns(choice, nextSlots, mode);
+  const nextRows = [...rows];
+  data.forEach((values, offset) => {
+    const draft = {...nextRows[rowIndex + offset]};
+    values.forEach((value, col) => { draft[columns[colIndex + col].key] = value.trim(); });
+    nextRows[rowIndex + offset] = draft;
+  });
+  return {rows: nextRows, slots: nextSlots};
+}
+
+export function gridReview(grid: GridRow[], choice: MarketChoice, slots: number, products: InventoryProduct[]) {
+  const rows: BatchPackage[] = [];
+  const issues: {row: number; message: string; fields: string[]}[] = [];
+  const positions: number[] = [];
+  const bySku = new Map(products.map(product => [inventoryKey(product.sku), product]));
+  const byName = new Map<string, InventoryProduct[]>();
+  for (const product of products) {
+    const key = inventoryKey(product.name);
+    byName.set(key, [...byName.get(key) ?? [], product]);
+  }
+  grid.forEach((draft, index) => {
+    if (!Object.values(draft).some(value => value.trim())) return;
+    const get = (key: string) => (draft[key] ?? '').trim();
+    const prices: BatchPackage['prices'] = {};
+    for (const market of batchMarkets(choice)) {
+      const read = (key:string) => get(market + '.' + key);
+      prices[market] = {original:read('original'), normal:read('normal'), campaign:read('campaign'), normalLate:read('normalLate')};
+    }
+    const items: BatchPackage['items'] = [];
+    for (let slot = 0; slot < slots; slot++) {
+      const name = get(slot + '.name'), sku = get(slot + '.sku'), quantity = get(slot + '.qty');
+      if (!name && !sku && !quantity) continue;
+      const matches = byName.get(inventoryKey(name)) ?? [];
+      const saved = sku ? bySku.get(inventoryKey(sku)) : matches.length === 1 ? matches[0] : undefined;
+      let message = '';
+      if (saved && name && inventoryKey(saved.name) !== inventoryKey(name)) message = 'Product name does not match this inventory SKU.';
+      else if (name && !sku && !saved) message = matches.length > 1 ? 'Several products have this name. Enter the inventory SKU.' : 'Enter an inventory SKU for this new product.';
+      if (message) issues.push({row:index, message, fields:[slot + '.name', slot + '.sku']});
+      items.push({sku:saved?.sku ?? sku, name:saved?.name ?? name, quantity, uiKey:String(slot)});
+    }
+    positions.push(index);
+    rows.push({id:'grid-' + index, name:get('name'), prices, pricingMode:'split_normal', skus:{Shopee:get('Shopee'), Lazada:get('Lazada'), TikTok:get('TikTok')}, items, dates:null, catalogRequired:true});
+  });
+  rows.forEach((pkg, i) => {
+    for (const message of batchIssues(pkg, rows, false)) {
+      let fields: string[] = [];
+      const [prefix, detail] = message.split(' ');
+      if (prefix === 'Package') fields = ['name'];
+      else if (prefix === 'Platform') fields = [...platforms];
+      else if (platforms.some(platform => platform === prefix)) fields = [prefix];
+      else if (prefix.startsWith('Inventory')) {
+        const item = Number.parseInt(detail, 10) - 1;
+        const slot = pkg.items[item]?.uiKey ?? '0';
+        fields = [slot + '.name', slot + '.sku', slot + '.qty'];
+      } else if (prefix in MARKET_CONFIG) {
+        const key = detail === 'late-month' ? 'normalLate' : detail;
+        fields = key in priceLabels ? [prefix + '.' + key] : Object.keys(priceLabels).map(k => prefix + '.' + k);
+      }
+      issues.push({row:positions[i], message, fields});
+    }
+  });
+  return {rows, issues};
+}
