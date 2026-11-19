@@ -354,6 +354,7 @@ async function savePackage(request: Request) {
     batchUpload?: boolean;
     captureInventory?: boolean;
     exportId?:string;
+    calculatorEntryId?:string;
     priceAdjustmentReason?:string;
     priceApplication?:unknown;
     mode?: "draft" | "publish";

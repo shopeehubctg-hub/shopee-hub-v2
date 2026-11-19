@@ -38,6 +38,6 @@ The Calculator browser regression covers pointer and keyboard activation, both i
 
 ## Round Calculator prices and check Original Price during entry
 
-The MY price header in Create Packages from Calculator offers **Round to nearest RM** for all package rows. It rounds only early-month, campaign and late-month MY selling prices. RM406.03 becomes RM406 and RM406.50 becomes RM407. The original Calculator recommendations remain available in pricing history. Rounding an unmodified recommendation supplies an editable price change reason.
+The MY price header in Create Packages from Calculator offers **Round to nearest RM** for all package rows. It rounds only early-month, campaign and late-month MY selling prices. RM406.03 becomes RM406 and RM406.50 becomes RM407. The original Calculator recommendations remain available in pricing history. The Calculator creation workflow accepts rounded and manually edited prices directly through review and save. Pricing history records the linked recommendations and final prices.
 
 An Original Price below a selling price shows an inline error immediately, including the minimum amount, currency and period. Typing, pasting and rounding all update the warning. Each market is checked independently, and an Original Price equal to the highest selling price is valid.

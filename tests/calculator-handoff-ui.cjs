@@ -96,7 +96,6 @@ async function run() {
     await price(2,'Original Price').fill('700.20');
     await price(2,'Normal · 1st–15th').fill('406.03');
     await price(2,'Campaign Day').fill('444.50');
-    await page.getByLabel('Row 2 price change reason').fill('Market price update');
     await button('Round to nearest RM').click();
     assert.equal(await original.inputValue(),'200');
     assert.equal(await warning.textContent(),'Original Price must be at least RM361 (Campaign Day).');
@@ -105,14 +104,11 @@ async function run() {
     assert.equal(await price(1,'Campaign Day').inputValue(),'361');
     assert.equal(await price(2,'Normal · 1st–15th').inputValue(),'406');
     assert.equal(await price(2,'Campaign Day').inputValue(),'445');
-    assert.equal(await page.getByLabel('Row 1 price change reason').inputValue(),'Rounded MY selling prices to the nearest RM.');
-    assert.equal(await page.getByLabel('Row 2 price change reason').inputValue(),'Market price update');
+    assert.equal(await page.getByLabel(/price change reason/i).count(),0);
     assert(await button('Round to nearest RM').isDisabled());
     await original.fill('600');
     assert.equal(await warning.count(),0);
     await price(1,'Campaign Day').fill('355');
-    assert.equal(await page.getByLabel('Row 1 price change reason').inputValue(),'');
-    await page.getByLabel('Row 1 price change reason').fill('November promotion');
     await cell(1,'Platform SKUs · Shopee SKU').evaluate((el)=>{
       const data=new DataTransfer();
       data.setData('text/plain','00012\t\t\tDay Cream\t2\n00023\t\t\tDay Cream\t3');
@@ -160,7 +156,13 @@ async function run() {
     assert.equal(await cell(2,'Platform SKUs · Shopee SKU').inputValue(),'00023');
     await button('Review Packages').click();
     await page.getByText('Review temporarily unavailable').waitFor();
-    await button('Review Packages').click();await button('Set Dates (2)').click();
+    await button('Review Packages').click();
+    await button('Edit Details').first().click();
+    const editor=page.locator('.batch-editor');
+    await editor.getByLabel('MY normal Price',{exact:true}).fill('320.25');
+    assert.equal(await editor.getByLabel(/price change reason/i).count(),0);
+    await button('Next').click();
+    await button('Set Dates (2)').click();
     assert.deepEqual(captures[0],captures[1]);
     await page.getByLabel('Add Campaign Month',{exact:true}).fill('2026-11');
     await page.getByText('Double Day',{exact:true}).click();
@@ -181,7 +183,7 @@ async function run() {
     assert.deepEqual(posts.map(p=>p.platforms[0].packageSku),['00012','00023']);
     assert.deepEqual(posts.map(p=>p.components[0].quantity),[2,3]);
     assert(posts.every(p=>p.components[0].inventorySku==='INV01'&&snapshots.has(p.exportId)&&p.storeId==='store-a'));
-    assert.equal(posts[0].priceAdjustmentReason,'November promotion');
+    assert(posts.every(p=>p.priceAdjustmentReason===undefined && p.calculatorEntryId===snapshots.get(p.exportId).requestId));
     assert.equal(posts[0].priceSchedules.find(p=>p.priceType==='campaign').sellingPrice,355);
     assert.equal(posts[0].normalMonthlyRule.prices.MY.late.sellingPrice,307);
     assert.deepEqual(errors,[]);
