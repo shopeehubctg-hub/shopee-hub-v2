@@ -2,7 +2,7 @@
 
 Branch `codex/package-batch-grid-20261119` starts at `93ba69d`.
 
-Packages & Pricing and the single-package editor open Batch Create with a directly editable table. Inventory entry defaults to By Product and supports By SKU. A paste starts at the focused cell, adds the necessary rows and inventory columns, and preserves leading-zero SKUs. The table supports 500 packages and 20 inventory items per package. Product matches use the selected store's library. Users can supply both a name and SKU for a new product. Row errors can be corrected in place.
+Packages & Pricing and the single-package editor open Batch Create with a directly editable table. Inventory entry defaults to By Product and supports By SKU. A paste starts at the focused cell, adds the necessary rows and inventory columns, and preserves leading-zero SKUs. The table supports 500 packages and starts with 20 inventory item slots per package. Product matches use the selected store's library. Users can supply both a name and SKU for a new product. Row errors can be corrected in place.
 
 Import Excel remains available with its template, By Product Name and By SKU tabs, and Calculator references. Both entry methods use the existing protected batch review, date selection, pricing, preview and retry-safe save flow. The initial table is an in-memory draft with a leave warning. The existing save journal applies once creation starts.
 
@@ -21,3 +21,11 @@ The Calculator’s single and selected-package Create actions now open the same 
 Calculator drafts are scoped to the current tab, store and signed-in account. The entry and reviewed rows survive refresh when session storage is available. Review links the original recommendations using stable request IDs and the existing store-scoped calculator snapshot API. Package creation uses the existing idempotent save process. No change to Supabase schema, access policies or migrations is required.
 
 38 affected automated tests passed. Local Chrome with mock API responses exercised two packages from the actual Calculator buttons through edited prices with reasons, multi-row paste, refresh, retry after review failed, shared dates, final preview, creation requests and return to the package list. The standalone Excel regression and Next.js build passed. Fixed Staging visual acceptance and final function QC remain pending.
+
+## Inventory library and item columns
+
+Both Dashboard entry paths open with 20 item slots, including previously opened Calculator drafts with fewer slots. Users can add several slots at once, up to the catalog service’s existing limit of 100 items per package. Empty slots do not enter the review or save payload. Workbook formats keep their original 20-slot layout.
+
+Focusing either a product name or an inventory SKU opens the selected store’s library. Search accepts either field. Choosing a result fills its exact SKU and product name together. Matching and paste preserve leading zeros and distinguish products with duplicate names.
+
+Read-only schema review on Staging and Production confirmed package version components use JSONB without a 20-item database constraint. The review and save APIs now use the same 100-item limit as inventory capture. No migrations, data imports or catalog writes were needed to deploy this change. Local Chrome exercised the Calculator workflow with 21 actual item lines through the final mocked save, including mouse and keyboard selection, five added columns, retry and refresh. Standalone batch, Excel and single-package inventory picker regressions also passed.

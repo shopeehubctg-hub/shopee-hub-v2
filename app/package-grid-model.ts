@@ -5,12 +5,40 @@ import type {CalculatorEntry} from './calculator-batch-entry';
 import {adjustedPrices,snapshotAmounts} from './pricing-evidence';
 import { MARKET_CONFIG } from './markets';
 
+export const DEFAULT_GRID_ITEM_SLOTS=20;
 export const MAX_GRID_ROWS = 500;
 export type GridRow = Record<string, string>;
 export type GridMode = 'product' | 'sku';
 export type GridColumn = { key: string; label: string; group: string; lookup?: 'sku' | 'name' };
 const priceLabels = { original: 'Original Price', normal: 'Normal · 1st–15th', campaign: 'Campaign Day', normalLate: 'Normal · 16th–End' };
 const platforms = ['Shopee', 'Lazada', 'TikTok'] as const;
+
+export function indexGridProducts(products:InventoryProduct[]) {
+  const byName=new Map<string,InventoryProduct|null>(), bySku=new Map<string,InventoryProduct>();
+  for(const product of products){
+    const key=inventoryKey(product.name);
+    byName.set(key,byName.has(key)?null:product);
+    bySku.set(inventoryKey(product.sku),product);
+  }
+  return {name:byName,sku:bySku};
+}
+
+export function editGridCells(previous:GridRow, changes:GridRow, library?:ReturnType<typeof indexGridProducts>):GridRow {
+  const next={...previous,...changes};
+  if(!library)return next;
+  for(const [key,value] of Object.entries(changes)){
+    const [slot,field]=key.split('.');
+    if(field!=='name' && field!=='sku')continue;
+    const other=field==='name'?'sku':'name', partner=slot+'.'+other;
+    if(partner in changes && changes[partner].trim())continue;
+    if(!value.trim() && partner in changes)continue;
+    const saved=library.sku.get(inventoryKey(previous[slot+'.sku']??''));
+    if(saved && inventoryKey(saved.name)===inventoryKey(previous[slot+'.name']??''))next[partner]='';
+    const match=library[field].get(inventoryKey(value));
+    if(match && !next[partner]?.trim())next[partner]=match[other];
+  }
+  return next;
+}
 
 export function gridColumns(choice: MarketChoice, slots: number, mode: GridMode): GridColumn[] {
   const columns: GridColumn[] = [{key: 'name', label: 'Package Name', group: 'Package'}];
@@ -50,19 +78,19 @@ export function clipboardRows(raw: string): string[][] {
 }
 
 export function pasteGrid(rows: GridRow[], choice: MarketChoice, mode: GridMode, slots: number,
-                         rowIndex: number, colIndex: number, text: string) {
+                         rowIndex: number, colIndex: number, text: string, library?:ReturnType<typeof indexGridProducts>) {
   const data = clipboardRows(text);
   if (rowIndex + data.length > MAX_GRID_ROWS) throw Error('Paste up to 500 package rows at a time.');
   const fixedColumns = gridColumns(choice, 0, mode).length;
   const width = Math.max(...data.map(row => row.length));
   const nextSlots = Math.max(slots, Math.ceil((colIndex + width - fixedColumns) / 3));
-  if (nextSlots > MAX_INVENTORY_ITEMS) throw Error('Use up to 20 inventory items per package.');
+  if (nextSlots > MAX_INVENTORY_ITEMS) throw Error(`Use up to ${MAX_INVENTORY_ITEMS} inventory items per package.`);
   const columns = gridColumns(choice, nextSlots, mode);
   const nextRows = [...rows];
   data.forEach((values, offset) => {
-    const draft = {...nextRows[rowIndex + offset]};
-    values.forEach((value, col) => { draft[columns[colIndex + col].key] = value.trim(); });
-    nextRows[rowIndex + offset] = draft;
+    const changes:GridRow = {};
+    values.forEach((value, col) => { changes[columns[colIndex + col].key] = value.trim(); });
+    nextRows[rowIndex + offset] = editGridCells(nextRows[rowIndex + offset]??{},changes,library);
   });
   return {rows: nextRows, slots: nextSlots};
 }

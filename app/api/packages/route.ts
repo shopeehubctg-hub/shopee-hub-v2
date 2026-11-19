@@ -464,7 +464,7 @@ async function savePackage(request: Request) {
     quantity:Number(item.quantity),
     kind:item.kind === "gift" ? "gift" as const : "product" as const,
   }));
-  if(components.length>MAX_INVENTORY_ITEMS)return packageError("Inventory Items","Use up to 20 inventory items.");
+  if(components.length>MAX_INVENTORY_ITEMS)return packageError("Inventory Items",`Use up to ${MAX_INVENTORY_ITEMS} inventory items.`);
   if(!body.packageId){
     const duplicate=duplicateInventory(components)[0];if(duplicate)return packageError("Inventory Items",duplicate.message);
     const savedProducts=await projectProducts(accessDb,membership.tenantId,body.storeId);for(const item of components)item.name=productName(savedProducts,item.inventorySku,item.name);

@@ -751,7 +751,7 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,onRecalculate,
       if (!form.samePricing) validatePrice("Campaign",form.prices[market].campaignOriginal,form.prices[market].campaignSelling);
     });
 
-    if(components.length>MAX_INVENTORY_ITEMS)addError("Inventory Items","Use up to 20 inventory items.");
+    if(components.length>MAX_INVENTORY_ITEMS)addError("Inventory Items",`Use up to ${MAX_INVENTORY_ITEMS} inventory items.`);
     if(!editingPackageId||!inventoryLinesUnchanged(originalInventory.current,components))inventoryDuplicates.forEach(d=>addError("Inventory Items",d.message));
     if (!components.length) addError("Inventory Items","Add at least one OXM inventory item.");
     components.forEach((line,index)=>{

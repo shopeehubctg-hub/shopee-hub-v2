@@ -1,3 +1,4 @@
+import {MAX_INVENTORY_ITEMS} from '../../inventory-items';
 import {pricingMode} from '../../pricing-periods';
 import {inventoryAccess,inventoryResponseError} from '../inventory-skus/access';
 import {projectProducts,productName} from '../inventory-skus/catalog';
@@ -10,7 +11,7 @@ export async function POST(request:Request){try{
  const products=await projectProducts(db,member.tenantId,storeId),snapshots=new Map();
  const rows:BatchPackage[]=[];
  for(const original of b.rows as BatchPackage[]){const row=structuredClone(original);if(row.fileStoreId&&row.fileStoreId!==storeId)throw Error('This file belongs to a different store. Select its original store before uploading.');
-  if(!Array.isArray(row.items)||row.items.length>20)throw Error('Use up to 20 inventory items per package.');
+  if(!Array.isArray(row.items)||row.items.length>MAX_INVENTORY_ITEMS)throw Error(`Use up to ${MAX_INVENTORY_ITEMS} inventory items per package.`);
   row.catalogRequired=true;
   row.items=row.items.map(i=>({sku:String(i.sku??'').trim(),quantity:String(i.quantity??''),name:productName(products,String(i.sku??''),i.name??''),uiKey:crypto.randomUUID()}));
   delete row.exportSnapshot;

@@ -1,14 +1,17 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
+import {createPortal} from 'react-dom';
+import {useInventoryMenuStyle} from './use-inventory-menu-style';
 import type { InventoryProduct } from './inventory-catalog-model';
 import { inventoryKey, MAX_INVENTORY_ITEMS } from './inventory-items';
 import { batchMarkets, marketChoices, marketChoiceLabel, type BatchPackage, type MarketChoice } from './package-batch-model';
-import { gridColumns, gridReview, MAX_GRID_ROWS, pasteGrid, type GridMode, type GridRow } from './package-grid-model';
+import { DEFAULT_GRID_ITEM_SLOTS, editGridCells, indexGridProducts, gridColumns, gridReview, MAX_GRID_ROWS, pasteGrid, type GridMode, type GridRow } from './package-grid-model';
 
 import {calculatorCells,readBatchSession,writeBatchSession,type CalculatorBatch} from './calculator-batch-entry';
 import {adjustedPrices,snapshotAmounts} from './pricing-evidence';
 
+type Lookup = {input:HTMLInputElement;row:number;slot:string;query:string};
 type GridDraft = {rows:GridRow[];choice:MarketChoice;mode:GridMode;slots:number};
 const pageSize = 12;
 export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBatch}: {
@@ -19,7 +22,12 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBat
   const [rows, setRows] = useState<GridRow[]>(()=>draft?.rows ?? calculatorBatch?.entries.map(calculatorCells) ?? [{},{},{}]);
   const [choice, setChoice] = useState<MarketChoice>(draft?.choice ?? calculatorBatch?.market ?? 'MY');
   const [mode, setMode] = useState<GridMode>(draft?.mode ?? 'product');
-  const [slots, setSlots] = useState(draft?.slots ?? 1);
+  const [slots, setSlots] = useState(Math.max(DEFAULT_GRID_ITEM_SLOTS,draft?.slots??0));
+  const [addCount,setAddCount]=useState('1');
+  const [lookup,setLookup]=useState<Lookup|null>(null);
+  const [highlight,setHighlight]=useState(-1);
+  const listId=useId();
+  const menuStyle=useInventoryMenuStyle(lookup?.input??null);
   useEffect(()=>writeBatchSession(draftKey,{rows,choice,mode,slots}),[draftKey,rows,choice,mode,slots]);
   const [page, setPage] = useState(0);
   const [validate, setValidate] = useState(false);
@@ -44,6 +52,24 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBat
     })();
     return () => controller.abort();
   }, [storeId, attempt]);
+  const library = useMemo(()=>indexGridProducts(products??[]),[products]);
+  const choices=useMemo(()=>{
+    if(!lookup || !products)return [];
+    const query=inventoryKey(lookup.query);
+    return query ? products.filter(p=>inventoryKey(p.name).includes(query)||inventoryKey(p.sku).includes(query)) : products;
+  },[lookup,products]);
+  useEffect(()=>{
+    const option=document.getElementById(listId+'-'+highlight);
+    if(option)option.scrollIntoView?.({block:'nearest',inline:'nearest'});
+  },[listId,highlight]);
+  function openLibrary(input:HTMLInputElement,row:number,slot:string,query=''){
+    setLookup({input,row,slot,query});setHighlight(-1);
+  }
+  function chooseProduct(product:InventoryProduct){
+    if(!lookup)return;
+    setRows(current=>current.map((row,i)=>i===lookup.row?{...row,[lookup.slot+'.name']:product.name,[lookup.slot+'.sku']:product.sku}:row));
+    setLookup(null);setMessage('');onEdit();
+  }
   const columns = gridColumns(choice, slots, mode);
   const groups: {label:string; width:number}[] = [];
   for (const col of columns) {
@@ -65,7 +91,7 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBat
     const [row,col] = focusTarget.current;
     table.current?.querySelector<HTMLInputElement>(`[data-row="${row}"][data-col="${col}"]`)?.focus();
     focusTarget.current = null;
-  }, [page, rows]);
+  }, [page, rows, slots]);
   function changeMarket(next: MarketChoice) {
     const removed = batchMarkets(choice).filter(code => !batchMarkets(next).includes(code));
     if (removed.some(code => rows.some(row => Object.entries(row).some(([key,v]) => key.startsWith(code + '.') && v.trim())))) {
@@ -90,7 +116,14 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBat
     <div className="batch-grid-tools">
       <label className="batch-country-picker">Markets<select value={choice} disabled={busy} onChange={e=>changeMarket(e.target.value as MarketChoice)}>{marketChoices.map(m=><option key={m} value={m}>{marketChoiceLabel(m)}</option>)}</select></label>
       <label className="batch-country-picker">Inventory entry<select value={mode} disabled={busy} onChange={e=>setMode(e.target.value as GridMode)}><option value="product">By Product</option><option value="sku">By SKU</option></select></label>
-      <button type="button" className="batch-secondary" disabled={busy || slots >= MAX_INVENTORY_ITEMS} onClick={()=>setSlots(slots+1)}>+ Item column</button>
+      <button type="button" className="batch-secondary" disabled={busy} onClick={()=>{
+        const cell=table.current?.querySelector<HTMLInputElement>('tbody input[role="combobox"]');
+        cell?.scrollIntoView({block:'nearest',inline:'center'});cell?.focus();
+      }}>Product Library</button>
+      <div className="batch-item-columns"><label>Columns to add<input type="number" min="1" max={MAX_INVENTORY_ITEMS-slots} value={addCount} disabled={busy||slots===MAX_INVENTORY_ITEMS} onChange={e=>setAddCount(e.target.value)}/></label>
+      <button type="button" className="batch-secondary" disabled={busy || !Number.isInteger(Number(addCount)) || Number(addCount)<1 || slots+Number(addCount)>MAX_INVENTORY_ITEMS} onClick={()=>{
+        focusTarget.current=[page*pageSize,columns.length];setSlots(slots+Number(addCount));setMessage('');
+      }}>Add columns</button><span>{slots} / {MAX_INVENTORY_ITEMS}</span></div>
     </div>
     <p id="batch-grid-help">{calculatorBatch ? 'Your three Calculator prices are filled in. Add original prices, platform SKUs and products for the selected packages.' : 'One package per row.'} Paste multiple rows, or use Tab to move across and Enter to move down.</p>
     {catalogError && <p role="alert" className="batch-error">{catalogError} <button type="button" className="batch-text-button" onClick={()=>setAttempt(attempt+1)}>Retry product library</button></p>}
@@ -98,8 +131,6 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBat
     {products && !products.length && <p className="batch-muted">Your product library is empty. Enter a product name and inventory SKU for each new product.</p>}
     {message && <p role="alert" className="batch-error">{message}</p>}
     {!!issues.length && <p role="alert" className="batch-error">Check the highlighted cells in {new Set(issues.map(issue => issue.row)).size} package row(s).</p>}
-    <datalist id="batch-grid-names">{products?.map(p=><option key={p.sku} value={p.name}>{p.sku}</option>)}</datalist>
-    <datalist id="batch-grid-skus">{products?.map(p=><option key={p.sku} value={p.sku}>{p.name}</option>)}</datalist>
     <div className="batch-grid-scroll" role="region" aria-label="Package entry table" tabIndex={0}>
       <table ref={table} className="batch-entry-table" aria-label="Batch package entry" aria-describedby="batch-grid-help">
         <thead><tr><th scope="col" rowSpan={2}>Row</th>{groups.map(g=><th key={g.label} scope="colgroup" colSpan={g.width}>{g.label}</th>)}{!calculatorBatch&&<th rowSpan={2} scope="col">Action</th>}</tr>
@@ -111,23 +142,43 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBat
           const rowIssues = issues.filter(issue=>issue.row===index);
           return <Fragment key={index}><tr><th scope="row">{index+1}</th>{columns.map((col,c)=>{
             const slot = col.key.split('.')[0];
-            let hint = '';
-            if (col.lookup) {
-              const byName = col.lookup === 'sku';
-              const otherKey = byName ? 'name' : 'sku';
-              const value = inventoryKey(draft[slot+'.'+otherKey] ?? '');
-              const matches = value ? products?.filter(p=>inventoryKey(p[otherKey])===value) : undefined;
-              hint = matches?.length===1 ? matches[0][col.lookup] : '';
-            }
+            const other=col.lookup==='name'?'sku':'name';
+            const partnerKey=slot+'.'+other;
+            const partner=inventoryKey(draft[partnerKey]??'');
+            const hint=col.lookup && partner ? library[other].get(partner)?.[col.lookup] : '';
+            const menuOpen=!!col.lookup && lookup?.row===index && lookup.input.dataset.col===String(c);
             const invalid = rowIssues.some(issue=>issue.fields.includes(col.key));
             return <td key={col.key}><input data-row={index} data-col={c} aria-label={`Row ${index+1} · ${col.group} · ${col.label}`} aria-invalid={invalid || undefined} aria-describedby={invalid ? 'grid-errors-'+index : undefined}
-              disabled={busy} list={col.lookup==='name'?'batch-grid-names':col.lookup==='sku'?'batch-grid-skus':undefined} placeholder={hint} value={draft[col.key] ?? ''}
-              onChange={e=>{const value=e.target.value;setRows(current=>current.map((row,i)=>i===index?{...row,[col.key]:value}:row));setMessage('');onEdit();}}
-              onKeyDown={e=>{if(e.key==='Enter' && !e.nativeEvent.isComposing){e.preventDefault();goToCell(index+(e.shiftKey?-1:1),c);}}}
+              disabled={busy} role={col.lookup?'combobox':undefined} aria-expanded={col.lookup?menuOpen:undefined} aria-controls={menuOpen?listId:undefined} aria-autocomplete={col.lookup?'list':undefined}
+              aria-activedescendant={menuOpen&&highlight>=0?listId+'-'+highlight:undefined} autoComplete="off"
+              placeholder={hint || (col.lookup?'Search name or SKU':'')} value={draft[col.key] ?? ''}
+              onFocus={col.lookup?e=>openLibrary(e.currentTarget,index,slot):undefined}
+              onClick={col.lookup?e=>{if(!menuOpen)openLibrary(e.currentTarget,index,slot);}:undefined}
+              onBlur={col.lookup?()=>setLookup(null):undefined}
+              onChange={e=>{
+                const value=e.target.value, field=col.lookup;
+                if(field)openLibrary(e.currentTarget,index,slot,value);
+                setRows(current=>current.map((row,i)=>i===index ? editGridCells(row,{[col.key]:value},library) : row));
+                setMessage('');onEdit();
+              }}
+              onKeyDown={e=>{
+                if(e.nativeEvent.isComposing)return;
+                if(col.lookup && (e.key==='ArrowDown'||e.key==='ArrowUp')){
+                  e.preventDefault();if(!menuOpen)openLibrary(e.currentTarget,index,slot);
+                  const last=(menuOpen?choices.length:products?.length??0)-1;
+                  setHighlight(h=>last<0?-1:e.key==='ArrowDown'?Math.min(last,h+1):h<0?last:Math.max(0,h-1));return;
+                }
+                if(menuOpen && e.key==='Escape'){e.preventDefault();setLookup(null);return;}
+                if(e.key==='Enter'){
+                  e.preventDefault();
+                  if(menuOpen&&!e.shiftKey&&choices[highlight])chooseProduct(choices[highlight]);
+                  else goToCell(index+(e.shiftKey?-1:1),c);
+                }
+              }}
               onPaste={e=>{
                 const raw=e.clipboardData.getData('text/plain');if(!/[\r\n\t]/.test(raw))return;
-                e.preventDefault();
-                try {const next=pasteGrid(rows,choice,mode,slots,index,c,raw);if(calculatorBatch && next.rows.length>rows.length)throw Error('Paste within the selected Calculator rows.');setRows(next.rows);setSlots(next.slots);setMessage('');onEdit();}
+                e.preventDefault();setLookup(null);
+                try {const next=pasteGrid(rows,choice,mode,slots,index,c,raw,library);if(calculatorBatch && next.rows.length>rows.length)throw Error('Paste within the selected Calculator rows.');setRows(next.rows);setSlots(next.slots);setMessage('');onEdit();}
                 catch(err){setMessage((err as Error).message);}
               }}/></td>;
           })}{!calculatorBatch&&<td><button type="button" className="batch-text-button" aria-label={'Duplicate row '+(index+1)} disabled={busy||rows.length>=MAX_GRID_ROWS||!Object.values(draft).some(Boolean)}
@@ -138,6 +189,13 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBat
         })}</tbody>
       </table>
     </div>
+    {lookup&&createPortal(<div className="batch-library-menu" style={menuStyle}>
+      <div role="listbox" id={listId} aria-label="Product Library" aria-busy={!products&&!catalogError}>
+        {choices.map((p,i)=><button key={p.sku} id={listId+'-'+i} type="button" role="option" tabIndex={-1} aria-selected={highlight===i}
+          onMouseDown={e=>e.preventDefault()} onClick={()=>chooseProduct(p)}><strong>{p.name}</strong><span>{p.sku}</span></button>)}
+      </div>
+      {!choices.length&&<p role="status">{catalogError?'Product library unavailable. Use Retry product library.':!products?'Loading product library…':products.length?'No matching products':'This store’s product library is empty.'}</p>}
+    </div>,document.body)}
     <div className="batch-grid-footer">{!calculatorBatch&&<button type="button" disabled={busy||rows.length>=MAX_GRID_ROWS} className="batch-secondary" onClick={()=>goToCell(rows.length,0)}>+ Add row</button>}
       {rows.length>pageSize&&<><button type="button" disabled={page===0} className="batch-text-button" onClick={()=>setPage(page-1)}>Previous</button><span>Rows {start+1}–{Math.min(start+pageSize,rows.length)} of {rows.length}</span><button type="button" disabled={start+pageSize>=rows.length} className="batch-text-button" onClick={()=>setPage(page+1)}>Next</button></>}
       <button type="button" className="batch-primary" disabled={busy||!products} onClick={review}>{busy?'Checking packages…':'Review Packages'}</button>
