@@ -45,3 +45,7 @@ An Original Price below a selling price shows an inline error immediately, inclu
 ## Continue from dates to preview
 
 Applying dates to the last packages that need them opens Final Preview in one click. Setting dates for part of a batch keeps the remaining packages in review. Returning to a completed review shows Continue to Final Preview and a date editor for each package. Creation still requires confirmation on Final Preview.
+
+## One Dashboard package editor
+
+Create Packages opens the By Product grid for one or more packages. The Calculator sends its selected rows directly to the same editor. Package creation now takes place entirely in the Dashboard, including multi-row paste, product lookup and final preview. The package list offers one creation action and reserves package selection for fulfillment. Existing package prices can be updated from Price Calculator.

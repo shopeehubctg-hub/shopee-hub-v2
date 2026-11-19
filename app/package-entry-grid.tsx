@@ -6,7 +6,7 @@ import {NewItemProductDialog} from './new-item-product-dialog';
 import {useInventoryMenuStyle} from './use-inventory-menu-style';
 import type { InventoryProduct } from './inventory-catalog-model';
 import { inventoryKey, MAX_INVENTORY_ITEMS } from './inventory-items';
-import { batchMarkets, originalPriceWarning, marketChoices, marketChoiceLabel, type BatchPackage, type MarketChoice } from './package-batch-model';
+import { batchMarkets, originalPriceWarning, gridMarketChoices, marketChoices, marketChoiceLabel, type BatchPackage, type MarketChoice } from './package-batch-model';
 import { DEFAULT_GRID_ITEM_SLOTS, editGridCells, indexGridProducts, gridMarketPrices, roundMYPrices, gridColumns, gridReview, MAX_GRID_ROWS, pasteGrid, type GridMode, type GridRow } from './package-grid-model';
 
 import {calculatorCells,readBatchSession,writeBatchSession,type CalculatorBatch} from './calculator-batch-entry';
@@ -15,13 +15,13 @@ import {isMarket} from './markets';
 type Lookup = {input:HTMLInputElement;row:number;slot:string;query:string};
 type GridDraft = {rows:GridRow[];choice:MarketChoice;mode:GridMode;slots:number};
 const pageSize = 12;
-export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBatch}: {
-  calculatorBatch?:CalculatorBatch; storeId: string; busy: boolean; onEdit: () => void; onReview: (rows: BatchPackage[]) => void;
+export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBatch, defaultMarket}: {
+  defaultMarket:MarketChoice; calculatorBatch?:CalculatorBatch; storeId: string; busy: boolean; onEdit: () => void; onReview: (rows: BatchPackage[]) => void;
 }) {
   const draftKey=calculatorBatch && 'calculator-grid:'+calculatorBatch.id;
   const [draft]=useState(()=>readBatchSession<GridDraft>(draftKey));
   const [rows, setRows] = useState<GridRow[]>(()=>draft?.rows ?? calculatorBatch?.entries.map(calculatorCells) ?? [{},{},{}]);
-  const [choice, setChoice] = useState<MarketChoice>(draft?.choice ?? calculatorBatch?.market ?? 'MY');
+  const [choice, setChoice] = useState<MarketChoice>(draft?.choice ?? calculatorBatch?.market ?? defaultMarket);
   const [mode, setMode] = useState<GridMode>(draft?.mode ?? 'product');
   const [slots, setSlots] = useState(Math.max(DEFAULT_GRID_ITEM_SLOTS,draft?.slots??0));
   const [addCount,setAddCount]=useState('1');
@@ -126,7 +126,7 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBat
   const start = page * pageSize;
   return <div className="batch-grid-panel">
     <div className="batch-grid-tools">
-      <label className="batch-country-picker">Markets<select value={choice} disabled={busy} onChange={e=>changeMarket(e.target.value as MarketChoice)}>{marketChoices.map(m=><option key={m} value={m}>{marketChoiceLabel(m)}</option>)}</select></label>
+      <label className="batch-country-picker">Markets<select value={choice} disabled={busy} onChange={e=>changeMarket(e.target.value as MarketChoice)}>{(calculatorBatch?marketChoices:gridMarketChoices).map(m=><option key={m} value={m}>{marketChoiceLabel(m)}</option>)}</select></label>
       <label className="batch-country-picker">Inventory entry<select value={mode} disabled={busy} onChange={e=>setMode(e.target.value as GridMode)}><option value="product">By Product</option><option value="sku">By SKU</option></select></label>
       <button type="button" className="batch-secondary" disabled={busy} onClick={()=>{
         const cell=table.current?.querySelector<HTMLInputElement>('tbody input[role="combobox"]');

@@ -3,8 +3,7 @@ import "./pricing-periods.css";
 
 import { useEffect, useMemo, useState } from "react";
 import {PackagePricingReview} from "./package-pricing-review";
-import {ExistingPackageCalculator} from "./reprice-calculator";
-import type {RepriceRow,RepriceTarget} from "./package-repricing";
+import type {RepriceRow} from "./package-repricing";
 
 import { autoTopUpEligibleForStore, calculatePricePerUnit, calculateShopeePrice, calculateShopeePriceForCustomerTarget, categoryIndexForProduct, commissionRateFor, maximumCoFundVoucher, resolvedCategoryForProduct, reviewPriceLadder, SERVICE_MODES as LEGACY_SERVICE_MODES } from "./price-calculator-model";
 import {marketChoices,marketChoiceLabel,type MarketChoice} from "./package-batch-model";
@@ -29,7 +28,7 @@ type FeeDraft = {
 };
 type CoFundVoucher = { id:number; campaignName:string; campaignDate:string|null; campaignStartAt:string|null; campaignEndAt:string|null; voucherName:string; discountAmount:number; currency:string; quantity:number };
 import type {PlatformVoucherPreset} from "./platform-voucher";
-type Props = { platformVoucher?:PlatformVoucherPreset|null; recalculateTargets?:RepriceTarget[]; onPricesUpdated?:(ids:string[])=>void; staging?:boolean; storeId?:string; storeName?:string; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; onCreatePackages?:(prefills:PackagePrefill[],market:MarketChoice)=>void };
+type Props = { platformVoucher?:PlatformVoucherPreset|null; onPricesUpdated?:(ids:string[])=>void; staging?:boolean; storeId?:string; storeName?:string; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; onCreatePackages?:(prefills:PackagePrefill[],market:MarketChoice)=>void };
 
 type LadderRow = { name:string; quantity:number; customerPrice:number; ppu:number; status:"base"|"better"|"higher"; label:string };
 type PricingGoal = "facebookPayout"|"sameCustomerPrice"|"cheaperCustomerPrice";
@@ -49,7 +48,7 @@ const pct = (value:number) => `${Number.isFinite(value) ? value.toFixed(2) : "0.
 const positive = (value:string|number) => Math.max(0, Number(value) || 0);
 const editableNumber = (value:string):NumberValue => value===""?"":positive(value);
 
-export function PriceCalculator({ platformVoucher, recalculateTargets=[],onPricesUpdated,staging=false, storeId="", storeName="", productProfile, coFundVouchers=[], onCreatePackages }:Props) {
+export function PriceCalculator({ platformVoucher, onPricesUpdated,staging=false, storeId="", storeName="", productProfile, coFundVouchers=[], onCreatePackages }:Props) {
   const SCENARIOS:ServiceMode[]=['nonCampaign','campaign','normalLate'];
   const scenarioLabel=(mode:ServiceMode)=>mode==='nonCampaign'?'Normal Day · 1st–15th':SERVICE_MODES[mode].label;
   const [selectedRows,setSelectedRows]=useState<number[]>([]);
@@ -223,7 +222,6 @@ export function PriceCalculator({ platformVoucher, recalculateTargets=[],onPrice
     return `Lower Than Meta by ${setting.discountUnit==="rm"?money(discount):pct(discount)}`;
   }
 
-  if(recalculateTargets.length)return <ExistingPackageCalculator platformVoucher={platformVoucher} key={`${storeId}:${platformVoucher?.updatedAt??""}:${recalculateTargets.map(t=>t.id).join(":")}`} storeId={storeId} storeName={storeName} targets={recalculateTargets} productProfile={productProfile} coFundVouchers={coFundVouchers} onComplete={onPricesUpdated??(()=>{})}/>;
   return <div className="price-calculator" onWheelCapture={event=>{const target=event.target as HTMLInputElement;if(target.tagName==="INPUT"&&target.type==="number")target.blur();}}>
     <section className="calculator-hero">
       <div><p className="kicker">SHOPEE MY · MARKUP CALCULATOR</p><h2>Markup Calculator</h2></div>
