@@ -5,7 +5,6 @@ import {SidebarNavigation} from "./sidebar-navigation";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { FakeSellerCase } from "./fake-seller-report";
 import {calculatorEntries,readBatchSession,writeBatchSession,type CalculatorBatch} from "./calculator-batch-entry";
-import type {MarketChoice} from "./package-batch-model";
 import type { PackagePrefill } from "./calculator-types";
 import { storeSnapshots } from "./store-snapshots";
 import { buildAdvertisingFunds, buildTopUpAction, formatRinggit } from "./advertising-model.js";
@@ -310,10 +309,10 @@ export default function Home() {
     setStoreSelectionMade(true);setStoreId(id);
   }
 
-  function openPackageDraft(prefills:PackagePrefill[],market:MarketChoice) {
+  function openPackageDraft(prefills:PackagePrefill[]) {
     if (!storeId || storeId==="all") throw Error("Select a store before creating packages.");
     if (!shellData?.user.email || !allowedSections.includes("packages")) throw Error("Your account needs access to Packages & Pricing.");
-    const batch:CalculatorBatch={id:crypto.randomUUID(),storeId,owner:shellData.user.email,market,entries:calculatorEntries(prefills)};
+    const batch:CalculatorBatch={id:crypto.randomUUID(),storeId,owner:shellData.user.email,market:"MY",entries:calculatorEntries(prefills)};
     writeBatchSession("calculator-batch:"+batch.id,batch);
     window.history.replaceState(window.history.state,"","?section=packages&calculatorBatch="+batch.id);
     setCalculatorBatch(batch);

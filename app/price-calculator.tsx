@@ -6,7 +6,6 @@ import {PackagePricingReview} from "./package-pricing-review";
 import type {RepriceRow} from "./package-repricing";
 
 import { autoTopUpEligibleForStore, calculatePricePerUnit, calculateShopeePrice, calculateShopeePriceForCustomerTarget, categoryIndexForProduct, commissionRateFor, maximumCoFundVoucher, resolvedCategoryForProduct, reviewPriceLadder, SERVICE_MODES as LEGACY_SERVICE_MODES } from "./price-calculator-model";
-import {marketChoices,marketChoiceLabel,type MarketChoice} from "./package-batch-model";
 import type { CalculatorSnapshot, PackagePrefill } from "./calculator-types";
 import type { ProjectProductProfile } from "./product-catalog";
 import { VOUCHER_PRESET_SOURCE, voucherPresetFor,periodVoucherPresetFor,PERIOD_VOUCHER_REFERENCE_DATE } from "./voucher-presets.js";
@@ -28,7 +27,7 @@ type FeeDraft = {
 };
 type CoFundVoucher = { id:number; campaignName:string; campaignDate:string|null; campaignStartAt:string|null; campaignEndAt:string|null; voucherName:string; discountAmount:number; currency:string; quantity:number };
 import type {PlatformVoucherPreset} from "./platform-voucher";
-type Props = { platformVoucher?:PlatformVoucherPreset|null; onPricesUpdated?:(ids:string[])=>void; staging?:boolean; storeId?:string; storeName?:string; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; onCreatePackages?:(prefills:PackagePrefill[],market:MarketChoice)=>void };
+type Props = { platformVoucher?:PlatformVoucherPreset|null; onPricesUpdated?:(ids:string[])=>void; staging?:boolean; storeId?:string; storeName?:string; productProfile?:ProjectProductProfile|null; coFundVouchers?:CoFundVoucher[]; onCreatePackages?:(prefills:PackagePrefill[])=>void };
 
 type LadderRow = { name:string; quantity:number; customerPrice:number; ppu:number; status:"base"|"better"|"higher"; label:string };
 type PricingGoal = "facebookPayout"|"sameCustomerPrice"|"cheaperCustomerPrice";
@@ -54,7 +53,6 @@ export function PriceCalculator({ platformVoucher, onPricesUpdated,staging=false
   const [selectedRows,setSelectedRows]=useState<number[]>([]);
   const [priceReview,setPriceReview]=useState<RepriceRow[]|null>(null);
   useEffect(()=>{setSelectedRows([]);setPriceReview(null);},[storeId]);
-  const [batchMarket,setBatchMarket] = useState<MarketChoice>("MY");
 
   const [packages,setPackages] = useState(INITIAL_PACKAGES);
 
@@ -209,7 +207,7 @@ export function PriceCalculator({ platformVoucher, onPricesUpdated,staging=false
     try {
       if (!onCreatePackages) throw Error("Unable to open Packages & Pricing.");
       setCreateError("");
-      onCreatePackages(rows,batchMarket);
+      onCreatePackages(rows);
     } catch (error) {
       setCreateError(error instanceof Error ? error.message : "Unable to open Packages & Pricing.");
     }
@@ -286,7 +284,7 @@ export function PriceCalculator({ platformVoucher, onPricesUpdated,staging=false
     </section>
 
     <section className="calculator-table calculator-results card">
-      <div className="calculator-section-head"><div><p className="kicker">STEP 2 · PACKAGE RESULTS</p><h3>Recommended Prices</h3></div><div className="calculator-result-head-actions">{<label className="calculator-country-picker">Select Countries<select value={batchMarket} onChange={e=>setBatchMarket(e.target.value as MarketChoice)}>{marketChoices.map(m=><option key={m} value={m}>{marketChoiceLabel(m)}</option>)}</select></label>}<button onClick={addPackage}>+ Add Package</button></div></div>
+      <div className="calculator-section-head"><div><p className="kicker">STEP 2 · PACKAGE RESULTS</p><h3>Recommended Prices</h3></div><div className="calculator-result-head-actions"><button onClick={addPackage}>+ Add Package</button></div></div>
       {voucherRates.normalLate===""&&<p role="status" className="calculator-download-note">Enter the Normal Day · 16th–End Platform Voucher %. This store has no saved late-month percentage.</p>}
       {!storeId&&<p role="status" className="calculator-download-note">Select a store before creating packages.</p>}
       {createError&&<p role="alert" className="package-message error">{createError}</p>}

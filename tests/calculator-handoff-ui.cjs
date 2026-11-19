@@ -54,6 +54,7 @@ async function run() {
     const cell=(row,label)=>page.getByLabel('Row '+row+' · '+label,{exact:true});
     await page.goto('http://127.0.0.1:'+server.address().port+'/?section=calculator');
     await page.getByLabel('Package B main product quantity',{exact:true}).fill('3');
+    assert.equal(await page.getByRole('combobox',{name:'Select Countries'}).count(),0);
     for(const id of [1,2])await page.getByLabel('Select Calculator package '+id,{exact:true}).check();
     await button('Create Selected Packages (2)').click();
     await cell(2,'Package · Package Name').waitFor();
@@ -61,6 +62,14 @@ async function run() {
     assert.equal(await cell(2,'Inventory item 1 · Qty').inputValue(),'3');
     assert.equal(await page.getByText('Import Excel',{exact:true}).count(),0);
     assert.equal(await page.locator('input[type=file]').count(),0);
+    const markets=page.getByRole('combobox',{name:/^Markets/});
+    assert.equal(await markets.inputValue(),'MY');
+    await markets.selectOption('MY+SG');
+    assert.equal(await cell(1,'SG · S$ · Normal · 1st–15th').inputValue(),'');
+    assert.equal(await cell(1,'MY · RM · Normal · 1st–15th').inputValue(),'321.11');
+    await page.reload();
+    assert.equal(await markets.inputValue(),'MY+SG');
+    await markets.selectOption('MY');
     const inv=(row,slot,field)=>cell(row,'Inventory item '+slot+' · '+field);
     assert.equal(await page.getByRole('columnheader',{name:/^Inventory item /}).count(),20);
     await button('Product Library').click();

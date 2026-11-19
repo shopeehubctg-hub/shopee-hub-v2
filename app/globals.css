@@ -441,8 +441,6 @@ body{background:var(--paper);color:var(--ink)}
 
 .batch-trial{margin:20px 0;padding:20px;background:#fff;border:1px solid #dbe5e9;border-radius:16px}.batch-trial button{padding:10px 16px;border-radius:8px;background:#075670;color:white;border:0;cursor:pointer}.batch-trial article{border:1px solid #dbe5e9;padding:16px;margin-top:12px;border-radius:12px}.batch-trial li{color:#a54320}.batch-trial input{margin:12px}.batch-trial p{line-height:1.6}
 /* Calculator export controls share the Dashboard form and action styles. */
-.calculator-result-head-actions .calculator-country-picker{display:flex;flex-direction:column;gap:5px;min-width:220px;padding:10px 14px;border:1px solid #82afbf;border-radius:10px;background:#edf7fa;color:#174b60;font-size:12px;font-weight:800}
-.calculator-country-picker select{width:100%;min-height:36px;border:1px solid #a7c2ce;border-radius:7px;background:#fff;padding:6px 10px;font:inherit;color:#182230}
 .package-hero-actions{flex-wrap:wrap}
 
 /* Compact live leaderboard: shared Dashboard typography, half-column footprint. */
