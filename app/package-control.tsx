@@ -1006,7 +1006,7 @@ export function PackageControl({ onRecalculate,highlightedIds=[],storeId, storeN
         {!sampleMode&&onRecalculate&&hasSelectedStore&&loadedStoreId===storeId&&source==="database"&&<button type="button" className="reprice-next" disabled={!selectedKitIds.length||scopedItems.filter(item=>selectedKitIds.includes(item.id)).some(item=>!eligibleRepriceTarget(item))} onClick={()=>onRecalculate(scopedItems.filter(item=>selectedKitIds.includes(item.id)))}>Recalculate Prices ({selectedKitIds.length})</button>}
         {!sampleMode&&canExportKits&&hasSelectedStore&&loadedStoreId===storeId&&source==="database"&&<button type="button" className="kit-export-button" onClick={previewKitExport} disabled={!selectedKitIds.length||kitBusy}>Generate Fulfillment Sheet{selectedKitIds.length?` (${selectedKitIds.length})`:""}</button>}
         {!sampleMode&&canCreate&&hasSelectedStore&&<button onClick={openNew}>Create Single Package</button>}
-    {!sampleMode&&canCreate&&hasSelectedStore&&<button type="button" onClick={()=>setBatchStore(storeId)}>Batch Upload Packages</button>}
+    {!sampleMode&&canCreate&&hasSelectedStore&&<button type="button" onClick={()=>setBatchStore(storeId)}>Batch Create Packages</button>}
       </div>
     </div>
 
@@ -1058,7 +1058,7 @@ export function PackageControl({ onRecalculate,highlightedIds=[],storeId, storeN
 
     {showCreate&&<div className={`package-modal${standaloneCreate?" standalone":""}`} role={standaloneCreate?undefined:"dialog"} aria-modal={standaloneCreate?undefined:"true"} aria-labelledby={standaloneCreate?undefined:"package-form-title"}><div className="package-form">
       <div className="package-form-head"><div><p className="kicker">{editingDraft?"EDIT DRAFT":editingPackageId?"EDIT PACKAGE":"NEW PACKAGE"}</p><h3 id="package-form-title">{editingDraft?"Edit Draft":editingPackageId?"Edit / Modify Package":"Create A Package"}</h3><span>{editingStore?.name??storeName}{prefillQueue.length?` · ${prefillQueue.length} Ready Package${prefillQueue.length===1?"":"s"} Remaining`:""}</span></div><button onClick={closeCreate} aria-label="Close">×</button></div>
-      {canCreate&&hasSelectedStore&&!editingPackageId&&!editingDraft&&<button type="button" onClick={()=>setBatchStore(storeId)}>Switch to Batch Upload Packages</button>}
+      {canCreate&&hasSelectedStore&&!editingPackageId&&!editingDraft&&<button type="button" onClick={()=>setBatchStore(storeId)}>Switch to Batch Create Packages</button>}
 
       {editingPackageId&&!editingDraft&&<p className="package-edit-note">Saving creates a new version. Previous details, your account and the time of the edit are retained in View History for Super Admin review.</p>}
 

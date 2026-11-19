@@ -91,3 +91,24 @@
 .batch-workspace .inventory-product-menu .inventory-add-product{background:#edf5f8;font-size:12px}
 @media(max-width:1000px){.batch-preview-grid,.batch-dates{grid-template-columns:1fr}.batch-workspace .batch-card-heading{flex-wrap:wrap}.batch-panel:has(>.batch-upload){grid-template-columns:minmax(140px,1fr) auto minmax(150px,1fr)}}
 @media(max-width:650px){.batch-workspace{padding:16px;--batch-control-height:42px}.batch-workspace h2{font-size:20px}.batch-workspace header{align-items:start}.batch-panel{padding:14px}.batch-panel:has(>.batch-upload){grid-template-columns:1fr}.batch-panel:has(>.batch-upload)>*{grid-column:1}.batch-workspace .batch-upload{padding:14px}.batch-workspace .batch-action-row button{width:100%}.batch-fields{grid-template-columns:1fr}.batch-dialog-backdrop{padding:12px}.batch-workspace .batch-dialog{padding:20px}.batch-price-card strong{font-size:18px}.batch-steps{gap:6px}.batch-steps li{padding:6px 8px}.batch-toolbar>p{flex-basis:100%}}
+
+.batch-entry-mode{margin:0 0 18px}
+.batch-grid-tools,.batch-grid-footer{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px}
+.batch-grid-tools label{min-width:145px}
+.batch-grid-tools .batch-secondary{margin-left:auto}
+.batch-grid-scroll{max-width:100%;overflow:auto;border:1px solid var(--batch-line);border-radius:10px;background:#fff}
+.batch-grid-scroll:focus-visible{outline:2px solid #075670}
+.batch-workspace .batch-entry-table{width:max-content;min-width:100%;border-collapse:separate;border-spacing:0}
+.batch-entry-table th,.batch-entry-table td{padding:0;text-align:left;border-right:1px solid var(--batch-line);border-bottom:1px solid var(--batch-line)}
+.batch-entry-table thead th,.batch-entry-table tbody th{padding:7px 10px;background:#f4f8fa;font-size:12px;color:#344e5e;white-space:nowrap}
+.batch-entry-table thead tr:first-child th{background:#eaf2f5}
+.batch-entry-table thead tr:nth-child(2) th:first-child,.batch-entry-table tbody tr>td:nth-child(2){position:sticky;left:0;z-index:1;background:#f8fbfc}
+.batch-workspace .batch-entry-table input{width:136px;min-width:90px;margin:0;border:1px solid transparent;border-radius:0;background:transparent}
+.batch-workspace .batch-entry-table td:nth-child(2) input{width:166px;font-weight:600}
+.batch-workspace .batch-entry-table input[list]{width:174px}
+.batch-workspace .batch-entry-table input:focus{outline:2px solid #11748e;outline-offset:-2px}
+.batch-workspace .batch-entry-table input[aria-invalid=true]{border-color:#c62828;background:#fff4f3}
+.batch-workspace .batch-grid-errors{padding:5px 10px;background:#fff7f6;color:#a52824;font-size:12px}
+.batch-grid-footer{align-items:center;margin:14px 0}
+.batch-grid-footer .batch-primary{margin-left:auto}
+@media(max-width:640px){.batch-grid-tools .batch-secondary{margin-left:0}.batch-workspace .batch-entry-table td:nth-child(2) input{width:128px}}
