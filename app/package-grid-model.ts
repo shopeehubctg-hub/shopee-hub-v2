@@ -2,7 +2,6 @@ import { batchIssues, batchMarkets, type BatchPackage, type MarketChoice, type B
 import type { InventoryProduct } from './inventory-catalog-model';
 import { inventoryKey, MAX_INVENTORY_ITEMS } from './inventory-items';
 import type {CalculatorEntry} from './calculator-batch-entry';
-import {adjustedPrices,snapshotAmounts} from './pricing-evidence';
 import { MARKET_CONFIG } from './markets';
 
 export const DEFAULT_GRID_ITEM_SLOTS=20;
@@ -14,14 +13,13 @@ const priceLabels = { original: 'Original Price', normal: 'Normal · 1st–15th'
 const platforms = ['Shopee', 'Lazada', 'TikTok'] as const;
 
 const mySellingFields = ['MY.normal', 'MY.campaign', 'MY.normalLate'];
-const roundingReason = 'Rounded MY selling prices to the nearest RM.';
 
 export function gridMarketPrices(row:GridRow, market:BatchMarket) {
   return {original:row[market+'.original']?.trim() ?? '', normal:row[market+'.normal']?.trim() ?? '',
     campaign:row[market+'.campaign']?.trim() ?? '', normalLate:row[market+'.normalLate']?.trim() ?? ''};
 }
 
-export function roundMYPrices(row:GridRow, entry:CalculatorEntry):GridRow {
+export function roundMYPrices(row:GridRow):GridRow {
   const changes:GridRow = {};
   for (const field of mySellingFields) {
     const raw = row[field]?.trim();
@@ -32,10 +30,6 @@ export function roundMYPrices(row:GridRow, entry:CalculatorEntry):GridRow {
     if (raw !== rounded) changes[field] = rounded;
   }
   if (!Object.keys(changes).length) return row;
-  const amountChanged = Object.keys(changes).some(field => Number(row[field]) !== Number(changes[field]));
-  if (amountChanged && !row.priceAdjustmentReason?.trim() && !adjustedPrices({MY:gridMarketPrices(row,'MY')},snapshotAmounts(entry.scenarios))) {
-    changes.priceAdjustmentReason = roundingReason;
-  }
   return {...row,...changes};
 }
 
@@ -51,8 +45,6 @@ export function indexGridProducts(products:InventoryProduct[]) {
 
 export function editGridCells(previous:GridRow, changes:GridRow, library?:ReturnType<typeof indexGridProducts>):GridRow {
   const next={...previous,...changes};
-  if (previous.priceAdjustmentReason === roundingReason && mySellingFields.some(field =>
-    field in changes && Number(previous[field]) !== Number(changes[field]))) next.priceAdjustmentReason = '';
   if(!library)return next;
   for(const [key,value] of Object.entries(changes)){
     const [slot,field]=key.split('.');
@@ -154,9 +146,6 @@ export function gridReview(grid: GridRow[], choice: MarketChoice, slots: number,
     }
     positions.push(index);
     const entry = entries?.[index];
-    if (entry && adjustedPrices(prices,snapshotAmounts(entry.scenarios)) && !get('priceAdjustmentReason')) {
-      issues.push({row:index, message:'Enter a reason for changing the Calculator price.', fields:['priceAdjustmentReason']});
-    }
     rows.push({id:entry?.requestId ?? 'grid-' + index, priceAdjustmentReason:get('priceAdjustmentReason') || undefined, name:get('name'), prices, pricingMode:'split_normal', skus:{Shopee:get('Shopee'), Lazada:get('Lazada'), TikTok:get('TikTok')}, items, dates:null, catalogRequired:true});
   });
   rows.forEach((pkg, i) => {

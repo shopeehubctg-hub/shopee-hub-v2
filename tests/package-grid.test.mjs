@@ -58,11 +58,11 @@ test('replacing a selected library item clears its old counterpart and preserves
 test('nearest RM rounds at 50 sen for three MY selling prices only',()=>{
   const manual={priceAdjustmentReason:'Campaign update','MY.original':'500.35','SG.normal':'40.55','0.qty':'3'};
   const row={...manual,'MY.normal':'406.03','MY.campaign':'358.50','MY.normalLate':'308.49'};
-  const rounded=roundMYPrices(row,{scenarios:[]});
+  const rounded=roundMYPrices(row);
   assert.deepEqual(rounded,{...manual,'MY.normal':'406','MY.campaign':'359','MY.normalLate':'308'});
-  assert.equal(roundMYPrices(rounded,{scenarios:[]}),rounded);
+  assert.equal(roundMYPrices(rounded),rounded);
   const partial={...manual,'MY.normal':'','MY.campaign':'bad','MY.normalLate':'25.00'};
-  assert.deepEqual(roundMYPrices(partial,{scenarios:[]}),{...partial,'MY.normalLate':'25'});
+  assert.deepEqual(roundMYPrices(partial),{...partial,'MY.normalLate':'25'});
 });
 
 test('original price may equal the highest selling price and is checked separately per market',()=>{

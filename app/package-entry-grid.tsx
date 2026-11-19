@@ -10,7 +10,6 @@ import { batchMarkets, originalPriceWarning, marketChoices, marketChoiceLabel, t
 import { DEFAULT_GRID_ITEM_SLOTS, editGridCells, indexGridProducts, gridMarketPrices, roundMYPrices, gridColumns, gridReview, MAX_GRID_ROWS, pasteGrid, type GridMode, type GridRow } from './package-grid-model';
 
 import {calculatorCells,readBatchSession,writeBatchSession,type CalculatorBatch} from './calculator-batch-entry';
-import {adjustedPrices,snapshotAmounts} from './pricing-evidence';
 import {isMarket} from './markets';
 
 type Lookup = {input:HTMLInputElement;row:number;slot:string;query:string};
@@ -82,8 +81,7 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBat
     setLookup(null);setMessage('');onEdit();
   }
   const columns = gridColumns(choice, slots, mode);
-  const roundedRows = useMemo(() => calculatorBatch ? rows.map((row,i) =>
-    calculatorBatch.entries[i] ? roundMYPrices(row, calculatorBatch.entries[i]) : row) : rows, [rows,calculatorBatch]);
+  const roundedRows = useMemo(() => calculatorBatch ? rows.map(roundMYPrices) : rows, [rows,calculatorBatch]);
   const canRound = roundedRows.some((row,i) => row !== rows[i]);
   const groups: {label:string; width:number; firstKey:string}[] = [];
   for (const col of columns) {
@@ -155,8 +153,6 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBat
         <tr>{columns.map(col=><th key={col.key} scope="col">{col.label}</th>)}</tr></thead>
         <tbody>{rows.slice(start,start+pageSize).map((draft, offset) => {
           const index = start + offset;
-          const entry=calculatorBatch?.entries[index];
-          const adjusted=entry && adjustedPrices({MY:gridMarketPrices(draft,'MY')},snapshotAmounts(entry.scenarios));
           const rowIssues = issues.filter(issue=>issue.row===index);
           return <Fragment key={index}><tr><th scope="row">{index+1}</th>{columns.map((col,c)=>{
             const slot = col.key.split('.')[0];
@@ -210,7 +206,6 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBat
               }}/>{warning && <div className="grid-original-warning" id={warningId} aria-live="polite">{warning}</div>}</td>;
           })}{!calculatorBatch&&<td><button type="button" className="batch-text-button" aria-label={'Duplicate row '+(index+1)} disabled={busy||rows.length>=MAX_GRID_ROWS||!Object.values(draft).some(Boolean)}
             onClick={()=>{setRows([...rows.slice(0,index+1),{...draft},...rows.slice(index+1)]);setPage(Math.floor((index+1)/pageSize));onEdit();}}>Duplicate</button></td>}</tr>
-          {adjusted&&<tr><td colSpan={columns.length+1}><label>Price change reason <input aria-label={'Row '+(index+1)+' price change reason'} value={draft.priceAdjustmentReason??''} disabled={busy} onChange={e=>{const reason=e.target.value;setRows(current=>current.map((row,i)=>i===index?{...row,priceAdjustmentReason:reason}:row));onEdit();}}/></label></td></tr>}
           {!!rowIssues.length&&<tr><td colSpan={columns.length+2} id={'grid-errors-'+index} className="batch-grid-errors">Row {index+1} · {[...new Set(rowIssues.map(i=>i.message))].join(' ')}</td></tr>}
           </Fragment>;
         })}</tbody>

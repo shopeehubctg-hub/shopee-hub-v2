@@ -91,6 +91,25 @@ test('direct Calculator handoff records all three prices and requires a reason f
  const explained=await resolve.resolvePricingEvidence({}, {tenantId:'tenant',storeId:'test',actor:'qa'},{...changed,priceAdjustmentReason:'Rounded for promotion'},schedules);assert.equal(explained.originalPrices.MY.normalLate,230);assert.equal(explained.finalPrices.at(-1).sellingPrice,235);
 });
 
+test('Calculator grid saves late-month changes without a reason and preserves the accepted values on later edits',async()=>{
+ const exportId=crypto.randomUUID(), requestId=crypto.randomUUID();
+ const source=scenarios().map(s=>({...s,calculationKind:'three_period_recommendations'}));
+ const db={execute:async()=>[{id:exportId,request_id:requestId,created_at:'now',actor:'qa',payload:{...evidence.snapshotAmounts(source),scenarios:source}}]};
+ const context={tenantId:'tenant',storeId:'test',actor:'qa'};
+ const changedRule={schema:1,prices:{MY:{early:{originalPrice:300,sellingPrice:211},late:{originalPrice:300,sellingPrice:235}}}};
+ const schedules=[price({originalPrice:30000,sellingPrice:21100}),price({priceType:'campaign',originalPrice:30000,sellingPrice:21900})];
+ const input={exportId,calculatorEntryId:requestId,batchUpload:true,pricingMode:'split_normal',normalMonthlyRule:changedRule};
+ const saved=await resolve.resolvePricingEvidence(db,context,input,schedules);
+ assert.equal(saved.adjustmentReason,'');
+ assert.equal(saved.originalPrices.MY.normalLate,230);
+ assert.deepEqual(saved.finalPrices.map(p=>p.sellingPrice),[211,219,235]);
+ const previous={_pricingMode:'split_normal',_normalMonthlyRule:changedRule,_pricingEvidence:saved};
+ const edit={packageId:crypto.randomUUID(),pricingMode:'split_normal',normalMonthlyRule:changedRule};
+ const retained=await resolve.resolvePricingEvidence(db,context,edit,schedules,previous);
+ assert.deepEqual(retained.finalPrices,saved.finalPrices);
+ await assert.rejects(()=>resolve.resolvePricingEvidence(db,context,edit,[{...schedules[0],sellingPrice:21500},schedules[1]],previous),/reason/);
+});
+
 test('fixed-three capture can apply one chosen price without replacing the three recommendations',async()=>{
  const source=scenarios().map(s=>({...s,calculationKind:'three_period_recommendations'}));
  const schedules=[price({originalPrice:30000,sellingPrice:22000}),price({priceType:'campaign',originalPrice:30000,sellingPrice:22000})];

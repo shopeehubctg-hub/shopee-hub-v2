@@ -6,15 +6,19 @@ import {exportSnapshots,snapshotAmounts,type ExportSnapshot,type PricingEvidence
 type DB=Pick<Awaited<ReturnType<typeof getDb>>,'execute'>;
 export async function findExport(db:DB,tenantId:string,storeId:string,id:string){
  if(!/^[0-9a-f-]{36}$/i.test(id))throw Error('Invalid Calculator reference. Export a fresh file.');
- const row=Array.from(await db.execute(sql`select id,actor,created_at,payload from public.calculator_export_snapshots where id=${id}::uuid and tenant_id=${tenantId} and store_id=${storeId}`))[0] as {id:string;actor:string;created_at:string;payload:Omit<ExportSnapshot,'id'>}|undefined;
+ const row=Array.from(await db.execute(sql`select id,actor,request_id,created_at,payload from public.calculator_export_snapshots where id=${id}::uuid and tenant_id=${tenantId} and store_id=${storeId}`))[0] as {id:string;actor:string;request_id:string;created_at:string;payload:Omit<ExportSnapshot,'id'>}|undefined;
  if(!row)throw Error('The Calculator record is unavailable for this store. Upload it under the original store or export again.');
- return {...row.payload,id:row.id,createdAt:String(row.created_at),actor:row.actor};
+ return {...row.payload,id:row.id,requestId:row.request_id,createdAt:String(row.created_at),actor:row.actor};
 }
-export async function resolvePricingEvidence(db:DB,context:{tenantId:string;storeId:string;actor:string},input:{priceApplication?:unknown;exportId?:string;batchUpload?:boolean;priceAdjustmentReason?:string;calculatorSettings?:Record<string,unknown>|null;pricingMode?:PricingMode;normalMonthlyRule?:NormalMonthlyRule|null},schedules:{market:string;priceType:string;sellingPrice:number;originalPrice:number;effectiveFrom:string;effectiveTo:string|null}[],previous?:Record<string,unknown>|null):Promise<PricingEvidence|null>{
+export async function resolvePricingEvidence(db:DB,context:{tenantId:string;storeId:string;actor:string},input:{packageId?:string;calculatorEntryId?:string;priceApplication?:unknown;exportId?:string;batchUpload?:boolean;priceAdjustmentReason?:string;calculatorSettings?:Record<string,unknown>|null;pricingMode?:PricingMode;normalMonthlyRule?:NormalMonthlyRule|null},schedules:{market:string;priceType:string;sellingPrice:number;originalPrice:number;effectiveFrom:string;effectiveTo:string|null}[],previous?:Record<string,unknown>|null):Promise<PricingEvidence|null>{
  const old=previous?._pricingEvidence as PricingEvidence|undefined;
  if(old?.exportId&&input.exportId&&old.exportId!==input.exportId)throw Error('The original Calculator record cannot be replaced.');
  const exportId=input.exportId||old?.exportId;
  const saved=exportId?await findExport(db,context.tenantId,context.storeId,exportId):undefined;
+
+ const dashboardCreate = !!input.calculatorEntryId && input.batchUpload === true && !input.packageId
+   && !previous && saved?.requestId === input.calculatorEntryId;
+ if (input.calculatorEntryId && !dashboardCreate) throw Error('The package does not match its Calculator entry.');
 
  const scenarios=(old?.scenarioReferences||old?.periodReferences?old.scenarios:saved?.scenarios)??old?.scenarios??(input.batchUpload?[]:calculatorSnapshots(input.calculatorSettings??null));
  if(!input.batchUpload&&!saved&&!old&&!scenarios.length)return null;
@@ -36,16 +40,16 @@ export async function resolvePricingEvidence(db:DB,context:{tenantId:string;stor
  const adjusted=baseline&&schedules.some(p=>p.market==='MY'&&Math.abs(p.sellingPrice/100-(p.priceType==='campaign'?baseline!.campaign:baseline!.normal))>0.005);
  const reason=(input.priceAdjustmentReason??old?.adjustmentReason??'').trim();
  if(reason.length>1000)throw Error('Use up to 1,000 characters for the price change reason.');
- // A partial recalculation may inherit a legacy manual price without a recorded reason.
+ // Preserve previously accepted prices on unrelated edits, including Calculator-created packages.
  // Preserve that discrepancy, but do not exempt a newly changed value or period ambiguity.
  const inherited=(p:typeof schedules[number])=>{
-  if(!(old?.scenarioReferences||old?.periodReferences)||!Array.isArray(old.finalPrices))return false;
+  if(!(old?.exportId||old?.scenarioReferences||old?.periodReferences)||!Array.isArray(old.finalPrices))return false;
   const prior=old.finalPrices.filter((row:unknown):row is {market:string;priceType:string;sellingPrice:number;effectiveFrom:string;effectiveTo:string|null}=>!!row&&typeof row==='object'&&'market' in row&&row.market==='MY'&&'priceType' in row&&row.priceType===p.priceType&&(!('pricingPeriod' in row)||row.pricingPeriod!=='normal_16_end')&&(!('effectiveFrom' in row)||row.effectiveFrom!=='monthly')&&'sellingPrice' in row&&typeof row.sellingPrice==='number'&&Number.isFinite(row.sellingPrice));
   const exact=prior.filter(row=>row.effectiveFrom===p.effectiveFrom&&row.effectiveTo===p.effectiveTo);
   const candidates=exact.length?exact:prior;
   return candidates.length>0&&candidates.every(row=>Math.round(row.sellingPrice*100)===p.sellingPrice);
  };
- if(lateChanged&&!reason&&!inheritedLate)throw Error('Enter a reason for changing the late-month Calculator price.');
- if(adjusted&&!reason&&schedules.some(p=>p.market==='MY'&&Math.abs(p.sellingPrice/100-(p.priceType==='campaign'?baseline!.campaign:baseline!.normal))>0.005&&!inherited(p)))throw Error('Enter a reason for changing the Calculator price.');
+ if(!dashboardCreate&&lateChanged&&!reason&&!inheritedLate)throw Error('Enter a reason for changing the late-month Calculator price.');
+ if(!dashboardCreate&&adjusted&&!reason&&schedules.some(p=>p.market==='MY'&&Math.abs(p.sellingPrice/100-(p.priceType==='campaign'?baseline!.campaign:baseline!.normal))>0.005&&!inherited(p)))throw Error('Enter a reason for changing the Calculator price.');
  return {...(old?.recommendations?{recommendations:old.recommendations}:{}),...(old?.priceSelection?{priceSelection:old.priceSelection}:{}),...(application?{priceApplication:application}:{}),source:scenarios.length?'Calculator':'Manual Excel Upload',...(saved?{exportId:saved.id,exportedAt:saved.createdAt,exportedBy:saved.actor}:{}),scenarios,...(old?.scenarioReferences?{scenarioReferences:old.scenarioReferences}:{}),...(old?.periodReferences?{periodReferences:old.periodReferences}:{}),...(original?{originalPrices:{MY:original}}:{}),finalPrices:[...schedules.map(p=>({...p,sellingPrice:p.sellingPrice/100,originalPrice:p.originalPrice/100})),...(late?[{market:'MY',priceType:'non_campaign',pricingPeriod:'normal_16_end',sellingPrice:late.sellingPrice,originalPrice:late.originalPrice,effectiveFrom:'monthly',effectiveTo:null}]:[])],adjustmentReason:reason,recordedBy:context.actor,recordedAt:new Date().toISOString()};
 }

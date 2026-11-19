@@ -47,7 +47,7 @@ export function originalPriceWarning(market:BatchMarket, prices:NonNullable<Batc
  return `Original Price must be at least ${MARKET_CONFIG[market].symbol}${highest.amount} (${highest.label}).`;
 }
 
-export function batchIssues(p:BatchPackage,all:BatchPackage[],includeDates=true){
+export function batchIssues(p:BatchPackage,all:BatchPackage[],includeDates=true,fromCalculator=false){
  const issues:string[]=[];if(!p.name.trim())issues.push('Package Name: required.');
  if(!Object.values(p.skus).some(v=>v.trim()))issues.push('Platform SKU: fill at least one platform.');
  for(const platform of ['Shopee','Lazada','TikTok'] as const)if(p.skus[platform].trim()&&all.some(other=>other.id!==p.id&&other.skus[platform].trim().toUpperCase()===p.skus[platform].trim().toUpperCase()))issues.push(`${platform} SKU: duplicated in another package.`);
@@ -62,7 +62,7 @@ export function batchIssues(p:BatchPackage,all:BatchPackage[],includeDates=true)
  const entered=p.items.filter(i=>i.sku||i.quantity);if(!entered.length)issues.push('Inventory: add at least one item.');if(entered.length>MAX_INVENTORY_ITEMS)issues.push(`Inventory: maximum ${MAX_INVENTORY_ITEMS} items.`);
  entered.forEach((i,index)=>{if(!i.sku.trim()||!Number.isInteger(Number(i.quantity))||Number(i.quantity)<=0||Number(i.quantity)>100000)issues.push(`Inventory ${index+1}: SKU and whole quantity 1–100,000 required.`);if(p.catalogRequired&&!i.name?.trim())issues.push(`Inventory ${index+1}: enter a Product Name for this new SKU.`);});
  issues.push(...duplicateInventory(p.items).map(d=>d.message));
- if(adjustedPrices(p.prices,p.exportSnapshot,p.priceApplication)&&!p.priceAdjustmentReason?.trim())issues.push('Price Adjustment: enter a reason for changing the Calculator price.');
+ if(!fromCalculator&&adjustedPrices(p.prices,p.exportSnapshot,p.priceApplication)&&!p.priceAdjustmentReason?.trim())issues.push('Price Adjustment: enter a reason for changing the Calculator price.');
  return includeDates?[...issues,...dateIssues(p.dates,sameBatchPrice(p))]:issues;
 }
 export function applyBatchDates(rows:BatchPackage[],ids:string[],dates:BatchDates){return rows.map(p=>ids.includes(p.id)?{...p,dates:structuredClone(dates)}:p);}
