@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {createPortal} from 'react-dom';
+import {NewItemProductDialog} from './new-item-product-dialog';
 import {useInventoryMenuStyle} from './use-inventory-menu-style';
 import type { InventoryProduct } from './inventory-catalog-model';
 import { inventoryKey, MAX_INVENTORY_ITEMS } from './inventory-items';
@@ -25,6 +26,8 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBat
   const [slots, setSlots] = useState(Math.max(DEFAULT_GRID_ITEM_SLOTS,draft?.slots??0));
   const [addCount,setAddCount]=useState('1');
   const [lookup,setLookup]=useState<Lookup|null>(null);
+  const [addingProduct, setAddingProduct] = useState<Lookup | null>(null);
+  const addProductButton = useRef<HTMLButtonElement>(null);
   const [highlight,setHighlight]=useState(-1);
   const listId=useId();
   const menuStyle=useInventoryMenuStyle(lookup?.input??null);
@@ -36,6 +39,7 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBat
   const [catalogError, setCatalogError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const table = useRef<HTMLTableElement>(null);
+  const reviewButton = useRef<HTMLButtonElement>(null);
   const focusTarget = useRef<[number,number] | null>(null);
   useEffect(() => {
     const controller = new AbortController();
@@ -65,9 +69,15 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBat
   function openLibrary(input:HTMLInputElement,row:number,slot:string,query=''){
     setLookup({input,row,slot,query});setHighlight(-1);
   }
-  function chooseProduct(product:InventoryProduct){
-    if(!lookup)return;
-    setRows(current=>current.map((row,i)=>i===lookup.row?{...row,[lookup.slot+'.name']:product.name,[lookup.slot+'.sku']:product.sku}:row));
+  const canAddProduct = !!lookup && !!products && !catalogError && choices.length === 0;
+  function beginAddProduct() {
+    if (!canAddProduct) return;
+    setAddingProduct(lookup);
+    setLookup(null);
+  }
+  function chooseProduct(product:InventoryProduct, target = lookup){
+    if (!target) return;
+    setRows(current=>current.map((row,i)=>i===target.row?{...row,[target.slot+'.name']:product.name,[target.slot+'.sku']:product.sku}:row));
     setLookup(null);setMessage('');onEdit();
   }
   const columns = gridColumns(choice, slots, mode);
@@ -128,7 +138,7 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBat
     <p id="batch-grid-help">{calculatorBatch ? 'Your three Calculator prices are filled in. Add original prices, platform SKUs and products for the selected packages.' : 'One package per row.'} Paste multiple rows, or use Tab to move across and Enter to move down.</p>
     {catalogError && <p role="alert" className="batch-error">{catalogError} <button type="button" className="batch-text-button" onClick={()=>setAttempt(attempt+1)}>Retry product library</button></p>}
     {!catalogError && !products && <p role="status">Loading product library…</p>}
-    {products && !products.length && <p className="batch-muted">Your product library is empty. Enter a product name and inventory SKU for each new product.</p>}
+    {products && !products.length && <p className="batch-muted">Your product library is empty. Open an inventory item and choose + Add New Product.</p>}
     {message && <p role="alert" className="batch-error">{message}</p>}
     {!!issues.length && <p role="alert" className="batch-error">Check the highlighted cells in {new Set(issues.map(issue => issue.row)).size} package row(s).</p>}
     <div className="batch-grid-scroll" role="region" aria-label="Package entry table" tabIndex={0}>
@@ -154,7 +164,7 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBat
               placeholder={hint || (col.lookup?'Search name or SKU':'')} value={draft[col.key] ?? ''}
               onFocus={col.lookup?e=>openLibrary(e.currentTarget,index,slot):undefined}
               onClick={col.lookup?e=>{if(!menuOpen)openLibrary(e.currentTarget,index,slot);}:undefined}
-              onBlur={col.lookup?()=>setLookup(null):undefined}
+              onBlur={col.lookup?e=>{if (!e.relatedTarget || e.relatedTarget !== addProductButton.current) setLookup(null);}:undefined}
               onChange={e=>{
                 const value=e.target.value, field=col.lookup;
                 if(field)openLibrary(e.currentTarget,index,slot,value);
@@ -163,6 +173,12 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBat
               }}
               onKeyDown={e=>{
                 if(e.nativeEvent.isComposing)return;
+                if (menuOpen && canAddProduct && !e.shiftKey) {
+                  if (e.key === 'Enter') { e.preventDefault(); beginAddProduct(); return; }
+                  if (e.key === 'Tab' || e.key === 'ArrowDown') {
+                    e.preventDefault(); addProductButton.current?.focus(); return;
+                  }
+                }
                 if(col.lookup && (e.key==='ArrowDown'||e.key==='ArrowUp')){
                   e.preventDefault();if(!menuOpen)openLibrary(e.currentTarget,index,slot);
                   const last=(menuOpen?choices.length:products?.length??0)-1;
@@ -195,10 +211,36 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBat
           onMouseDown={e=>e.preventDefault()} onClick={()=>chooseProduct(p)}><strong>{p.name}</strong><span>{p.sku}</span></button>)}
       </div>
       {!choices.length&&<p role="status">{catalogError?'Product library unavailable. Use Retry product library.':!products?'Loading product library…':products.length?'No matching products':'This store’s product library is empty.'}</p>}
+      {canAddProduct && <button ref={addProductButton} type="button" className="batch-library-add"
+        aria-haspopup="dialog" onMouseDown={e=>e.preventDefault()} onClick={beginAddProduct}
+        onBlur={()=>setLookup(null)} onKeyDown={e=>{
+          if (e.key === 'Tab') {
+            e.preventDefault();
+            const nextColumn = Number(lookup.input.dataset.col) + 1;
+            if (e.shiftKey) lookup.input.focus();
+            else if (nextColumn < columns.length) goToCell(lookup.row, nextColumn);
+            else if (lookup.row + 1 < rows.length) goToCell(lookup.row + 1, 0);
+            else reviewButton.current?.focus();
+          }
+        }}>+ Add New Product</button>}
     </div>,document.body)}
+    {addingProduct && <NewItemProductDialog
+      initialName={rows[addingProduct.row][addingProduct.slot+'.name'] ?? ''}
+      initialSku={rows[addingProduct.row][addingProduct.slot+'.sku'] ?? ''}
+      savedBySku={library.sku}
+      onCancel={()=>{
+        addingProduct.input.focus();
+        setAddingProduct(null);
+      }}
+      onAdd={product=>{
+        chooseProduct(product, addingProduct);
+        const quantityColumn = columns.findIndex(col => col.key === addingProduct.slot + '.qty');
+        goToCell(addingProduct.row, quantityColumn);
+        setAddingProduct(null);
+      }}/>}
     <div className="batch-grid-footer">{!calculatorBatch&&<button type="button" disabled={busy||rows.length>=MAX_GRID_ROWS} className="batch-secondary" onClick={()=>goToCell(rows.length,0)}>+ Add row</button>}
       {rows.length>pageSize&&<><button type="button" disabled={page===0} className="batch-text-button" onClick={()=>setPage(page-1)}>Previous</button><span>Rows {start+1}–{Math.min(start+pageSize,rows.length)} of {rows.length}</span><button type="button" disabled={start+pageSize>=rows.length} className="batch-text-button" onClick={()=>setPage(page+1)}>Next</button></>}
-      <button type="button" className="batch-primary" disabled={busy||!products} onClick={review}>{busy?'Checking packages…':'Review Packages'}</button>
+      <button ref={reviewButton} type="button" className="batch-primary" disabled={busy||!products} onClick={review}>{busy?'Checking packages…':'Review Packages'}</button>
     </div>
   </div>;
 }

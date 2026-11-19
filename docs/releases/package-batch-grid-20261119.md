@@ -29,3 +29,9 @@ Both Dashboard entry paths open with 20 item slots, including previously opened 
 Focusing either a product name or an inventory SKU opens the selected store’s library. Search accepts either field. Choosing a result fills its exact SKU and product name together. Matching and paste preserve leading zeros and distinguish products with duplicate names.
 
 Read-only schema review on Staging and Production confirmed package version components use JSONB without a 20-item database constraint. The review and save APIs now use the same 100-item limit as inventory capture. No migrations, data imports or catalog writes were needed to deploy this change. Local Chrome exercised the Calculator workflow with 21 actual item lines through the final mocked save, including mouse and keyboard selection, five added columns, retry and refresh. Standalone batch, Excel and single-package inventory picker regressions also passed.
+
+## Add a product from an empty search
+
+In the Calculator handoff and direct batch table, an unsuccessful product or SKU search offers **+ Add New Product**. The form carries over the current item's name and SKU. **Add to Item** fills both cells and returns focus to that item's quantity. Cancel keeps the item as it was when the form opened. An existing SKU with a conflicting name is flagged in the form. Catalog persistence follows the existing package save flow.
+
+The Calculator browser regression covers pointer and keyboard activation, both inventory modes, leading-zero SKUs, cancellation, conflicting names, correct row and slot, quantity preservation, draft refresh and the final mocked package requests. No database migration is involved.
