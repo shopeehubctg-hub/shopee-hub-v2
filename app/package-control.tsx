@@ -8,6 +8,7 @@ import {duplicateInventory,MAX_INVENTORY_ITEMS,inventoryLinesUnchanged} from "./
 import {PricingEvidencePanel} from "./pricing-evidence-panel";
 import type {PricingEvidence} from "./pricing-evidence";
 import {InventorySkuPicker} from "./inventory-sku-picker";
+import type {CalculatorBatch} from "./calculator-batch-entry";
 import {PackageBatchPreview} from "./package-batch-preview";
 
 import { MARKET_CODES, MARKET_CONFIG, isMarket, marketMoney, marketFromPlatform, marketDate, type MarketCode } from "./markets";
@@ -75,7 +76,7 @@ const durationLabel=(item:PackageItem)=>({"long-term":"Long Term","monthly":"Mon
 
 type KitExportPreview = { packageCount:number; rowCount:number; signature:string };
 type KitExportResponse = KitExportPreview & { rows:Array<{kitSku:string;inventorySku:string;quantity:number;price:1}> };
-type Props = { onRecalculate?:(targets:RepriceTarget[])=>void; highlightedIds?:string[]; storeId:string; storeName:string; storePlatform?:string; canCreate?:boolean; allowSamplePreview?:boolean; staging?:boolean; prefills?:PackagePrefill[]; standaloneCreate?:boolean; draftStorageKey?:string; onPrefillsAccepted?:()=>void };
+type Props = { calculatorBatch?:CalculatorBatch|null; onCalculatorExit?:()=>void; onRecalculate?:(targets:RepriceTarget[])=>void; highlightedIds?:string[]; storeId:string; storeName:string; storePlatform?:string; canCreate?:boolean; allowSamplePreview?:boolean; staging?:boolean; prefills?:PackagePrefill[]; standaloneCreate?:boolean; draftStorageKey?:string; onPrefillsAccepted?:()=>void };
 type StoredBatch = { prefills:PackagePrefill[]; storeId?:string; requestIds?:Record<string,string> };
 
 const PLATFORM_NAMES:PlatformName[] = ["Shopee","Lazada","TikTok Shop"];
@@ -202,7 +203,7 @@ function PackagePriceSummary({item,country="all"}:{item:PackageItem;country?:"al
   })}</div>;
 }
 
-export function PackageControl({ onRecalculate,highlightedIds=[],storeId, storeName, storePlatform, canCreate=true, allowSamplePreview=false, staging=false, prefills=[], standaloneCreate:initialStandaloneCreate=false, draftStorageKey, onPrefillsAccepted }:Props) {
+export function PackageControl({ calculatorBatch,onCalculatorExit,onRecalculate,highlightedIds=[],storeId, storeName, storePlatform, canCreate=true, allowSamplePreview=false, staging=false, prefills=[], standaloneCreate:initialStandaloneCreate=false, draftStorageKey, onPrefillsAccepted }:Props) {
   const [batchStore,setBatchStore] = useState<string|null>(null);
   const [batchListView,setBatchListView] = useState(false);
   const standaloneCreate=initialStandaloneCreate&&!batchListView;
@@ -996,7 +997,7 @@ export function PackageControl({ onRecalculate,highlightedIds=[],storeId, storeN
       {item.recurringCampaign&&<div><b>Monthly campaign</b><span>{displayDate(item.recurringCampaign.startDate)} → {item.recurringCampaign.endDate?displayDate(item.recurringCampaign.endDate):"Ongoing"}</span></div>}</>;
   }
 
-  if(canCreate&&hasSelectedStore&&!sampleMode&&batchStore===storeId)return <PackageBatchPreview staging={staging} key={storeId} storeId={storeId} storeName={storeName} backLabel={standaloneCreate?"Back to Single Package":"Back to Packages"} onExit={(notice)=>{setBatchStore(null);if(notice){setBatchListView(true);setShowCreate(false);setMessage(notice);setMessageType("success");setFilter("all");setSearch("");}void load();}}/>;
+  if(canCreate&&hasSelectedStore&&!sampleMode&&(batchStore===storeId||calculatorBatch?.storeId===storeId))return <PackageBatchPreview calculatorBatch={calculatorBatch??undefined} staging={staging} key={calculatorBatch?.id??storeId} storeId={storeId} storeName={storeName} backLabel={standaloneCreate?"Back to Single Package":"Back to Packages"} onExit={(notice)=>{if(calculatorBatch)onCalculatorExit?.();setBatchStore(null);if(notice){setBatchListView(true);setShowCreate(false);setMessage(notice);setMessageType("success");setFilter("all");setSearch("");}void load();}}/>;
   return <div className={`package-control${standaloneCreate?" standalone-create":""}`}>
     <div className="package-hero">
       <div><p className="kicker">OXM PACKAGE CONTROL</p><h2>Packages & Pricing</h2><p>Create packages, choose platforms and set promotion dates. Every change is saved in history.</p></div>

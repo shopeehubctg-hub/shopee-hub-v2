@@ -5,6 +5,8 @@ import type {RepriceTarget} from "./package-repricing";
 
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { FakeSellerCase } from "./fake-seller-report";
+import {calculatorEntries,readBatchSession,writeBatchSession,type CalculatorBatch} from "./calculator-batch-entry";
+import type {MarketChoice} from "./package-batch-model";
 import type { PackagePrefill } from "./calculator-types";
 import { storeSnapshots } from "./store-snapshots";
 import { buildAdvertisingFunds, buildTopUpAction, formatRinggit } from "./advertising-model.js";
@@ -172,6 +174,7 @@ export default function Home() {
   function startRecalculation(targets:RepriceTarget[]){setRecalculateTargets(targets);setSection("calculator");window.scrollTo({top:0});}
   function finishPriceUpdate(ids:string[]){setRecalculateTargets([]);setHighlightedPackageIds(ids);setStandalonePackageCreate(false);setPackagePrefills([]);setSection("packages");window.scrollTo({top:0});}
   const [packagePrefills, setPackagePrefills] = useState<PackagePrefill[]>([]);
+  const [calculatorBatch,setCalculatorBatch]=useState<CalculatorBatch|null>(null);
   const [packageDraftKey, setPackageDraftKey] = useState("");
   const [standalonePackageCreate, setStandalonePackageCreate] = useState(false);
 
@@ -229,6 +232,16 @@ export default function Home() {
     if(initialSection&&(PORTAL_MODULES.some(module=>module.id===initialSection)||["account","permissions","live_sales_monitor"].includes(initialSection)))setSection(initialSection);
     const draftKey = params.get("packageDraft");
     if (params.get("section") === "packages") setSection("packages");
+    const batchId=params.get("calculatorBatch");
+    if (initialSection==="packages" && batchId) {
+      const saved=readBatchSession<CalculatorBatch>("calculator-batch:"+batchId);
+      if (saved?.id===batchId && saved.storeId && saved.entries?.length) {
+        setCalculatorBatch(saved);
+        setStoreSelectionMade(true);
+        void load(saved.storeId);
+        return ()=>{bootstrapController.current?.abort();++loadSequence.current;};
+      }
+    }
     if (draftKey) {
       try {
         const saved = window.localStorage.getItem(`package-draft:${draftKey}`);
@@ -284,43 +297,42 @@ export default function Home() {
   },[shellData,section,storeId,needsModuleData,moduleKey,dataRevision]);
 
   function permitBatchLeave(){return window.dispatchEvent(new Event("package-batch-leave",{cancelable:true}));}
-  function setSection(id:string){if(id!==requestedSection&&!permitBatchLeave())return;setRequestedSection(id);}
+  function setSection(id:string){
+    if(id!==requestedSection){
+      if(!permitBatchLeave())return;
+      if(calculatorBatch && requestedSection==="packages")closeCalculatorBatch(id);
+    }
+    setRequestedSection(id);
+  }
   function selectStore(id:string){
-    if(id!==storeId&&!permitBatchLeave())return;
+    if(id!==storeId){
+      if(!permitBatchLeave())return;
+      if(calculatorBatch)closeCalculatorBatch();
+    }
     bootstrapController.current?.abort();++loadSequence.current;setLoading(false);
     setStoreSelectionMade(true);setStoreId(id);
   }
 
-  function openPackageDraft(prefills:PackagePrefill[]) {
-    if (!storeId || storeId === "all") throw new Error("Please select a store before creating packages.");
-    if (!allowedSections.includes("packages")) throw new Error("Your account needs access to Packages & Pricing. Please contact your administrator.");
-    const draftKey = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const draftUrl = `${window.location.pathname}?section=packages&packageDraft=${encodeURIComponent(draftKey)}`;
-    let stored = false;
-    try {
-      window.localStorage.setItem(`package-draft:${draftKey}`, JSON.stringify({ prefills, storeId }));
-      stored = true;
-    } catch { /* Keep the batch in memory when browser storage is unavailable. */ }
-    if (stored) {
-      try {
-        // Open a same-origin blank tab first: noopener itself returns null even
-        // when a tab opens, so it cannot tell us whether the popup was blocked.
-        const tab = window.open("", "_blank");
-        if (tab) {
-          tab.opener = null;
-          tab.location.replace(draftUrl);
-          return;
-        }
-      } catch { /* Browser popup policies must not prevent package creation. */ }
-    }
-    if (stored) {
-      try { window.history.replaceState(window.history.state,"",draftUrl); } catch { /* In-memory navigation remains available. */ }
-    }
-    setPackagePrefills(prefills);
-    setPackageDraftKey(stored ? draftKey : "");
-    setStandalonePackageCreate(true);
+  function openPackageDraft(prefills:PackagePrefill[],market:MarketChoice) {
+    if (!storeId || storeId==="all") throw Error("Select a store before creating packages.");
+    if (!shellData?.user.email || !allowedSections.includes("packages")) throw Error("Your account needs access to Packages & Pricing.");
+    const batch:CalculatorBatch={id:crypto.randomUUID(),storeId,owner:shellData.user.email,market,entries:calculatorEntries(prefills)};
+    writeBatchSession("calculator-batch:"+batch.id,batch);
+    window.history.replaceState(window.history.state,"","?section=packages&calculatorBatch="+batch.id);
+    setCalculatorBatch(batch);
+    setPackagePrefills([]);
+    setPackageDraftKey("");
+    setStandalonePackageCreate(false);
     setStoreSelectionMade(true);
     setSection("packages");
+    window.scrollTo({top:0});
+  }
+  function closeCalculatorBatch(nextSection="packages") {
+    if(calculatorBatch){
+      for(const prefix of ["calculator-batch:","calculator-grid:","calculator-review:"])writeBatchSession(prefix+calculatorBatch.id,null);
+    }
+    setCalculatorBatch(null);
+    window.history.replaceState(window.history.state,"","?section="+encodeURIComponent(nextSection));
   }
   const allStoresSelected = storeId === "all";
   const store = allStoresSelected ? null : (data?.stores.find(s => s.id === storeId) ?? data?.stores[0]);
@@ -438,8 +450,8 @@ export default function Home() {
         </section>
       </div>}
 
-      {section==="packages" && <div className="page"><PackageControl onRecalculate={allowedSections.includes("calculator")?startRecalculation:undefined} highlightedIds={highlightedPackageIds} staging={isStaging} storePlatform={store?.platform} allowSamplePreview={data.access?.role==="superadmin"} storeId={storeSelectionMade?storeId:""} storeName={!storeSelectionMade?"No Store Selected":allStoresSelected?"All Accessible Stores":(store?.name ?? "Selected Store")} prefills={packagePrefills} standaloneCreate={standalonePackageCreate} draftStorageKey={packageDraftKey ? `package-draft:${packageDraftKey}` : undefined} onPrefillsAccepted={()=>setPackagePrefills([])} /></div>}
-      {section==="calculator" && <div className="page" aria-label="Price Calculator"><CalculatorCountryAvailability platform={allStoresSelected?undefined:store?.platform} onOpenPackages={allowedSections.includes("packages")?()=>setSection("packages"):undefined}><PriceCalculator recalculateTargets={recalculateTargets} onPricesUpdated={finishPriceUpdate} staging={isStaging} storeId={allStoresSelected?"":store?.id??""} storeName={allStoresSelected?"":(store?.name??"")} productProfile={allStoresSelected?null:data?.productProfile} platformVoucher={allStoresSelected?null:data?.platformVoucher??null} coFundVouchers={allStoresSelected?[]:data?.coFundVouchers} onCreatePackage={prefill=>openPackageDraft([prefill])} onCreatePackages={openPackageDraft} /></CalculatorCountryAvailability></div>}
+      {section==="packages" && <div className="page"><PackageControl calculatorBatch={calculatorBatch?.owner===shellData?.user.email && calculatorBatch?.storeId===storeId ? calculatorBatch : null} onCalculatorExit={closeCalculatorBatch} onRecalculate={allowedSections.includes("calculator")?startRecalculation:undefined} highlightedIds={highlightedPackageIds} staging={isStaging} storePlatform={store?.platform} allowSamplePreview={data.access?.role==="superadmin"} storeId={storeSelectionMade?storeId:""} storeName={!storeSelectionMade?"No Store Selected":allStoresSelected?"All Accessible Stores":(store?.name ?? "Selected Store")} prefills={packagePrefills} standaloneCreate={standalonePackageCreate} draftStorageKey={packageDraftKey ? `package-draft:${packageDraftKey}` : undefined} onPrefillsAccepted={()=>setPackagePrefills([])} /></div>}
+      {section==="calculator" && <div className="page" aria-label="Price Calculator"><CalculatorCountryAvailability platform={allStoresSelected?undefined:store?.platform} onOpenPackages={allowedSections.includes("packages")?()=>setSection("packages"):undefined}><PriceCalculator recalculateTargets={recalculateTargets} onPricesUpdated={finishPriceUpdate} staging={isStaging} storeId={allStoresSelected?"":store?.id??""} storeName={allStoresSelected?"":(store?.name??"")} productProfile={allStoresSelected?null:data?.productProfile} platformVoucher={allStoresSelected?null:data?.platformVoucher??null} coFundVouchers={allStoresSelected?[]:data?.coFundVouchers} onCreatePackages={openPackageDraft} /></CalculatorCountryAvailability></div>}
       {section==="design" && <div className="page"><DesignChecker key={storeId} storeId={storeId}/></div>}
       {section==="protection" && <div className="page"><FakeSellerReport storeName={store?.name ?? "Selected store"} allStores={allStoresSelected} cases={fakeSellerCases}/></div>}
       {section==="permissions" && data?.access?.canManagePermissions && <div className="page"><PermissionSettings staging={isStaging} accountSetupPreview initialEnabledModules={data.access.clientEnabledModules} onStoreChanged={()=>load(storeId && storeId!=="all" ? storeId : undefined,true)}/></div>}

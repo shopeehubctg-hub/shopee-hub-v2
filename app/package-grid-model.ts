@@ -1,6 +1,8 @@
 import { batchIssues, batchMarkets, type BatchPackage, type MarketChoice } from './package-batch-model';
 import type { InventoryProduct } from './inventory-catalog-model';
 import { inventoryKey, MAX_INVENTORY_ITEMS } from './inventory-items';
+import type {CalculatorEntry} from './calculator-batch-entry';
+import {adjustedPrices,snapshotAmounts} from './pricing-evidence';
 import { MARKET_CONFIG } from './markets';
 
 export const MAX_GRID_ROWS = 500;
@@ -65,7 +67,7 @@ export function pasteGrid(rows: GridRow[], choice: MarketChoice, mode: GridMode,
   return {rows: nextRows, slots: nextSlots};
 }
 
-export function gridReview(grid: GridRow[], choice: MarketChoice, slots: number, products: InventoryProduct[]) {
+export function gridReview(grid: GridRow[], choice: MarketChoice, slots: number, products: InventoryProduct[], entries?: CalculatorEntry[]) {
   const rows: BatchPackage[] = [];
   const issues: {row: number; message: string; fields: string[]}[] = [];
   const positions: number[] = [];
@@ -76,7 +78,7 @@ export function gridReview(grid: GridRow[], choice: MarketChoice, slots: number,
     byName.set(key, [...byName.get(key) ?? [], product]);
   }
   grid.forEach((draft, index) => {
-    if (!Object.values(draft).some(value => value.trim())) return;
+    if (!entries && !Object.values(draft).some(value => value.trim())) return;
     const get = (key: string) => (draft[key] ?? '').trim();
     const prices: BatchPackage['prices'] = {};
     for (const market of batchMarkets(choice)) {
@@ -96,7 +98,11 @@ export function gridReview(grid: GridRow[], choice: MarketChoice, slots: number,
       items.push({sku:saved?.sku ?? sku, name:saved?.name ?? name, quantity, uiKey:String(slot)});
     }
     positions.push(index);
-    rows.push({id:'grid-' + index, name:get('name'), prices, pricingMode:'split_normal', skus:{Shopee:get('Shopee'), Lazada:get('Lazada'), TikTok:get('TikTok')}, items, dates:null, catalogRequired:true});
+    const entry = entries?.[index];
+    if (entry && adjustedPrices(prices,snapshotAmounts(entry.scenarios)) && !get('priceAdjustmentReason')) {
+      issues.push({row:index, message:'Enter a reason for changing the Calculator price.', fields:['priceAdjustmentReason']});
+    }
+    rows.push({id:entry?.requestId ?? 'grid-' + index, priceAdjustmentReason:get('priceAdjustmentReason') || undefined, name:get('name'), prices, pricingMode:'split_normal', skus:{Shopee:get('Shopee'), Lazada:get('Lazada'), TikTok:get('TikTok')}, items, dates:null, catalogRequired:true});
   });
   rows.forEach((pkg, i) => {
     for (const message of batchIssues(pkg, rows, false)) {
