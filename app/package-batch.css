@@ -123,3 +123,14 @@
 
 .batch-workspace .batch-round-price{margin-left:12px;min-height:32px;padding:4px 10px;text-transform:none;letter-spacing:normal}
 .batch-entry-table .grid-original-warning{box-sizing:border-box;max-width:136px;padding:4px 8px 6px;color:#a52824;font-size:12px;font-weight:600;line-height:1.4;white-space:normal}
+.batch-entry-table .platform-listing-cell{vertical-align:top;padding:5px 8px}
+.platform-listing-inputs{display:grid;gap:4px;min-width:0}
+.platform-listing-cell .platform-listing-inputs{width:150px}
+.platform-listing-line{display:flex;align-items:center;gap:4px}
+.batch-workspace .platform-listing-line input{flex:1;min-width:0;margin:0;border:1px solid #cedbe2;border-radius:6px;background:#fff}
+.batch-workspace .platform-listing-line input[aria-invalid=true]{border-color:#c62828;background:#fff4f3}
+.batch-workspace .platform-listing-inputs button{background:transparent;color:#075670;padding:0 4px;min-height:26px}
+.batch-workspace .platform-listing-inputs .add-listing{justify-self:start}
+.batch-workspace .platform-listing-inputs .remove-listing{min-width:26px;font-size:16px}
+.platform-listing-inputs .batch-field-error{white-space:normal;overflow-wrap:anywhere}
+.review-listing-field>span:first-child{display:block;font-size:12px;font-weight:600;margin:8px 0 6px}

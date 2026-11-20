@@ -1,5 +1,7 @@
 "use client";
 
+import {indexListings, listingConflict, listingPlatforms} from './listing-skus';
+import {PlatformListingInputs} from './platform-listing-inputs';
 import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {createPortal} from 'react-dom';
 import {NewItemProductDialog} from './new-item-product-dialog';
@@ -89,6 +91,17 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBat
     if (group?.label === col.group) group.width++;
     else groups.push({label:col.group, width:1, firstKey:col.key});
   }
+  const listingIndex = useMemo(()=>indexListings(rows.map((row,i)=>({id:String(i),name:row.name,skus:row}))),[rows]);
+  function pasteCells(event: React.ClipboardEvent<HTMLInputElement>, row: number, col: number) {
+    const raw=event.clipboardData.getData('text/plain');
+    if (!/[\r\n\t]/.test(raw)) return;
+    event.preventDefault(); setLookup(null);
+    try {
+      const next=pasteGrid(rows,choice,mode,slots,row,col,raw,library);
+      if(calculatorBatch && next.rows.length>rows.length) throw Error('Paste within the selected Calculator rows.');
+      setRows(next.rows); setSlots(next.slots); setMessage(''); onEdit();
+    } catch(err) {setMessage((err as Error).message);}
+  }
   const issues = useMemo(() => validate ? gridReview(rows, choice, slots, products ?? [], calculatorBatch?.entries).issues : [], [rows, choice, slots, products, validate, calculatorBatch]);
   const goToCell = (row:number, col:number) => {
     if (row < 0 || row >= (calculatorBatch?.entries.length ?? MAX_GRID_ROWS)) return;
@@ -137,7 +150,7 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBat
         focusTarget.current=[page*pageSize,columns.length];setSlots(slots+Number(addCount));setMessage('');
       }}>Add columns</button><span>{slots} / {MAX_INVENTORY_ITEMS}</span></div>
     </div>
-    <p id="batch-grid-help">{calculatorBatch ? 'Your three Calculator prices are filled in. Add original prices, platform SKUs and products for the selected packages.' : 'One package per row.'} Paste multiple rows, or use Tab to move across and Enter to move down.</p>
+    <p id="batch-grid-help">{calculatorBatch ? 'Your three Calculator prices are filled in. Add original prices, platform SKUs and products for the selected packages.' : 'One package per row.'} Paste multiple rows, or use Tab to move across and Enter to move down. In a platform SKU cell, paste one listing SKU per line for the same package.</p>
     {catalogError && <p role="alert" className="batch-error">{catalogError} <button type="button" className="batch-text-button" onClick={()=>setAttempt(attempt+1)}>Retry product library</button></p>}
     {!catalogError && !products && <p role="status">Loading product library…</p>}
     {products && !products.length && <p className="batch-muted">Your product library is empty. Open an inventory item and choose + Add New Product.</p>}
@@ -165,6 +178,14 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBat
               ? originalPriceWarning(slot,gridMarketPrices(draft,slot),true) : '';
             const warningId = 'grid-original-' + index + '-' + slot;
             const invalid = rowIssues.some(issue=>issue.fields.includes(col.key));
+            const platform = listingPlatforms.find(name=>name===col.key);
+            if (platform) return <td key={col.key} className="platform-listing-cell"><PlatformListingInputs
+              platform={platform} value={draft[platform] ?? ''} label={`Row ${index+1} · ${col.group} · ${col.label}`}
+              row={index} col={c} disabled={busy} invalid={invalid && !draft[platform]?.trim()}
+              describedBy={invalid ? 'grid-errors-'+index : undefined}
+              conflict={sku=>listingConflict(listingIndex,String(index),platform,sku)}
+              onChange={value=>{setRows(current=>current.map((r,i)=>i===index?{...r,[platform]:value}:r));setMessage('');onEdit();}}
+              onEnter={backward=>goToCell(index+(backward?-1:1),c)} onGridPaste={e=>pasteCells(e,index,c)}/></td>;
             return <td key={col.key}><input data-row={index} data-col={c} aria-label={`Row ${index+1} · ${col.group} · ${col.label}`} aria-invalid={!!warning || invalid || undefined} aria-describedby={warning ? warningId : invalid ? 'grid-errors-'+index : undefined}
               disabled={busy} role={col.lookup?'combobox':undefined} aria-expanded={col.lookup?menuOpen:undefined} aria-controls={menuOpen?listId:undefined} aria-autocomplete={col.lookup?'list':undefined}
               aria-activedescendant={menuOpen&&highlight>=0?listId+'-'+highlight:undefined} autoComplete="off"
@@ -198,12 +219,7 @@ export function PackageEntryGrid({storeId, busy, onEdit, onReview, calculatorBat
                   else goToCell(index+(e.shiftKey?-1:1),c);
                 }
               }}
-              onPaste={e=>{
-                const raw=e.clipboardData.getData('text/plain');if(!/[\r\n\t]/.test(raw))return;
-                e.preventDefault();setLookup(null);
-                try {const next=pasteGrid(rows,choice,mode,slots,index,c,raw,library);if(calculatorBatch && next.rows.length>rows.length)throw Error('Paste within the selected Calculator rows.');setRows(next.rows);setSlots(next.slots);setMessage('');onEdit();}
-                catch(err){setMessage((err as Error).message);}
-              }}/>{warning && <div className="grid-original-warning" id={warningId} aria-live="polite">{warning}</div>}</td>;
+              onPaste={e=>pasteCells(e,index,c)}/>{warning && <div className="grid-original-warning" id={warningId} aria-live="polite">{warning}</div>}</td>;
           })}{!calculatorBatch&&<td><button type="button" className="batch-text-button" aria-label={'Duplicate row '+(index+1)} disabled={busy||rows.length>=MAX_GRID_ROWS||!Object.values(draft).some(Boolean)}
             onClick={()=>{setRows([...rows.slice(0,index+1),{...draft},...rows.slice(index+1)]);setPage(Math.floor((index+1)/pageSize));onEdit();}}>Duplicate</button></td>}</tr>
           {!!rowIssues.length&&<tr><td colSpan={columns.length+2} id={'grid-errors-'+index} className="batch-grid-errors">Row {index+1} · {[...new Set(rowIssues.map(i=>i.message))].join(' ')}</td></tr>}

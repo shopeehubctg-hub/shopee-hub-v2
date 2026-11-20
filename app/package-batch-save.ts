@@ -1,3 +1,4 @@
+import {platformListings} from './listing-skus';
 import {batchIssues,monthRange,sameBatchPrice,type BatchPackage,type BatchMarket} from './package-batch-model';
 import {defaultRecurringEvent,recurringEventWindow,type RecurringCampaignRule} from './recurring-campaign';
 
@@ -13,7 +14,7 @@ export function batchCreatePayload(row:BatchPackage,storeId:string,storeName:str
  });
  const recurringCampaign:RecurringCampaignRule|null=!same&&d.campaign.mode==='long'?{schema:1,startDate:d.campaign.start,endDate:null,events:d.campaign.events.map(e=>({...defaultRecurringEvent(e),prices:Object.fromEntries(markets.map(m=>[m,{originalPrice:Number(row.prices[m]!.original),sellingPrice:Number(row.prices[m]!.campaign||row.prices[m]!.normal)}]))}))}:null;
  return {calculatorEntryId:fromCalculator ? row.id : undefined,priceApplication:row.priceApplication,pricingMode:row.pricingMode??(same?'uniform':'normal_campaign'),normalMonthlyRule:row.pricingMode==='split_normal'?{schema:1,prices:Object.fromEntries(markets.map(m=>[m,{early:{originalPrice:Number(row.prices[m]!.original),sellingPrice:Number(row.prices[m]!.normal)},late:{originalPrice:Number(row.prices[m]!.original),sellingPrice:Number(row.prices[m]!.normalLate)}}]))}:null,exportId:row.exportId,priceAdjustmentReason:row.priceAdjustmentReason,batchUpload:true,mode:'publish' as const,clientRequestId,storeId,storeName,name:row.name.trim(),markets,priceSchedules,samePricing:same,longTerm:d.normal.mode==='long',campaignLongTerm:campaign.every(w=>w.to===null),recurringCampaign,
-  platforms:Object.entries(row.skus).filter(([,sku])=>sku.trim()).map(([platform,sku])=>({platform:platform==='TikTok'?'TikTok Shop':platform,packageSku:sku.trim()})),
+  platforms:platformListings(row.skus).map(({platform,packageSku})=>({platform:platform==='TikTok'?'TikTok Shop':platform,packageSku})),
   components:row.items.filter(i=>i.sku||i.quantity).map(i=>({inventorySku:i.sku.trim(),name:i.name?.trim()||i.sku.trim(),quantity:Number(i.quantity),kind:'product'})),changeNote:row.exportId?'Created from Calculator prices':'Created with Batch Create'};
 }
 export type BatchSaveResult={kind:'created'|'draft'|'failed'|'rejected'|'ready';message:string;packageId?:string};
