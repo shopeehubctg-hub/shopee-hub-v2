@@ -1,3 +1,4 @@
+import {indexListings, listingPlatforms} from './listing-skus';
 import { batchIssues, batchMarkets, type BatchPackage, type MarketChoice, type BatchMarket } from './package-batch-model';
 import type { InventoryProduct } from './inventory-catalog-model';
 import { inventoryKey, MAX_INVENTORY_ITEMS } from './inventory-items';
@@ -10,7 +11,7 @@ export type GridRow = Record<string, string>;
 export type GridMode = 'product' | 'sku';
 export type GridColumn = { key: string; label: string; group: string; lookup?: 'sku' | 'name' };
 const priceLabels = { original: 'Original Price', normal: 'Normal · 1st–15th', campaign: 'Campaign Day', normalLate: 'Normal · 16th–End' };
-const platforms = ['Shopee', 'Lazada', 'TikTok'] as const;
+
 
 const mySellingFields = ['MY.normal', 'MY.campaign', 'MY.normalLate'];
 
@@ -67,7 +68,7 @@ export function gridColumns(choice: MarketChoice, slots: number, mode: GridMode)
       columns.push({key: market + '.' + key, label, group: market + ' · ' + MARKET_CONFIG[market].symbol});
     }
   }
-  for (const key of platforms) columns.push({key, label: key + ' SKU', group: 'Platform SKUs'});
+  for (const key of listingPlatforms) columns.push({key, label: key + ' SKU', group: 'Platform SKUs'});
   for (let slot = 0; slot < slots; slot++) {
     const group = 'Inventory item ' + (slot + 1);
     const name: GridColumn = {key: slot + '.name', label: 'Product Name', group, lookup: 'name'};
@@ -148,13 +149,14 @@ export function gridReview(grid: GridRow[], choice: MarketChoice, slots: number,
     const entry = entries?.[index];
     rows.push({id:entry?.requestId ?? 'grid-' + index, priceAdjustmentReason:get('priceAdjustmentReason') || undefined, name:get('name'), prices, pricingMode:'split_normal', skus:{Shopee:get('Shopee'), Lazada:get('Lazada'), TikTok:get('TikTok')}, items, dates:null, catalogRequired:true});
   });
+  const listingIndex=indexListings(rows);
   rows.forEach((pkg, i) => {
-    for (const message of batchIssues(pkg, rows, false)) {
+    for (const message of batchIssues(pkg, rows, false, false, listingIndex)) {
       let fields: string[] = [];
       const [prefix, detail] = message.split(' ');
       if (prefix === 'Package') fields = ['name'];
-      else if (prefix === 'Platform') fields = [...platforms];
-      else if (platforms.some(platform => platform === prefix)) fields = [prefix];
+      else if (prefix === 'Platform') fields = [...listingPlatforms];
+      else if (listingPlatforms.some(platform => platform === prefix)) fields = [prefix];
       else if (prefix.startsWith('Inventory')) {
         const item = Number.parseInt(detail, 10) - 1;
         const slot = pkg.items[item]?.uiKey ?? '0';

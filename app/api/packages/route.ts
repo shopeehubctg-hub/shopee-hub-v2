@@ -265,7 +265,9 @@ export async function GET(request: Request) {
       const normalPrice=versionPrices.find(item=>item.priceType==="non_campaign"&&priceMarket(item.market,item.currency)===displayMarket);
       const legacyDisplayPrice=recurringCampaign ? eventPrice?{originalPrice:Math.round(eventPrice.originalPrice*100),sellingPrice:Math.round(eventPrice.sellingPrice*100)}:normalPrice??price : price;
       const displayPrice=version?.calculatorSettings?._pricingMode==='split_normal'?effectivePackagePrice(versionPrices,version.calculatorSettings,today,displayMarket,true)??legacyDisplayPrice:legacyDisplayPrice;
+      const primarySku = (version && versionMetadata(version.calculatorSettings)?.packageSku) ?? row.packageSku;
       const currentPlatforms = version ? (platformsByVersion.get(version.id)??[]).map(({ platform, packageSku }) => ({ platform, packageSku })) : [];
+      currentPlatforms.sort((a,b)=>Number(b.packageSku===primarySku)-Number(a.packageSku===primarySku));
       return {
         ...row,
         status:["active","scheduled","expired"].includes(row.status)
@@ -550,7 +552,8 @@ async function savePackage(request: Request) {
   }
   const mappingsToCapture=requestedPackageId?newInventoryMappings(previousComponents,components):components;
   const diff = componentDiff(previousComponents, components);
-  const metadata:PackageMetadata={name:body.name.trim(),market:markets.join(","),channel:platforms.map(item=>item.platform).join(", "),packageSku:platforms[0].packageSku};
+  const channel = [...new Set(platforms.map(line=>line.platform))].join(", ");
+  const metadata:PackageMetadata={name:body.name.trim(),market:markets.join(","),channel,packageSku:platforms[0].packageSku};
   const [oldPrices, oldSkus] = previousVersion ? await Promise.all([
     db.select().from(packagePrices).where(eq(packagePrices.versionId,previousVersion.id)),
     db.select().from(packagePlatformSkus).where(eq(packagePlatformSkus.versionId,previousVersion.id)),
@@ -597,7 +600,7 @@ async function savePackage(request: Request) {
         storeId:body.storeId!,
         packageSku:platforms[0].packageSku,
         name:body.name!.trim(),
-        channel:platforms.map(item => item.platform).join(", "),
+        channel,
         market:markets.join(","),
         status:localReceipt&&mode==="publish"?packageLifecycleStatus(schedules,{_longTermLifecycle:longTermLifecycle},marketToday(storeMarket)):"draft",
         createdBy:user.email,

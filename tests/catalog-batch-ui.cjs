@@ -50,7 +50,28 @@ async function verifyOnePackage(page) {
   for (const [field,value] of Object.entries({'MY · RM · Original Price':'150','MY · RM · Normal · 1st–15th':'100','MY · RM · Campaign Day':'90','MY · RM · Normal · 16th–End':'95','Platform SKUs · Shopee SKU':'001','Inventory item 1 · Inventory SKU':'fillerday','Inventory item 1 · Qty':'1'})) {
     await page.getByLabel('Row 1 · '+field,{exact:true}).fill(value);
   }
+  const firstListing = page.getByLabel('Row 1 · Platform SKUs · Shopee SKU',{exact:true});
+  const cell = firstListing.locator('..').locator('..').locator('..');
+  await cell.getByRole('button',{name:/Add Shopee listing/}).click();
+  const secondListing = page.getByLabel('Row 1 · Platform SKUs · Shopee SKU · Listing 2',{exact:true});
+  assert.equal(await secondListing.evaluate(el=>el===document.activeElement),true);
+  await secondListing.fill('001');
+  assert.equal(await firstListing.getAttribute('aria-invalid'),'true');
+  assert.equal(await secondListing.getAttribute('aria-invalid'),'true');
+  await secondListing.evaluate(el=>{
+    const data=new DataTransfer();
+    data.setData('text/plain','SP-002\r\nSP-003');
+    el.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:data}));
+  });
+  const thirdListing = page.getByLabel('Row 1 · Platform SKUs · Shopee SKU · Listing 3',{exact:true});
+  assert.equal(await thirdListing.inputValue(),'SP-003');
+  await cell.getByRole('button',{name:/Remove .*listing 3$/}).click();
+  assert.equal(await thirdListing.count(),0);
   await button('Review Packages').click();
+  await page.getByText('Shopee: 001 · SP-002',{exact:true}).waitFor();
+  await button('Edit Details').click();
+  await page.getByLabel('Shopee SKU · Listing 2',{exact:true}).fill('SP-002B');
+  await button('Edit Details').click();
   await button('Set Dates (1)').click();
   const month=page.getByLabel('Add Campaign Month',{exact:true});
   await month.fill('2026-11');
@@ -61,6 +82,7 @@ async function verifyOnePackage(page) {
   await page.waitForFunction(()=>window.exitMessage);
   const posts=await page.evaluate(()=>window.posts);
   assert.equal(posts.length,1);
-  assert.equal(posts[0].platforms[0].packageSku,'001');
+  assert.deepEqual(posts[0].platforms,[{platform:'Shopee',packageSku:'001'},{platform:'Shopee',packageSku:'SP-002B'}]);
+  assert.equal(posts[0].components.length,1);
   console.log('PASS: single filled row follows the same dashboard editor through final preview and submission.');
 }

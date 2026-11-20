@@ -1,3 +1,4 @@
+import {indexListings, listingConflict, platformListings} from './listing-skus';
 import {pricingMode,type PricingMode,type PriceApplication,type PriceSourcePeriod} from './pricing-periods';
 import {defaultRecurringEvent,recurringEventWindow,recurringEventIds,type RecurringEventId} from './recurring-campaign';
 import {MARKET_CONFIG, type MarketCode} from './markets';
@@ -48,11 +49,14 @@ export function originalPriceWarning(market:BatchMarket, prices:NonNullable<Batc
  return `Original Price must be at least ${MARKET_CONFIG[market].symbol}${highest.amount} (${highest.label}).`;
 }
 
-export function batchIssues(p:BatchPackage,all:BatchPackage[],includeDates=true,fromCalculator=false){
+export function batchIssues(p:BatchPackage,all:BatchPackage[],includeDates=true,fromCalculator=false,listingIndex=indexListings(all)){
  const issues:string[]=[];if(!p.name.trim())issues.push('Package Name: required.');
- if(!Object.values(p.skus).some(v=>v.trim()))issues.push('Platform SKU: fill at least one platform.');
- for(const platform of ['Shopee','Lazada','TikTok'] as const)if(p.skus[platform].trim()&&all.some(other=>other.id!==p.id&&other.skus[platform].trim().toUpperCase()===p.skus[platform].trim().toUpperCase()))issues.push(`${platform} SKU: duplicated in another package.`);
- const platformValues=Object.values(p.skus).map(v=>v.trim().toUpperCase()).filter(Boolean);if(new Set(platformValues).size!==platformValues.length)issues.push('Platform SKU: each platform listing SKU must be different.');
+ const listings=platformListings(p.skus);
+ if(!listings.length)issues.push('Platform SKU: fill at least one platform.');
+ for(const {platform,packageSku} of listings){
+  const conflict=listingConflict(listingIndex,p.id,platform,packageSku);
+  if(conflict)issues.push(`${platform} SKU (${packageSku}): ${conflict}`);
+ }
  if(!Object.keys(p.prices).length)issues.push('Prices: choose a selling market.');
  if(p.pricingMode==='uniform'&&p.threePeriodPrices&&!p.priceApplication)issues.push('Whole-month Price: choose a source period.');
  if(p.pricingMode==='uniform'&&Object.values(p.prices).some(v=>v.campaign&&Number(v.campaign)!==Number(v.normal)))issues.push('Same Price All Month: Normal and Campaign prices must match.');
