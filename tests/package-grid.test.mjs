@@ -80,3 +80,12 @@ test('original price may equal the highest selling price and is checked separate
     assert(errors[0].message.includes('RM400')&&errors[0].message.includes(period));
   }
 });
+
+test('a secondary listing colliding with another row is marked on both packages',()=>{
+  const pasted=pasteGrid([],'MY','product',1,0,0,line.join('\t')).rows[0];
+  const rows=[{...pasted,Shopee:'001\nSP-B'},{...pasted,name:'Second',Shopee:'sp-b'}];
+  const {issues}=gridReview(rows,'MY',1,catalog);
+  assert.deepEqual(issues.map(i=>[i.row,i.fields]),[[0,['Shopee']],[1,['Shopee']]]);
+  rows[1].Shopee='003';
+  assert.deepEqual(gridReview(rows,'MY',1,catalog).issues,[]);
+});

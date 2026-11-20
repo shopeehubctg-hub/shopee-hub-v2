@@ -1034,7 +1034,7 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
       {!item.priceSchedules?.length&&!item.recurringCampaign&&!isMarket(item.market)&&<p className="package-result-count">{countryFilter==="all"?(sellingMarkets(item).join(", ")||"Country not recorded"):countryFilter} · Price details unavailable</p>}
       {packageDuration(item)==="long-term"&&<span className="package-long-term-badge">Long-term Package</span>}
       {(item.priceSchedules?.length||item.recurringCampaign)?<PackagePriceSummary item={item} country={countryFilter}/>:null}
-      <div className="platform-skus">{(item.platforms?.length?item.platforms:[{platform:"Shopee" as const,packageSku:item.packageSku}]).map(platform=><div key={platform.platform}><span>{platform.platform}</span><b>{platform.packageSku}</b></div>)}</div>
+      <div className="platform-skus">{(item.platforms?.length?item.platforms:[{platform:"Shopee" as const,packageSku:item.packageSku}]).map(platform=><div key={platform.platform+":"+platform.packageSku}><span>{platform.platform}</span><b>{platform.packageSku}</b></div>)}</div>
       <div className="package-meta">{allStoresSelected&&<span>Store <b>{item.storeName??item.storeId}</b></span>}<span>Version <b>v{item.version}</b></span></div>
       <div className="component-list">{item.components.map((line,index)=><div key={`${line.inventorySku}-${index}`}><span className={`component-kind ${line.kind}`}>{line.kind}</span><b>{line.inventorySku}</b><span>{line.name}</span><strong>× {line.quantity}</strong></div>)}</div>
       {renderHistory(item)}
