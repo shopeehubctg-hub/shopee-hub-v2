@@ -7,7 +7,7 @@ import { getChatGPTUser } from "../../../chatgpt-auth";
 import { assertDeploymentIsolation } from "../../../deployment-isolation";
 import { canAccessModule, canAccessStore } from "../../../module-access";
 import { packageImageExtensions, packageImageIssue, packageImageMaxBytes } from "../../../package-image-validation";
-import { packageImageDestination, packageImageName } from "../../../package-image-destination";
+import { packageImageDestination, packageImageDestinations, packageImageName } from "../../../package-image-destination";
 
 const requestLimit = 2 * packageImageMaxBytes + 100_000;
 
@@ -30,22 +30,24 @@ export async function GET() {
         and has_table_privilege(current_user, 'public.package_image_versions', 'SELECT') as writable
     `);
     const token = await packageImageDriveToken();
-    const projects = ["Mizino Placenta", "Mizino SlimPro"];
-    const destinations = await Promise.all(projects.map(async project => {
-      const folder = packageImageDestination("Mizino Premium", "MY", project);
-      if (!folder) return { project, status: "not_configured" };
-      const response = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(folder)}?fields=mimeType,trashed,capabilities(canAddChildren)&supportsAllDrives=true`,
-        { headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: AbortSignal.timeout(10000) },
-      );
-      const result = await response.json();
-      const insufficientScope = result.error?.details?.some?.(
-        (detail: { reason?: string }) => detail.reason === "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
-      );
-      const status = !response.ok ? (insufficientScope ? "drive_scope_required" : `drive_http_${response.status}`)
-        : result.trashed || result.mimeType !== "application/vnd.google-apps.folder" ? "not_an_active_folder"
-        : result.capabilities?.canAddChildren ? "writable" : "write_permission_required";
-      return { project, status };
+    const destinations = await Promise.all(packageImageDestinations().map(async ({ project, folder }) => {
+      try {
+        const response = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(folder)}?fields=name,mimeType,trashed,capabilities(canAddChildren)&supportsAllDrives=true`,
+          { headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: AbortSignal.timeout(10000) },
+        );
+        const result = await response.json();
+        const insufficientScope = result.error?.details?.some?.(
+          (detail: { reason?: string }) => detail.reason === "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
+        );
+        const status = !response.ok ? (insufficientScope ? "drive_scope_required" : `drive_http_${response.status}`)
+          : result.trashed || result.mimeType !== "application/vnd.google-apps.folder" ? "not_an_active_folder"
+          : result.name !== "Dashboard Upload" ? "unexpected_folder_name"
+          : result.capabilities?.canAddChildren ? "writable" : "write_permission_required";
+        return { project, status };
+      } catch {
+        return { project, status: "unavailable" };
+      }
     }));
     return Response.json({ tokenRefresh: "ok", databaseWriteAccess: storage?.writable === true, destinations },
       { headers: { "Cache-Control": "no-store" } });
