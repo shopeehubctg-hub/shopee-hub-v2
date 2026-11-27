@@ -11,6 +11,50 @@ import { packageImageDestination, packageImageName } from "../../../package-imag
 const extensions = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" } as const;
 const uploadLimit = 4_000_000;
 
+export async function GET() {
+  if (assertDeploymentIsolation() !== "staging") return new Response(null, { status: 404 });
+  const user = await getChatGPTUser();
+  if (user?.email.toLowerCase() !== "shopeehub.ctg@gmail.com") {
+    return new Response(null, { status: 404 });
+  }
+  const db = await getDb();
+  const [membership] = await db.select().from(customerUsers)
+    .where(eq(customerUsers.email, user.email.toLowerCase())).limit(1);
+  if (!membership?.active || !await canAccessModule(db, membership, "packages")) {
+    return new Response(null, { status: 403 });
+  }
+  try {
+    const [storage] = await db.execute<{ writable: boolean }>(sql`
+      select has_table_privilege(current_user, 'public.package_image_versions', 'INSERT')
+        and has_table_privilege(current_user, 'public.package_image_versions', 'UPDATE')
+        and has_table_privilege(current_user, 'public.package_image_versions', 'SELECT') as writable
+    `);
+    const token = await packageImageDriveToken();
+    const projects = ["Mizino Placenta", "Mizino SlimPro"];
+    const destinations = await Promise.all(projects.map(async project => {
+      const folder = packageImageDestination("Mizino Premium", "MY", project);
+      if (!folder) return { project, status: "not_configured" };
+      const response = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(folder)}?fields=mimeType,trashed,capabilities(canAddChildren)&supportsAllDrives=true`,
+        { headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: AbortSignal.timeout(10000) },
+      );
+      const result = await response.json();
+      const insufficientScope = result.error?.details?.some?.(
+        (detail: { reason?: string }) => detail.reason === "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
+      );
+      const status = !response.ok ? (insufficientScope ? "drive_scope_required" : `drive_http_${response.status}`)
+        : result.trashed || result.mimeType !== "application/vnd.google-apps.folder" ? "not_an_active_folder"
+        : result.capabilities?.canAddChildren ? "writable" : "write_permission_required";
+      return { project, status };
+    }));
+    return Response.json({ tokenRefresh: "ok", databaseWriteAccess: storage?.writable === true, destinations },
+      { headers: { "Cache-Control": "no-store" } });
+  } catch {
+    return Response.json({ error: "Staging Drive diagnostics could not complete." },
+      { status: 503, headers: { "Cache-Control": "no-store" } });
+  }
+}
+
 export async function HEAD() {
   if (assertDeploymentIsolation() !== "staging") return new Response(null, { status: 404 });
   const user = await getChatGPTUser();
