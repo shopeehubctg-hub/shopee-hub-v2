@@ -10,6 +10,7 @@ const origin = "https://shopee-hub-v2-260731-git-cod-e05b8d-shopeehubctg-5199s-p
 const path = "/api/packages/images/oauth/callback";
 const email = "shopeehub.ctg@gmail.com";
 const cookie = "__Secure-package-drive-oauth";
+const driveScope = "https://www.googleapis.com/auth/drive";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -37,7 +38,7 @@ export async function GET(request: Request) {
       client_id:clientId, redirect_uri:redirectUri, response_type:"code", state,
       code_challenge:createHash("sha256").update(verifier).digest("base64url"),
       code_challenge_method:"S256", access_type:"offline", prompt:"consent", login_hint:email,
-      scope:"openid email https://www.googleapis.com/auth/drive",
+      scope:`openid email ${driveScope}`,
     });
     const reply = NextResponse.redirect("https://accounts.google.com/o/oauth2/v2/auth?" + params);
     reply.cookies.set(cookie, state + "." + verifier, {httpOnly:true, secure:true, sameSite:"lax", path, maxAge:600});
@@ -62,6 +63,11 @@ export async function GET(request: Request) {
     });
     const identity = await identityResponse.json();
     if (!identityResponse.ok || identity.email !== email || identity.email_verified !== true) throw Error();
+    if (typeof tokens.scope !== "string" || !tokens.scope.split(/\s+/).includes(driveScope)) {
+      return new Response("Google Drive access was not granted. Restart authorization and select Google Drive access.", {
+        status: 403, headers: {"Referrer-Policy":"no-referrer","Cache-Control":"no-store"},
+      });
+    }
     await saveStagingDriveRefreshToken(tokens.refresh_token);
     const reply = NextResponse.redirect(origin + "/?section=packages");
     reply.cookies.set(cookie, "", {httpOnly:true,secure:true,sameSite:"lax",path,maxAge:0});
