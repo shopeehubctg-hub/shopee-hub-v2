@@ -233,7 +233,8 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
   const [imageUploadError,setImageUploadError] = useState("");
   const [imageProject,setImageProject] = useState("");
   const [imageRetry,setImageRetry] = useState<{packageId:string;version:number}|null>(null);
-  const hasPackageImages = Boolean(packageImages.main || packageImages.package);
+  const queuedImageCount = Number(Boolean(packageImages.main)) + Number(Boolean(packageImages.package));
+  const hasPackageImages = queuedImageCount > 0;
   const imageSelectionBlocked = Object.values(imageValidation).some(Boolean);
   const imageRejected = Object.values(imageValidation).includes("rejected");
   const [message,setMessage] = useState("");
@@ -1129,7 +1130,7 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
 
     {kitPreview&&<div className="package-modal" role="dialog" aria-modal="true" aria-labelledby="kit-export-title"><div className="package-form kit-export-dialog"><div className="package-form-head"><div><p className="kicker">ANCHANTO KIT PRODUCTS</p><h3 id="kit-export-title">Generate Fulfillment Sheet</h3><span>{storeName}</span></div><button type="button" onClick={()=>{setKitPreview(null);setKitError("");}} aria-label="Close">×</button></div><p>{kitPreview.packageCount} selected package{kitPreview.packageCount===1?"":"s"} will generate <strong>{kitPreview.rowCount} rows</strong> in the Kit Products sheet. Price is 1 for every row.</p><p>The download does not change packages or upload anything to Anchanto.</p>{kitError&&<div className="package-message error" role="alert">{kitError}</div>}<div className="form-actions"><button type="button" className="secondary" onClick={()=>{setKitPreview(null);setKitError("");}}>Cancel</button><button type="button" onClick={downloadKitExport} disabled={kitBusy}>{kitBusy?"Checking…":"Download .xls"}</button></div></div></div>}
 
-    {showCreate&&<div className={`package-modal${standaloneCreate?" standalone":""}`} role={standaloneCreate?undefined:"dialog"} aria-modal={standaloneCreate?undefined:"true"} aria-labelledby={standaloneCreate?undefined:"package-form-title"}><div className="package-form">
+    {showCreate&&<div className={`package-modal${standaloneCreate?" standalone":""}`} role={standaloneCreate?undefined:"dialog"} aria-modal={standaloneCreate?undefined:"true"} aria-labelledby={standaloneCreate?undefined:"package-form-title"}><div className={`package-form${editingPackageId&&!editingDraft?" package-form-with-sticky-footer":""}`}>
       <div className="package-form-head"><div><p className="kicker">{editingDraft?"EDIT DRAFT":editingPackageId?"EDIT PACKAGE":"NEW PACKAGE"}</p><h3 id="package-form-title">{editingDraft?"Edit Draft":editingPackageId?"Edit / Modify Package":"Create A Package"}</h3><span>{editingStore?.name??storeName}{prefillQueue.length?` · ${prefillQueue.length} Ready Package${prefillQueue.length===1?"":"s"} Remaining`:""}</span></div><button onClick={closeCreate} disabled={saving} aria-label="Close">×</button></div>
 
       {editingPackageId&&!editingDraft&&<p className="package-edit-note">Saving creates a new version. Previous details, your account and the time of the edit are retained in View History for Super Admin review.</p>}
@@ -1223,8 +1224,12 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
 
       {(editingPackageId||calculatorSettings)&&<label className="change-note">Price Change Reason<input value={priceAdjustmentReason} onChange={e=>setPriceAdjustmentReason(e.target.value)} placeholder="Required when changing a Calculator price"/></label>}
       <label className="change-note">Change Note<input value={form.changeNote} onChange={event=>setForm({...form,changeNote:event.target.value})} placeholder="What changed and why?"/></label>
-      {imageRejected && <p className="package-image-error">Replace or clear the rejected image to save.</p>}
-      <div className="form-actions"><button className="secondary" onClick={closeCreate} disabled={saving}>Cancel</button>{!imageRetry&&(!editingPackageId||editingDraft)&&<button className="secondary" onClick={()=>save("draft")} disabled={saving||imageSelectionBlocked}>{saving?"Saving…":prefillQueue.length?`Save Draft & Next (${prefillQueue.length} More)`:"Save Draft"}</button>}<button onClick={()=>save("publish")} disabled={saving||imageSelectionBlocked}>{saving?"Saving…":imageRetry?imageRetryLabel:editingPackageId&&!editingDraft?"Save Changes":prefillQueue.length?`Create & Continue (${prefillQueue.length} More)`:"Create Package"}</button></div>
+      <div className={editingPackageId&&!editingDraft?"package-edit-footer":undefined}>
+        {imageRejected && <p className="package-image-error">Replace or clear the rejected image to save.</p>}
+        <div className="form-actions"><button className="secondary" onClick={closeCreate} disabled={saving}>Cancel</button>{!imageRetry&&(!editingPackageId||editingDraft)&&<button className="secondary" onClick={()=>save("draft")} disabled={saving||imageSelectionBlocked}>{saving?"Saving…":prefillQueue.length?`Save Draft & Next (${prefillQueue.length} More)`:"Save Draft"}</button>}{staging&&editingPackageId&&!editingDraft&&<span className="package-queued-images" role="status">
+          {Object.values(imageValidation).includes("checking")?"Checking images…":`${queuedImageCount} ${queuedImageCount===1?"image":"images"} to upload`}
+        </span>}<button onClick={()=>save("publish")} disabled={saving||imageSelectionBlocked}>{saving?"Saving…":imageRetry?imageRetryLabel:editingPackageId&&!editingDraft?"Save Changes":prefillQueue.length?`Create & Continue (${prefillQueue.length} More)`:"Create Package"}</button></div>
+      </div>
     </div></div>}
   </div>;
 }
