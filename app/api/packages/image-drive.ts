@@ -1,9 +1,43 @@
 import "server-only";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { sql } from "drizzle-orm";
+import { getDb } from "../../../db";
+
+function stagingEncryptionKey() {
+  if (assertDeploymentIsolation() !== "staging" || !process.env.PACKAGE_DRIVE_CLIENT_SECRET) {
+    throw new Error("Staging Drive secrets are unavailable.");
+  }
+  return createHash("sha256").update("package-drive-refresh-token:v1:").update(process.env.PACKAGE_DRIVE_CLIENT_SECRET).digest();
+}
+
+export async function saveStagingDriveRefreshToken(token: string) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", stagingEncryptionKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
+  const value = [iv, cipher.getAuthTag(), encrypted].map(part => part.toString("base64url")).join(".");
+  const db = await getDb();
+  await db.execute(sql`insert into private.package_drive_oauth (singleton, encrypted_token)
+    values (true, ${value}) on conflict (singleton) do update set encrypted_token = excluded.encrypted_token`);
+}
+
+async function readStagingDriveRefreshToken() {
+  const key = stagingEncryptionKey();
+  const db = await getDb();
+  const rows: {encrypted_token: string}[] = await db.execute<{encrypted_token: string}>(sql`
+    select encrypted_token from private.package_drive_oauth where singleton = true`);
+  if (!rows[0]) return undefined;
+  const [iv, tag, encrypted] = rows[0].encrypted_token.split(".").map(part => Buffer.from(part, "base64url"));
+  const decipher = createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
+}
+
 import { assertDeploymentIsolation } from "../../deployment-isolation";
 
 export async function packageImageDriveToken() {
   if (assertDeploymentIsolation() !== "staging") throw new Error("Image upload is unavailable in this environment.");
-  const { PACKAGE_DRIVE_CLIENT_ID, PACKAGE_DRIVE_CLIENT_SECRET, PACKAGE_DRIVE_REFRESH_TOKEN } = process.env;
+  const { PACKAGE_DRIVE_CLIENT_ID, PACKAGE_DRIVE_CLIENT_SECRET } = process.env;
+  const PACKAGE_DRIVE_REFRESH_TOKEN = PACKAGE_DRIVE_CLIENT_ID && PACKAGE_DRIVE_CLIENT_SECRET ? await readStagingDriveRefreshToken() : undefined;
   if (!PACKAGE_DRIVE_CLIENT_ID || !PACKAGE_DRIVE_CLIENT_SECRET || !PACKAGE_DRIVE_REFRESH_TOKEN) {
     throw new Error("Staging Drive authorization is required.");
   }
