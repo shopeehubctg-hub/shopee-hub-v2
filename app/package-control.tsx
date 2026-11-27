@@ -815,6 +815,13 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
     setMessage("");
     setFormErrors([]);
     try {
+      if (hasPackageImages) {
+        const readiness = await fetch("/api/packages/images", { method: "HEAD", cache: "no-store" });
+        if (!readiness.ok) {
+          setFormErrors([{section:"Saving",message:"Image upload is unavailable. Retry later or remove the selected images to save the package first."}]);
+          return;
+        }
+      }
       const clientRequestId=editingPackageId?undefined:(createRequestId.current ||= crypto.randomUUID());
       const schedules=priceSchedules();
       const campaignLines=schedules.filter(line=>line.priceType==="campaign");
