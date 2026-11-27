@@ -2,7 +2,9 @@ import { createHash, randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getChatGPTUser } from "../../../../../chatgpt-auth";
 import { assertDeploymentIsolation } from "../../../../../deployment-isolation";
-import { saveStagingDriveRefreshToken } from "../../../image-drive";
+import { getDb } from "../../../../../../db";
+import { sql } from "drizzle-orm";
+import { assertStagingDriveStorageConfigured, saveStagingDriveRefreshToken } from "../../../image-drive";
 
 const origin = "https://shopee-hub-v2-260731-git-cod-e05b8d-shopeehubctg-5199s-projects.vercel.app";
 const path = "/api/packages/images/oauth/callback";
@@ -16,6 +18,13 @@ export async function GET(request: Request) {
   const clientId = process.env.PACKAGE_DRIVE_CLIENT_ID;
   const clientSecret = process.env.PACKAGE_DRIVE_CLIENT_SECRET;
   if (!clientId || !clientSecret) return new Response("Staging OAuth client is not configured.", {status:503});
+  try {
+    assertStagingDriveStorageConfigured();
+    const db = await getDb();
+    await db.execute(sql`select singleton from private.package_drive_oauth where singleton = true`);
+  } catch {
+    return new Response("Staging Drive token storage is unavailable.", {status:503});
+  }
   const redirectUri = origin + path;
   const code = url.searchParams.get("code");
   if (url.searchParams.has("error")) return new Response("Google authorization was declined.", {status:400});
