@@ -44,7 +44,7 @@ export async function POST(request: Request) {
   const folder = packageImageDestination(row.store.name, row.package.market, project || undefined);
   if (!folder) return Response.json({ error: "Media Resources is not configured for this project." }, { status: 422 });
 
-  const files = [];
+  const files: { kind: "main" | "package"; image: File; name: string }[] = [];
   let totalSize = 0;
   for (const kind of ["main", "package"] as const) {
     const image = form?.get(kind);
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
   if (totalSize > uploadLimit) return new Response(null, { status: 413 });
   try {
     const token = await packageImageDriveToken();
-    const saved = [];
+    const saved: { kind: "main" | "package"; name: string; fileId: string }[] = [];
     for (const { kind, image, name } of files) {
       const hash = createHash("sha256").update(Buffer.from(await image.arrayBuffer())).digest("hex");
       const idsResponse = await fetch("https://www.googleapis.com/drive/v3/files/generateIds?count=1&space=drive", {
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
       if (!idsResponse.ok || typeof generatedId !== "string") throw new Error("Drive ID reservation failed");
 
       type ImageReservation = {drive_file_id: string; file_name: string; uploaded_at: string | null};
-      const reservations = await db.execute<ImageReservation>(sql`
+      const reservations: ImageReservation[] = await db.execute<ImageReservation>(sql`
         insert into public.package_image_versions
           (package_version_id, market, kind, folder_id, project_name, sha256, drive_file_id, file_name, mime_type, byte_size, actor)
         values (${row.version.id}, ${row.package.market}, ${kind}, ${folder}, ${project}, ${hash}, ${generatedId}, ${name}, ${image.type}, ${image.size}, ${user.email})
