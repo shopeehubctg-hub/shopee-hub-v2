@@ -1,20 +1,31 @@
 import "server-only";
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../../db";
 
 function stagingEncryptionKey() {
-  if (assertDeploymentIsolation() !== "staging" || !process.env.PACKAGE_DRIVE_CLIENT_SECRET) {
+  if (assertDeploymentIsolation() !== "staging" || !process.env.PACKAGE_DRIVE_CLIENT_ID) {
     throw new Error("Staging Drive secrets are unavailable.");
   }
-  return createHash("sha256").update("package-drive-refresh-token:v1:").update(process.env.PACKAGE_DRIVE_CLIENT_SECRET).digest();
+  const key = Buffer.from(process.env.PACKAGE_DRIVE_TOKEN_KEY ?? "", "base64url");
+  if (key.length !== 32) throw new Error("Staging Drive token encryption key is unavailable.");
+  return key;
+}
+
+function stagingTokenBinding() {
+  return Buffer.from(`package-drive:v1:ubjfuveoqbvouryldqfu:j-packaging:${process.env.PACKAGE_DRIVE_CLIENT_ID}`);
+}
+
+export function assertStagingDriveStorageConfigured() {
+  stagingEncryptionKey();
 }
 
 export async function saveStagingDriveRefreshToken(token: string) {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", stagingEncryptionKey(), iv);
+  cipher.setAAD(stagingTokenBinding());
   const encrypted = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
-  const value = [iv, cipher.getAuthTag(), encrypted].map(part => part.toString("base64url")).join(".");
+  const value = "v1." + [iv, cipher.getAuthTag(), encrypted].map(part => part.toString("base64url")).join(".");
   const db = await getDb();
   await db.execute(sql`insert into private.package_drive_oauth (singleton, encrypted_token)
     values (true, ${value}) on conflict (singleton) do update set encrypted_token = excluded.encrypted_token`);
@@ -26,8 +37,11 @@ async function readStagingDriveRefreshToken() {
   const rows: {encrypted_token: string}[] = await db.execute<{encrypted_token: string}>(sql`
     select encrypted_token from private.package_drive_oauth where singleton = true`);
   if (!rows[0]) return undefined;
-  const [iv, tag, encrypted] = rows[0].encrypted_token.split(".").map(part => Buffer.from(part, "base64url"));
+  const [version, ...parts] = rows[0].encrypted_token.split(".");
+  if (version !== "v1" || parts.length !== 3) throw new Error("Invalid Drive token envelope.");
+  const [iv, tag, encrypted] = parts.map(part => Buffer.from(part, "base64url"));
   const decipher = createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAAD(stagingTokenBinding());
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
 }
