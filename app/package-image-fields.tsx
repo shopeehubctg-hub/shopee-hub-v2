@@ -26,18 +26,19 @@ function ImageField({ label, file, disabled, onChange }: {
   </label>;
 }
 
-export function PackageImageFields({ images, onChange, mizino, project, onProjectChange, disabled }: {
+export function PackageImageFields({ images, onChange, mizino, project, onProjectChange, disabled, projectLocked = false }: {
   images: PackageImageSelection;
   onChange: (kind: PackageImageKind, file?: File) => void;
   mizino: boolean;
   project: string;
   onProjectChange: (project: string) => void;
+  projectLocked?: boolean;
   disabled: boolean;
 }) {
   return <fieldset disabled={disabled}>
     <legend>Package Images</legend>
     {mizino && <label>Project
-      <select value={project} onChange={event => onProjectChange(event.currentTarget.value)}>
+      <select disabled={projectLocked} value={project} onChange={event => onProjectChange(event.currentTarget.value)}>
         <option value="">Select project</option>
         <option>Mizino Placenta</option>
         <option>Mizino SlimPro</option>
