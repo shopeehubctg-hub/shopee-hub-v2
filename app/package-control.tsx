@@ -230,16 +230,18 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
   const [saving,setSaving] = useState(false);
   const [packageImages,setPackageImages] = useState<PackageImageSelection>({});
   const [imageValidation,setImageValidation] = useState<Partial<Record<PackageImageKind,PackageImageValidation>>>({});
-  const [imageUploadStatus,setImageUploadStatus] = useState<{text:string;error?:boolean}|null>(null);
+  const [imageUploadError,setImageUploadError] = useState("");
   const [imageProject,setImageProject] = useState("");
   const [imageRetry,setImageRetry] = useState<{packageId:string;version:number}|null>(null);
   const hasPackageImages = Boolean(packageImages.main || packageImages.package);
   const imageSelectionBlocked = Object.values(imageValidation).some(Boolean);
+  const imageRejected = Object.values(imageValidation).includes("rejected");
   const [message,setMessage] = useState("");
   const [messageType,setMessageType] = useState<"success"|"warning"|"error">("success");
   const [formErrors,setFormErrors] = useState<FormError[]>([]);
   const [editingPackageId,setEditingPackageId] = useState<string|null>(null);
   const [editingDraft,setEditingDraft] = useState(false);
+  const imageRetryLabel = editingPackageId && !editingDraft ? "Save Changes" : "Retry Save";
   const [editingVersion,setEditingVersion] = useState<number|null>(null);
   const [editingStore,setEditingStore] = useState<{id:string;name:string;platform?:string}|null>(null);
   const [savedDateOrigin,setSavedDateOrigin]=useState<{prices:PriceSchedule[];status:string}|null>(null);
@@ -504,7 +506,7 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
   function resetForm() {
     setPackageImages({});
     setImageValidation({});
-    setImageUploadStatus(null);
+    setImageUploadError("");
     setImageProject("");
     setImageRetry(null);
     setPriceApplication(undefined);setThreePeriodPrices(null);
@@ -783,28 +785,9 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
     }
   }
 
-  async function uploadCurrentVersionImages() {
-    if (saving || imageSelectionBlocked || !hasPackageImages || !editingPackageId ||
-        editingVersion === null || !Number.isSafeInteger(editingVersion) || editingVersion < 1) return;
-    if ((editingStore?.name ?? storeName) === "Mizino Premium" && !imageProject) {
-      setImageUploadStatus({ text: "Choose Placenta or SlimPro before uploading.", error: true });
-      return;
-    }
-    setSaving(true);
-    setImageUploadStatus(null);
-    try {
-      await sendPackageImages({ packageId: editingPackageId, version: editingVersion });
-      setPackageImages({});
-      setImageUploadStatus({ text: `Images uploaded to Drive for version ${editingVersion}.` });
-    } catch (error) {
-      setImageUploadStatus({ text: error instanceof Error ? error.message : "Image upload failed. Try again.", error: true });
-    } finally {
-      setSaving(false);
-    }
-  }
-
   async function save(mode:"draft"|"publish") {
     if (saving || imageSelectionBlocked) return;
+    setImageUploadError("");
     if (imageRetry) {
       setSaving(true);
       try {
@@ -813,10 +796,14 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
         setPackageImages({});
         setFormErrors([]);
         setMessageType("success");
-        setMessage("Package saved and images uploaded.");
+        setMessage(`Images uploaded to Drive · Version ${imageRetry.version}`);
+        if (editingPackageId && !editingDraft) {
+          setHistoryOpen(imageRetry.packageId);
+          closeCreate();
+        }
         void load(true,imageRetry.packageId);
       } catch (error) {
-        setFormErrors([{section:"Saving",message:`Package saved. ${error instanceof Error ? error.message : "Image upload failed."} Use Retry images.`}]);
+        setImageUploadError(`Version ${imageRetry.version} was saved. ${error instanceof Error ? error.message : "Image upload failed."} Click ${imageRetryLabel} to retry the images.`);
       } finally {
         setSaving(false);
       }
@@ -824,7 +811,7 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
     }
     if (!validateForm()) return;
     if (hasPackageImages && (editingStore?.name??storeName) === "Mizino Premium" && !imageProject) {
-      setFormErrors([{section:"Saving",message:"Choose Placenta or SlimPro for the images."}]);
+      setImageUploadError("Choose Mizino Placenta or Mizino SlimPro before saving with images.");
       return;
     }
     if (draftStorageKey && prefillBatch.length) {
@@ -845,9 +832,9 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
     setFormErrors([]);
     try {
       if (hasPackageImages) {
-        const readiness = await fetch("/api/packages/images", { method: "HEAD", cache: "no-store" });
-        if (!readiness.ok) {
-          setFormErrors([{section:"Saving",message:"Image upload is unavailable. Retry later or remove the selected images to save the package first."}]);
+        const readiness = await fetch("/api/packages/images", { method: "HEAD", cache: "no-store" }).catch(() => null);
+        if (!readiness?.ok) {
+          setImageUploadError("Drive is unavailable. Your changes have not been saved. Try again or clear the images to save without them.");
           return;
         }
       }
@@ -877,7 +864,11 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
         return;
       }
       let uploadedImages = false;
-      if (hasPackageImages && data?.packageId && Number.isInteger(data.version)) {
+      if (hasPackageImages) {
+        if (typeof data?.packageId !== "string" || !Number.isSafeInteger(data.version) || data.version < 1) {
+          setImageUploadError("The saved version could not be confirmed. Check the package history before trying again.");
+          return;
+        }
         const saved = {packageId: data.packageId as string, version: data.version as number};
         try {
           await sendPackageImages(saved);
@@ -885,7 +876,7 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
           setPackageImages({});
         } catch (error) {
           setImageRetry(saved);
-          setFormErrors([{section:"Saving",message:`Package saved. ${error instanceof Error ? error.message : "Image upload failed."} Use Retry images.`}]);
+          setImageUploadError(`Version ${saved.version} was saved. ${error instanceof Error ? error.message : "Image upload failed."} Click ${imageRetryLabel} to retry the images.`);
           return;
         }
       }
@@ -1145,20 +1136,20 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
 
       {formErrors.length>0&&<div className="package-error-popout" role="alert" aria-live="assertive"><div><b>We could not save this package. Please check:</b><button type="button" onClick={()=>setFormErrors([])} aria-label="Dismiss errors">×</button></div>{([...new Set(formErrors.map(error=>error.section))] as FormSection[]).map(section=><div className="package-error-group" key={section}><strong>{section}</strong><ul>{formErrors.filter(error=>error.section===section).map(error=><li key={`${error.section}-${error.message}`}>{error.message}</li>)}</ul></div>)}</div>}
 
+      {imageUploadError && <div className="package-error-popout package-image-upload-alert" role="alert">
+        <strong>Images were not uploaded</strong>
+        <p>{imageUploadError}</p>
+      </div>}
       {staging && <div className="form-section">
         <PackageImageFields images={packageImages}
           onChange={(kind, file) => setPackageImages(current => ({ ...current, [kind]: file }))}
           onValidationChange={(kind, state) => {
             setImageValidation(current => ({ ...current, [kind]: state }));
-            setImageUploadStatus(null);
+            setImageUploadError("");
           }}
           mizino={(editingStore?.name ?? storeName) === "Mizino Premium"} project={imageProject}
           onProjectChange={setImageProject} disabled={saving || Boolean(imageRetry)} />
-        {editingPackageId && editingVersion !== null && !imageRetry && <div className="form-actions">
-          <button type="button" className="secondary" onClick={() => void uploadCurrentVersionImages()}
-            disabled={saving || imageSelectionBlocked || !hasPackageImages}>Upload Images to v{editingVersion}</button>
-        </div>}
-        {imageUploadStatus && <p role={imageUploadStatus.error ? "alert" : "status"}>{imageUploadStatus.text}</p>}
+        {editingPackageId && !editingDraft && <p><small>Selected images upload to Drive when you save changes.</small></p>}
       </div>}
 
       {prefillBatch.length>0&&<section className="calculator-batch-transfer"><div><b>{prefillQueue.length+1} Calculator Packages Remaining</b><span>Non-Campaign and Campaign prices are grouped by package. Save each completed package as a draft to open the next one.</span></div><div className="calculator-batch-list">{groupPrefills(prefillBatch).slice(0,3).map((group,index)=>{const nonCampaign=group.find(item=>item.calculatorSettings.serviceScenario==="Non-Campaign Day")??group[0];const campaign=group.find(item=>item.calculatorSettings.serviceScenario==="Campaign Day")??group[0];return <div className={index===0?"current":""} key={batchIdentity(group[0])}><span>{index===0?"Current":"Queued"}</span><b>{group[0].name}</b><strong><small>Non-Campaign</small>{money(nonCampaign.sellingPrice,"MY")}</strong><strong><small>Campaign</small>{money(campaign.sellingPrice,"MY")}</strong></div>})}{prefillQueue.length>2&&<small>+ {prefillQueue.length-2} more in queue</small>}</div></section>}
@@ -1232,7 +1223,8 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
 
       {(editingPackageId||calculatorSettings)&&<label className="change-note">Price Change Reason<input value={priceAdjustmentReason} onChange={e=>setPriceAdjustmentReason(e.target.value)} placeholder="Required when changing a Calculator price"/></label>}
       <label className="change-note">Change Note<input value={form.changeNote} onChange={event=>setForm({...form,changeNote:event.target.value})} placeholder="What changed and why?"/></label>
-      <div className="form-actions"><button className="secondary" onClick={closeCreate} disabled={saving}>Cancel</button>{!imageRetry&&(!editingPackageId||editingDraft)&&<button className="secondary" onClick={()=>save("draft")} disabled={saving||imageSelectionBlocked}>{saving?"Saving…":prefillQueue.length?`Save Draft & Next (${prefillQueue.length} More)`:"Save Draft"}</button>}<button onClick={()=>save("publish")} disabled={saving||imageSelectionBlocked}>{saving?"Saving…":imageRetry?"Retry images":hasPackageImages?"Save Package & Upload":prefillQueue.length?`Create & Continue (${prefillQueue.length} More)`:editingDraft?"Create Package":editingPackageId?"Save Changes":"Create Package"}</button></div>
+      {imageRejected && <p className="package-image-error">Replace or clear the rejected image to save.</p>}
+      <div className="form-actions"><button className="secondary" onClick={closeCreate} disabled={saving}>Cancel</button>{!imageRetry&&(!editingPackageId||editingDraft)&&<button className="secondary" onClick={()=>save("draft")} disabled={saving||imageSelectionBlocked}>{saving?"Saving…":prefillQueue.length?`Save Draft & Next (${prefillQueue.length} More)`:"Save Draft"}</button>}<button onClick={()=>save("publish")} disabled={saving||imageSelectionBlocked}>{saving?"Saving…":imageRetry?imageRetryLabel:editingPackageId&&!editingDraft?"Save Changes":prefillQueue.length?`Create & Continue (${prefillQueue.length} More)`:"Create Package"}</button></div>
     </div></div>}
   </div>;
 }
