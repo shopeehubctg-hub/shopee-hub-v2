@@ -1,4 +1,6 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import { packageImageDriveToken, uploadPackageImage } from "../image-drive";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { customerUsers, packages, packageVersions, stores } from "../../../../db/schema";
 import { getChatGPTUser } from "../../../chatgpt-auth";
@@ -56,6 +58,47 @@ export async function POST(request: Request) {
   }
   if (!files.length) return new Response(null, { status: 400 });
   if (totalSize > uploadLimit) return new Response(null, { status: 413 });
-  // Fail closed until image records can reserve Drive IDs and reconcile retries.
-  return Response.json({ error: "Package image persistence is not configured." }, { status: 503 });
+  try {
+    const token = await packageImageDriveToken();
+    const saved = [];
+    for (const { kind, image, name } of files) {
+      const hash = createHash("sha256").update(Buffer.from(await image.arrayBuffer())).digest("hex");
+      const idsResponse = await fetch("https://www.googleapis.com/drive/v3/files/generateIds?count=1&space=drive", {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(10000),
+      });
+      const ids = await idsResponse.json();
+      const generatedId = ids.ids?.[0];
+      if (!idsResponse.ok || typeof generatedId !== "string") throw new Error("Drive ID reservation failed");
+
+      const [record] = await db.execute<{drive_file_id: string; file_name: string; uploaded_at: string | null}>(sql`
+        insert into public.package_image_versions
+          (package_version_id, market, kind, folder_id, project_name, sha256, drive_file_id, file_name, mime_type, byte_size, actor)
+        values (${row.version.id}, ${row.package.market}, ${kind}, ${folder}, ${project}, ${hash}, ${generatedId}, ${name}, ${image.type}, ${image.size}, ${user.email})
+        on conflict (package_version_id, market, kind, folder_id, sha256) do update
+          set drive_file_id = package_image_versions.drive_file_id
+        returning drive_file_id, file_name, uploaded_at
+      `);
+      if (!record) throw new Error("Image reservation failed");
+      if (!record.uploaded_at) {
+        try {
+          await uploadPackageImage(token, folder, record.file_name, image, record.drive_file_id);
+        } catch {
+          const existing = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(record.drive_file_id)}?fields=id,name,parents,trashed&supportsAllDrives=true`, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(10000),
+          });
+          const file = await existing.json();
+          if (!existing.ok || file.trashed || file.id !== record.drive_file_id ||
+              file.name !== record.file_name || !file.parents?.includes(folder)) throw new Error("Drive verification failed");
+        }
+        await db.execute(sql`update public.package_image_versions set uploaded_at = coalesce(uploaded_at, now())
+          where drive_file_id = ${record.drive_file_id}`);
+      }
+      saved.push({ kind, name: record.file_name, fileId: record.drive_file_id });
+    }
+    return Response.json({ images: saved });
+  } catch {
+    return Response.json({ error: "Image upload could not be confirmed. Retry the same images." }, { status: 503 });
+  }
 }
