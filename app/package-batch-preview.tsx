@@ -95,7 +95,18 @@ export function PackageBatchPreview({storeId,storeName,onExit,calculatorBatch,st
     payload.set('project',pending[row.id].project);
     payload.set(kind,file);
     const upload=await fetch('/api/packages/images',{method:'POST',body:payload,signal:AbortSignal.timeout(60000)}).catch(()=>null);
-    if(!upload?.ok)throw Error(`${row.name} was saved. The ${kind} image upload could not be confirmed. Retry the same images.`);
+    if(!upload?.ok){
+     const status=upload?.status;
+     const hint=status===400?'The server rejected the image or its upload details.'
+      :status===401?'The Staging login expired.'
+      :status===403?'The server denied the upload.'
+      :status===404?'The saved package or version is unavailable for upload.'
+      :status===413?'The image exceeds the server upload limit.'
+      :status===422?'Media Resources is unavailable for the selected project.'
+      :status===503?'The server could not confirm the Google Drive upload.'
+      :'The upload request did not complete.';
+     throw Error(`${row.name} was saved. ${kind} image: ${hint}${status ? ` (HTTP ${status})` : ''} Retry Image Upload to continue.`);
+    }
     pending[row.id]={...pending[row.id],kinds:pending[row.id].kinds.filter(item=>item!==kind)};
     result.imageUploads={...pending};
     persist(structuredClone(result));
