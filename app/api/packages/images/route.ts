@@ -71,7 +71,8 @@ export async function POST(request: Request) {
       const generatedId = ids.ids?.[0];
       if (!idsResponse.ok || typeof generatedId !== "string") throw new Error("Drive ID reservation failed");
 
-      const [record] = await db.execute<{drive_file_id: string; file_name: string; uploaded_at: string | null}>(sql`
+      type ImageReservation = {drive_file_id: string; file_name: string; uploaded_at: string | null};
+      const [record]: ImageReservation[] = await db.execute<ImageReservation>(sql`
         insert into public.package_image_versions
           (package_version_id, market, kind, folder_id, project_name, sha256, drive_file_id, file_name, mime_type, byte_size, actor)
         values (${row.version.id}, ${row.package.market}, ${kind}, ${folder}, ${project}, ${hash}, ${generatedId}, ${name}, ${image.type}, ${image.size}, ${user.email})
