@@ -43,7 +43,7 @@ function ImageField({ label, file, disabled, onChange, onValidationChange }: {
   return <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
     <label style={{ display: "grid", gap: 6 }}>
       <span>{label}</span>
-      <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" disabled={disabled}
+      <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" aria-invalid={!!issue} disabled={disabled}
         onChange={async event => {
           const candidate = event.currentTarget.files?.[0];
           if (!candidate) return;
@@ -66,7 +66,7 @@ function ImageField({ label, file, disabled, onChange, onValidationChange }: {
     </label>
     {checking && <small role="status">Checking image…</small>}
     {file && <small style={{ overflowWrap: "anywhere" }}>Ready to upload: {file.name}</small>}
-    {issue && <small role="alert">{issue}</small>}
+    {issue && <p className="package-image-error" role="alert"><strong>Image rejected.</strong> {issue}</p>}
     {preview && <img src={preview} alt={label + " preview"} width={80} height={80} style={{ objectFit: "contain" }} />}
     {(file || issue || checking) && <button className="secondary" type="button" disabled={disabled}
       aria-label={`Clear ${label.toLowerCase()} selection`} onClick={clearSelection}>Clear selection</button>}
