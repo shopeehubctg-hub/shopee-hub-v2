@@ -1,8 +1,8 @@
 import { projectDriveFolders } from "./project-drive-folders";
 
-const mizinoMediaFolders = {
-  "Mizino Placenta": "1vBEhKK5-aIVZsVeF1fs6lm6UVaZM-LqZ",
-  "Mizino SlimPro": "1A9kr73SZmuEkJaUSObVnoKh1Q9zNRfcL",
+const mizinoDashboardUploadFolders = {
+  "Mizino Placenta": "1valUQZyuRzINfCJ6Hsl9xVvL0qrnoTqj",
+  "Mizino SlimPro": "1Lg6EqDIBcJNYzHox2HTuclLRXqOG7Hih",
 } as const;
 
 /** Resolve only after validating the store and project against the package owner. */
@@ -10,7 +10,7 @@ export function packageImageDestination(storeName: string, market: string, proje
   if (market !== "MY") return null;
   if (storeName === "Mizino Premium") {
     return project === "Mizino Placenta" || project === "Mizino SlimPro"
-      ? mizinoMediaFolders[project]
+      ? mizinoDashboardUploadFolders[project]
       : null;
   }
   if (project || !Object.hasOwn(projectDriveFolders, storeName)) return null;
