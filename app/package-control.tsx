@@ -1,5 +1,5 @@
 "use client";
-import { PackageImageFields, type PackageImageSelection } from "./package-image-fields";
+import { PackageImageFields, type PackageImageKind, type PackageImageSelection, type PackageImageValidation } from "./package-image-fields";
 import "./pricing-periods.css";
 import {PACKAGE_PRICING_MODES,PRICE_SOURCE_PERIODS,type PriceApplication,type PriceSourcePeriod,pricingMode,pricingModeLabels,readNormalMonthlyRule,normalPeriodAmounts,pricingPeriodLabels,snapshotPeriod,type PricingMode} from "./pricing-periods";
 import "./package-repricing.css";
@@ -229,9 +229,12 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
   const [showCreate,setShowCreate] = useState(false);
   const [saving,setSaving] = useState(false);
   const [packageImages,setPackageImages] = useState<PackageImageSelection>({});
+  const [imageValidation,setImageValidation] = useState<Partial<Record<PackageImageKind,PackageImageValidation>>>({});
+  const [imageUploadStatus,setImageUploadStatus] = useState<{text:string;error?:boolean}|null>(null);
   const [imageProject,setImageProject] = useState("");
   const [imageRetry,setImageRetry] = useState<{packageId:string;version:number}|null>(null);
   const hasPackageImages = Boolean(packageImages.main || packageImages.package);
+  const imageSelectionBlocked = Object.values(imageValidation).some(Boolean);
   const [message,setMessage] = useState("");
   const [messageType,setMessageType] = useState<"success"|"warning"|"error">("success");
   const [formErrors,setFormErrors] = useState<FormError[]>([]);
@@ -500,6 +503,8 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
 
   function resetForm() {
     setPackageImages({});
+    setImageValidation({});
+    setImageUploadStatus(null);
     setImageProject("");
     setImageRetry(null);
     setPriceApplication(undefined);setThreePeriodPrices(null);
@@ -772,10 +777,34 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
       if (file) payload.set(kind, file);
     }
     const response = await fetch("/api/packages/images", { method: "POST", body: payload });
-    if (!response.ok) throw new Error("Package saved. Image upload failed.");
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      throw new Error(typeof result?.error === "string" ? result.error : `Drive upload failed (HTTP ${response.status}). Try again.`);
+    }
+  }
+
+  async function uploadCurrentVersionImages() {
+    if (saving || imageSelectionBlocked || !hasPackageImages || !editingPackageId ||
+        editingVersion === null || !Number.isSafeInteger(editingVersion) || editingVersion < 1) return;
+    if ((editingStore?.name ?? storeName) === "Mizino Premium" && !imageProject) {
+      setImageUploadStatus({ text: "Choose Placenta or SlimPro before uploading.", error: true });
+      return;
+    }
+    setSaving(true);
+    setImageUploadStatus(null);
+    try {
+      await sendPackageImages({ packageId: editingPackageId, version: editingVersion });
+      setPackageImages({});
+      setImageUploadStatus({ text: `Images uploaded to Drive for version ${editingVersion}.` });
+    } catch (error) {
+      setImageUploadStatus({ text: error instanceof Error ? error.message : "Image upload failed. Try again.", error: true });
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function save(mode:"draft"|"publish") {
+    if (saving || imageSelectionBlocked) return;
     if (imageRetry) {
       setSaving(true);
       try {
@@ -786,8 +815,8 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
         setMessageType("success");
         setMessage("Package saved and images uploaded.");
         void load(true,imageRetry.packageId);
-      } catch {
-        setFormErrors([{section:"Saving",message:"Package saved. Image upload failed. Retry images."}]);
+      } catch (error) {
+        setFormErrors([{section:"Saving",message:`Package saved. ${error instanceof Error ? error.message : "Image upload failed."} Use Retry images.`}]);
       } finally {
         setSaving(false);
       }
@@ -847,14 +876,16 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
         setFormErrors(apiErrors.length?apiErrors:[{section:"Saving",message:"We could not save the package. Please try again."}]);
         return;
       }
+      let uploadedImages = false;
       if (hasPackageImages && data?.packageId && Number.isInteger(data.version)) {
         const saved = {packageId: data.packageId as string, version: data.version as number};
         try {
           await sendPackageImages(saved);
+          uploadedImages = true;
           setPackageImages({});
-        } catch {
+        } catch (error) {
           setImageRetry(saved);
-          setFormErrors([{section:"Saving",message:"Package saved. Image upload failed. Retry images."}]);
+          setFormErrors([{section:"Saving",message:`Package saved. ${error instanceof Error ? error.message : "Image upload failed."} Use Retry images.`}]);
           return;
         }
       }
@@ -896,7 +927,7 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
         resetForm();
       }
       setMessageType(data?.savedAsDraft?"warning":"success");
-      setMessage(savedMessage);
+      setMessage(uploadedImages ? `${savedMessage} · Images uploaded to Drive` : savedMessage);
       void load(true,editingPackageId??undefined);
     } catch {
       setFormErrors([{section:"Saving",message:"We could not reach the server. Check your internet connection and try again."}]);
@@ -1108,13 +1139,27 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
     {kitPreview&&<div className="package-modal" role="dialog" aria-modal="true" aria-labelledby="kit-export-title"><div className="package-form kit-export-dialog"><div className="package-form-head"><div><p className="kicker">ANCHANTO KIT PRODUCTS</p><h3 id="kit-export-title">Generate Fulfillment Sheet</h3><span>{storeName}</span></div><button type="button" onClick={()=>{setKitPreview(null);setKitError("");}} aria-label="Close">×</button></div><p>{kitPreview.packageCount} selected package{kitPreview.packageCount===1?"":"s"} will generate <strong>{kitPreview.rowCount} rows</strong> in the Kit Products sheet. Price is 1 for every row.</p><p>The download does not change packages or upload anything to Anchanto.</p>{kitError&&<div className="package-message error" role="alert">{kitError}</div>}<div className="form-actions"><button type="button" className="secondary" onClick={()=>{setKitPreview(null);setKitError("");}}>Cancel</button><button type="button" onClick={downloadKitExport} disabled={kitBusy}>{kitBusy?"Checking…":"Download .xls"}</button></div></div></div>}
 
     {showCreate&&<div className={`package-modal${standaloneCreate?" standalone":""}`} role={standaloneCreate?undefined:"dialog"} aria-modal={standaloneCreate?undefined:"true"} aria-labelledby={standaloneCreate?undefined:"package-form-title"}><div className="package-form">
-      <div className="package-form-head"><div><p className="kicker">{editingDraft?"EDIT DRAFT":editingPackageId?"EDIT PACKAGE":"NEW PACKAGE"}</p><h3 id="package-form-title">{editingDraft?"Edit Draft":editingPackageId?"Edit / Modify Package":"Create A Package"}</h3><span>{editingStore?.name??storeName}{prefillQueue.length?` · ${prefillQueue.length} Ready Package${prefillQueue.length===1?"":"s"} Remaining`:""}</span></div><button onClick={closeCreate} aria-label="Close">×</button></div>
+      <div className="package-form-head"><div><p className="kicker">{editingDraft?"EDIT DRAFT":editingPackageId?"EDIT PACKAGE":"NEW PACKAGE"}</p><h3 id="package-form-title">{editingDraft?"Edit Draft":editingPackageId?"Edit / Modify Package":"Create A Package"}</h3><span>{editingStore?.name??storeName}{prefillQueue.length?` · ${prefillQueue.length} Ready Package${prefillQueue.length===1?"":"s"} Remaining`:""}</span></div><button onClick={closeCreate} disabled={saving} aria-label="Close">×</button></div>
 
       {editingPackageId&&!editingDraft&&<p className="package-edit-note">Saving creates a new version. Previous details, your account and the time of the edit are retained in View History for Super Admin review.</p>}
 
       {formErrors.length>0&&<div className="package-error-popout" role="alert" aria-live="assertive"><div><b>We could not save this package. Please check:</b><button type="button" onClick={()=>setFormErrors([])} aria-label="Dismiss errors">×</button></div>{([...new Set(formErrors.map(error=>error.section))] as FormSection[]).map(section=><div className="package-error-group" key={section}><strong>{section}</strong><ul>{formErrors.filter(error=>error.section===section).map(error=><li key={`${error.section}-${error.message}`}>{error.message}</li>)}</ul></div>)}</div>}
 
-      {staging && <PackageImageFields images={packageImages} onChange={(kind, file) => setPackageImages(current => ({ ...current, [kind]: file }))} mizino={(editingStore?.name??storeName) === "Mizino Premium"} project={imageProject} onProjectChange={setImageProject} disabled={saving || Boolean(imageRetry)} />}
+      {staging && <div className="form-section">
+        <PackageImageFields images={packageImages}
+          onChange={(kind, file) => setPackageImages(current => ({ ...current, [kind]: file }))}
+          onValidationChange={(kind, state) => {
+            setImageValidation(current => ({ ...current, [kind]: state }));
+            setImageUploadStatus(null);
+          }}
+          mizino={(editingStore?.name ?? storeName) === "Mizino Premium"} project={imageProject}
+          onProjectChange={setImageProject} disabled={saving || Boolean(imageRetry)} />
+        {editingPackageId && editingVersion !== null && !imageRetry && <div className="form-actions">
+          <button type="button" className="secondary" onClick={() => void uploadCurrentVersionImages()}
+            disabled={saving || imageSelectionBlocked || !hasPackageImages}>Upload Images to v{editingVersion}</button>
+        </div>}
+        {imageUploadStatus && <p role={imageUploadStatus.error ? "alert" : "status"}>{imageUploadStatus.text}</p>}
+      </div>}
 
       {prefillBatch.length>0&&<section className="calculator-batch-transfer"><div><b>{prefillQueue.length+1} Calculator Packages Remaining</b><span>Non-Campaign and Campaign prices are grouped by package. Save each completed package as a draft to open the next one.</span></div><div className="calculator-batch-list">{groupPrefills(prefillBatch).slice(0,3).map((group,index)=>{const nonCampaign=group.find(item=>item.calculatorSettings.serviceScenario==="Non-Campaign Day")??group[0];const campaign=group.find(item=>item.calculatorSettings.serviceScenario==="Campaign Day")??group[0];return <div className={index===0?"current":""} key={batchIdentity(group[0])}><span>{index===0?"Current":"Queued"}</span><b>{group[0].name}</b><strong><small>Non-Campaign</small>{money(nonCampaign.sellingPrice,"MY")}</strong><strong><small>Campaign</small>{money(campaign.sellingPrice,"MY")}</strong></div>})}{prefillQueue.length>2&&<small>+ {prefillQueue.length-2} more in queue</small>}</div></section>}
 
@@ -1187,7 +1232,7 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
 
       {(editingPackageId||calculatorSettings)&&<label className="change-note">Price Change Reason<input value={priceAdjustmentReason} onChange={e=>setPriceAdjustmentReason(e.target.value)} placeholder="Required when changing a Calculator price"/></label>}
       <label className="change-note">Change Note<input value={form.changeNote} onChange={event=>setForm({...form,changeNote:event.target.value})} placeholder="What changed and why?"/></label>
-      <div className="form-actions"><button className="secondary" onClick={closeCreate}>Cancel</button>{!imageRetry&&(!editingPackageId||editingDraft)&&<button className="secondary" onClick={()=>save("draft")} disabled={saving}>{saving?"Saving…":prefillQueue.length?`Save Draft & Next (${prefillQueue.length} More)`:"Save Draft"}</button>}<button onClick={()=>save("publish")} disabled={saving}>{saving?"Saving…":imageRetry?"Retry images":hasPackageImages?"Save Package & Upload":prefillQueue.length?`Create & Continue (${prefillQueue.length} More)`:editingDraft?"Create Package":editingPackageId?"Save Changes":"Create Package"}</button></div>
+      <div className="form-actions"><button className="secondary" onClick={closeCreate} disabled={saving}>Cancel</button>{!imageRetry&&(!editingPackageId||editingDraft)&&<button className="secondary" onClick={()=>save("draft")} disabled={saving||imageSelectionBlocked}>{saving?"Saving…":prefillQueue.length?`Save Draft & Next (${prefillQueue.length} More)`:"Save Draft"}</button>}<button onClick={()=>save("publish")} disabled={saving||imageSelectionBlocked}>{saving?"Saving…":imageRetry?"Retry images":hasPackageImages?"Save Package & Upload":prefillQueue.length?`Create & Continue (${prefillQueue.length} More)`:editingDraft?"Create Package":editingPackageId?"Save Changes":"Create Package"}</button></div>
     </div></div>}
   </div>;
 }
