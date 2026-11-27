@@ -6,10 +6,10 @@ import { customerUsers, packages, packageVersions, stores } from "../../../../db
 import { getChatGPTUser } from "../../../chatgpt-auth";
 import { assertDeploymentIsolation } from "../../../deployment-isolation";
 import { canAccessModule, canAccessStore } from "../../../module-access";
+import { packageImageExtensions, packageImageIssue, packageImageMaxBytes } from "../../../package-image-validation";
 import { packageImageDestination, packageImageName } from "../../../package-image-destination";
 
-const extensions = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" } as const;
-const uploadLimit = 4_000_000;
+const requestLimit = 2 * packageImageMaxBytes + 100_000;
 
 export async function GET() {
   if (assertDeploymentIsolation() !== "staging") return new Response(null, { status: 404 });
@@ -86,7 +86,7 @@ export async function POST(request: Request) {
     return new Response(null, { status: 403 });
   }
   const length = Number(request.headers.get("content-length"));
-  if (length > uploadLimit) return Response.json({ error: "Images exceed the upload size limit." }, { status: 413 });
+  if (length > requestLimit) return Response.json({ error: "Each image must be under 2 MB." }, { status: 413 });
   const form = await request.formData().catch(() => null);
   const packageId = form?.get("packageId");
   const version = Number(form?.get("version"));
@@ -107,19 +107,16 @@ export async function POST(request: Request) {
   if (!folder) return Response.json({ error: "Media Resources is not configured for this project." }, { status: 422 });
 
   const files: { kind: "main" | "package"; image: File; name: string }[] = [];
-  let totalSize = 0;
   for (const kind of ["main", "package"] as const) {
     const image = form?.get(kind);
     if (image == null) continue;
-    if (typeof image === "string" || !image.size || !Object.hasOwn(extensions, image.type)) {
-      return Response.json({ error: "Choose a JPG, PNG or WebP image." }, { status: 400 });
-    }
-    totalSize += image.size;
-    const extension = extensions[image.type as keyof typeof extensions];
+    if (typeof image === "string") return Response.json({ error: "Choose an image file." }, { status: 400 });
+    const issue = await packageImageIssue(image).catch(() => "The image could not be read.");
+    if (issue) return Response.json({ error: issue }, { status: image.size >= packageImageMaxBytes ? 413 : 400 });
+    const extension = packageImageExtensions[image.type as keyof typeof packageImageExtensions];
     files.push({ kind, image, name: packageImageName(row.package.name, kind, extension) });
   }
   if (!files.length) return new Response(null, { status: 400 });
-  if (totalSize > uploadLimit) return new Response(null, { status: 413 });
   try {
     const token = await packageImageDriveToken();
     const saved: { kind: "main" | "package"; name: string; fileId: string }[] = [];
