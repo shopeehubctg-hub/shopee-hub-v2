@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { packageImageIssue } from "./package-image-validation";
 
 export type PackageImageKind = "main" | "package";
 export type PackageImageSelection = Partial<Record<PackageImageKind, File>>;
@@ -12,6 +13,8 @@ function ImageField({ label, file, disabled, onChange }: {
   onChange: (file?: File) => void;
 }) {
   const [preview, setPreview] = useState("");
+  const [issue, setIssue] = useState("");
+  const selection = useRef(0);
   useEffect(() => {
     if (!file) { setPreview(""); return; }
     const url = URL.createObjectURL(file);
@@ -21,7 +24,23 @@ function ImageField({ label, file, disabled, onChange }: {
   return <label style={{ display: "grid", gap: 6 }}>
     <span>{label}</span>
     <input type="file" accept="image/jpeg,image/png,image/webp" disabled={disabled}
-      onChange={event => onChange(event.currentTarget.files?.[0])} />
+      onChange={async event => {
+        const input = event.currentTarget;
+        const candidate = input.files?.[0];
+        if (!candidate) return;
+        const attempt = ++selection.current;
+        setIssue("");
+        const error = await packageImageIssue(candidate).catch(() => "The image could not be read.");
+        if (attempt !== selection.current) return;
+        if (error) {
+          input.value = "";
+          setIssue(error);
+          return;
+        }
+        onChange(candidate);
+      }} />
+    {file && <small style={{ overflowWrap: "anywhere" }}>Selected: {file.name}</small>}
+    {issue && <small role="alert">{issue}</small>}
     {preview && <img src={preview} alt={label + " preview"} width={80} height={80} style={{ objectFit: "contain" }} />}
   </label>;
 }
@@ -37,6 +56,7 @@ export function PackageImageFields({ images, onChange, mizino, project, onProjec
 }) {
   return <fieldset disabled={disabled}>
     <legend>Package Images</legend>
+    <p><small>JPG, PNG or WebP · Square (1:1) · Under 2 MB each</small></p>
     {mizino && <label>Project
       <select disabled={projectLocked} value={project} onChange={event => onProjectChange(event.currentTarget.value)}>
         <option value="">Select project</option>
