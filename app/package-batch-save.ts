@@ -1,3 +1,4 @@
+import type {PackageImageKind} from './package-image-fields';
 import {platformListings} from './listing-skus';
 import {batchIssues,monthRange,sameBatchPrice,type BatchPackage,type BatchMarket} from './package-batch-model';
 import {defaultRecurringEvent,recurringEventWindow,type RecurringCampaignRule} from './recurring-campaign';
@@ -17,8 +18,8 @@ export function batchCreatePayload(row:BatchPackage,storeId:string,storeName:str
   platforms:platformListings(row.skus).map(({platform,packageSku})=>({platform:platform==='TikTok'?'TikTok Shop':platform,packageSku})),
   components:row.items.filter(i=>i.sku||i.quantity).map(i=>({inventorySku:i.sku.trim(),name:i.name?.trim()||i.sku.trim(),quantity:Number(i.quantity),kind:'product'})),changeNote:row.exportId?'Created from Calculator prices':'Created with Batch Create'};
 }
-export type BatchSaveResult={kind:'created'|'draft'|'failed'|'rejected'|'ready';message:string;packageId?:string};
-export type BatchSaveJournal={storeId:string;storeName:string;rows:BatchPackage[];requests:Record<string,string>;results:Record<string,BatchSaveResult>;active:boolean};
+export type BatchSaveResult={kind:'created'|'draft'|'failed'|'rejected'|'ready';message:string;packageId?:string;version?:number};
+export type BatchSaveJournal={storeId:string;storeName:string;rows:BatchPackage[];requests:Record<string,string>;results:Record<string,BatchSaveResult>;active:boolean;imageUploads?:Record<string,{project:string;kinds:PackageImageKind[]}>};
 export async function submitBatch(journal:BatchSaveJournal,persist:(journal:BatchSaveJournal)=>void,send:typeof fetch=fetch,fromCalculator=false){
  let next=structuredClone(journal);
  for(const row of next.rows){
@@ -26,7 +27,7 @@ export async function submitBatch(journal:BatchSaveJournal,persist:(journal:Batc
   try{
    const response=await send('/api/packages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(batchCreatePayload(row,next.storeId,next.storeName,next.requests[row.id],fromCalculator)),signal:AbortSignal.timeout(65000)});
    const data=await response.json();
-   next.results[row.id]=data.packageId&&(data.ok||data.savedAsDraft)?{kind:data.savedAsDraft?'draft':'created',packageId:data.packageId,message:data.savedAsDraft?(data.error||'Saved as draft. Retry publishing from the package card.'):'Created successfully'}:response.status===409&&data.code==='BATCH_SKU_CONFLICT'&&!data.packageId?{kind:'rejected',message:data.error||'SKU already exists. Edit this package before submitting again.'}:{kind:'failed',message:data.error||`Could not confirm creation (${response.status}). Retry with the same request.`};
+   next.results[row.id]=data.packageId&&(data.ok||data.savedAsDraft)?{kind:data.savedAsDraft?'draft':'created',packageId:data.packageId,version:Number.isSafeInteger(data.version)?data.version:undefined,message:data.savedAsDraft?(data.error||'Saved as draft. Retry publishing from the package card.'):'Created successfully'}:response.status===409&&data.code==='BATCH_SKU_CONFLICT'&&!data.packageId?{kind:'rejected',message:data.error||'SKU already exists. Edit this package before submitting again.'}:{kind:'failed',message:data.error||`Could not confirm creation (${response.status}). Retry with the same request.`};
   }catch(error){next.results[row.id]={kind:'failed',message:error instanceof Error?error.message:'Could not confirm creation. Retry safely.'};}
   persist(structuredClone(next));
  }
