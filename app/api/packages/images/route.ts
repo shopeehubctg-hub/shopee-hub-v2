@@ -11,6 +11,24 @@ import { packageImageDestination, packageImageName } from "../../../package-imag
 const extensions = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" } as const;
 const uploadLimit = 4_000_000;
 
+export async function HEAD() {
+  if (assertDeploymentIsolation() !== "staging") return new Response(null, { status: 404 });
+  const user = await getChatGPTUser();
+  if (!user) return new Response(null, { status: 401 });
+  const db = await getDb();
+  const [membership] = await db.select().from(customerUsers)
+    .where(eq(customerUsers.email, user.email.toLowerCase())).limit(1);
+  if (!membership?.active || !await canAccessModule(db, membership, "packages")) {
+    return new Response(null, { status: 403 });
+  }
+  try {
+    await packageImageDriveToken();
+    return new Response(null, { status: 204 });
+  } catch {
+    return new Response(null, { status: 503 });
+  }
+}
+
 export async function POST(request: Request) {
   if (assertDeploymentIsolation() !== "staging") return new Response(null, { status: 404 });
   if (request.headers.get("origin") !== new URL(request.url).origin) return new Response(null, { status: 403 });
