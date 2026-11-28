@@ -1,4 +1,5 @@
 "use client";
+import { PackageImageFields, type PackageImageKind, type PackageImageSelection, type PackageImageValidation } from "./package-image-fields";
 import "./pricing-periods.css";
 import {PACKAGE_PRICING_MODES,PRICE_SOURCE_PERIODS,type PriceApplication,type PriceSourcePeriod,pricingMode,pricingModeLabels,readNormalMonthlyRule,normalPeriodAmounts,pricingPeriodLabels,snapshotPeriod,type PricingMode} from "./pricing-periods";
 import "./package-repricing.css";
@@ -227,11 +228,22 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
   const [displayCount,setDisplayCount] = useState(30);
   const [showCreate,setShowCreate] = useState(false);
   const [saving,setSaving] = useState(false);
+  const [packageImages,setPackageImages] = useState<PackageImageSelection>({});
+  const [imageValidation,setImageValidation] = useState<Partial<Record<PackageImageKind,PackageImageValidation>>>({});
+  const [imageUploadError,setImageUploadError] = useState("");
+  const [imageProject,setImageProject] = useState("");
+  const [imageRetry,setImageRetry] = useState<{packageId:string;version:number}|null>(null);
+  const queuedImageCount = Number(Boolean(packageImages.main)) + Number(Boolean(packageImages.package));
+  const hasPackageImages = queuedImageCount > 0;
+  const imageSelectionBlocked = Object.values(imageValidation).some(Boolean);
+  const imageRejected = Object.values(imageValidation).includes("rejected");
   const [message,setMessage] = useState("");
   const [messageType,setMessageType] = useState<"success"|"warning"|"error">("success");
   const [formErrors,setFormErrors] = useState<FormError[]>([]);
   const [editingPackageId,setEditingPackageId] = useState<string|null>(null);
   const [editingDraft,setEditingDraft] = useState(false);
+  const imageUploadsEnabled = staging || process.env.NEXT_PUBLIC_PACKAGE_DRIVE_PRODUCTION_UPLOADS_ENABLED === "1";
+  const imageRetryLabel = editingPackageId && !editingDraft ? "Save Changes" : "Retry Save";
   const [editingVersion,setEditingVersion] = useState<number|null>(null);
   const [editingStore,setEditingStore] = useState<{id:string;name:string;platform?:string}|null>(null);
   const [savedDateOrigin,setSavedDateOrigin]=useState<{prices:PriceSchedule[];status:string}|null>(null);
@@ -494,6 +506,11 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
   const drafts = scopedItems.filter(item=>item.status==="draft"||item.status==="review").length;
 
   function resetForm() {
+    setPackageImages({});
+    setImageValidation({});
+    setImageUploadError("");
+    setImageProject("");
+    setImageRetry(null);
     setPriceApplication(undefined);setThreePeriodPrices(null);
     originalCampaignSchedules.current=[];
     originalRecurringCampaign.current=false;
@@ -755,8 +772,50 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
     return errors.length===0;
   }
 
+  async function sendPackageImages(saved: {packageId:string;version:number}) {
+    const payload = new FormData();
+    payload.set("packageId", saved.packageId);
+    payload.set("version", String(saved.version));
+    payload.set("project", imageProject);
+    for (const [kind, file] of Object.entries(packageImages)) {
+      if (file) payload.set(kind, file);
+    }
+    const response = await fetch("/api/packages/images", { method: "POST", body: payload });
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      throw new Error(typeof result?.error === "string" ? result.error : `Drive upload failed (HTTP ${response.status}). Try again.`);
+    }
+  }
+
   async function save(mode:"draft"|"publish") {
+    if (saving || imageSelectionBlocked) return;
+    setImageUploadError("");
+    if (imageRetry) {
+      setSaving(true);
+      try {
+        await sendPackageImages(imageRetry);
+        setImageRetry(null);
+        setPackageImages({});
+        setFormErrors([]);
+        setMessageType("success");
+        setMessage(`Images uploaded to Drive · Version ${imageRetry.version}`);
+        if (editingPackageId && !editingDraft) {
+          setHistoryOpen(imageRetry.packageId);
+          closeCreate();
+        }
+        void load(true,imageRetry.packageId);
+      } catch (error) {
+        setImageUploadError(`Version ${imageRetry.version} was saved. ${error instanceof Error ? error.message : "Image upload failed."} Click ${imageRetryLabel} to retry the images.`);
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
     if (!validateForm()) return;
+    if (hasPackageImages && (editingStore?.name??storeName) === "Mizino Premium" && !imageProject) {
+      setImageUploadError("Choose Mizino Placenta or Mizino SlimPro before saving with images.");
+      return;
+    }
     if (draftStorageKey && prefillBatch.length) {
       let stored=readStoredBatch();
       if (!stored) {
@@ -774,6 +833,13 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
     setMessage("");
     setFormErrors([]);
     try {
+      if (hasPackageImages) {
+        const readiness = await fetch("/api/packages/images", { method: "HEAD", cache: "no-store" }).catch(() => null);
+        if (!readiness?.ok) {
+          setImageUploadError("Drive is unavailable. Your changes have not been saved. Try again or clear the images to save without them.");
+          return;
+        }
+      }
       const clientRequestId=editingPackageId?undefined:(createRequestId.current ||= crypto.randomUUID());
       const schedules=priceSchedules();
       const campaignLines=schedules.filter(line=>line.priceType==="campaign");
@@ -798,6 +864,23 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
           [{section:(data?.section??"Saving") as FormSection,message:data?.error??`We could not save the package (error ${response.status}). Please try again.`}];
         setFormErrors(apiErrors.length?apiErrors:[{section:"Saving",message:"We could not save the package. Please try again."}]);
         return;
+      }
+      let uploadedImages = false;
+      if (hasPackageImages) {
+        if (typeof data?.packageId !== "string" || !Number.isSafeInteger(data.version) || data.version < 1) {
+          setImageUploadError("The saved version could not be confirmed. Check the package history before trying again.");
+          return;
+        }
+        const saved = {packageId: data.packageId as string, version: data.version as number};
+        try {
+          await sendPackageImages(saved);
+          uploadedImages = true;
+          setPackageImages({});
+        } catch (error) {
+          setImageRetry(saved);
+          setImageUploadError(`Version ${saved.version} was saved. ${error instanceof Error ? error.message : "Image upload failed."} Click ${imageRetryLabel} to retry the images.`);
+          return;
+        }
       }
       const savedMessage=data?.savedAsDraft?data.error:mode==="draft"
         ? `Draft saved · Version ${data.version} · not sent to Google Sheet`
@@ -837,7 +920,7 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
         resetForm();
       }
       setMessageType(data?.savedAsDraft?"warning":"success");
-      setMessage(savedMessage);
+      setMessage(uploadedImages ? `${savedMessage} · Images uploaded to Drive` : savedMessage);
       void load(true,editingPackageId??undefined);
     } catch {
       setFormErrors([{section:"Saving",message:"We could not reach the server. Check your internet connection and try again."}]);
@@ -966,14 +1049,16 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
     const inline=item.historyLoaded!==false&&Array.isArray(item.history);
     const lines=inline?item.history:result?.history;
     if(!inline&&source==="database"&&!sampleMode&&result?.status!=="ready")return <div className="version-history">{result?.status==="error"?<div role="alert">History could not be loaded. <button type="button" onClick={()=>void requestPackageHistory(item)}>Retry history</button></div>:<p role="status">Loading history…</p>}</div>;
-    return <div className="version-history">{!lines?.length?<p>No recorded history is available.</p>:lines.map(line=><div className="history-entry" key={line.version}>
-        <div><b>v{line.version}</b><span>{line.changeNote}</span><small>{line.effectiveFrom} → {line.effectiveTo || "Open Ended"} · Sheet {line.sheetSyncStatus ?? "preview"}</small></div>
-        <p className="history-author">Changed by <strong>{line.createdBy || "Not recorded"}</strong> · <time dateTime={line.createdAt || undefined}>{packageHistoryTime(line.createdAt)}</time></p>
-        <div className="history-changes"><table><caption>{line.version===1?"Initial package details":`Changes in version ${line.version}`}</caption><thead><tr><th scope="col">Field</th><th scope="col">Previous</th><th scope="col">Updated</th></tr></thead><tbody>{packageHistoryChanges(lines?.find(previous=>previous.version===line.version-1),line).map(change=><tr key={change.field}><th scope="row">{change.field}</th><td>{change.before}</td><td>{change.after}</td></tr>)}</tbody></table></div>
-        <div className="history-diff"><span className="added">+ {(line.addedComponents ?? []).map(lineText).join(", ") || "No Additions"}</span><span className="removed">− {(line.removedComponents ?? []).map(lineText).join(", ") || "No Removals"}</span></div>
-        <PricingEvidencePanel value={line.calculatorSettings?._pricingEvidence}/>
-        {calculatorSnapshots(line.calculatorSettings).length>0&&<div className="calculator-history"><b>Calculator Snapshot</b>{calculatorSnapshots(line.calculatorSettings).map(snapshot=><div key={snapshotPeriod(snapshot)}><strong>{pricingPeriodLabels[snapshotPeriod(snapshot)]}</strong><span>{snapshot.category}</span>{snapshot.pricingGoal?<span>Goal · {snapshot.pricingGoal==="facebookPayout"?"Match Meta Order Income":snapshot.pricingGoal==="sameCustomerPrice"?"Match Meta Buyer Payment":`Lower Than Meta by ${snapshot.discountUnit==="rm"?money(snapshot.discountValue??0,"MY"):`${(snapshot.discountValue??0).toFixed(2)}%`}`}</span>:null}<span>Meta {money(snapshot.facebookPrice,"MY")} → Shopee {money(snapshot.suggestedShopeePrice,"MY")}</span>{snapshot.mainProductQuantity?<span>Main Product Qty {snapshot.mainProductQuantity} · Meta Price Per Unit {snapshot.facebookPricePerUnit==null?"—":money(snapshot.facebookPricePerUnit,"MY")} · Buyer Price Per Unit {snapshot.customerPricePerUnit==null?"—":money(snapshot.customerPricePerUnit,"MY")}</span>:null}<span>Commission {snapshot.commissionRate.toFixed(2)}% · Service {snapshot.serviceRate.toFixed(2)}% · Payout {money(snapshot.actualPayout,"MY")}</span></div>)}</div>}
-      </div>)}</div>;
+    return <div className="version-history">{!lines?.length?<p>No recorded history is available.</p>:lines.map(line=><details className="history-entry" key={line.version}>
+        <summary><b>v{line.version}</b><span>{line.changeNote}</span><small>{line.effectiveFrom} → {line.effectiveTo || "Open Ended"} · Sheet {line.sheetSyncStatus ?? "preview"}</small></summary>
+        <div className="history-entry-body">
+          <p className="history-author">Changed by <strong>{line.createdBy || "Not recorded"}</strong> · <time dateTime={line.createdAt || undefined}>{packageHistoryTime(line.createdAt)}</time></p>
+          <div className="history-changes"><table><caption>{line.version===1?"Initial package details":`Changes in version ${line.version}`}</caption><thead><tr><th scope="col">Field</th><th scope="col">Previous</th><th scope="col">Updated</th></tr></thead><tbody>{packageHistoryChanges(lines?.find(previous=>previous.version===line.version-1),line).map(change=><tr key={change.field}><th scope="row">{change.field}</th><td>{change.before}</td><td>{change.after}</td></tr>)}</tbody></table></div>
+          <div className="history-diff"><span className="added">+ {(line.addedComponents ?? []).map(lineText).join(", ") || "No Additions"}</span><span className="removed">− {(line.removedComponents ?? []).map(lineText).join(", ") || "No Removals"}</span></div>
+          <PricingEvidencePanel value={line.calculatorSettings?._pricingEvidence}/>
+          {calculatorSnapshots(line.calculatorSettings).length>0&&<div className="calculator-history"><b>Calculator Snapshot</b>{calculatorSnapshots(line.calculatorSettings).map(snapshot=><div key={snapshotPeriod(snapshot)}><strong>{pricingPeriodLabels[snapshotPeriod(snapshot)]}</strong><span>{snapshot.category}</span>{snapshot.pricingGoal?<span>Goal · {snapshot.pricingGoal==="facebookPayout"?"Match Meta Order Income":snapshot.pricingGoal==="sameCustomerPrice"?"Match Meta Buyer Payment":`Lower Than Meta by ${snapshot.discountUnit==="rm"?money(snapshot.discountValue??0,"MY"):`${(snapshot.discountValue??0).toFixed(2)}%`}`}</span>:null}<span>Meta {money(snapshot.facebookPrice,"MY")} → Shopee {money(snapshot.suggestedShopeePrice,"MY")}</span>{snapshot.mainProductQuantity?<span>Main Product Qty {snapshot.mainProductQuantity} · Meta Price Per Unit {snapshot.facebookPricePerUnit==null?"—":money(snapshot.facebookPricePerUnit,"MY")} · Buyer Price Per Unit {snapshot.customerPricePerUnit==null?"—":money(snapshot.customerPricePerUnit,"MY")}</span>:null}<span>Commission {snapshot.commissionRate.toFixed(2)}% · Service {snapshot.serviceRate.toFixed(2)}% · Payout {money(snapshot.actualPayout,"MY")}</span></div>)}</div>}
+        </div>
+      </details>)}</div>;
   }
   function renderActions(item:PackageItem) { if(sampleMode)return <div className="package-card-foot"><button type="button" onClick={()=>toggleHistory(item)}>{openHistory===item.id?"Hide History":"View History"}</button></div>; return (<div className="package-card-foot"><span>{item.components.length} Inventory SKU Lines</span><button onClick={()=>toggleHistory(item)} aria-label={`${openHistory===item.id?"Hide":"View"} history for ${item.name}`}>{openHistory===item.id?"Hide History":"View History"}</button>{item.status==="draft"&&source==="database"&&<button onClick={()=>publishDraft(item)} disabled={saving} aria-label={`Create package ${item.name}`}>Create Package</button>}{item.pendingVersion&&source==="database"&&<button onClick={()=>retrySheetSync(item)} disabled={saving} aria-label={`Retry Google Sheet sync for ${item.name} version ${item.pendingVersion}`}>Retry Sheet Sync</button>}{!(item.pendingVersion&&source==="database")&&<button onClick={()=>startVersion(item)} disabled={saving} aria-label={`${item.status==="draft"?"Edit draft":source==="database"?"Edit package":"Migrate and edit"} ${item.name}`}>{item.status==="draft"&&source==="database"?"Edit Draft":source==="database"?"Edit / Modify":"Migrate & Edit"}</button>}{source==="database"&&item.status==="active"&&<button onClick={()=>endPackage(item)} disabled={saving||Boolean(item.pendingVersion)||item.sheetSyncStatus!=="synced"} className="package-end" aria-label={`End package ${item.name}`}>End Package</button>}{canDelete&&source==="database"&&<button onClick={()=>deletePackage(item)} disabled={saving} className="package-delete" aria-label={`Remove package ${item.name}`}>Remove Package</button>}</div>); }
   function renderListPrices(item:PackageItem,market:MarketName) {
@@ -1046,12 +1131,28 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
 
     {kitPreview&&<div className="package-modal" role="dialog" aria-modal="true" aria-labelledby="kit-export-title"><div className="package-form kit-export-dialog"><div className="package-form-head"><div><p className="kicker">ANCHANTO KIT PRODUCTS</p><h3 id="kit-export-title">Generate Fulfillment Sheet</h3><span>{storeName}</span></div><button type="button" onClick={()=>{setKitPreview(null);setKitError("");}} aria-label="Close">×</button></div><p>{kitPreview.packageCount} selected package{kitPreview.packageCount===1?"":"s"} will generate <strong>{kitPreview.rowCount} rows</strong> in the Kit Products sheet. Price is 1 for every row.</p><p>The download does not change packages or upload anything to Anchanto.</p>{kitError&&<div className="package-message error" role="alert">{kitError}</div>}<div className="form-actions"><button type="button" className="secondary" onClick={()=>{setKitPreview(null);setKitError("");}}>Cancel</button><button type="button" onClick={downloadKitExport} disabled={kitBusy}>{kitBusy?"Checking…":"Download .xls"}</button></div></div></div>}
 
-    {showCreate&&<div className={`package-modal${standaloneCreate?" standalone":""}`} role={standaloneCreate?undefined:"dialog"} aria-modal={standaloneCreate?undefined:"true"} aria-labelledby={standaloneCreate?undefined:"package-form-title"}><div className="package-form">
-      <div className="package-form-head"><div><p className="kicker">{editingDraft?"EDIT DRAFT":editingPackageId?"EDIT PACKAGE":"NEW PACKAGE"}</p><h3 id="package-form-title">{editingDraft?"Edit Draft":editingPackageId?"Edit / Modify Package":"Create A Package"}</h3><span>{editingStore?.name??storeName}{prefillQueue.length?` · ${prefillQueue.length} Ready Package${prefillQueue.length===1?"":"s"} Remaining`:""}</span></div><button onClick={closeCreate} aria-label="Close">×</button></div>
+    {showCreate&&<div className={`package-modal${standaloneCreate?" standalone":""}`} role={standaloneCreate?undefined:"dialog"} aria-modal={standaloneCreate?undefined:"true"} aria-labelledby={standaloneCreate?undefined:"package-form-title"}><div className={`package-form${editingPackageId&&!editingDraft?" package-form-with-sticky-footer":""}`}>
+      <div className="package-form-head"><div><p className="kicker">{editingDraft?"EDIT DRAFT":editingPackageId?"EDIT PACKAGE":"NEW PACKAGE"}</p><h3 id="package-form-title">{editingDraft?"Edit Draft":editingPackageId?"Edit / Modify Package":"Create A Package"}</h3><span>{editingStore?.name??storeName}{prefillQueue.length?` · ${prefillQueue.length} Ready Package${prefillQueue.length===1?"":"s"} Remaining`:""}</span></div><button onClick={closeCreate} disabled={saving} aria-label="Close">×</button></div>
 
       {editingPackageId&&!editingDraft&&<p className="package-edit-note">Saving creates a new version. Previous details, your account and the time of the edit are retained in View History for Super Admin review.</p>}
 
       {formErrors.length>0&&<div className="package-error-popout" role="alert" aria-live="assertive"><div><b>We could not save this package. Please check:</b><button type="button" onClick={()=>setFormErrors([])} aria-label="Dismiss errors">×</button></div>{([...new Set(formErrors.map(error=>error.section))] as FormSection[]).map(section=><div className="package-error-group" key={section}><strong>{section}</strong><ul>{formErrors.filter(error=>error.section===section).map(error=><li key={`${error.section}-${error.message}`}>{error.message}</li>)}</ul></div>)}</div>}
+
+      {imageUploadError && <div className="package-error-popout package-image-upload-alert" role="alert">
+        <strong>Images were not uploaded</strong>
+        <p>{imageUploadError}</p>
+      </div>}
+      {imageUploadsEnabled && <div className="form-section">
+        <PackageImageFields images={packageImages}
+          onChange={(kind, file) => setPackageImages(current => ({ ...current, [kind]: file }))}
+          onValidationChange={(kind, state) => {
+            setImageValidation(current => ({ ...current, [kind]: state }));
+            setImageUploadError("");
+          }}
+          mizino={(editingStore?.name ?? storeName) === "Mizino Premium"} project={imageProject}
+          onProjectChange={setImageProject} disabled={saving || Boolean(imageRetry)} />
+        {editingPackageId && !editingDraft && <p><small>Selected images upload to Drive when you save changes.</small></p>}
+      </div>}
 
       {prefillBatch.length>0&&<section className="calculator-batch-transfer"><div><b>{prefillQueue.length+1} Calculator Packages Remaining</b><span>Non-Campaign and Campaign prices are grouped by package. Save each completed package as a draft to open the next one.</span></div><div className="calculator-batch-list">{groupPrefills(prefillBatch).slice(0,3).map((group,index)=>{const nonCampaign=group.find(item=>item.calculatorSettings.serviceScenario==="Non-Campaign Day")??group[0];const campaign=group.find(item=>item.calculatorSettings.serviceScenario==="Campaign Day")??group[0];return <div className={index===0?"current":""} key={batchIdentity(group[0])}><span>{index===0?"Current":"Queued"}</span><b>{group[0].name}</b><strong><small>Non-Campaign</small>{money(nonCampaign.sellingPrice,"MY")}</strong><strong><small>Campaign</small>{money(campaign.sellingPrice,"MY")}</strong></div>})}{prefillQueue.length>2&&<small>+ {prefillQueue.length-2} more in queue</small>}</div></section>}
 
@@ -1124,7 +1225,12 @@ export function PackageControl({ calculatorBatch,onCalculatorExit,highlightedIds
 
       {(editingPackageId||calculatorSettings)&&<label className="change-note">Price Change Reason<input value={priceAdjustmentReason} onChange={e=>setPriceAdjustmentReason(e.target.value)} placeholder="Required when changing a Calculator price"/></label>}
       <label className="change-note">Change Note<input value={form.changeNote} onChange={event=>setForm({...form,changeNote:event.target.value})} placeholder="What changed and why?"/></label>
-      <div className="form-actions"><button className="secondary" onClick={closeCreate}>Cancel</button>{(!editingPackageId||editingDraft)&&<button className="secondary" onClick={()=>save("draft")} disabled={saving}>{saving?"Saving…":prefillQueue.length?`Save Draft & Next (${prefillQueue.length} More)`:"Save Draft"}</button>}<button onClick={()=>save("publish")} disabled={saving}>{saving?"Saving…":prefillQueue.length?`Create & Continue (${prefillQueue.length} More)`:editingDraft?"Create Package":editingPackageId?"Save Changes":"Create Package"}</button></div>
+      <div className={editingPackageId&&!editingDraft?"package-edit-footer":undefined}>
+        {imageRejected && <p className="package-image-error">Replace or clear the rejected image to save.</p>}
+        <div className="form-actions"><button className="secondary" onClick={closeCreate} disabled={saving}>Cancel</button>{!imageRetry&&(!editingPackageId||editingDraft)&&<button className="secondary" onClick={()=>save("draft")} disabled={saving||imageSelectionBlocked}>{saving?"Saving…":prefillQueue.length?`Save Draft & Next (${prefillQueue.length} More)`:"Save Draft"}</button>}{imageUploadsEnabled&&editingPackageId&&!editingDraft&&<span className="package-queued-images" role="status">
+          {Object.values(imageValidation).includes("checking")?"Checking images…":`${queuedImageCount} ${queuedImageCount===1?"image":"images"} to upload`}
+        </span>}<button onClick={()=>save("publish")} disabled={saving||imageSelectionBlocked}>{saving?"Saving…":imageRetry?imageRetryLabel:editingPackageId&&!editingDraft?"Save Changes":prefillQueue.length?`Create & Continue (${prefillQueue.length} More)`:"Create Package"}</button></div>
+      </div>
     </div></div>}
   </div>;
 }

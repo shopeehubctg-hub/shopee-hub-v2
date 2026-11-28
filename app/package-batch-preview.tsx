@@ -7,6 +7,9 @@ import {useEffect,useMemo,useRef,useState} from 'react';
 import {applyBatchDates,applyBatchPricing,batchIssues,blankDates,dateIssues,sameBatchPrice,type BatchDates,type BatchPackage} from './package-batch-model';
 import {recurringEventIds,recurringEventLabels,type RecurringEventId} from './recurring-campaign';
 import './package-batch.css';
+import {PackageImageFields,type PackageImageKind,type PackageImageSelection} from './package-image-fields';
+import {packageImageIssue} from './package-image-validation';
+import {packageImageDestination} from './package-image-destination';
 import {linkCalculatorRows,readBatchSession,writeBatchSession,type CalculatorBatch} from './calculator-batch-entry';
 import {PackageEntryGrid} from './package-entry-grid';
 import {InventorySkuPicker} from './inventory-sku-picker';
@@ -14,6 +17,7 @@ import {duplicateInventory,MAX_INVENTORY_ITEMS} from './inventory-items';
 import {adjustedPrices} from './pricing-evidence';
 import {MARKET_CONFIG,type MarketCode} from './markets';
 import {batchCreatePayload,submitBatch,type BatchSaveJournal} from './package-batch-save';
+const imageMatchKey=(name:string)=>name.normalize('NFKC').trim().replace(/\s+/g,' ').toLowerCase();
 const monthLabel=(m:string)=>new Date(m+'-01T00:00:00Z').toLocaleDateString('en-GB',{month:'short',year:'numeric',timeZone:'UTC'});
 export function BatchDatesEditor({value,onChange,showCampaign}:{value:BatchDates;onChange:(v:BatchDates)=>void;showCampaign:boolean}){
  const n=value.normal,c=value.campaign;
@@ -44,6 +48,57 @@ export function PackageBatchPreview({storeId,storeName,onExit,calculatorBatch,st
  const [step,setStep]=useState<1|2|3>(restored?.step??1),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const [rows,setRows]=useState<BatchPackage[]>(restored?.rows??[]),[selected,setSelected]=useState<string[]>(restored?.selected??[]),[dirty,setDirty]=useState(!!calculatorBatch),[expanded,setExpanded]=useState<string|null>(null),[dates,setDates]=useState<BatchDates|null>(null);
  const [journal,setJournal]=useState<BatchSaveJournal|null>(null),[failure,setFailure]=useState<BatchSaveJournal|null>(null),[returnToPreview,setReturnToPreview]=useState(false),[individualDates,setIndividualDates]=useState(false);
+ const [media,setMedia]=useState<Record<string,{project:string;images:PackageImageSelection}>>({});
+ const mizino=storeName==='Mizino Premium';
+ const imageUploadsEnabled = staging || process.env.NEXT_PUBLIC_PACKAGE_DRIVE_PRODUCTION_UPLOADS_ENABLED === "1";
+ const imageRows=imageUploadsEnabled&&(mizino||packageImageDestination(storeName,'MY'))
+  ? rows.filter(row=>Object.keys(row.prices).length===1&&row.prices.MY)
+  : [];
+ const [bulkPicking,setBulkPicking]=useState(false);
+ const [bulkReport,setBulkReport]=useState<{selected:number;errors:string[]}|null>(null);
+ const selectBulkImages=async(files:File[])=>{
+  if(!files.length)return;
+  setBulkPicking(true);
+  setBulkReport(null);
+  try{
+   const selections=await Promise.all(files.map(async file=>{
+    const issue=await packageImageIssue(file).catch(()=>"The image could not be read.");
+    if(issue)return {file,issue};
+    const match=/^(.*?)\s+[-–—]\s+(main|package)\.[^.]+$/i.exec(file.name);
+    if(!match)return {file,issue:'Name the file “Package Name — MAIN” or “Package Name — PACKAGE”.'};
+    const targets=imageRows.filter(row=>imageMatchKey(row.name)===imageMatchKey(match[1]));
+    if(targets.length!==1)return {file,issue:targets.length?'More than one package uses this name. Select the image on the package card.':'No package matches this file name.'};
+    return {file,id:targets[0].id,kind:match[2].toLowerCase() as PackageImageKind};
+   }));
+   const counts=new Map<string,number>();
+   for(const item of selections){
+    if(!item.id||!item.kind)continue;
+    const key=item.id+':'+item.kind;
+    counts.set(key,(counts.get(key)??0)+1);
+   }
+   const additions:Record<string,PackageImageSelection>={};
+   const errors:string[]=[];
+   let selected=0;
+   for(const item of selections){
+    if(!item.id||!item.kind){errors.push(item.file.name+': '+item.issue);continue;}
+    if((counts.get(item.id+':'+item.kind)??0)>1||media[item.id]?.images[item.kind]){
+     errors.push(item.file.name+': An image is already selected or repeated for this slot.');
+     continue;
+    }
+    (additions[item.id]??={})[item.kind]=item.file;
+    selected++;
+   }
+   setMedia(current=>{
+    const next={...current};
+    for(const [id,images] of Object.entries(additions))next[id]={project:current[id]?.project??'',images:{...images,...current[id]?.images}};
+    return next;
+   });
+   setBulkReport({selected,errors});
+  }finally{setBulkPicking(false);}
+ };
+ const updateMedia=(id:string,patch:Partial<{project:string;images:PackageImageSelection}>)=>{
+  setMedia(current=>({...current,[id]:{...(current[id]??{project:'',images:{}}),...patch}}));
+ };
  const saving=useRef(false),editorRef=useRef<HTMLDivElement>(null),journalKey=calculatorBatch ? `shopeehub:calculator-save:${calculatorBatch.owner}:${storeId}` : `shopeehub:batch-save:${storeId}`;
  useEffect(()=>{if(!journal)writeBatchSession(reviewKey,{rows,selected,step,gridChanged});},[reviewKey,rows,selected,step,gridChanged,journal]);
  const persist=(value:BatchSaveJournal)=>{sessionStorage.setItem(journalKey,JSON.stringify(value));setJournal(value);};
@@ -55,19 +110,69 @@ export function PackageBatchPreview({storeId,storeName,onExit,calculatorBatch,st
  const rowIssues=(row:BatchPackage,includeDates=true)=>batchIssues(row,rows,includeDates,!!calculatorBatch,listingIndex);
  const contentInvalid=rows.filter(p=>rowIssues(p,false).length),invalid=rows.filter(p=>rowIssues(p).length),chosen=rows.filter(p=>selected.includes(p.id));
  const openEditor=(id:string,fromPreview=false)=>{setFailure(null);setExpanded(id);setReturnToPreview(fromPreview);setIndividualDates(false);setDates(null);setError('');setStep(2);};
- const create=async()=>{if(saving.current)return;saving.current=true;setBusy(true);setError('');try{
+ const create=async()=>{if(saving.current||bulkPicking)return;saving.current=true;setBusy(true);setError('');try{
   if(rows.some(row=>rowIssues(row).length))throw Error('Fix all package issues before creating.');
-  const initial=journal??{storeId,storeName,rows:structuredClone(rows),requests:Object.fromEntries(rows.map(row=>[row.id,crypto.randomUUID()])),results:{},active:true};
+  const uploads=journal?.imageUploads??{};
+  const pending={...uploads};
+  for(const row of rows){
+   if(pending[row.id])continue;
+   const choice=media[row.id];
+   const kinds=(['main','package'] as const).filter(kind=>choice?.images[kind]);
+   if(!kinds.length)continue;
+   if(!packageImageDestination(storeName,'MY',choice.project||undefined))throw Error('Choose a Media Resources project for each package with images.');
+   pending[row.id]={project:choice.project,kinds};
+  }
+  const withImages=rows.filter(row=>pending[row.id]?.kinds.length);
+  for(const row of withImages){
+   if(pending[row.id].kinds.some(kind=>!media[row.id]?.images[kind]))throw Error(`Reselect the pending images for ${row.name} before retrying.`);
+  }
+  if(withImages.length && !(await fetch('/api/packages/images',{method:'HEAD',signal:AbortSignal.timeout(20000)})).ok)throw Error('Drive is unavailable. Try again.');
+  const initial={...(journal??{storeId,storeName,rows:structuredClone(rows),requests:Object.fromEntries(rows.map(row=>[row.id,crypto.randomUUID()])),results:{},active:true}),imageUploads:pending};
   initial.rows.forEach(row=>batchCreatePayload(row,storeId,storeName,initial.requests[row.id],!!calculatorBatch));persist(initial);
   const result=await submitBatch(initial,persist,fetch,!!calculatorBatch);
+  for(const row of withImages){
+   const receipt=result.results[row.id];
+   if(!receipt||!['created','draft'].includes(receipt.kind))continue;
+   if(!receipt.packageId||!receipt.version)throw Error(`${row.name} was saved. Its version could not be confirmed for upload.`);
+   for(const kind of [...pending[row.id].kinds]){
+    const file=media[row.id].images[kind]!;
+    if(!file)continue;
+    const payload=new FormData();
+    payload.set('packageId',receipt.packageId);
+    payload.set('version',String(receipt.version));
+    payload.set('project',pending[row.id].project);
+    payload.set(kind,file);
+    const upload=await fetch('/api/packages/images',{method:'POST',body:payload,signal:AbortSignal.timeout(60000)}).catch(()=>null);
+    if(!upload?.ok){
+     const status=upload?.status;
+     const detail=(status===400||status===413)?await upload?.json().catch(()=>null):null;
+     const hint=typeof detail?.error==='string'?detail.error
+      :status===400?'The server rejected the image or its upload details.'
+      :status===401?'Your Dashboard login expired.'
+      :status===403?'The server denied the upload.'
+      :status===404?'The saved package or version is unavailable for upload.'
+      :status===413?'The image exceeds the server upload limit.'
+      :status===422?'Media Resources is unavailable for the selected project.'
+      :status===503?'The server could not confirm the Google Drive upload.'
+      :'The upload request did not complete.';
+     throw Error(`${row.name} was saved. ${kind} image: ${hint}${status ? ` (HTTP ${status})` : ''} Retry Image Upload to continue.`);
+    }
+    pending[row.id]={...pending[row.id],kinds:pending[row.id].kinds.filter(item=>item!==kind)};
+    result.imageUploads={...pending};
+    persist(structuredClone(result));
+   }
+   updateMedia(row.id,{images:{}});
+  }
   if(result.rows.every(row=>['created','draft'].includes(result.results[row.id]?.kind))){persist({...result,active:false});setDirty(false);onExit(`${Object.values(result.results).filter(r=>r.kind==='created').length} Packages Created · ${Object.values(result.results).filter(r=>r.kind==='draft').length} Saved as Draft`);}
   else setFailure(result);
  }catch(err){setError(err instanceof Error?err.message:'Unable to save batch.');}finally{saving.current=false;setBusy(false);}};
  const patch=(id:string,update:Partial<BatchPackage>)=>{if(journal&&journal.results[id]?.kind!=='rejected')return;setDirty(true);setRows(current=>current.map(p=>p.id===id?{...p,...update}:p));};
- const exit=()=>{if(saving.current)return;if(journal){const unresolved=journal.rows.some(r=>!journal.results[r.id]||!['created','draft'].includes(journal.results[r.id].kind));if(unresolved&&!window.confirm('Some saves are unconfirmed. Return to packages? This batch will be retained for safe retry.'))return;if(!unresolved)persist({...journal,active:false});onExit();return;}if(!dirty||window.confirm('This batch is not saved. Return and discard the preview?'))onExit();};
+ const exit=()=>{if(saving.current)return;if(journal){const unresolved=journal.rows.some(r=>journal.imageUploads?.[r.id]?.kinds.length||!journal.results[r.id]||!['created','draft'].includes(journal.results[r.id].kind));if(unresolved&&!window.confirm('Some packages or images are still pending. The batch will be retained, but images must be reselected.'))return;if(!unresolved)persist({...journal,active:false});onExit();return;}if(!dirty||window.confirm('This batch is not saved. Return and discard the preview?'))onExit();};
  const correct=(row:BatchPackage)=>{if(!journal||journal.results[row.id]?.kind!=='rejected')return;const issues=rowIssues(row);if(issues.length){setError(issues.join(' '));return;}const next={...journal,rows:journal.rows.map(r=>r.id===row.id?structuredClone(row):r),requests:{...journal.requests,[row.id]:crypto.randomUUID()},results:{...journal.results,[row.id]:{kind:'ready' as const,message:'Corrected · Ready to create'}}};try{persist(next);setError('');setExpanded(null);setStep(3);}catch{setError('Unable to retain corrections. Please try again.');}};
  const finishEdit=(p:BatchPackage)=>{const problems=rowIssues(p,returnToPreview||!!p.dates);if(problems.length){setError(problems.join(' '));return;}if(journal){correct(p);return;}setExpanded(null);setError('');if(returnToPreview)setStep(3);};
  const packageCount=rows.length+' Package'+(rows.length===1?'':'s');
+ const pendingImages=rows.some(row=>journal?.imageUploads?.[row.id]?.kinds.length||Object.values(media[row.id]?.images??{}).some(Boolean));
+ const onlyImageRetry=!!journal&&journal.rows.every(row=>['created','draft'].includes(journal.results[row.id]?.kind));
  const readyForPreview=rows.length>0&&invalid.length===0;
  const finalDateSelection=chosen.length>0&&invalid.every(row=>selected.includes(row.id));
  const openDates=(targets:BatchPackage[])=>{
@@ -109,7 +214,7 @@ export function PackageBatchPreview({storeId,storeName,onExit,calculatorBatch,st
  };
  return <section className="batch-workspace"><header><div><p className="kicker">{staging?"STAGING · ":""}{storeName}</p><h2>{calculatorBatch?'Create Packages from Calculator':'Create Packages'}</h2></div><button className="batch-secondary" type="button" disabled={busy} onClick={exit}>Back to Packages</button></header>
  <ol className="batch-steps">{['Enter Packages','Review & Set Dates','Final Preview'].map((text,i)=><li key={text} aria-current={step===i+1?'step':undefined}>{i+1}. {text}</li>)}</ol>
- {error&&<p role="alert" className="batch-error">{error}</p>}
+ {error&&step!==3&&<p role="alert" className="batch-error">{error}</p>}
  {!journal&&<div hidden={step!==1}><PackageEntryGrid defaultMarket={defaultMarket} calculatorBatch={calculatorBatch} storeId={storeId} busy={busy} onEdit={()=>{setDirty(true);setGridChanged(true);setError('');}} onReview={reviewGrid}/></div>}
  {step===1&&rows.length>0&&<button type="button" className="batch-secondary" disabled={busy} onClick={()=>{setError('');setStep(2);}}>Return to Current Review</button>}
  {step===2&&<>
@@ -131,8 +236,31 @@ export function PackageBatchPreview({storeId,storeName,onExit,calculatorBatch,st
  {dates&&<div className="batch-panel"><h3>Set Dates for {selected.length} Selected {selected.length===1?'Package':'Packages'}</h3><p>These dates apply to the selected packages only.</p><div className="batch-fields"><label>Package Pricing<select aria-label="Selected Package Pricing" value={applyMode} onChange={e=>setApplyMode(e.target.value as typeof applyMode)}>{PACKAGE_PRICING_MODES.map(mode=><option key={mode} value={mode}>{pricingModeLabels[mode]}</option>)}</select></label>{applyMode==='uniform'&&<label>Whole-month Price From<select aria-label="Selected Whole-month Price From" value={uniformSource} onChange={e=>setUniformSource(e.target.value as PriceSourcePeriod)}><option value="">Select a price</option>{PRICE_SOURCE_PERIODS.map(period=><option key={period} value={period}>{pricingPeriodLabels[period]}</option>)}</select></label>}</div><BatchDatesEditor value={dates} onChange={setDates} showCampaign={applyMode!=='uniform'}/><div className="batch-action-row"><button className="batch-primary" type="button" disabled={!!journal||!chosen.length} onClick={applySelectedDates}>{finalDateSelection?'Continue to Final Preview':`Apply Dates to ${chosen.length} Package${chosen.length===1?'':'s'}`}</button><button className="batch-cancel" type="button" onClick={()=>{setDates(null);setError('');}}>Cancel</button></div></div>}
  </>}
  {step===3&&<div><h3>{packageCount} · Final Preview</h3><p>Check your prices, dates and inventory items before creating these packages for {storeName}.</p><div className="batch-preview-grid">
- {rows.map(p=>{const result=journal?.results[p.id];return <article className={`batch-panel batch-preview-card${result?.kind==='rejected'?' batch-rejected':''}`} key={p.id}><div className="batch-card-heading"><h3>{p.name}</h3>{(!journal||result?.kind==='rejected')&&<button type="button" className={result?.kind==='rejected'?'batch-primary':'batch-secondary'} disabled={busy} onClick={()=>openEditor(p.id,true)}>{result?.kind==='rejected'?'Fix Package Errors':'Edit Package'}</button>}</div>{result&&<p role="status" className={['failed','rejected'].includes(result.kind)?'batch-error':''}><b>{result.kind==='created'?'Created':result.kind==='draft'?'Saved as Draft':result.kind==='rejected'?'Not Created':result.kind==='ready'?'Ready to Create':'Not Confirmed'}</b> · {result.message}</p>}{Object.entries(p.skus).filter(([,v])=>v).map(([k,v])=><p key={k}>{k} SKU: <b>{listingValues(v).join(' · ')}</b></p>)}{Object.entries(p.prices).map(([m,v])=><div className="batch-price-card" key={m}><b>{m} · {MARKET_CONFIG[m as MarketCode].symbol}</b><span>Original Price <s>{MARKET_CONFIG[m as MarketCode].symbol} {Number(v.original).toFixed(2)}</s></span><div><span>{p.pricingMode!=='split_normal'&&Number(v.normal)===Number(v.campaign||v.normal)?'Campaign Day & Normal Day Same Price':p.pricingMode==='split_normal'?'Normal Day · 1st–15th':'Normal Day Price'}</span><strong>{MARKET_CONFIG[m as MarketCode].symbol} {Number(v.normal).toFixed(2)}</strong></div>{(p.pricingMode==='split_normal'||Number(v.normal)!==Number(v.campaign||v.normal))&&<div><span>Campaign Day Price</span><strong>{MARKET_CONFIG[m as MarketCode].symbol} {Number(v.campaign||v.normal).toFixed(2)}</strong></div>}{p.pricingMode==='split_normal'&&<div><span>Normal Day · 16th–End</span><strong>{MARKET_CONFIG[m as MarketCode].symbol} {Number(v.normalLate).toFixed(2)}</strong></div>}</div>)}<DatesSummary row={p}/>{p.exportSnapshot&&<details className="batch-pricing-evidence"><summary>Calculator Settings · {adjustedPrices(p.prices,p.exportSnapshot,p.priceApplication)?'Price Adjusted':'Original Calculated Prices'}</summary>{p.exportSnapshot.scenarios.map(snapshot=><p key={snapshotPeriod(snapshot)}><b>{pricingPeriodLabels[snapshotPeriod(snapshot)]}</b> · {snapshot.pricingGoal==='facebookPayout'?'Match Meta Order Income':snapshot.pricingGoal==='sameCustomerPrice'?'Match Meta Buyer Payment':'Lower Than Meta'} · Meta RM {snapshot.facebookPrice.toFixed(2)} · Shopee RM {snapshot.suggestedShopeePrice.toFixed(2)}</p>)}{!calculatorBatch&&p.priceAdjustmentReason&&<p>Price Change Reason: {p.priceAdjustmentReason}</p>}</details>}<h4>Inventory Items</h4><ul>{p.items.filter(i=>i.sku||i.quantity).map((i,j)=><li key={j}>{i.sku}{i.name&&i.name!==i.sku?' · '+i.name:''} × {i.quantity}</li>)}</ul></article>;})}</div>
- <div className="batch-save-actions batch-action-row">{!journal&&<button type="button" className="batch-secondary" disabled={busy} onClick={()=>{setExpanded(null);setStep(2);}}>Back to Edit</button>}<button className="batch-primary" type="button" disabled={busy||!!invalid.length||!rows.length||!!journal&&journal.rows.every(r=>journal.results[r.id]&&!['failed','ready'].includes(journal.results[r.id].kind))} onClick={create}>{busy?'Creating Packages…':journal?(Object.values(journal.results).some(r=>r.kind==='ready')?'Create Corrected Packages':'Retry Unconfirmed Packages'):`Create ${packageCount}`}</button>
+ {!journal&&imageRows.length>0&&<fieldset className="batch-panel" disabled={busy||bulkPicking}>
+  <legend>Bulk Upload Images</legend>
+  <p>Choose multiple images at once. Name files after the package, for example “Summer Set — MAIN.jpg” and “Summer Set — PACKAGE.jpg”.</p>
+  <p><small>JPG, PNG or WebP · Square (1:1) · Under 2 MB each</small></p>
+  <label>Select images <input type="file" multiple accept="image/jpeg,image/png,image/webp"
+   onChange={event=>{const files=Array.from(event.currentTarget.files??[]);event.currentTarget.value='';void selectBulkImages(files);}} /></label>
+  {bulkPicking&&<p role="status">Checking images…</p>}
+  {bulkReport&&<p role="status">{bulkReport.selected} added</p>}
+  {!!bulkReport?.errors.length&&<div role="alert" className="package-image-error">
+   <strong>{bulkReport.errors.length} {bulkReport.errors.length===1?'image':'images'} rejected</strong>
+   <ul>{bulkReport.errors.map((error,index)=><li key={index}>{error}</li>)}</ul>
+  </div>}
+ </fieldset>}
+ {rows.map(p=>{const result=journal?.results[p.id];return <article className={`batch-panel batch-preview-card${result?.kind==='rejected'?' batch-rejected':''}`} key={p.id}><div className="batch-card-heading"><h3>{p.name}</h3>{(!journal||result?.kind==='rejected')&&<button type="button" className={result?.kind==='rejected'?'batch-primary':'batch-secondary'} disabled={busy} onClick={()=>openEditor(p.id,true)}>{result?.kind==='rejected'?'Fix Package Errors':'Edit Package'}</button>}</div>{result&&<p role="status" className={['failed','rejected'].includes(result.kind)?'batch-error':''}><b>{result.kind==='created'?'Created':result.kind==='draft'?'Saved as Draft':result.kind==='rejected'?'Not Created':result.kind==='ready'?'Ready to Create':'Not Confirmed'}</b> · {result.message}</p>}{Object.entries(p.skus).filter(([,v])=>v).map(([k,v])=><p key={k}>{k} SKU: <b>{listingValues(v).join(' · ')}</b></p>)}{Object.entries(p.prices).map(([m,v])=><div className="batch-price-card" key={m}><b>{m} · {MARKET_CONFIG[m as MarketCode].symbol}</b><span>Original Price <s>{MARKET_CONFIG[m as MarketCode].symbol} {Number(v.original).toFixed(2)}</s></span><div><span>{p.pricingMode!=='split_normal'&&Number(v.normal)===Number(v.campaign||v.normal)?'Campaign Day & Normal Day Same Price':p.pricingMode==='split_normal'?'Normal Day · 1st–15th':'Normal Day Price'}</span><strong>{MARKET_CONFIG[m as MarketCode].symbol} {Number(v.normal).toFixed(2)}</strong></div>{(p.pricingMode==='split_normal'||Number(v.normal)!==Number(v.campaign||v.normal))&&<div><span>Campaign Day Price</span><strong>{MARKET_CONFIG[m as MarketCode].symbol} {Number(v.campaign||v.normal).toFixed(2)}</strong></div>}{p.pricingMode==='split_normal'&&<div><span>Normal Day · 16th–End</span><strong>{MARKET_CONFIG[m as MarketCode].symbol} {Number(v.normalLate).toFixed(2)}</strong></div>}</div>)}<DatesSummary row={p}/>{p.exportSnapshot&&<details className="batch-pricing-evidence"><summary>Calculator Settings · {adjustedPrices(p.prices,p.exportSnapshot,p.priceApplication)?'Price Adjusted':'Original Calculated Prices'}</summary>{p.exportSnapshot.scenarios.map(snapshot=><p key={snapshotPeriod(snapshot)}><b>{pricingPeriodLabels[snapshotPeriod(snapshot)]}</b> · {snapshot.pricingGoal==='facebookPayout'?'Match Meta Order Income':snapshot.pricingGoal==='sameCustomerPrice'?'Match Meta Buyer Payment':'Lower Than Meta'} · Meta RM {snapshot.facebookPrice.toFixed(2)} · Shopee RM {snapshot.suggestedShopeePrice.toFixed(2)}</p>)}{!calculatorBatch&&p.priceAdjustmentReason&&<p>Price Change Reason: {p.priceAdjustmentReason}</p>}</details>}<h4>Inventory Items</h4><ul>{p.items.filter(i=>i.sku||i.quantity).map((i,j)=><li key={j}>{i.sku}{i.name&&i.name!==i.sku?' · '+i.name:''} × {i.quantity}</li>)}</ul>
+ {imageUploadsEnabled&&Object.keys(p.prices).length===1&&p.prices.MY&&(mizino||packageImageDestination(storeName,'MY'))&&
+  (!journal||!!journal.imageUploads?.[p.id]?.kinds.length)&&<>
+  {journal?.imageUploads?.[p.id]?.kinds.length ? <p role="status">Pending images: {journal.imageUploads[p.id].kinds.join(', ')}. Reselect the same files if needed.</p> : null}
+  <PackageImageFields images={media[p.id]?.images??{}} project={journal?.imageUploads?.[p.id]?.project??media[p.id]?.project??''}
+   mizino={mizino} disabled={busy||bulkPicking} projectLocked={!!journal?.imageUploads?.[p.id]}
+   onProjectChange={project=>updateMedia(p.id,{project})}
+   onChange={(kind,file)=>updateMedia(p.id,{images:{...media[p.id]?.images,[kind]:file}})} />
+  </>}
+ </article>;})}</div>
+ {error&&<p role="alert" className="package-image-error">{error}</p>}
+ <div className="batch-save-actions batch-action-row">{!journal&&<button type="button" className="batch-secondary" disabled={busy} onClick={()=>{setExpanded(null);setStep(2);}}>Back to Edit</button>}<button className="batch-primary" type="button" disabled={busy||bulkPicking||!!invalid.length||!rows.length||!pendingImages&&!!journal&&journal.rows.every(r=>journal.results[r.id]&&!['failed','ready'].includes(journal.results[r.id].kind))} onClick={create}>{busy?'Saving Packages…':onlyImageRetry?'Retry Image Upload':journal?(Object.values(journal.results).some(r=>r.kind==='ready')?'Create Corrected Packages':'Retry Unconfirmed Packages'):`Create ${packageCount}`}</button>
  {journal&&<p role="status">{Object.values(journal.results).filter(r=>r.kind==='created').length} Created · {Object.values(journal.results).filter(r=>r.kind==='draft').length} Saved as Draft · {Object.values(journal.results).filter(r=>r.kind==='failed').length} Unconfirmed · {Object.values(journal.results).filter(r=>r.kind==='rejected').length} Need Correction</p>}</div></div>}
  {failure&&<FailureDialog journal={failure} onClose={()=>setFailure(null)} onFix={id=>openEditor(id,true)}/>}
  </section>;
