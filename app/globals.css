@@ -487,8 +487,8 @@ body{background:var(--paper);color:var(--ink)}
 .package-image-upload-alert strong{font-size:14px}
 .package-image-upload-alert p{margin:4px 0 0;font-size:13px;line-height:1.5}
 
-.package-form-with-sticky-footer{scroll-padding-bottom:82px}
-.package-edit-footer{position:sticky;bottom:0;z-index:3;margin-top:12px;padding:10px 0 3px;border-top:1px solid var(--line);background:#fffdfa;box-shadow:0 -8px 14px #fffdfa}
+.package-form.package-form-with-sticky-footer{scroll-padding-bottom:82px;padding-bottom:0}
+.package-edit-footer{position:sticky;bottom:0;z-index:3;margin-top:12px;padding:10px 0 12px;border-top:1px solid var(--line);background:#fffdfa;box-shadow:0 -8px 14px #fffdfa}
 .package-edit-footer .form-actions{align-items:center;margin:0}
 .package-queued-images{font-size:12px;font-weight:600;color:#53636e;white-space:nowrap}
 @media(max-width:520px){.package-edit-footer .form-actions{gap:6px}.package-queued-images{margin-inline-start:auto}}
